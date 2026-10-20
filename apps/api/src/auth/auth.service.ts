@@ -19,9 +19,12 @@ export class AuthService {
     private readonly onEmailDeliveryFailure: (error: unknown) => void = () => undefined,
   ) {}
 
-  async register(email: string, password: string): Promise<void> {
+  async register(email: string, password: string, inviteToken?: string): Promise<void> {
     if (!isPasswordPolicyValid(password)) {
       throw new AuthError(PASSWORD_POLICY_MESSAGE, 400);
+    }
+    if (inviteToken !== undefined && !/^[A-Za-z0-9_-]{40,128}$/.test(inviteToken)) {
+      throw new AuthError("O convite é inválido ou expirou.", 400);
     }
 
     const normalizedEmail = email.trim().toLowerCase();
@@ -40,6 +43,7 @@ export class AuthService {
 
     const confirmationUrl = new URL("/verify-email", this.configuration.webBaseUrl);
     confirmationUrl.searchParams.set("token", verificationToken);
+    if (inviteToken) confirmationUrl.searchParams.set("invite", inviteToken);
 
     setImmediate(() => {
       void this.deliverVerificationEmail(

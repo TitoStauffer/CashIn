@@ -25,6 +25,7 @@ const app = createApp(database, {
     verificationTokenTtlHours: positiveIntegerFromEnvironment("EMAIL_VERIFICATION_TOKEN_TTL_HOURS", 24),
     sessionTtlDays: positiveIntegerFromEnvironment("AUTH_SESSION_TTL_DAYS", 7),
   },
+  walletInvitationTokenTtlHours: positiveIntegerFromEnvironment("WALLET_INVITATION_TOKEN_TTL_HOURS", 168),
   secureCookies: process.env.NODE_ENV === "production",
 });
 

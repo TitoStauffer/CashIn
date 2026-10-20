@@ -14,6 +14,7 @@ interface AuthRouteOptions {
 interface RegisterBody {
   email: string;
   password: string;
+  inviteToken?: string;
 }
 
 interface VerifyBody {
@@ -103,13 +104,14 @@ export function registerAuthRoutes(app: FastifyInstance, options: AuthRouteOptio
           properties: {
             email: { type: "string", format: "email", maxLength: 320 },
             password: { type: "string", minLength: 8, maxLength: 128 },
+            inviteToken: { type: "string", minLength: 40, maxLength: 128, pattern: "^[A-Za-z0-9_-]+$" },
           },
         },
       },
     },
     async (request, reply) => {
       try {
-        await options.authService.register(request.body.email, request.body.password);
+        await options.authService.register(request.body.email, request.body.password, request.body.inviteToken);
         return reply.code(202).send({
           message: "Email enviado, favor confirmar seu cadastro",
         });

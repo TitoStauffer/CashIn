@@ -29,6 +29,12 @@ export interface AuthRepository {
 
 export interface EmailSender {
   sendVerificationEmail(email: string, confirmationUrl: string): Promise<void>;
+  sendWalletInvitationEmail?(
+    email: string,
+    invitationUrl: string,
+    walletName: string,
+    inviterEmail: string,
+  ): Promise<void>;
 }
 
 export interface AuthConfiguration {

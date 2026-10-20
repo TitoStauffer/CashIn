@@ -8,9 +8,12 @@ import { IncomesPage } from './incomes/IncomesPage'
 import { GoalsPage } from './goals/GoalsPage'
 import { DashboardPage } from './dashboard/DashboardPage'
 import { WalletProvider } from './wallets/WalletContext'
+import { WalletInvitationPage } from './wallets/WalletInvitationPage'
+import { WalletSharingPage } from './wallets/WalletSharingPage'
+import { getPendingInviteToken, storePendingInviteToken } from './wallets/walletApi'
 import './App.css'
 
-type Page = 'login' | 'register' | 'verify-email' | 'dashboard' | 'categories' | 'incomes' | 'expenses' | 'goals'
+type Page = 'login' | 'register' | 'verify-email' | 'wallet-invite' | 'wallet-sharing' | 'dashboard' | 'categories' | 'incomes' | 'expenses' | 'goals'
 const pendingVerifications = new Map<string, Promise<unknown>>()
 const passwordPolicyMessage =
   'A senha deve ter pelo menos 8 caracteres, incluindo uma letra maiúscula, uma letra minúscula, um número e um caractere especial.'
@@ -63,6 +66,8 @@ function getPage(): Page {
   const path = window.location.pathname.replace(/\/$/, '')
   if (path.endsWith('/register')) return 'register'
   if (path.endsWith('/verify-email')) return 'verify-email'
+  if (path.endsWith('/wallet-invite')) return 'wallet-invite'
+  if (path.endsWith('/wallet-sharing')) return 'wallet-sharing'
   if (path.endsWith('/dashboard')) return 'dashboard'
   if (path.endsWith('/categories')) return 'categories'
   if (path.endsWith('/incomes')) return 'incomes'
@@ -103,6 +108,11 @@ function App() {
   const [verificationToken] = useState(() =>
     new URLSearchParams(window.location.search).get('token'),
   )
+  const [emailVerificationInviteToken] = useState(() =>
+    new URLSearchParams(window.location.search).get('invite'),
+  )
+  const invitationToken = new URLSearchParams(window.location.search).get('token')
+  const pendingInviteToken = emailVerificationInviteToken || getPendingInviteToken()
   const [user, setUser] = useState<User | null>(null)
   const [checkingSession, setCheckingSession] = useState(true)
   const [sessionError, setSessionError] = useState('')
@@ -158,7 +168,8 @@ function App() {
       const response = await authApi.login(email.trim(), password)
       setUser(response.user)
       setPassword('')
-      window.location.assign('/dashboard')
+      const token = new URLSearchParams(window.location.search).get('invite') || getPendingInviteToken()
+      window.location.assign(token ? `/wallet-invite?token=${encodeURIComponent(token)}` : '/dashboard')
     } catch (error) {
       setFormError(getErrorMessage(error, 'login'))
     } finally {
@@ -177,8 +188,14 @@ function App() {
 
     setIsSubmitting(true)
     try {
-      const response = await authApi.register(email.trim(), password)
-      setFormMessage(response.message || 'Email enviado, favor confirmar seu cadastro')
+      const inviteToken = new URLSearchParams(window.location.search).get('invite')
+      if (inviteToken) storePendingInviteToken(inviteToken)
+      const response = inviteToken
+        ? await authApi.register(email.trim(), password, inviteToken)
+        : await authApi.register(email.trim(), password)
+      setFormMessage(inviteToken
+        ? `${response.message || 'Email enviado, favor confirmar seu cadastro'} Depois de confirmar, volte a este convite, entre na sua conta e aceite o acesso.`
+        : response.message || 'Email enviado, favor confirmar seu cadastro')
       setPassword('')
     } catch (error) {
       setFormError(getErrorMessage(error, 'register'))
@@ -237,6 +254,18 @@ function App() {
     return (
       <WalletProvider userId={user.id}>
         <GoalsPage userEmail={user.email} isLoggingOut={isSubmitting} onLogout={handleLogout} />
+      </WalletProvider>
+    )
+  }
+
+  if (!checkingSession && page === 'wallet-invite') {
+    return <WalletInvitationPage token={invitationToken} user={user} />
+  }
+
+  if (!checkingSession && user && page === 'wallet-sharing') {
+    return (
+      <WalletProvider userId={user.id}>
+        <WalletSharingPage userEmail={user.email} isLoggingOut={isSubmitting} onLogout={handleLogout} />
       </WalletProvider>
     )
   }
@@ -309,7 +338,7 @@ function App() {
                         ? formError
                         : 'O link não contém um token de confirmação.'}
                     </p>
-                    <a className="button button--secondary" href="/login">Voltar para o login</a>
+                    <a className="button button--secondary" href={pendingInviteToken ? `/login?invite=${encodeURIComponent(pendingInviteToken)}` : '/login'}>Voltar para o login</a>
                   </>
                 ) : verification === 'success' ? (
                   <>
@@ -317,7 +346,7 @@ function App() {
                     <p className="form-eyebrow">TUDO CERTO</p>
                     <h2 id="form-title">Seu e-mail foi confirmado.</h2>
                     <p className="form-description">Agora você já pode entrar na sua conta.</p>
-                    <a className="button" href="/login">Ir para o login</a>
+                    <a className="button" href={pendingInviteToken ? `/login?invite=${encodeURIComponent(pendingInviteToken)}` : '/login'}>Ir para o login</a>
                   </>
                 ) : (
                   <>
@@ -437,7 +466,11 @@ function App() {
 
                 <p className="switch-form">
                   {page === 'register' ? 'Já tem uma conta?' : 'Ainda não tem uma conta?'}{' '}
-                  <a href={page === 'register' ? '/login' : '/register'}>
+                  <a href={page === 'register'
+                    ? new URLSearchParams(window.location.search).get('invite')
+                      ? `/login?invite=${encodeURIComponent(new URLSearchParams(window.location.search).get('invite')!)}`
+                      : '/login'
+                    : '/register'}>
                     {page === 'register' ? 'Entrar' : 'Criar conta'}
                   </a>
                 </p>

@@ -34,6 +34,8 @@ O padrão usa `smtp.gmail.com` na porta `587` com STARTTLS (`SMTP_SECURE=false`)
 
 O cadastro responde sem aguardar o envio do e-mail, que ocorre em segundo plano no processo da API. Se o envio falhar, a conta pendente é removida e o erro SMTP é registrado sem credenciais ou conteúdo do e-mail; corrija a configuração e tente cadastrar novamente. Esse processamento em memória atende ao MVP local, mas não mantém tarefas pendentes caso o processo da API seja reiniciado durante o envio.
 
+O mesmo SMTP envia convites de carteira. O prazo padrão do convite é de 168 horas; `WALLET_INVITATION_TOKEN_TTL_HOURS` pode alterar esse prazo. O token bruto existe apenas no link enviado e nunca é armazenado no banco (somente seu hash é persistido). Em cadastro iniciado por convite, a Web envia `inviteToken` para `POST /auth/register`; a API preserva o convite no link de confirmação para que o fluxo funcione mesmo quando o e-mail abre outra aba. A pessoa confirma o e-mail, entra na conta e aceita o convite autenticada.
+
 As senhas de novas contas devem ter pelo menos 8 caracteres e incluir uma letra maiúscula, uma minúscula, um número e um caractere especial.
 
 Cadastro e login têm limites temporários de tentativas por endereço IP para reduzir abuso. O controle é mantido em memória e atende ao MVP com uma única instância da API; para múltiplas instâncias, será necessário compartilhar o estado do limitador.
@@ -44,6 +46,16 @@ Os dados financeiros são organizados por carteira. Toda conta possui uma cartei
 
 - `GET /wallets` lista as carteiras às quais o usuário autenticado pertence. A resposta tem o formato `{ "items": [{ "id": "<uuid>", "name": "Pessoal", "isPersonal": true, "role": "owner" }] }`.
 - `POST /wallets` cria uma carteira adicional para o usuário autenticado, com `{ "name": "Viagem" }`, e retorna a carteira criada com status `201`.
+
+Convites e administração de membros são exclusivos do proprietário de carteiras compartilhadas (carteira pessoal não pode ser compartilhada):
+
+- `POST /wallets/:walletId/invites` com `{ "email": "pessoa@example.com" }` cria um convite e agenda o e-mail em segundo plano; retorna `202` sem o token.
+- `GET /wallets/:walletId/invites` lista convites e estados `pending`, `accepted`, `cancelled` ou `expired`.
+- `DELETE /wallets/:walletId/invites/:inviteId` cancela um convite pendente e retorna `204`.
+- `POST /wallet-invitations/accept` com `{ "token": "..." }` exige sessão autenticada e e-mail confirmado que corresponda ao endereço convidado; retorna `200` com a carteira concedida. Tokens expirados, cancelados ou já usados são recusados.
+- `GET /wallets/:walletId/members` lista proprietário e membros; `DELETE /wallets/:walletId/members/:userId` remove um membro e encerra seu acesso à carteira. A propriedade não pode ser removida por esse endpoint.
+
+Convites não concedem acesso até a aceitação autenticada. Um membro pode usar os recursos financeiros da carteira, mas não pode listar/cancelar convites, administrar membros ou transferir propriedade; essas rotas respondem `404` para não proprietários.
 
 Envie `X-Wallet-Id: <uuid>` nas operações de categorias, entradas, saídas, metas de investimento, aportes e resumo financeiro para selecionar a carteira. Se o header for omitido, a API usa a carteira pessoal do usuário. A API só permite acessar uma carteira quando há um registro de membership para o usuário autenticado; carteira inexistente ou sem acesso retorna `404`.
 

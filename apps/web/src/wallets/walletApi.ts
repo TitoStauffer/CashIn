@@ -6,6 +6,24 @@ export type Wallet = {
 }
 
 type WalletListResponse = { items: Wallet[] }
+export type WalletInvitationStatus = 'pending' | 'expired' | 'cancelled' | 'accepted'
+export type WalletInvitation = {
+  id: string
+  email: string
+  status: WalletInvitationStatus
+  expiresAt: string
+  createdAt: string
+}
+export type WalletMember = {
+  id: string
+  email: string
+  role: 'owner' | 'member'
+  createdAt: string
+}
+type WalletInvitationListResponse = { items: WalletInvitation[] }
+type WalletMemberListResponse = { items: WalletMember[] }
+type WalletInvitationCreateResponse = { invitation: WalletInvitation; message?: string }
+type WalletInvitationAcceptResponse = { wallet: Wallet; message?: string }
 type ErrorResponse = { message?: string }
 
 export class WalletApiError extends Error {
@@ -47,6 +65,53 @@ export const walletApi = {
       body: JSON.stringify({ name }),
     })
   },
+  listInvitations(walletId: string, signal?: AbortSignal) {
+    return request<WalletInvitationListResponse>(`/wallets/${encodeURIComponent(walletId)}/invites`, { signal })
+  },
+  createInvitation(walletId: string, email: string) {
+    return request<WalletInvitationCreateResponse>(`/wallets/${encodeURIComponent(walletId)}/invites`, {
+      method: 'POST',
+      body: JSON.stringify({ email }),
+    })
+  },
+  cancelInvitation(walletId: string, invitationId: string) {
+    return request<void>(`/wallets/${encodeURIComponent(walletId)}/invites/${encodeURIComponent(invitationId)}`, {
+      method: 'DELETE',
+    })
+  },
+  listMembers(walletId: string, signal?: AbortSignal) {
+    return request<WalletMemberListResponse>(`/wallets/${encodeURIComponent(walletId)}/members`, { signal })
+  },
+  removeMember(walletId: string, memberId: string) {
+    return request<void>(`/wallets/${encodeURIComponent(walletId)}/members/${encodeURIComponent(memberId)}`, {
+      method: 'DELETE',
+    })
+  },
+  acceptInvitation(token: string) {
+    return request<WalletInvitationAcceptResponse>('/wallet-invites/accept', {
+      method: 'POST',
+      body: JSON.stringify({ token }),
+    })
+  },
+}
+
+const pendingInviteStorageKey = 'saldocerto.pending-wallet-invite'
+
+export function getPendingInviteToken() {
+  try {
+    return window.sessionStorage.getItem(pendingInviteStorageKey)
+  } catch {
+    return null
+  }
+}
+
+export function storePendingInviteToken(token: string | null) {
+  try {
+    if (token) window.sessionStorage.setItem(pendingInviteStorageKey, token)
+    else window.sessionStorage.removeItem(pendingInviteStorageKey)
+  } catch {
+    // Keep the invite flow usable when session storage is unavailable.
+  }
 }
 
 export function getWalletStorageKey(userId: string) {

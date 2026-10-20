@@ -103,6 +103,23 @@ describe('FinancialSidebar', () => {
     expect(window.localStorage.getItem('saldocerto.active-wallet.user-1')).toBe('wallet-new')
   })
 
+  it('shows wallet sharing only to owners of shared wallets', async () => {
+    const user = userEvent.setup()
+    vi.mocked(walletApi.list).mockResolvedValueOnce({ items: [
+      { id: 'wallet-personal', name: 'Pessoal', isPersonal: true, role: 'owner' },
+      { id: 'wallet-shared-owner', name: 'Casa', isPersonal: false, role: 'owner' },
+      { id: 'wallet-shared-member', name: 'Família', isPersonal: false, role: 'member' },
+    ] })
+    await renderSidebar()
+
+    expect(screen.queryByRole('link', { name: 'Compartilhamento' })).not.toBeInTheDocument()
+    await user.selectOptions(screen.getByRole('combobox', { name: /Carteira ativa/ }), 'wallet-shared-owner')
+    expect(screen.getByRole('link', { name: 'Compartilhamento' })).toHaveAttribute('href', '/wallet-sharing')
+
+    await user.selectOptions(screen.getByRole('combobox', { name: /Carteira ativa/ }), 'wallet-shared-member')
+    expect(screen.queryByRole('link', { name: 'Compartilhamento' })).not.toBeInTheDocument()
+  })
+
   it('restores the saved wallet when it still belongs to the account', async () => {
     window.localStorage.setItem('saldocerto.active-wallet.user-1', 'wallet-shared')
     renderSidebar()
