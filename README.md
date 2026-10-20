@@ -40,9 +40,9 @@ Cadastro e login têm limites temporários de tentativas por endereço IP para r
 
 ## Categorias financeiras
 
-Categorias e subcategorias são gerenciadas por usuário autenticado. As naturezas disponíveis são `income` (entrada), `expense` (saída) e `investment_goal` (meta de investimento). Uma subcategoria herda a natureza da categoria.
+Categorias e subcategorias são gerenciadas por usuário autenticado. As naturezas disponíveis são `income` (entrada), `expense` (saída), `investment` (meta de investimento) e `investment_goal` (natureza legada, mantida por compatibilidade). Uma subcategoria herda a natureza da categoria.
 
-- `GET /categories?nature=income|expense|investment_goal` lista categorias e suas subcategorias; o filtro `nature` é opcional.
+- `GET /categories?nature=income|expense|investment|investment_goal` lista categorias e suas subcategorias; o filtro `nature` é opcional.
 - `POST /categories` cria uma categoria com `{ "name": "...", "nature": "income" }`.
 - `PATCH /categories/:categoryId` renomeia uma categoria com `{ "name": "..." }`.
 - `DELETE /categories/:categoryId` exclui uma categoria e suas subcategorias, desde que não estejam referenciadas por movimentações ou metas.
@@ -75,6 +75,25 @@ Todas as operações de saída exigem uma sessão autenticada e são isoladas pe
 - `DELETE /expenses/:expenseId` exclui uma saída e retorna `204`.
 
 O valor deve ser positivo. As categorias precisam pertencer ao usuário autenticado e ter natureza `expense`; a subcategoria, quando informada, precisa pertencer à categoria selecionada. IDs de saídas de outros usuários não podem ser consultados, alterados ou excluídos.
+
+## Resumo financeiro
+
+`GET /financial-summary?from=AAAA-MM-DD&to=AAAA-MM-DD` retorna os totais do usuário autenticado, com filtros de data opcionais e inclusivos. A resposta separa as entradas, despesas de consumo e aportes: `{ "incomeTotal": "500.00", "expenseTotal": "100.00", "contributionTotal": "50.00", "availableBalance": "350.00" }`. O saldo disponível é calculado como entradas menos despesas menos aportes; aportes não são somados às despesas.
+
+## Metas de investimento e aportes
+
+Todas as operações de metas e aportes exigem autenticação e usam o usuário da sessão como proprietário. Valores monetários são decimais enviados e retornados como strings, preservando até duas casas decimais. A natureza de categoria `investment` pode ser usada para associar uma meta; `investment_goal` permanece válida para compatibilidade com categorias existentes.
+
+- `GET /investment-goals` lista metas com `contributedAmount` e `progressPercentage` calculados a partir dos aportes atuais.
+- `GET /investment-goals/:goalId` consulta uma meta e seu progresso.
+- `POST /investment-goals` cria uma meta com `{ "title": "Reserva", "description": "Reserva de emergência", "targetAmount": "10000.00", "dueDate": null, "categoryId": "<uuid-ou-null>", "subcategoryId": "<uuid-ou-null>" }`. Prazo e categoria/subcategoria são opcionais.
+- `PUT /investment-goals/:goalId` substitui os campos editáveis da meta usando o mesmo formato de cadastro.
+- `POST /investment-goals/:goalId/close` encerra uma meta. Metas encerradas continuam consultáveis; criação de aporte, edição da meta e edição ou exclusão de aportes retornam `409`.
+- `GET /investment-goals/:goalId/contributions` lista os aportes da meta.
+- `POST /investment-goals/:goalId/contributions` cria um aporte com `{ "amount": "250.00", "date": "2026-10-19", "description": "Aporte mensal" }`.
+- `PUT /investment-goals/:goalId/contributions/:contributionId` atualiza um aporte; `DELETE` no mesmo caminho o exclui.
+
+O total aportado e o percentual são derivados na consulta, portanto criação, edição e exclusão de aportes atualizam o progresso sem duplicar valores. Aportes são registros financeiros separados das despesas de consumo.
 
 O MVP 1 será validado com API e Web. A API é independente do cliente e poderá ser consumida pelo aplicativo Mobile quando essa etapa entrar no escopo.
 

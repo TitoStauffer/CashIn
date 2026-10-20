@@ -255,6 +255,7 @@ export function ExpensesPage({ userEmail, isLoggingOut, onLogout }: ExpensesPage
           <nav className="expenses-account" aria-label="Navegação da área financeira">
             <a className="expenses-account__link" href="/incomes">Entradas</a>
             <a className="expenses-account__link" href="/expenses" aria-current="page">Despesas</a>
+            <a className="expenses-account__link" href="/goals">Metas</a>
             <a className="expenses-account__link" href="/categories">Categorias</a>
             <span className="expenses-account__email">{userEmail}</span>
             <button className="expenses-signout" type="button" onClick={onLogout} disabled={isLoggingOut}>

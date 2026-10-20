@@ -1,4 +1,4 @@
-export const CATEGORY_NATURES = ["income", "expense", "investment_goal"] as const;
+export const CATEGORY_NATURES = ["income", "expense", "investment", "investment_goal"] as const;
 
 export type CategoryNature = (typeof CATEGORY_NATURES)[number];
 

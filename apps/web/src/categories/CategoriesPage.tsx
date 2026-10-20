@@ -24,7 +24,8 @@ type MutationAction =
 const natureOptions: { value: CategoryNature; label: string }[] = [
   { value: 'income', label: 'Entradas' },
   { value: 'expense', label: 'Saídas' },
-  { value: 'investment_goal', label: 'Metas de investimento' },
+  { value: 'investment', label: 'Metas de investimento' },
+  { value: 'investment_goal', label: 'Metas de investimento (legado)' },
 ]
 
 function normalizeName(value: string) {
@@ -299,6 +300,7 @@ export function CategoriesPage({ userEmail, isLoggingOut, onLogout }: Categories
           <nav className="categories-account" aria-label="Conta">
             <a className="categories-account__link" href="/incomes">Entradas</a>
             <a className="categories-account__link" href="/expenses">Despesas</a>
+            <a className="categories-account__link" href="/goals">Metas</a>
             <a className="categories-account__link" href="/categories" aria-current="page">Categorias</a>
             <span className="categories-account__email">{userEmail}</span>
             <button className="categories-signout" type="button" onClick={onLogout} disabled={isLoggingOut}>

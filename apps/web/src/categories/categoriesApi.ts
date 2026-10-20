@@ -1,4 +1,4 @@
-export type CategoryNature = 'income' | 'expense' | 'investment_goal'
+export type CategoryNature = 'income' | 'expense' | 'investment' | 'investment_goal'
 
 export type Subcategory = {
   id: string

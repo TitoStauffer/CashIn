@@ -17,6 +17,14 @@ import { ExpensesService } from "./expenses/expenses.service.js";
 import { PostgresExpensesRepository } from "./expenses/postgres-expenses.repository.js";
 import { registerExpenseRoutes } from "./expenses/expenses.routes.js";
 import type { ExpenseRepository } from "./expenses/expenses.types.js";
+import { InvestmentGoalsService } from "./investment-goals/investment-goals.service.js";
+import { PostgresInvestmentGoalsRepository } from "./investment-goals/postgres-investment-goals.repository.js";
+import { registerInvestmentGoalRoutes } from "./investment-goals/investment-goals.routes.js";
+import type { InvestmentGoalsRepository } from "./investment-goals/investment-goals.types.js";
+import { FinancialSummaryService } from "./financial-summary/financial-summary.service.js";
+import { PostgresFinancialSummaryRepository } from "./financial-summary/postgres-financial-summary.repository.js";
+import { registerFinancialSummaryRoutes } from "./financial-summary/financial-summary.routes.js";
+import type { FinancialSummaryRepository } from "./financial-summary/financial-summary.types.js";
 
 export interface AppOptions {
   logger?: boolean;
@@ -25,6 +33,8 @@ export interface AppOptions {
   categoryRepository?: CategoryRepository;
   incomeRepository?: IncomeRepository;
   expenseRepository?: ExpenseRepository;
+  investmentGoalsRepository?: InvestmentGoalsRepository;
+  financialSummaryRepository?: FinancialSummaryRepository;
   authConfiguration?: Partial<AuthConfiguration>;
   secureCookies?: boolean;
 }
@@ -100,6 +110,18 @@ export function createApp(
   registerExpenseRoutes(app, {
     expensesService: new ExpensesService(
       options.expenseRepository ?? new PostgresExpensesRepository(database),
+    ),
+  });
+
+  registerInvestmentGoalRoutes(app, {
+    investmentGoalsService: new InvestmentGoalsService(
+      options.investmentGoalsRepository ?? new PostgresInvestmentGoalsRepository(database),
+    ),
+  });
+
+  registerFinancialSummaryRoutes(app, {
+    financialSummaryService: new FinancialSummaryService(
+      options.financialSummaryRepository ?? new PostgresFinancialSummaryRepository(database),
     ),
   });
 

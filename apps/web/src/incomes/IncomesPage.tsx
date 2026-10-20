@@ -255,6 +255,7 @@ export function IncomesPage({ userEmail, isLoggingOut, onLogout }: IncomesPagePr
           <nav className="incomes-account" aria-label="Navegação da área financeira">
             <a className="incomes-account__link" href="/incomes" aria-current="page">Entradas</a>
             <a className="incomes-account__link" href="/expenses">Despesas</a>
+            <a className="incomes-account__link" href="/goals">Metas</a>
             <a className="incomes-account__link" href="/categories">Categorias</a>
             <span className="incomes-account__email">{userEmail}</span>
             <button className="incomes-signout" type="button" onClick={onLogout} disabled={isLoggingOut}>
