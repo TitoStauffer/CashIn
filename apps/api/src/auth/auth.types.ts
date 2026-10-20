@@ -35,6 +35,12 @@ export interface EmailSender {
     walletName: string,
     inviterEmail: string,
   ): Promise<void>;
+  sendWalletAccessRequestEmail?(
+    ownerEmail: string,
+    walletName: string,
+    requesterEmail: string,
+    requestsUrl: string,
+  ): Promise<void>;
 }
 
 export interface AuthConfiguration {

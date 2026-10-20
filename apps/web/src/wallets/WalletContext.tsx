@@ -10,7 +10,7 @@ function getWalletErrorMessage(error: unknown) {
   return 'Não foi possível carregar suas carteiras. Tente novamente.'
 }
 
-export function WalletProvider({ userId, children }: { userId: string; children: ReactNode }) {
+export function WalletProvider({ userId, preferredWalletId, children }: { userId: string; preferredWalletId?: string | null; children: ReactNode }) {
   const [wallets, setWallets] = useState<Wallet[]>([])
   const [activeWalletId, setActiveWalletId] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(true)
@@ -24,7 +24,8 @@ export function WalletProvider({ userId, children }: { userId: string; children:
       .then(({ items }) => {
         setWallets(items)
         const storedWalletId = getStoredWalletId(userId)
-        const nextWallet = items.find((wallet) => wallet.id === storedWalletId)
+        const nextWallet = items.find((wallet) => wallet.id === preferredWalletId)
+          ?? items.find((wallet) => wallet.id === storedWalletId)
           ?? items.find((wallet) => wallet.isPersonal)
           ?? items[0]
         const nextWalletId = nextWallet?.id ?? null
@@ -40,7 +41,7 @@ export function WalletProvider({ userId, children }: { userId: string; children:
         if (!controller.signal.aborted) setIsLoading(false)
       })
     return () => controller.abort()
-  }, [reloadKey, userId])
+  }, [preferredWalletId, reloadKey, userId])
 
   const selectWallet = useCallback((walletId: string) => {
     if (!wallets.some((wallet) => wallet.id === walletId)) return

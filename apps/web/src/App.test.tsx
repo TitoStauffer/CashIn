@@ -243,4 +243,41 @@ describe('wallet invitation routes', () => {
     expect(await screen.findByRole('status')).toHaveTextContent('Convite aceito.')
     expect(window.localStorage.getItem('saldocerto.active-wallet.user-2')).toBe('wallet-shared')
   })
+
+  it('opens a public access request link without revealing the wallet', async () => {
+    window.history.replaceState({}, '', '/wallet-access-request?token=access-token')
+    render(<App />)
+
+    expect(await screen.findByRole('heading', { name: 'Solicite acesso.' })).toBeVisible()
+    expect(screen.getByText(/Nenhuma informação financeira será exibida antes da aprovação/)).toBeVisible()
+    expect(screen.getByLabelText('E-mail')).toBeRequired()
+  })
+})
+
+describe('wallet sharing notification route', () => {
+  beforeEach(() => {
+    window.localStorage.clear()
+    window.history.replaceState({}, '', '/wallet-sharing?walletId=wallet-shared')
+    vi.spyOn(authApi, 'me').mockResolvedValue({ user: { id: 'user-owner', email: 'owner@example.com' } })
+    vi.spyOn(walletApi, 'list').mockResolvedValue({ items: [
+      { id: 'wallet-personal', name: 'Pessoal', isPersonal: true, role: 'owner' },
+      { id: 'wallet-shared', name: 'Família', isPersonal: false, role: 'owner' },
+    ] })
+    vi.spyOn(walletApi, 'listInvitations').mockResolvedValue({ items: [] })
+    vi.spyOn(walletApi, 'listMembers').mockResolvedValue({ items: [] })
+    vi.spyOn(walletApi, 'listAccessRequests').mockResolvedValue({ items: [] })
+  })
+
+  afterEach(() => {
+    cleanup()
+    vi.restoreAllMocks()
+    window.localStorage.clear()
+  })
+
+  it('opens the requested wallet when the signed-in user has access', async () => {
+    render(<App />)
+
+    expect(await screen.findByRole('combobox', { name: 'Carteira ativa: Família' })).toHaveValue('wallet-shared')
+    expect(walletApi.listAccessRequests).toHaveBeenCalledWith('wallet-shared', expect.any(AbortSignal))
+  })
 })

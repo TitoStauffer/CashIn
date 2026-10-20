@@ -19,6 +19,9 @@
 .wallet-invitation-card__back:hover { text-decoration: underline; }
 .wallet-invitation-footer { width: min(100%, 430px); padding-top: 18px; border-top: 1px solid #e5ebe4; color: #879188; font-size: 10px; }
 .wallet-invitation-page :focus-visible { outline: 3px solid rgb(69 132 94 / 35%); outline-offset: 3px; }
+.wallet-access-request-label { display: block; margin: 16px 0 7px; color: #405b49; font-size: 11px; font-weight: 650; }
+.wallet-access-request-input { width: 100%; min-height: 43px; padding: 0 11px; border: 1px solid #dfe6df; border-radius: 7px; outline: none; background: #fcfdfb; color: #263e31; font: inherit; font-size: 12px; }
+.wallet-access-request-input:focus-visible { border-color: #4d8a66; box-shadow: 0 0 0 3px rgb(77 138 102 / 13%); }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { transition-duration: .01ms !important; }

@@ -20,8 +20,25 @@ export type WalletMember = {
   role: 'owner' | 'member'
   createdAt: string
 }
+export type WalletAccessRequestStatus = 'pending' | 'approved' | 'rejected' | 'cancelled' | 'expired' | 'accepted'
+export type WalletAccessRequest = {
+  id: string
+  email: string
+  status: WalletAccessRequestStatus
+  createdAt: string
+  expiresAt?: string
+  approvedAt?: string | null
+  rejectedAt?: string | null
+  cancelledAt?: string | null
+}
+export type WalletAccessLink = {
+  id: string
+  url: string
+  expiresAt: string
+}
 type WalletInvitationListResponse = { items: WalletInvitation[] }
 type WalletMemberListResponse = { items: WalletMember[] }
+type WalletAccessRequestListResponse = { items: WalletAccessRequest[] }
 type WalletInvitationCreateResponse = { invitation: WalletInvitation; message?: string }
 type WalletInvitationAcceptResponse = { wallet: Wallet; message?: string }
 type ErrorResponse = { message?: string }
@@ -84,6 +101,30 @@ export const walletApi = {
   },
   removeMember(walletId: string, memberId: string) {
     return request<void>(`/wallets/${encodeURIComponent(walletId)}/members/${encodeURIComponent(memberId)}`, {
+      method: 'DELETE',
+    })
+  },
+  createAccessLink(walletId: string) {
+    return request<{ link: WalletAccessLink }>(`/wallets/${encodeURIComponent(walletId)}/access-links`, {
+      method: 'POST',
+    })
+  },
+  listAccessRequests(walletId: string, signal?: AbortSignal) {
+    return request<WalletAccessRequestListResponse>(`/wallets/${encodeURIComponent(walletId)}/access-requests`, { signal })
+  },
+  submitAccessRequest(token: string, email: string) {
+    return request<{ message?: string }>('/wallet-access-requests', {
+      method: 'POST',
+      body: JSON.stringify({ token, email }),
+    })
+  },
+  decideAccessRequest(walletId: string, requestId: string, decision: 'approve' | 'reject') {
+    return request<void>(`/wallets/${encodeURIComponent(walletId)}/access-requests/${encodeURIComponent(requestId)}/${decision}`, {
+      method: 'POST',
+    })
+  },
+  cancelAccessRequest(walletId: string, requestId: string) {
+    return request<void>(`/wallets/${encodeURIComponent(walletId)}/access-requests/${encodeURIComponent(requestId)}`, {
       method: 'DELETE',
     })
   },

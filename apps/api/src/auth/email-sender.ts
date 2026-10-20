@@ -35,6 +35,15 @@ export class UnconfiguredEmailSender implements EmailSender {
   ): Promise<void> {
     throw new Error("Email sender is not configured");
   }
+
+  async sendWalletAccessRequestEmail(
+    _ownerEmail: string,
+    _walletName: string,
+    _requesterEmail: string,
+    _requestsUrl: string,
+  ): Promise<void> {
+    throw new Error("Email sender is not configured");
+  }
 }
 
 export class SmtpEmailSender implements EmailSender {
@@ -97,6 +106,32 @@ export class SmtpEmailSender implements EmailSender {
       ].join(""),
     };
     await this.sendMail(message);
+  }
+
+  async sendWalletAccessRequestEmail(
+    ownerEmail: string,
+    walletName: string,
+    requesterEmail: string,
+    requestsUrl: string,
+  ): Promise<void> {
+    const safeUrl = escapeHtml(requestsUrl);
+    const safeWalletName = escapeHtml(walletName);
+    const safeRequesterEmail = escapeHtml(requesterEmail);
+    await this.sendMail({
+      from: `Saldo Certo <${this.fromAddress}>`,
+      to: ownerEmail,
+      subject: "Nova solicitação para sua carteira - Saldo Certo",
+      text: [
+        `O endereço ${requesterEmail} solicitou acesso à carteira "${walletName}" no Saldo Certo.`,
+        "",
+        "Acesse suas solicitações para aprovar ou recusar:",
+        requestsUrl,
+      ].join("\n"),
+      html: [
+        `<p>O endereço <strong>${safeRequesterEmail}</strong> solicitou acesso à carteira <strong>${safeWalletName}</strong> no Saldo Certo.</p>`,
+        `<p><a href="${safeUrl}">Revisar solicitação</a></p>`,
+      ].join(""),
+    });
   }
 }
 

@@ -9,11 +9,12 @@ import { GoalsPage } from './goals/GoalsPage'
 import { DashboardPage } from './dashboard/DashboardPage'
 import { WalletProvider } from './wallets/WalletContext'
 import { WalletInvitationPage } from './wallets/WalletInvitationPage'
+import { WalletAccessRequestPage } from './wallets/WalletAccessRequestPage'
 import { WalletSharingPage } from './wallets/WalletSharingPage'
 import { getPendingInviteToken, storePendingInviteToken } from './wallets/walletApi'
 import './App.css'
 
-type Page = 'login' | 'register' | 'verify-email' | 'wallet-invite' | 'wallet-sharing' | 'dashboard' | 'categories' | 'incomes' | 'expenses' | 'goals'
+type Page = 'login' | 'register' | 'verify-email' | 'wallet-invite' | 'wallet-access-request' | 'wallet-sharing' | 'dashboard' | 'categories' | 'incomes' | 'expenses' | 'goals'
 const pendingVerifications = new Map<string, Promise<unknown>>()
 const passwordPolicyMessage =
   'A senha deve ter pelo menos 8 caracteres, incluindo uma letra maiúscula, uma letra minúscula, um número e um caractere especial.'
@@ -67,6 +68,7 @@ function getPage(): Page {
   if (path.endsWith('/register')) return 'register'
   if (path.endsWith('/verify-email')) return 'verify-email'
   if (path.endsWith('/wallet-invite')) return 'wallet-invite'
+  if (path.endsWith('/wallet-access-request')) return 'wallet-access-request'
   if (path.endsWith('/wallet-sharing')) return 'wallet-sharing'
   if (path.endsWith('/dashboard')) return 'dashboard'
   if (path.endsWith('/categories')) return 'categories'
@@ -112,6 +114,10 @@ function App() {
     new URLSearchParams(window.location.search).get('invite'),
   )
   const invitationToken = new URLSearchParams(window.location.search).get('token')
+  const accessRequestToken = new URLSearchParams(window.location.search).get('token')
+  const requestedWalletId = page === 'wallet-sharing'
+    ? new URLSearchParams(window.location.search).get('walletId')
+    : null
   const pendingInviteToken = emailVerificationInviteToken || getPendingInviteToken()
   const [user, setUser] = useState<User | null>(null)
   const [checkingSession, setCheckingSession] = useState(true)
@@ -262,9 +268,13 @@ function App() {
     return <WalletInvitationPage token={invitationToken} user={user} />
   }
 
+  if (!checkingSession && page === 'wallet-access-request') {
+    return <WalletAccessRequestPage token={accessRequestToken} />
+  }
+
   if (!checkingSession && user && page === 'wallet-sharing') {
     return (
-      <WalletProvider userId={user.id}>
+      <WalletProvider userId={user.id} preferredWalletId={requestedWalletId}>
         <WalletSharingPage userEmail={user.email} isLoggingOut={isSubmitting} onLogout={handleLogout} />
       </WalletProvider>
     )

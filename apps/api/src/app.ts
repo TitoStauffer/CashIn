@@ -34,6 +34,10 @@ import { WalletInvitationsService } from "./wallet-invitations/wallet-invitation
 import { PostgresWalletInvitationRepository } from "./wallet-invitations/postgres-wallet-invitation.repository.js";
 import { registerWalletInvitationRoutes } from "./wallet-invitations/wallet-invitations.routes.js";
 import type { WalletInvitationRepository } from "./wallet-invitations/wallet-invitations.types.js";
+import { WalletAccessRequestsService } from "./wallet-access-requests/wallet-access-requests.service.js";
+import { PostgresWalletAccessRequestRepository } from "./wallet-access-requests/postgres-wallet-access-request.repository.js";
+import { registerWalletAccessRequestRoutes } from "./wallet-access-requests/wallet-access-requests.routes.js";
+import type { WalletAccessRequestRepository } from "./wallet-access-requests/wallet-access-requests.types.js";
 
 export interface AppOptions {
   logger?: boolean;
@@ -46,8 +50,10 @@ export interface AppOptions {
   financialSummaryRepository?: FinancialSummaryRepository;
   walletRepository?: WalletRepository;
   walletInvitationRepository?: WalletInvitationRepository;
+  walletAccessRequestRepository?: WalletAccessRequestRepository;
   authConfiguration?: Partial<AuthConfiguration>;
   walletInvitationTokenTtlHours?: number;
+  walletAccessLinkTtlHours?: number;
   secureCookies?: boolean;
 }
 
@@ -131,13 +137,35 @@ export function createApp(
   registerWalletRoutes(app, { walletsService });
 
   const emailSender = options.emailSender ?? new UnconfiguredEmailSender();
-  registerWalletInvitationRoutes(app, {
-    walletInvitationsService: new WalletInvitationsService(
-      options.walletInvitationRepository ?? new PostgresWalletInvitationRepository(database),
+  const walletInvitationsService = new WalletInvitationsService(
+    options.walletInvitationRepository ?? new PostgresWalletInvitationRepository(database),
+    emailSender,
+    {
+      webBaseUrl: options.authConfiguration?.webBaseUrl ?? "http://localhost:5173",
+      invitationTokenTtlHours: options.walletInvitationTokenTtlHours ?? 168,
+    },
+    undefined,
+    (error) => {
+      const metadata = typeof error === "object" && error !== null
+        ? error as { code?: unknown; responseCode?: unknown }
+        : {};
+      app.log.error({
+        smtpCode: typeof metadata.code === "string" ? metadata.code : "UNKNOWN",
+        smtpResponseCode: typeof metadata.responseCode === "number" ? metadata.responseCode : undefined,
+      }, "Wallet invitation email delivery failed");
+    },
+  );
+  registerWalletInvitationRoutes(app, { walletInvitationsService });
+
+  registerWalletAccessRequestRoutes(app, {
+    walletAccessRequestsService: new WalletAccessRequestsService(
+      options.walletAccessRequestRepository ?? new PostgresWalletAccessRequestRepository(database),
+      walletInvitationsService,
       emailSender,
       {
         webBaseUrl: options.authConfiguration?.webBaseUrl ?? "http://localhost:5173",
-        invitationTokenTtlHours: options.walletInvitationTokenTtlHours ?? 168,
+        accessLinkTtlHours: options.walletAccessLinkTtlHours ?? 168,
+        requestRateLimit: { maxRequests: 5, windowMs: 15 * 60 * 1000 },
       },
       undefined,
       (error) => {
@@ -147,7 +175,7 @@ export function createApp(
         app.log.error({
           smtpCode: typeof metadata.code === "string" ? metadata.code : "UNKNOWN",
           smtpResponseCode: typeof metadata.responseCode === "number" ? metadata.responseCode : undefined,
-        }, "Wallet invitation email delivery failed");
+        }, "Wallet access request email delivery failed");
       },
     ),
   });

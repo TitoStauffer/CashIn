@@ -129,4 +129,30 @@ describe('financial wallet request context', () => {
     expect(fetch).toHaveBeenNthCalledWith(5, '/api/wallets/wallet%2Fone/members/member%2F1', expect.objectContaining({ method: 'DELETE' }))
     expect(fetch).toHaveBeenNthCalledWith(6, '/api/wallet-invitations/accept', expect.objectContaining({ method: 'POST', body: JSON.stringify({ token: 'token' }) }))
   })
+
+  it('uses the shared wallet access link and request contracts', async () => {
+    const link = { id: 'link-1', url: 'https://example.test/wallet-access-request?token=token', expiresAt: '2026-10-27T00:00:00Z' }
+    const accessRequest = { id: 'request-1', email: 'person@example.com', status: 'pending', createdAt: '2026-10-20T00:00:00Z' }
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(response({ link }) as unknown as Response)
+      .mockResolvedValueOnce(response({ items: [accessRequest] }) as unknown as Response)
+      .mockResolvedValueOnce(response({ message: 'Se aplicável, o pedido será encaminhado.' }, 202) as unknown as Response)
+      .mockResolvedValueOnce(response(null, 204) as unknown as Response)
+      .mockResolvedValueOnce(response(null, 204) as unknown as Response)
+      .mockResolvedValueOnce(response(null, 204) as unknown as Response)
+
+    await expect(walletApi.createAccessLink('wallet/one')).resolves.toEqual({ link })
+    await expect(walletApi.listAccessRequests('wallet/one')).resolves.toEqual({ items: [accessRequest] })
+    await expect(walletApi.submitAccessRequest('token', 'person@example.com')).resolves.toEqual({ message: 'Se aplicável, o pedido será encaminhado.' })
+    await expect(walletApi.decideAccessRequest('wallet/one', 'request/1', 'approve')).resolves.toBeUndefined()
+    await expect(walletApi.decideAccessRequest('wallet/one', 'request/1', 'reject')).resolves.toBeUndefined()
+    await expect(walletApi.cancelAccessRequest('wallet/one', 'request/1')).resolves.toBeUndefined()
+
+    expect(fetch).toHaveBeenNthCalledWith(1, '/api/wallets/wallet%2Fone/access-links', expect.objectContaining({ method: 'POST' }))
+    expect(fetch).toHaveBeenNthCalledWith(2, '/api/wallets/wallet%2Fone/access-requests', expect.any(Object))
+    expect(fetch).toHaveBeenNthCalledWith(3, '/api/wallet-access-requests', expect.objectContaining({ method: 'POST', body: JSON.stringify({ token: 'token', email: 'person@example.com' }) }))
+    expect(fetch).toHaveBeenNthCalledWith(4, '/api/wallets/wallet%2Fone/access-requests/request%2F1/approve', expect.objectContaining({ method: 'POST' }))
+    expect(fetch).toHaveBeenNthCalledWith(5, '/api/wallets/wallet%2Fone/access-requests/request%2F1/reject', expect.objectContaining({ method: 'POST' }))
+    expect(fetch).toHaveBeenNthCalledWith(6, '/api/wallets/wallet%2Fone/access-requests/request%2F1', expect.objectContaining({ method: 'DELETE' }))
+  })
 })

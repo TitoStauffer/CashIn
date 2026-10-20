@@ -38,6 +38,7 @@ test("PostgreSQL wallet invitations enforce ownership, verified email, cancellat
       "006_financial_precision_and_name_uniqueness.sql",
       "007_wallets.sql",
       "008_wallet_invitations.sql",
+      "009_wallet_access_requests.sql",
     ]) {
       const sql = await readFile(join(migrationDirectory, version), "utf8");
       await database.transaction(async (transaction) => {
