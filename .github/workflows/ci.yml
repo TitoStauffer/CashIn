@@ -1,0 +1,144 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [master]
+  push:
+    branches: [master]
+
+# Least privilege for GITHUB_TOKEN: the jobs only read the repository.
+permissions:
+  contents: read
+
+# A new push to the same PR cancels the previous run; pushes to master always finish.
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  # Same major version as the Docker images (node:24-alpine), pinned to an exact release.
+  NODE_VERSION: "24.22.0"
+
+defaults:
+  run:
+    # Explicit bash enables -eo pipefail, so a failing command in a pipe fails the step.
+    shell: bash
+
+jobs:
+  api:
+    name: API
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: apps/api
+
+    services:
+      # Ephemeral database for integration tests. Same image as compose.yaml.
+      # Credentials exist only inside this job and are not used anywhere else.
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: saldocerto_test
+          POSTGRES_USER: saldocerto
+          POSTGRES_PASSWORD: saldocerto_ci_only
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U saldocerto -d saldocerto_test"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 12
+
+    env:
+      # Enables the *.integration.test.ts files; each test creates and drops its own schema
+      # and applies the migrations through runMigrations (src/database.ts).
+      TEST_DATABASE_URL: postgresql://saldocerto:saldocerto_ci_only@localhost:5432/saldocerto_test
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: apps/api/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Wait for PostgreSQL
+        # The runner already waits for the service health check; this confirms the
+        # connection from Node with the same driver the tests use.
+        run: |
+          for attempt in $(seq 1 30); do
+            if node -e "const { Client } = require('pg'); const c = new Client({ connectionString: process.env.TEST_DATABASE_URL }); c.connect().then(() => c.query('SELECT 1')).then(() => c.end()).then(() => process.exit(0), () => process.exit(1));"; then
+              echo "PostgreSQL is ready."
+              exit 0
+            fi
+            echo "Waiting for PostgreSQL (attempt ${attempt})..."
+            sleep 2
+          done
+          echo "::error::PostgreSQL did not become ready."
+          exit 1
+
+      - name: Test (unit + integration)
+        # Single run of the project's own test command; the log feeds the next step.
+        run: npm test 2>&1 | tee "${RUNNER_TEMP}/api-test.log"
+
+      - name: Ensure no test was skipped
+        # Integration tests skip themselves when TEST_DATABASE_URL is missing.
+        # Fail instead of reporting a green run that never touched the database.
+        run: |
+          summary=$(grep -E '^(#|ℹ) skipped [0-9]+$' "${RUNNER_TEMP}/api-test.log" | tail -n 1)
+          if [ -z "${summary}" ]; then
+            echo "::error::Could not find the test summary line."
+            exit 1
+          fi
+          skipped=${summary##* }
+          if [ "${skipped}" != "0" ]; then
+            echo "::error::${skipped} test(s) were skipped. Integration tests must run in CI."
+            exit 1
+          fi
+          echo "No skipped tests."
+
+      - name: Build
+        run: npm run build
+
+  web:
+    name: Web
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: apps/web
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Typecheck and build
+        # The build script runs tsc -b before vite build.
+        run: npm run build
