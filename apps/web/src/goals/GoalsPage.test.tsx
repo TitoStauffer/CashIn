@@ -121,4 +121,15 @@ describe('GoalsPage currency inputs', () => {
     expect(screen.getByLabelText('Valor *')).toBeVisible()
     expect(goalsApi.createContribution).not.toHaveBeenCalled()
   })
+
+  it('shows a recoverable error when goals cannot be loaded', async () => {
+    const user = userEvent.setup()
+    vi.mocked(goalsApi.list).mockRejectedValueOnce(new Error('offline'))
+    render(<GoalsPage userEmail="tito@example.com" isLoggingOut={false} onLogout={vi.fn()} />)
+
+    expect(await screen.findByText('Não foi possível carregar suas metas. Verifique sua conexão e tente novamente.')).toBeVisible()
+    await user.click(screen.getByRole('button', { name: 'Tentar novamente' }))
+
+    expect(await screen.findByRole('heading', { name: 'Carro novo' })).toBeVisible()
+  })
 })

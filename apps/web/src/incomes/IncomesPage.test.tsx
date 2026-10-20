@@ -60,4 +60,15 @@ describe('IncomesPage currency input', () => {
     await user.click(screen.getByRole('button', { name: 'Salvar alterações' }))
     await waitFor(() => expect(incomesApi.update).toHaveBeenCalledWith('income-1', expect.objectContaining({ amount: '1234.56' })))
   })
+
+  it('shows a recoverable error when incomes cannot be loaded', async () => {
+    const user = userEvent.setup()
+    vi.mocked(incomesApi.list).mockRejectedValueOnce(new Error('offline'))
+    render(<IncomesPage userEmail="tito@example.com" isLoggingOut={false} onLogout={vi.fn()} />)
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Não foi possível conectar ao serviço.')
+    await user.click(screen.getByRole('button', { name: 'Tentar novamente' }))
+
+    expect(await screen.findByText('Salário mensal')).toBeVisible()
+  })
 })

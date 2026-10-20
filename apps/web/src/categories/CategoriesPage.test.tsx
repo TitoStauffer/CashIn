@@ -58,4 +58,15 @@ describe('CategoriesPage duplicate names', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('Já existe uma subcategoria com esse nome')
     expect(categoriesApi.createSubcategory).not.toHaveBeenCalled()
   })
+
+  it('shows a recoverable error when categories cannot be loaded', async () => {
+    const user = userEvent.setup()
+    vi.mocked(categoriesApi.list).mockRejectedValueOnce(new Error('offline'))
+    render(<CategoriesPage userEmail="tito@example.com" isLoggingOut={false} onLogout={vi.fn()} />)
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Não foi possível conectar ao serviço.')
+    await user.click(screen.getByRole('button', { name: 'Tentar novamente' }))
+
+    expect(await screen.findByRole('heading', { name: 'Salário' })).toBeVisible()
+  })
 })

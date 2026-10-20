@@ -60,4 +60,15 @@ describe('ExpensesPage currency input', () => {
     await user.click(screen.getByRole('button', { name: 'Salvar alterações' }))
     await waitFor(() => expect(expensesApi.update).toHaveBeenCalledWith('expense-1', expect.objectContaining({ amount: '1234.56' })))
   })
+
+  it('shows a recoverable error when expenses cannot be loaded', async () => {
+    const user = userEvent.setup()
+    vi.mocked(expensesApi.list).mockRejectedValueOnce(new Error('offline'))
+    render(<ExpensesPage userEmail="tito@example.com" isLoggingOut={false} onLogout={vi.fn()} />)
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Não foi possível conectar ao serviço.')
+    await user.click(screen.getByRole('button', { name: 'Tentar novamente' }))
+
+    expect(await screen.findByText('Aluguel')).toBeVisible()
+  })
 })

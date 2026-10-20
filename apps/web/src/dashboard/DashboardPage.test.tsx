@@ -1,4 +1,5 @@
 import { cleanup, render, screen, waitFor } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { DashboardPage } from './DashboardPage'
 import { dashboardApi } from './dashboardApi'
@@ -53,5 +54,16 @@ describe('DashboardPage', () => {
     const balanceCard = (await screen.findByText('Saldo disponível')).closest('article')
     expect(balanceCard).toHaveTextContent('R$ 1.500,00')
     expect(balanceCard).not.toHaveClass('dashboard-summary-card--negative')
+  })
+
+  it('shows a recoverable error when the overview cannot be loaded', async () => {
+    const user = userEvent.setup()
+    vi.mocked(dashboardApi.summary).mockRejectedValueOnce(new Error('offline'))
+    render(<DashboardPage userEmail="tito@example.com" isLoggingOut={false} onLogout={vi.fn()} />)
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Não foi possível carregar a visão geral.')
+    await user.click(screen.getByRole('button', { name: 'Tentar novamente' }))
+
+    expect(await screen.findByText('Saldo disponível')).toBeVisible()
   })
 })
