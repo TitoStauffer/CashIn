@@ -33,14 +33,9 @@
 ## Git e entrega
 - Use a chave de issue atribuída pelo Jira para identificar cada ticket; não invente nem mantenha uma sequência de números manualmente.
 - Use prefixos `feature/`, `fix/` e `chore/`, seguidos pela chave da issue e uma descrição curta, por exemplo: `feature/DEV-123-desc-da-feature`. Para iniciar o desenvolvimento de uma issue, crie a branch a partir da branch padrão do repositório.
-  - Ao concluir uma feature, pode criar um commit com mensagem objetiva neste formato, substituindo pela chave e pelo conteúdo reais do ticket:
-    ```text
-    [DEV-123] - título objetivo do ticket
-    * Primeira mudança de impacto
-    * Segunda mudança de impacto
-    ```
-    Cada item iniciado por `*` deve ficar em uma linha separada. Preserve a identidade Git configurada e não inclua coautoria do agente.
-- No fluxo de uma issue, o Agent de Product Manager pode criar a branch, fazer push e abrir o PR sem solicitação separada. O Agent de Product Manager pode fazer merge somente depois da aprovação do Code Review e de QA e da aprovação de todas as verificações configuradas. Deploy continua exigindo solicitação explícita.
+  - Ao concluir uma feature, pode criar um commit com Conventional Commits em português e mensagem objetiva, por exemplo: `feat(dev-123): gerenciar categorias`. Preserve a identidade Git configurada e não inclua coautoria do agente.
+- No fluxo de uma issue do projeto, o Agent de Product Manager está autorizado a criar a branch, fazer push e abrir ou atualizar o PR sem solicitar aprovação separada. Essa autorização vale para as mudanças necessárias à entrega da issue; não inclui deploy.
+- O Agent de Product Manager pode fazer merge somente depois da aprovação do Code Review e de QA e da aprovação de todas as verificações configuradas. Deploy continua exigindo solicitação explícita.
 
 
 ## Workflow
