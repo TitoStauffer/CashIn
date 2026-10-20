@@ -12,6 +12,12 @@ const goal = {
 }
 const contribution = { id: 'contribution-1', amount: '15.25', date: '2026-10-01', description: 'Aporte mensal' }
 
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>((resolvePromise) => { resolve = resolvePromise })
+  return { promise, resolve }
+}
+
 describe('GoalsPage currency inputs', () => {
   beforeEach(() => {
     vi.stubGlobal('matchMedia', vi.fn(() => ({
@@ -131,5 +137,44 @@ describe('GoalsPage currency inputs', () => {
     await user.click(screen.getByRole('button', { name: 'Tentar novamente' }))
 
     expect(await screen.findByRole('heading', { name: 'Carro novo' })).toBeVisible()
+  })
+
+  it('shows loading and mutation success states when creating a goal', async () => {
+    const user = userEvent.setup()
+    const initialLoad = deferred<{ items: Array<typeof goal> }>()
+    const createRequest = deferred<typeof goal>()
+    vi.mocked(goalsApi.list)
+      .mockReturnValueOnce(initialLoad.promise)
+      .mockResolvedValueOnce({ items: [goal] })
+    vi.mocked(goalsApi.create).mockReturnValueOnce(createRequest.promise)
+    render(<GoalsPage userEmail="tito@example.com" isLoggingOut={false} onLogout={vi.fn()} />)
+
+    expect(screen.getByRole('status')).toHaveTextContent('Carregando metas')
+    initialLoad.resolve({ items: [goal] })
+    await screen.findByRole('heading', { name: 'Carro novo' })
+    await user.click(screen.getByRole('button', { name: /Nova meta/ }))
+    await user.type(screen.getByLabelText('Título *'), 'Viagem')
+    await user.type(screen.getByLabelText('Descrição *'), 'Reserva para viajar')
+    fireEvent.change(screen.getByLabelText('Valor-alvo *'), { target: { value: '15000,00' } })
+    await user.click(screen.getByRole('button', { name: 'Criar meta' }))
+
+    expect(screen.getByRole('button', { name: 'Salvando…' })).toBeVisible()
+    createRequest.resolve(goal)
+    expect(await screen.findByRole('status')).toHaveTextContent('Meta criada.')
+  })
+
+  it('shows the saving and success states when registering a contribution', async () => {
+    const user = userEvent.setup()
+    const createRequest = deferred<typeof contribution>()
+    vi.mocked(goalsApi.createContribution).mockReturnValueOnce(createRequest.promise)
+    render(<GoalsPage userEmail="tito@example.com" isLoggingOut={false} onLogout={vi.fn()} />)
+
+    await user.click(await screen.findByRole('button', { name: '＋ Registrar aporte' }))
+    await user.type(await screen.findByLabelText('Valor *'), '250,00')
+    await user.click(screen.getByRole('button', { name: 'Registrar aporte' }))
+
+    expect(screen.getByRole('button', { name: 'Salvando…' })).toBeVisible()
+    createRequest.resolve(contribution)
+    expect(await screen.findByRole('status')).toHaveTextContent('Aporte registrado.')
   })
 })

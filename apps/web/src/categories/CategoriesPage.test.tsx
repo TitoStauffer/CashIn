@@ -11,6 +11,12 @@ const category = {
   subcategories: [{ id: 'income-subcategory', name: 'Salário mensal', categoryId: 'income-category' }],
 }
 
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>((resolvePromise) => { resolve = resolvePromise })
+  return { promise, resolve }
+}
+
 describe('CategoriesPage duplicate names', () => {
   beforeEach(() => {
     vi.stubGlobal('matchMedia', vi.fn(() => ({
@@ -68,5 +74,27 @@ describe('CategoriesPage duplicate names', () => {
     await user.click(screen.getByRole('button', { name: 'Tentar novamente' }))
 
     expect(await screen.findByRole('heading', { name: 'Salário' })).toBeVisible()
+  })
+
+  it('shows loading and mutation success states for category creation', async () => {
+    const user = userEvent.setup()
+    const initialLoad = deferred<{ items: Array<typeof category> }>()
+    const createRequest = deferred<void>()
+    vi.mocked(categoriesApi.list).mockReturnValueOnce(initialLoad.promise)
+    vi.mocked(categoriesApi.list).mockResolvedValueOnce({ items: [category, { ...category, id: 'new-category', name: 'Freelance', subcategories: [] }] })
+    vi.mocked(categoriesApi.create).mockReturnValueOnce(createRequest.promise)
+    render(<CategoriesPage userEmail="tito@example.com" isLoggingOut={false} onLogout={vi.fn()} />)
+
+    expect(screen.getByRole('status')).toHaveTextContent('Carregando categorias de entradas')
+    initialLoad.resolve({ items: [category] })
+    await screen.findByRole('heading', { name: 'Salário' })
+    await user.click(screen.getByRole('button', { name: 'Nova categoria' }))
+    await user.type(screen.getByLabelText('Nome da categoria'), 'Freelance')
+    await user.click(screen.getByRole('button', { name: 'Salvar categoria' }))
+
+    expect(screen.getByRole('button', { name: 'Salvando…' })).toBeVisible()
+    createRequest.resolve()
+    expect(await screen.findByRole('status')).toHaveTextContent('Categoria criada.')
+    expect(await screen.findByRole('heading', { name: 'Freelance' })).toBeVisible()
   })
 })

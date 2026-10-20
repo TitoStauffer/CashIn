@@ -4,6 +4,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { DashboardPage } from './DashboardPage'
 import { dashboardApi } from './dashboardApi'
 
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>((resolvePromise) => { resolve = resolvePromise })
+  return { promise, resolve }
+}
+
 describe('DashboardPage', () => {
   beforeEach(() => {
     vi.stubGlobal('matchMedia', vi.fn(() => ({
@@ -65,5 +71,23 @@ describe('DashboardPage', () => {
     await user.click(screen.getByRole('button', { name: 'Tentar novamente' }))
 
     expect(await screen.findByText('Saldo disponível')).toBeVisible()
+  })
+
+  it('shows a visible loading state until both dashboard requests finish', async () => {
+    const summaryRequest = deferred<Awaited<ReturnType<typeof dashboardApi.summary>>>()
+    vi.mocked(dashboardApi.summary).mockReturnValueOnce(summaryRequest.promise)
+    render(<DashboardPage userEmail="tito@example.com" isLoggingOut={false} onLogout={vi.fn()} />)
+
+    expect(screen.getByRole('status')).toHaveTextContent('Carregando sua visão financeira')
+    summaryRequest.resolve({
+      incomeTotal: '1200.00',
+      expenseTotal: '2000.00',
+      contributionTotal: '434.56',
+      availableBalance: '-1234.56',
+      incomeByCategory: [],
+      expenseByCategory: [],
+    })
+    expect(await screen.findByText('Saldo disponível')).toBeVisible()
+    expect(screen.queryByRole('status')).not.toBeInTheDocument()
   })
 })

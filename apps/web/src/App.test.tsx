@@ -1,0 +1,122 @@
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { AuthApiError, authApi } from './authApi'
+import App from './App'
+
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  let reject!: (reason?: unknown) => void
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise
+    reject = rejectPromise
+  })
+  return { promise, resolve, reject }
+}
+
+describe('authentication forms', () => {
+  beforeEach(() => {
+    window.history.replaceState({}, '', '/login')
+    vi.spyOn(authApi, 'me').mockRejectedValue(new AuthApiError('', 401))
+    vi.spyOn(authApi, 'login').mockRejectedValue(new AuthApiError('', 401))
+    vi.spyOn(authApi, 'register').mockResolvedValue({ message: 'Email enviado, favor confirmar seu cadastro' })
+  })
+
+  afterEach(() => {
+    cleanup()
+    vi.restoreAllMocks()
+  })
+
+  it('requires a valid email and password before login', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+    await screen.findByRole('heading', { name: 'Entre na sua conta' })
+
+    const email = screen.getByLabelText('E-mail') as HTMLInputElement
+    const password = screen.getByLabelText('Senha') as HTMLInputElement
+    const form = screen.getByRole('button', { name: 'Entrar' }).closest('form')
+    expect(form).not.toBeNull()
+    expect(email).toBeRequired()
+    expect(password).toBeRequired()
+    expect(form).not.toBeValid()
+
+    await user.type(email, 'invalido')
+    await user.type(password, 'senha')
+    expect(email).not.toBeValid()
+    expect(form).not.toBeValid()
+    expect(authApi.login).not.toHaveBeenCalled()
+  })
+
+  it('enforces password rules and submits registration through the mocked API', async () => {
+    const user = userEvent.setup()
+    window.history.replaceState({}, '', '/register')
+    render(<App />)
+    await screen.findByRole('heading', { name: 'Crie sua conta' })
+
+    await user.type(screen.getByLabelText('E-mail'), 'tito@example.com')
+    const password = screen.getByLabelText('Senha')
+    fireEvent.change(password, { target: { value: 'weak' } })
+    const form = screen.getByRole('button', { name: 'Criar conta' }).closest('form')
+    expect(form).not.toBeNull()
+    fireEvent.submit(form as HTMLFormElement)
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('A senha deve ter pelo menos 8 caracteres')
+    expect(authApi.register).not.toHaveBeenCalled()
+    expect(screen.getByText('Pelo menos 8 caracteres')).toBeVisible()
+
+    const registrationRequest = deferred<{ message: string }>()
+    vi.mocked(authApi.register).mockReturnValueOnce(registrationRequest.promise)
+    fireEvent.change(password, { target: { value: 'SenhaForte1!' } })
+    await user.click(screen.getByRole('button', { name: 'Criar conta' }))
+
+    await waitFor(() => expect(authApi.register).toHaveBeenCalledWith('tito@example.com', 'SenhaForte1!'))
+    expect(screen.getByRole('button', { name: 'Criando sua conta…' })).toBeVisible()
+    registrationRequest.resolve({ message: 'Email enviado, favor confirmar seu cadastro' })
+    expect(await screen.findByRole('status')).toHaveTextContent('Email enviado, favor confirmar seu cadastro')
+  })
+
+  it('shows a clear registration error from the mocked API', async () => {
+    const user = userEvent.setup()
+    window.history.replaceState({}, '', '/register')
+    vi.mocked(authApi.register).mockRejectedValueOnce(new AuthApiError('Este e-mail já possui uma conta.', 409))
+    render(<App />)
+    await screen.findByRole('heading', { name: 'Crie sua conta' })
+
+    await user.type(screen.getByLabelText('E-mail'), 'tito@example.com')
+    await user.type(screen.getByLabelText('Senha'), 'SenhaForte1!')
+    await user.click(screen.getByRole('button', { name: 'Criar conta' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Este e-mail já possui uma conta.')
+  })
+
+  it('shows the pending and authenticated states while logging in', async () => {
+    const user = userEvent.setup()
+    const loginRequest = deferred<{ user: { id: string; email: string } }>()
+    vi.mocked(authApi.login).mockReturnValueOnce(loginRequest.promise)
+    render(<App />)
+    await screen.findByRole('heading', { name: 'Entre na sua conta' })
+
+    await user.type(screen.getByLabelText('E-mail'), 'tito@example.com')
+    await user.type(screen.getByLabelText('Senha'), 'SenhaForte1!')
+    await user.click(screen.getByRole('button', { name: 'Entrar' }))
+
+    expect(screen.getByRole('button', { name: 'Entrando…' })).toBeVisible()
+    loginRequest.resolve({ user: { id: 'user-1', email: 'tito@example.com' } })
+    expect(await screen.findByRole('heading', { name: 'Olá, que bom ter você por aqui.' })).toBeVisible()
+    expect(screen.getByText('tito@example.com')).toBeVisible()
+    expect(screen.getByRole('link', { name: /Abrir visão geral/ })).toBeVisible()
+  })
+
+  it('shows a clear login error from the mocked API', async () => {
+    const user = userEvent.setup()
+    vi.mocked(authApi.login).mockRejectedValueOnce(new AuthApiError('', 401))
+    render(<App />)
+    await screen.findByRole('heading', { name: 'Entre na sua conta' })
+
+    await user.type(screen.getByLabelText('E-mail'), 'tito@example.com')
+    await user.type(screen.getByLabelText('Senha'), 'SenhaForte1!')
+    await user.click(screen.getByRole('button', { name: 'Entrar' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('E-mail ou senha inválidos')
+  })
+})
