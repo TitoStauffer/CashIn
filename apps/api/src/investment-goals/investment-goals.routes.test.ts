@@ -67,7 +67,7 @@ class MemoryInvestmentGoalsRepository implements InvestmentGoalsRepository {
   }
   async updateGoal(userId: string, goalId: string, input: Required<InvestmentGoalInput>): Promise<InvestmentGoal | null> {
     const goal = this.goals.get(goalId);
-    if (!goal || goal.userId !== userId) return null;
+    if (!goal || goal.userId !== userId || goal.status === "closed") return null;
     Object.assign(goal, input);
     return this.toGoal(goal);
   }
@@ -92,14 +92,18 @@ class MemoryInvestmentGoalsRepository implements InvestmentGoalsRepository {
   }
   async updateContribution(userId: string, goalId: string, contributionId: string, input: Required<InvestmentContributionInput>): Promise<InvestmentContribution | null> {
     const item = this.contributions.get(contributionId);
-    if (!item || item.userId !== userId || item.goalId !== goalId) return null;
+    const goal = this.goals.get(goalId);
+    if (!item || item.userId !== userId || item.goalId !== goalId || goal?.status === "closed") return null;
     Object.assign(item, input);
     const { userId: _userId, goalId: _goalId, ...result } = item;
     return result;
   }
   async deleteContribution(userId: string, goalId: string, contributionId: string): Promise<boolean> {
     const item = this.contributions.get(contributionId);
-    return item?.userId === userId && item.goalId === goalId ? this.contributions.delete(contributionId) : false;
+    const goal = this.goals.get(goalId);
+    return item?.userId === userId && item.goalId === goalId && goal?.status === "active"
+      ? this.contributions.delete(contributionId)
+      : false;
   }
   async hasContribution(userId: string, goalId: string, contributionId: string): Promise<boolean> {
     const item = this.contributions.get(contributionId);
@@ -160,6 +164,14 @@ test("investment goal progress follows contribution CRUD and goals stay isolated
   assert.equal(fetched.json().contributedAmount, "40.00");
   assert.equal(fetched.json().progressPercentage, 40);
 
+  const removable = await app.inject({
+    method: "POST", url: `/investment-goals/${goalId}/contributions`, headers: { cookie: authCookie() },
+    payload: { amount: "5.00", date: "2026-10-19" },
+  });
+  assert.equal((await app.inject({
+    method: "DELETE", url: `/investment-goals/${goalId}/contributions/${removable.json().id}`, headers: { cookie: authCookie() },
+  })).statusCode, 204);
+
   const foreign = await app.inject({ method: "GET", url: `/investment-goals/${goalId}`, headers: { cookie: authCookie(SESSION_B) } });
   assert.equal(foreign.statusCode, 404);
   const foreignDelete = await app.inject({
@@ -167,18 +179,31 @@ test("investment goal progress follows contribution CRUD and goals stay isolated
   });
   assert.equal(foreignDelete.statusCode, 404);
 
-  assert.equal((await app.inject({
+  const close = await app.inject({
     method: "POST", url: `/investment-goals/${goalId}/close`, headers: { cookie: authCookie() },
-  })).statusCode, 200);
+  });
+  assert.equal(close.statusCode, 200);
   const closedContribution = await app.inject({
     method: "POST", url: `/investment-goals/${goalId}/contributions`, headers: { cookie: authCookie() },
     payload: { amount: "10", date: "2026-10-19" },
   });
   assert.equal(closedContribution.statusCode, 409);
-  assert.equal((await app.inject({
+  const closedGoalUpdate = await app.inject({
+    method: "PUT", url: `/investment-goals/${goalId}`, headers: { cookie: authCookie() },
+    payload: { title: "Novo título", description: "Alteração", targetAmount: "100.00" },
+  });
+  assert.equal(closedGoalUpdate.statusCode, 409);
+  assert.match(closedGoalUpdate.json().message, /encerrada/i);
+  const closedContributionUpdate = await app.inject({
+    method: "PUT", url: `/investment-goals/${goalId}/contributions/${contributionId}`, headers: { cookie: authCookie() },
+    payload: { amount: "50.00", date: "2026-10-20" },
+  });
+  assert.equal(closedContributionUpdate.statusCode, 409);
+  const closedContributionDelete = await app.inject({
     method: "DELETE", url: `/investment-goals/${goalId}/contributions/${contributionId}`, headers: { cookie: authCookie() },
-  })).statusCode, 204);
+  });
+  assert.equal(closedContributionDelete.statusCode, 409);
   const afterDelete = await app.inject({ method: "GET", url: `/investment-goals/${goalId}`, headers: { cookie: authCookie() } });
-  assert.equal(afterDelete.json().contributedAmount, "0.00");
+  assert.equal(afterDelete.json().contributedAmount, "40.00");
   await app.close();
 });

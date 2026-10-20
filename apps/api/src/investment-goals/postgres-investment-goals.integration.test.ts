@@ -80,6 +80,9 @@ test("PostgreSQL investment goal and contribution CRUD preserves progress and ow
       amount: "200.00", date: "2026-10-20", description: null,
     });
     assert.equal((await service.getGoal(userId, goal.id)).contributedAmount, "200.00");
+    const removable = await service.createContribution(userId, goal.id, { amount: "5.00", date: "2026-10-20" });
+    await service.deleteContribution(userId, goal.id, removable.id);
+    assert.equal((await service.getGoal(userId, goal.id)).contributedAmount, "200.00");
     assert.equal((await service.listGoals(otherUserId)).length, 0);
     await assert.rejects(
       service.getGoal(otherUserId, goal.id),
@@ -90,8 +93,19 @@ test("PostgreSQL investment goal and contribution CRUD preserves progress and ow
       service.createContribution(userId, goal.id, { amount: "10", date: "2026-10-20" }),
       (error: unknown) => typeof error === "object" && error !== null && "statusCode" in error && error.statusCode === 409,
     );
-    await service.deleteContribution(userId, goal.id, contribution.id);
-    assert.equal((await service.getGoal(userId, goal.id)).contributedAmount, "0");
+    await assert.rejects(
+      service.updateGoal(userId, goal.id, { title: "Meta alterada", description: "Meta fechada", targetAmount: "1000" }),
+      (error: unknown) => typeof error === "object" && error !== null && "statusCode" in error && error.statusCode === 409,
+    );
+    await assert.rejects(
+      service.updateContribution(userId, goal.id, contribution.id, { amount: "300", date: "2026-10-21" }),
+      (error: unknown) => typeof error === "object" && error !== null && "statusCode" in error && error.statusCode === 409,
+    );
+    await assert.rejects(
+      service.deleteContribution(userId, goal.id, contribution.id),
+      (error: unknown) => typeof error === "object" && error !== null && "statusCode" in error && error.statusCode === 409,
+    );
+    assert.equal((await service.getGoal(userId, goal.id)).contributedAmount, "200.00");
   } finally {
     await scopedPool?.end();
     await adminPool.query(`DROP SCHEMA IF EXISTS ${schemaName} CASCADE`);

@@ -105,18 +105,9 @@ test("PostgreSQL category CRUD, uniqueness, ownership, and referenced deletion b
     assert.deepEqual(await service.listCategories(userId), [sameNameOtherNature]);
 
     const investmentCategory = await service.createCategory(userId, "Reserva", "investment_goal");
-    await database.query(`
-      CREATE TABLE investment_goals (
-        id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-        user_id uuid NOT NULL,
-        category_id uuid NOT NULL,
-        CONSTRAINT investment_goals_category_fk
-          FOREIGN KEY (category_id, user_id)
-          REFERENCES categories (id, user_id) ON DELETE RESTRICT
-      )
-    `);
     await database.query(
-      "INSERT INTO investment_goals (user_id, category_id) VALUES ($1, $2)",
+      `INSERT INTO investment_goals (user_id, title, description, target_amount, category_id, category_nature)
+       VALUES ($1, 'Reserva', 'Meta de investimento', 100, $2, 'investment_goal')`,
       [userId, investmentCategory.id],
     );
     await assert.rejects(

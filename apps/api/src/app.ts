@@ -21,6 +21,10 @@ import { InvestmentGoalsService } from "./investment-goals/investment-goals.serv
 import { PostgresInvestmentGoalsRepository } from "./investment-goals/postgres-investment-goals.repository.js";
 import { registerInvestmentGoalRoutes } from "./investment-goals/investment-goals.routes.js";
 import type { InvestmentGoalsRepository } from "./investment-goals/investment-goals.types.js";
+import { FinancialSummaryService } from "./financial-summary/financial-summary.service.js";
+import { PostgresFinancialSummaryRepository } from "./financial-summary/postgres-financial-summary.repository.js";
+import { registerFinancialSummaryRoutes } from "./financial-summary/financial-summary.routes.js";
+import type { FinancialSummaryRepository } from "./financial-summary/financial-summary.types.js";
 
 export interface AppOptions {
   logger?: boolean;
@@ -30,6 +34,7 @@ export interface AppOptions {
   incomeRepository?: IncomeRepository;
   expenseRepository?: ExpenseRepository;
   investmentGoalsRepository?: InvestmentGoalsRepository;
+  financialSummaryRepository?: FinancialSummaryRepository;
   authConfiguration?: Partial<AuthConfiguration>;
   secureCookies?: boolean;
 }
@@ -111,6 +116,12 @@ export function createApp(
   registerInvestmentGoalRoutes(app, {
     investmentGoalsService: new InvestmentGoalsService(
       options.investmentGoalsRepository ?? new PostgresInvestmentGoalsRepository(database),
+    ),
+  });
+
+  registerFinancialSummaryRoutes(app, {
+    financialSummaryService: new FinancialSummaryService(
+      options.financialSummaryRepository ?? new PostgresFinancialSummaryRepository(database),
     ),
   });
 

@@ -14,7 +14,7 @@ export class InvalidInvestmentGoalReferenceError extends InvestmentGoalError {
 
 export class ClosedInvestmentGoalError extends InvestmentGoalError {
   constructor() {
-    super("Não é possível registrar aportes em uma meta encerrada.", 409);
+    super("A meta de investimento está encerrada e não aceita alterações.", 409);
     this.name = "ClosedInvestmentGoalError";
   }
 }

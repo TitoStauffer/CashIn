@@ -18,6 +18,8 @@ CREATE TABLE investment_goals (
   updated_at timestamptz NOT NULL DEFAULT now(),
   category_nature text NOT NULL DEFAULT 'investment'
     CHECK (category_nature IN ('investment', 'investment_goal')),
+  CONSTRAINT investment_goals_subcategory_requires_category_check
+    CHECK (subcategory_id IS NULL OR category_id IS NOT NULL),
   CONSTRAINT investment_goals_id_user_id_key UNIQUE (id, user_id),
   CONSTRAINT investment_goals_category_owner_nature_fkey
     FOREIGN KEY (category_id, user_id, category_nature)

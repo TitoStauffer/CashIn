@@ -194,6 +194,7 @@ export class PostgresInvestmentGoalsRepository implements InvestmentGoalsReposit
           AND category.nature IN ('investment', 'investment_goal')
          WHERE goal.id = $1
            AND goal.user_id = $2
+           AND goal.closed_at IS NULL
            AND ($7::uuid IS NULL OR category.id IS NOT NULL)
            AND ($8::uuid IS NULL OR EXISTS (
              SELECT 1 FROM subcategories AS subcategory
@@ -280,6 +281,7 @@ export class PostgresInvestmentGoalsRepository implements InvestmentGoalsReposit
          AND contribution.goal_id = $3
          AND goal.id = contribution.goal_id
          AND goal.user_id = contribution.user_id
+         AND goal.closed_at IS NULL
        RETURNING ${contributionColumns}`,
       [contributionId, userId, goalId, input.amount, input.date, input.description],
     );
@@ -289,7 +291,14 @@ export class PostgresInvestmentGoalsRepository implements InvestmentGoalsReposit
 
   async deleteContribution(userId: string, goalId: string, contributionId: string): Promise<boolean> {
     const result = await this.database.query(
-      "DELETE FROM investment_contributions WHERE id = $1 AND user_id = $2 AND goal_id = $3",
+      `DELETE FROM investment_contributions AS contribution
+       USING investment_goals AS goal
+       WHERE contribution.id = $1
+         AND contribution.user_id = $2
+         AND contribution.goal_id = $3
+         AND goal.id = contribution.goal_id
+         AND goal.user_id = contribution.user_id
+         AND goal.closed_at IS NULL`,
       [contributionId, userId, goalId],
     );
     return result.rowCount === 1;
