@@ -6,9 +6,10 @@ import { CategoriesPage } from './categories/CategoriesPage'
 import { ExpensesPage } from './expenses/ExpensesPage'
 import { IncomesPage } from './incomes/IncomesPage'
 import { GoalsPage } from './goals/GoalsPage'
+import { DashboardPage } from './dashboard/DashboardPage'
 import './App.css'
 
-type Page = 'login' | 'register' | 'verify-email' | 'categories' | 'incomes' | 'expenses' | 'goals'
+type Page = 'login' | 'register' | 'verify-email' | 'dashboard' | 'categories' | 'incomes' | 'expenses' | 'goals'
 const pendingVerifications = new Map<string, Promise<unknown>>()
 const passwordPolicyMessage =
   'A senha deve ter pelo menos 8 caracteres, incluindo uma letra maiúscula, uma letra minúscula, um número e um caractere especial.'
@@ -61,6 +62,7 @@ function getPage(): Page {
   const path = window.location.pathname.replace(/\/$/, '')
   if (path.endsWith('/register')) return 'register'
   if (path.endsWith('/verify-email')) return 'verify-email'
+  if (path.endsWith('/dashboard')) return 'dashboard'
   if (path.endsWith('/categories')) return 'categories'
   if (path.endsWith('/incomes')) return 'incomes'
   if (path.endsWith('/expenses')) return 'expenses'
@@ -155,7 +157,7 @@ function App() {
       const response = await authApi.login(email.trim(), password)
       setUser(response.user)
       setPassword('')
-      window.location.assign('/categories')
+      window.location.assign('/dashboard')
     } catch (error) {
       setFormError(getErrorMessage(error, 'login'))
     } finally {
@@ -201,6 +203,16 @@ function App() {
   if (!checkingSession && user && page === 'categories') {
     return (
       <CategoriesPage
+        userEmail={user.email}
+        isLoggingOut={isSubmitting}
+        onLogout={handleLogout}
+      />
+    )
+  }
+
+  if (!checkingSession && user && page === 'dashboard') {
+    return (
+      <DashboardPage
         userEmail={user.email}
         isLoggingOut={isSubmitting}
         onLogout={handleLogout}
@@ -332,7 +344,7 @@ function App() {
                 <h2 id="form-title">Olá, que bom ter você por aqui.</h2>
                 <p className="form-description">Você entrou como <strong>{user.email}</strong>.</p>
                 {formError && <p className="alert alert--error" role="alert">{formError}</p>}
-                <a className="button" href="/categories">Gerenciar categorias <span aria-hidden="true">→</span></a>
+                <a className="button" href="/dashboard">Abrir visão geral <span aria-hidden="true">→</span></a>
                 <button className="button button--secondary" type="button" onClick={handleLogout} disabled={isSubmitting}>
                   {isSubmitting ? 'Encerrando sessão…' : 'Sair da conta'}
                 </button>
@@ -348,6 +360,8 @@ function App() {
                         ? 'Entre para acessar suas categorias'
                         : page === 'goals'
                           ? 'Entre para acessar suas metas'
+                        : page === 'dashboard'
+                          ? 'Entre para acessar sua visão geral'
                         : 'Entre na sua conta'}
                   </h2>
                   <p className="form-description">
@@ -357,6 +371,8 @@ function App() {
                         ? 'Acesse sua conta para organizar categorias e subcategorias.'
                         : page === 'goals'
                           ? 'Acesse sua conta para organizar suas metas de investimento.'
+                        : page === 'dashboard'
+                          ? 'Acesse sua conta para acompanhar seu fluxo financeiro e suas metas.'
                         : 'Acesse seu espaço para continuar de onde parou.'}
                   </p>
                 </div>
@@ -367,6 +383,9 @@ function App() {
                 )}
                 {page === 'goals' && (
                   <p className="alert alert--info" role="status">Entre com sua conta para acessar suas metas pessoais.</p>
+                )}
+                {page === 'dashboard' && (
+                  <p className="alert alert--info" role="status">Entre com sua conta para visualizar seus dados financeiros pessoais.</p>
                 )}
                 {formError && <p className="alert alert--error" role="alert">{formError}</p>}
                 {formMessage && <p className="alert alert--success" role="status">{formMessage}</p>}

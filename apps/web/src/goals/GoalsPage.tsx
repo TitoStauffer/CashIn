@@ -265,8 +265,9 @@ export function GoalsPage({ userEmail, isLoggingOut, onLogout }: GoalsPageProps)
     <main className="goals-page">
       <div className="goals-shell">
         <header className="goals-topbar">
-          <a className="goals-brand" href="/categories" aria-label="Saldo Certo, área financeira"><span className="goals-brand__mark" aria-hidden="true">SC</span><span>saldo<span>certo</span></span></a>
+          <a className="goals-brand" href="/dashboard" aria-label="Saldo Certo, visão geral"><span className="goals-brand__mark" aria-hidden="true">SC</span><span>saldo<span>certo</span></span></a>
           <nav className="goals-account" aria-label="Navegação da área financeira">
+            <a className="goals-account__link" href="/dashboard">Visão geral</a>
             <a className="goals-account__link" href="/incomes">Entradas</a><a className="goals-account__link" href="/expenses">Despesas</a><a className="goals-account__link" href="/goals" aria-current="page">Metas</a><a className="goals-account__link" href="/categories">Categorias</a>
             <span className="goals-account__email">{userEmail}</span><button className="goals-signout" type="button" onClick={onLogout} disabled={isLoggingOut}>{isLoggingOut ? 'Saindo…' : 'Sair'}</button>
           </nav>
