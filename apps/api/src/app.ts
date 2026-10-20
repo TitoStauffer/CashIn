@@ -17,6 +17,10 @@ import { ExpensesService } from "./expenses/expenses.service.js";
 import { PostgresExpensesRepository } from "./expenses/postgres-expenses.repository.js";
 import { registerExpenseRoutes } from "./expenses/expenses.routes.js";
 import type { ExpenseRepository } from "./expenses/expenses.types.js";
+import { InvestmentGoalsService } from "./investment-goals/investment-goals.service.js";
+import { PostgresInvestmentGoalsRepository } from "./investment-goals/postgres-investment-goals.repository.js";
+import { registerInvestmentGoalRoutes } from "./investment-goals/investment-goals.routes.js";
+import type { InvestmentGoalsRepository } from "./investment-goals/investment-goals.types.js";
 
 export interface AppOptions {
   logger?: boolean;
@@ -25,6 +29,7 @@ export interface AppOptions {
   categoryRepository?: CategoryRepository;
   incomeRepository?: IncomeRepository;
   expenseRepository?: ExpenseRepository;
+  investmentGoalsRepository?: InvestmentGoalsRepository;
   authConfiguration?: Partial<AuthConfiguration>;
   secureCookies?: boolean;
 }
@@ -100,6 +105,12 @@ export function createApp(
   registerExpenseRoutes(app, {
     expensesService: new ExpensesService(
       options.expenseRepository ?? new PostgresExpensesRepository(database),
+    ),
+  });
+
+  registerInvestmentGoalRoutes(app, {
+    investmentGoalsService: new InvestmentGoalsService(
+      options.investmentGoalsRepository ?? new PostgresInvestmentGoalsRepository(database),
     ),
   });
 

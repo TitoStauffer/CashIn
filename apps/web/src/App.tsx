@@ -5,9 +5,10 @@ import type { User } from './authApi'
 import { CategoriesPage } from './categories/CategoriesPage'
 import { ExpensesPage } from './expenses/ExpensesPage'
 import { IncomesPage } from './incomes/IncomesPage'
+import { GoalsPage } from './goals/GoalsPage'
 import './App.css'
 
-type Page = 'login' | 'register' | 'verify-email' | 'categories' | 'incomes' | 'expenses'
+type Page = 'login' | 'register' | 'verify-email' | 'categories' | 'incomes' | 'expenses' | 'goals'
 const pendingVerifications = new Map<string, Promise<unknown>>()
 const passwordPolicyMessage =
   'A senha deve ter pelo menos 8 caracteres, incluindo uma letra maiúscula, uma letra minúscula, um número e um caractere especial.'
@@ -63,6 +64,7 @@ function getPage(): Page {
   if (path.endsWith('/categories')) return 'categories'
   if (path.endsWith('/incomes')) return 'incomes'
   if (path.endsWith('/expenses')) return 'expenses'
+  if (path.endsWith('/goals')) return 'goals'
   return 'login'
 }
 
@@ -226,6 +228,16 @@ function App() {
     )
   }
 
+  if (!checkingSession && user && page === 'goals') {
+    return (
+      <GoalsPage
+        userEmail={user.email}
+        isLoggingOut={isSubmitting}
+        onLogout={handleLogout}
+      />
+    )
+  }
+
   return (
     <main className="auth-page">
       <div className="auth-shell">
@@ -334,6 +346,8 @@ function App() {
                       ? 'Crie sua conta'
                       : page === 'categories'
                         ? 'Entre para acessar suas categorias'
+                        : page === 'goals'
+                          ? 'Entre para acessar suas metas'
                         : 'Entre na sua conta'}
                   </h2>
                   <p className="form-description">
@@ -341,6 +355,8 @@ function App() {
                       ? 'Seus próximos passos financeiros começam aqui.'
                       : page === 'categories'
                         ? 'Acesse sua conta para organizar categorias e subcategorias.'
+                        : page === 'goals'
+                          ? 'Acesse sua conta para organizar suas metas de investimento.'
                         : 'Acesse seu espaço para continuar de onde parou.'}
                   </p>
                 </div>
@@ -348,6 +364,9 @@ function App() {
                 {sessionError && <p className="alert alert--info" role="status">{sessionError}</p>}
                 {page === 'categories' && (
                   <p className="alert alert--info" role="status">Entre com sua conta para acessar suas categorias pessoais.</p>
+                )}
+                {page === 'goals' && (
+                  <p className="alert alert--info" role="status">Entre com sua conta para acessar suas metas pessoais.</p>
                 )}
                 {formError && <p className="alert alert--error" role="alert">{formError}</p>}
                 {formMessage && <p className="alert alert--success" role="status">{formMessage}</p>}
