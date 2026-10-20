@@ -156,6 +156,23 @@ jobs:
       - name: Lint
         run: npm run lint
 
+      - name: Test with coverage
+        run: npm run test:coverage
+
+      - name: Prepare coverage report for SonarQube
+        # SonarQube needs paths relative to the repository root in a monorepo (apps/web/src/...).
+        run: |
+          test -s coverage/lcov.info
+          sed -i 's#^SF:src/#SF:apps/web/src/#' coverage/lcov.info
+
+      - name: Upload coverage report
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: web-coverage
+          path: apps/web/coverage/lcov.info
+          if-no-files-found: error
+          retention-days: 7
+
       - name: Typecheck and build
         # The build script runs tsc -b before vite build.
         run: npm run build
@@ -181,6 +198,12 @@ jobs:
         with:
           name: api-coverage
           path: apps/api/coverage
+
+      - name: Download Web coverage report
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: web-coverage
+          path: apps/web/coverage
 
       - name: SonarQube Cloud scan
         # The scanner waits for the Quality Gate so a failure is visible as a failed PR check.

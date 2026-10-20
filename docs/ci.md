@@ -5,8 +5,8 @@ O workflow `.github/workflows/ci.yml` valida a API e a Web em jobs independentes
 | Job | Diretório | Passos (comandos já existentes no projeto) |
 | --- | --- | --- |
 | `API` | `apps/api` | `npm ci` → `npm run typecheck` → espera do PostgreSQL → `npm run test:coverage` (unitários + integração, uma vez) → checagem de testes pulados → reescrita dos caminhos LCOV → upload do artefato `api-coverage` (7 dias) → `npm run build` |
-| `Web` | `apps/web` | `npm ci` → `npm run lint` → `npm run build` (o script roda `tsc -b` e depois `vite build`) |
-| `SonarQube` | raiz do repositório | Depende de `API` e `Web`; analisa PRs do próprio repositório e pushes em `master`; aguarda o Quality Gate e falha se ele reprovar |
+| `Web` | `apps/web` | `npm ci` → `npm run lint` → `npm run test:coverage` → reescrita dos caminhos LCOV → upload do artefato `web-coverage` (7 dias) → `npm run build` (o script roda `tsc -b` e depois `vite build`) |
+| `SonarQube` | raiz do repositório | Depende de `API` e `Web`; baixa os dois LCOV; analisa PRs do próprio repositório e pushes em `master`; aguarda o Quality Gate e falha se ele reprovar |
 
 ## Decisões
 
@@ -29,7 +29,7 @@ O workflow `.github/workflows/ci.yml` valida a API e a Web em jobs independentes
 
 - Nenhum e-mail é enviado no CI. O workflow não define `SMTP_*`.
 - `email-sender.test.ts` injeta uma função `sendMail` falsa, e os testes de rotas usam um `emailSender` falso. O `SmtpEmailSender` real só é construído, e o `nodemailer` não abre conexão na construção.
-- A API não tem outras chamadas de rede externas. As chamadas `fetch` existem só na Web (`*Api.ts`), que não tem testes automatizados.
+- A API não tem outras chamadas de rede externas. As chamadas `fetch` existem só na Web (`*Api.ts`); a suite Web atual cobre a navegação e ainda não exercita os clientes HTTP.
 
 ## Checks obrigatórios a configurar no GitHub
 
@@ -57,6 +57,7 @@ npm run build
 cd ../web
 npm ci
 npm run lint
+npm run test:coverage
 npm run build
 ```
 
@@ -72,7 +73,7 @@ zizmor .github/workflows/ci.yml
 ## Pendências e limitações conhecidas
 
 - **A API não tem lint configurado.** O job `API` não roda lint porque não existe comando para isso. Adicionar um linter exige uma nova dependência de desenvolvimento.
-- **A Web não tem testes automatizados**, e o typecheck dela acontece dentro do `npm run build`.
+- **A Web tem testes automatizados do menu lateral** com Vitest e Testing Library. O relatório de cobertura é gerado em `apps/web/coverage/lcov.info`; o typecheck ocorre dentro do `npm run build`.
 - **Imagem do PostgreSQL por tag.** O `zizmor` aponta `postgres:17-alpine` sem digest (`unpinned-images`). A tag foi mantida igual ao `compose.yaml`. Para fixar, rode `docker pull postgres:17-alpine` e `docker inspect --format "{{index .RepoDigests 0}}" postgres:17-alpine`, e use `postgres:17-alpine@sha256:...` no workflow.
 - **Atualização das actions:** os SHAs fixos não se atualizam sozinhos. Considere o Dependabot (`package-ecosystem: github-actions`).
 
@@ -83,7 +84,7 @@ O workflow usa a organização `titostauffer` e o projeto `TitoStauffer_CashIn` 
 - **Automatic Analysis deve permanecer desligada.** Se estiver ligada, a execução do scanner pelo CI falha.
 - O token só é fornecido ao passo do scanner pelo secret `SONAR_TOKEN`; nunca o coloque no repositório ou em logs.
 - PRs de forks pulam a análise porque não recebem secrets.
-- A cobertura da API vem do LCOV gerado na mesma execução de `npm run test:coverage`; o workflow reescreve `SF:src/...` para caminhos relativos à raiz (`SF:apps/api/src/...`) antes de enviar o artefato `api-coverage`.
-- A Web ainda não tem testes automatizados, portanto não há relatório de cobertura da Web.
+- A cobertura da API e da Web vem do LCOV gerado na execução de `npm run test:coverage` de cada job; o workflow reescreve `SF:src/...` para caminhos relativos à raiz (`SF:apps/api/src/...` e `SF:apps/web/src/...`) antes de enviar os artefatos `api-coverage` e `web-coverage`.
+- Os testes `*.test.ts` e `*.test.tsx` são excluídos da análise de código de produção e classificados como testes no SonarQube.
 - A análise CI-based aguarda o Quality Gate. O job `SonarQube` aparece no PR como verificação e falha se o Quality Gate reprovar. Quando o projeto está vinculado ao repositório GitHub, a decoração do SonarQube Cloud também pode exibir detalhes e o resultado da análise no PR.
 - O plano gratuito permite análise de PRs direcionada à branch principal e possui limite de linhas para projetos privados. O projeto precisa estar dentro desse limite e ter `master` configurada como branch principal.

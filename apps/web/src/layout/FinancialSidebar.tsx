@@ -81,7 +81,9 @@ export function FinancialSidebar({ activePage, userEmail, isLoggingOut, onLogout
               toggleCollapsed()
             }
           }}
-          aria-label={isMobileMenuOpen ? 'Fechar menu' : isCollapsed ? 'Expandir menu' : 'Recolher menu'}
+          aria-label={isMobileViewport
+            ? isMobileMenuOpen ? 'Fechar menu' : 'Abrir menu'
+            : isCollapsed ? 'Expandir menu' : 'Recolher menu'}
           aria-expanded={isMobileViewport ? isMobileMenuOpen : !isCollapsed}
           aria-controls="financial-navigation"
         >
