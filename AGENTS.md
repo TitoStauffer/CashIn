@@ -15,7 +15,7 @@
 - Use Docker Compose para o ambiente local quando aplicável.
 - Mantenha a API independente do cliente que a consome.
 - Organize funcionalidades da API em camadas claras, como rotas/controllers para HTTP, services para casos de uso e regras de negócio, repositories para persistência e schemas para validação e contratos.
-- Mantenha as regras de negócio desacopladas de Fastify e do banco. Não force camadas ou abstrações sem necessidade; aplique DDD apenas quando a complexidade do domínio justificar(mas pergunte antes de aplicar o DDD).
+- Mantenha as regras de negócio desacopladas de Fastify e do banco. Não force camadas ou abstrações sem necessidade; aplique DDD apenas quando a complexidade do domínio justificar, mas pergunte antes de aplicá-lo.
 - Prefira código claro, orientado a objetos quando adequado, e siga KISS, DRY, e SOLID.
 - Reutilize dependências existentes. Peça confirmação antes de adicionar dependências de produção.
 - Preserve compatibilidade de APIs e banco quando viável. Faça alterações de esquema por migrações versionadas.
@@ -33,9 +33,16 @@
 ## Git e entrega
 - Use a chave de issue atribuída pelo Jira para identificar cada ticket; não invente nem mantenha uma sequência de números manualmente.
 - Use prefixos `feature/`, `fix/` e `chore/`, seguidos pela chave da issue e uma descrição curta, por exemplo: `feature/DEV-123-desc-da-feature`. Para iniciar o desenvolvimento de uma issue, crie a branch a partir da branch padrão do repositório.
-  - Ao concluir uma feature, pode criar um commit com Conventional Commits em português e mensagem objetiva, por exemplo: `feat(dev-123): gerenciar categorias`. Preserve a identidade Git configurada e não inclua coautoria do agente.
+  - Ao concluir uma feature, pode criar um commit com mensagem objetiva no formato abaixo, substituindo a chave e o conteúdo pelos dados reais do ticket. Cada item iniciado por `*` deve ficar em uma linha separada. Preserve a identidade Git configurada e não inclua coautoria do agente.
+    ```text
+    [DEV-123] - título objetivo do ticket
+    * Primeira mudança de impacto
+    * Segunda mudança de impacto
+    ```
 - No fluxo de uma issue do projeto, o Agent de Product Manager está autorizado a criar a branch, fazer push e abrir ou atualizar o PR sem solicitar aprovação separada. Essa autorização vale para as mudanças necessárias à entrega da issue; não inclui deploy.
 - O Agent de Product Manager pode fazer merge somente depois da aprovação do Code Review e de QA e da aprovação de todas as verificações configuradas. Deploy continua exigindo solicitação explícita.
+- Todo PR deve seguir o padrão de título e descrição definido em `.github/pull_request_template.md`. Use links diretos do Jira no formato `https://titostauffer.atlassian.net/browse/DEV-XXX` para a História e, quando aplicável, para o épico. Não marque verificações que não foram executadas.
+- O autor preenche o PR e mantém desmarcadas as aprovações. O Agent de Code Review marca somente o checkbox de Code Review após aprovar; o Agent de QA marca somente o checkbox de QA após aprovar. Se forem solicitados ajustes ou houver reprovação, o checkbox correspondente permanece desmarcado até nova aprovação.
 
 
 ## Workflow
@@ -53,6 +60,8 @@
 - Nunca marque uma issue como Concluída antes que o merge tenha sido realizado com sucesso e todas as aprovações obrigatórias tenham sido obtidas.
 - Se uma execução falhar, uma aprovação estiver bloqueada ou uma transição não estiver disponível, registre a falha e interrompa o fluxo afetado de maneira segura.
 - Antes de retomar uma execução interrompida, verifique o status atual no Jira, a branch Git, o Pull Request, as aprovações e o estado da execução anterior.
+- O dispatcher está em `tools/jira-dispatcher` (instalação, configuração e operação no README dele). Em execuções iniciadas por ele, a reserva (transição `To Do` → `In Progress` e comentário de início com o identificador da execução) já foi feita pelo dispatcher antes de o Codex iniciar: não repita essa transição nem esse comentário, e crie a branch da issue logo após a reserva, a partir da branch padrão.
+- Em execuções iniciadas pelo dispatcher, encerre a execução ao concluir a issue reservada e não inicie outra História; a seleção da próxima História elegível cabe ao dispatcher.
 
 ### Inicialização e coordenação de subagentes
 - Ao iniciar uma História, o agente que conduz a execução deve ler a descrição, os critérios de aceitação e as instruções relevantes do projeto.
@@ -74,7 +83,8 @@
   - Aprovação do Code Review: `Code Review aprovado em [data e horário]. [Resumo da revisão ou link para a revisão].`
   - Aprovação do QA: `QA aprovado em [data e horário]. [Critérios validados e resultado].`
   - `In Review` → `Done` após o merge: `Merge concluído em [data e horário]. PR: [URL]. Code Review e QA aprovados.`
-- Quando uma História do MVP 1 chegar a `Done`, o Agent de Product Manager deve verificar se há outra História elegível do épico `DEV-6` em `To Do` na sprint ativa, conforme os critérios do dispatcher. Se houver, deve iniciar somente a próxima História elegível priorizada pelo Jira, respeitando a ordem do quadro em caso de empate. Antes de iniciá-la, criar sua branch a partir da branch padrão e então movê-la de `To Do` para `In Progress`, registrando o comentário de início conforme a regra acima. Se o contexto, as dependências ou a ordem de prioridade não permitirem identificar com segurança qual ticket iniciar, perguntar ao usuário antes da transição. Não puxe automaticamente tickets de outras sprints ou épicos.
+- Quando todas as issues de trabalho associadas a um épico estiverem em `Done` (`Concluído`), o Agent de Product Manager deve verificar o status e as transições disponíveis do épico e movê-lo para `Done`, se a transição estiver disponível. Considere Histórias, Tarefas técnicas vinculadas a essas Histórias e demais issues incluídas no épico; não encerre o épico enquanto houver qualquer issue de trabalho não concluída, em andamento ou bloqueada. Depois da transição, registre no próprio épico um comentário com data e horário local no formato `DD/MM/AAAA HH:mm (America/Sao_Paulo)`, confirmação do encerramento e as chaves das issues verificadas. Esta regra vale para execuções manuais e iniciadas pelo dispatcher; ela não autoriza o dispatcher a implementar ou selecionar outra issue.
+- Fora de execuções iniciadas pelo dispatcher, quando uma História do MVP 1 chegar a `Done`, o Agent de Product Manager deve verificar se há outra História elegível do épico `DEV-6` em `To Do` na sprint ativa, conforme os critérios do dispatcher. Se houver, deve iniciar somente a próxima História elegível priorizada pelo Jira, respeitando a ordem do quadro em caso de empate. Antes de iniciá-la, criar sua branch a partir da branch padrão e então movê-la de `To Do` para `In Progress`, registrando o comentário de início conforme a regra acima. Se o contexto, as dependências ou a ordem de prioridade não permitirem identificar com segurança qual ticket iniciar, perguntar ao usuário antes da transição. Não puxe automaticamente tickets de outras sprints ou épicos.
 - O workflow de uma entrega deve envolver somente os responsáveis pelas áreas incluídas no escopo:
   - Agent de Product Manager cria a História seguindo o template configurado e cria a branch conforme as regras de Git.
   - Agent de Product Manager indica na História o papel do Agent técnico principal conforme a principal área de implementação. Esse Agent puxa o ticket, movendo-o de `To Do` (`Tarefas pendentes`) para `In Progress` (`Em andamento`) pelas transições disponíveis no Jira, usando a conta Jira do usuário. Em Histórias que envolvam várias áreas, há um único Agent técnico principal; os demais Agents necessários colaboram na mesma História.
