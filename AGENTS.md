@@ -42,7 +42,8 @@
 - No fluxo de uma issue do projeto, o Agent de Product Manager está autorizado a criar a branch, fazer push e abrir ou atualizar o PR sem solicitar aprovação separada. Essa autorização vale para as mudanças necessárias à entrega da issue; não inclui deploy.
 - O Agent de Product Manager pode fazer merge somente depois da aprovação do Code Review e de QA e da aprovação de todas as verificações configuradas. Deploy continua exigindo solicitação explícita.
 - Todo PR deve seguir o padrão de título e descrição definido em `.github/pull_request_template.md`. Use links diretos do Jira no formato `https://titostauffer.atlassian.net/browse/DEV-XXX` para a História e, quando aplicável, para o épico. Não marque verificações que não foram executadas.
-- O autor preenche o PR e mantém desmarcadas as aprovações. O Agent de Code Review marca somente o checkbox de Code Review após aprovar; o Agent de QA marca somente o checkbox de QA após aprovar. Se forem solicitados ajustes ou houver reprovação, o checkbox correspondente permanece desmarcado até nova aprovação.
+- O Agent técnico principal fornece ao PR o escopo, as evidências, os comandos executados e seus resultados. O Agent de Product Manager é responsável por manter os checklists factuais do PR atualizados: confere e marca os itens sustentados por evidência antes de mover a issue para `In Review` e faz uma conferência final após Code Review, QA e checks configurados, antes do merge. Não marque itens sem validação.
+- As aprovações formais são de responsabilidade exclusiva dos respectivos agentes: Code Review marca somente seu checkbox após aprovar e QA marca somente seu checkbox após aprovar. O Product Manager não marca esses dois checkboxes em nome deles. Se forem solicitados ajustes ou houver reprovação, o checkbox correspondente permanece desmarcado até nova aprovação.
 
 
 ## Workflow
@@ -71,6 +72,46 @@
 - Ao concluir sua parte, cada Agent informa o que fez, quais arquivos alterou, quais verificações executou e se encontrou bloqueios.
 - O agente que conduz a execução integra o trabalho e verifica a História completa. As responsabilidades de Jira e Git seguem as regras definidas neste workflow.
 
+### Processo de Code Review no GitHub
+- O Agent de Code Review deve confirmar o repositório, o número e o título do PR, seu estado atual e o diff a revisar. Deve consultar o contexto adicional necessário e não presumir problemas sem evidências suficientes.
+- A revisão deve avaliar, no mínimo:
+  - Bugs, erros de lógica e atendimento aos critérios de aceitação.
+  - Vulnerabilidades, exposição de dados sensíveis, validações, tratamento de erros e casos extremos.
+  - Qualidade, legibilidade, manutenibilidade, complexidade e separação de responsabilidades.
+  - Compatibilidade, regressões potenciais, arquitetura e convenções existentes.
+  - Adequação dos testes às alterações, incluindo testes ausentes ou insuficientes.
+  - Uso correto de TypeScript, Node.js, Fastify, React e PostgreSQL, conforme aplicável.
+- Todo apontamento que exija correção deve informar severidade (`BLOCKER`, `HIGH`, `MEDIUM` ou `LOW`), localização (arquivo e linha ou intervalo, quando possível), problema, impacto e correção sugerida. Priorize comentários inline nas linhas relevantes do diff quando a integração permitir; caso contrário, use o comentário geral do PR e indique os caminhos e linhas afetados.
+- Não publique apontamentos genéricos, duplicados ou baseados apenas em preferência estilística. Identifique sugestões não bloqueantes como tais.
+- A decisão da revisão deve ser uma destas:
+  - `APPROVED`: somente quando a análise estiver concluída, não houver bloqueios identificados e os riscos relevantes tiverem sido avaliados. Achados `LOW` não impedem aprovação se não representarem risco relevante.
+  - `CHANGES_REQUESTED`: quando houver problema comprovado `BLOCKER` ou `HIGH`, ou outro problema que impeça aprovação segura. Um problema `MEDIUM` pode bloquear quando seu impacto justificar; registre a justificativa.
+  - `INCONCLUSIVE`: quando falta de contexto, permissão ou falha de integração impedir uma análise fundamentada. Registre a limitação; não simule aprovação.
+- Não aprove um PR somente porque os testes passaram. Não declare testes, workflows ou verificações aprovados sem consultar evidências reais. Diferencie testes executados pelo Agent dos checks do GitHub Actions e do SonarQube.
+- Ao concluir, publique no PR os apontamentos relevantes e um comentário geral de resumo. Quando a integração permitir, registre também uma revisão formal do GitHub com o estado correspondente (`APPROVED` ou `CHANGES_REQUESTED`). Um comentário textual contendo “APPROVED” não substitui uma revisão formal. Não publique aprovação formal se houver bloqueios.
+- Se o GitHub rejeitar uma revisão formal porque a identidade autenticada é a autora do PR, não tente contornar a restrição. Informe a limitação, mantenha o checkbox desmarcado e solicite uma revisão formal por uma identidade autorizada diferente da autora.
+- Evite comentários duplicados em novas rodadas: atualize o comentário de resumo anterior, quando possível, ou identifique claramente a rodada. Nunca inclua tokens, secrets, credenciais ou dados sensíveis nos comentários.
+- Use este formato conciso para o comentário geral:
+  ```markdown
+  ### Code Review — [APPROVED | CHANGES_REQUESTED | INCONCLUSIVE]
+
+  **PR:** [número e título]
+
+  **Resumo:** [conclusão da revisão]
+
+  **Contagem por severidade:** BLOCKER: [n]; HIGH: [n]; MEDIUM: [n]; LOW: [n]
+
+  **Principais achados:** [problemas relevantes e referências a arquivos/linhas]
+
+  **Testes e verificações:** [somente resultados efetivamente verificados, distinguindo testes locais dos checks do GitHub Actions e SonarQube]
+
+  **Próximos passos:** [correções necessárias ou confirmação da conclusão]
+  ```
+  Quando não houver problemas, declare explicitamente que nenhum bloqueio foi identificado; não afirme que o código está livre de todos os bugs ou vulnerabilidades.
+- Marque o checkbox **Code Review aprovado** no template do PR somente após concluir a análise com `APPROVED` e registrar com sucesso a aprovação formal, quando essa capacidade estiver disponível. Se a revisão estiver inconclusiva, pendente ou solicitar alterações, mantenha-o desmarcado. O checkbox não substitui a revisão formal nem os checks obrigatórios do GitHub.
+- Se comentários inline ou revisão formal não forem suportados pela integração disponível, use apenas as operações confirmadas, publique o resultado possível e informe explicitamente a limitação. Nunca afirme que uma operação foi realizada sem confirmação da ferramenta.
+- Em `CHANGES_REQUESTED`, o Agent técnico principal move o ticket de `In Review` para `In Progress`, registra o motivo no Jira conforme as regras de transição deste arquivo e coordena as correções. Após nova rodada, o Code Review reavalia o diff atualizado. A aprovação do Code Review não aprova QA nem autoriza o merge; o fluxo de QA e merge existente continua obrigatório.
+
 - Para cada feature do MVP 1 do CashIn, o Agent de Product Manager cria diretamente no Jira uma issue do tipo `História`, no projeto `DEV`, associa-a ao épico [DEV-6 — CashIn MVP 1](https://titostauffer.atlassian.net/browse/DEV-6) e a deixa em `To Do` (`Tarefas pendentes`). Use a chave atribuída pelo Jira e siga o template configurado na ferramenta, sem manter um template paralelo neste arquivo.
 - Como os Agents são papéis do fluxo, e não usuários Jira separados, mantenha as issues atribuídas à conta Jira do usuário. Registre na História o papel do Agent técnico principal.
 - Quando uma tarefa técnica precisar de acompanhamento separado, crie uma issue do tipo `Tarefa` e vincule-a à História correspondente.
@@ -83,7 +124,8 @@
   - Aprovação do Code Review: `Code Review aprovado em [data e horário]. [Resumo da revisão ou link para a revisão].`
   - Aprovação do QA: `QA aprovado em [data e horário]. [Critérios validados e resultado].`
   - `In Review` → `Done` após o merge: `Merge concluído em [data e horário]. PR: [URL]. Code Review e QA aprovados.`
-- Quando todas as issues de trabalho associadas a um épico estiverem em `Done` (`Concluído`), o Agent de Product Manager deve verificar o status e as transições disponíveis do épico e movê-lo para `Done`, se a transição estiver disponível. Considere Histórias, Tarefas técnicas vinculadas a essas Histórias e demais issues incluídas no épico; não encerre o épico enquanto houver qualquer issue de trabalho não concluída, em andamento ou bloqueada. Depois da transição, registre no próprio épico um comentário com data e horário local no formato `DD/MM/AAAA HH:mm (America/Sao_Paulo)`, confirmação do encerramento e as chaves das issues verificadas. Esta regra vale para execuções manuais e iniciadas pelo dispatcher; ela não autoriza o dispatcher a implementar ou selecionar outra issue.
+- O épico permanente de débitos técnicos [DEV-25 — Tech Debts](https://titostauffer.atlassian.net/browse/DEV-25) é uma exceção à regra de encerramento de épicos: deve permanecer aberto e nunca ser movido para `Done` (`Concluído`) apenas porque suas Histórias ou Tarefas filhas foram concluídas. Mantenha-o em `To Do` (`Tarefas pendentes`) salvo solicitação explícita do usuário para outro status não terminal.
+- Quando todas as issues de trabalho associadas a qualquer outro épico estiverem em `Done` (`Concluído`), o Agent de Product Manager deve verificar o status e as transições disponíveis do épico e movê-lo para `Done`, se a transição estiver disponível. Considere Histórias, Tarefas técnicas vinculadas a essas Histórias e demais issues incluídas no épico; não encerre o épico enquanto houver qualquer issue de trabalho não concluída, em andamento ou bloqueada. Depois da transição, registre no próprio épico um comentário com data e horário local no formato `DD/MM/AAAA HH:mm (America/Sao_Paulo)`, confirmação do encerramento e as chaves das issues verificadas. Esta regra vale para execuções manuais e iniciadas pelo dispatcher; ela não autoriza o dispatcher a implementar ou selecionar outra issue.
 - Fora de execuções iniciadas pelo dispatcher, quando uma História do MVP 1 chegar a `Done`, o Agent de Product Manager deve verificar se há outra História elegível do épico `DEV-6` em `To Do` na sprint ativa, conforme os critérios do dispatcher. Se houver, deve iniciar somente a próxima História elegível priorizada pelo Jira, respeitando a ordem do quadro em caso de empate. Antes de iniciá-la, criar sua branch a partir da branch padrão e então movê-la de `To Do` para `In Progress`, registrando o comentário de início conforme a regra acima. Se o contexto, as dependências ou a ordem de prioridade não permitirem identificar com segurança qual ticket iniciar, perguntar ao usuário antes da transição. Não puxe automaticamente tickets de outras sprints ou épicos.
 - O workflow de uma entrega deve envolver somente os responsáveis pelas áreas incluídas no escopo:
   - Agent de Product Manager cria a História seguindo o template configurado e cria a branch conforme as regras de Git.
@@ -93,10 +135,7 @@
   - Quando a História envolver Backend e Frontend, os dois Agents implementam suas partes e podem trabalhar em paralelo quando as dependências e os contratos permitirem. O Agent técnico principal coordena a integração, mas não substitui os demais responsáveis. A História permanece em `In Progress` até todas as partes do escopo estarem concluídas e integradas. Se o acompanhamento separado for necessário, crie issues do tipo `Tarefa` vinculadas à História.
   - Agent de Product Manager cria o commit, faz push da branch e abre o PR conforme as regras de Git.
   - Depois que o PR estiver aberto, Agent de Product Manager move o ticket de `In Progress` (`Em andamento`) para `In Review` (`Em análise`) pelas transições disponíveis no Jira.
-  - Agent de Code Review revisa o PR e registra a aprovação se não encontrar bloqueios ou solicita ajustes com comentários no PR. Deve procurar por:
-    - Falhas em segurança.
-    - Falta de Qualidade de código.
-    - Falta de padrões de projeto.
+  - Agent de Code Review revisa o PR conforme a seção **Processo de Code Review no GitHub**, registra a decisão e os apontamentos no PR, e marca o checkbox correspondente somente quando os critérios de aprovação forem atendidos.
   - Se a revisão pedir ajustes, o Agent técnico principal move o ticket de volta para `In Progress` (`Em andamento`) e coordena a correção com os demais Agents necessários.
   - Após a aprovação do Code Review, Agent de QA valida a implementação com base nos critérios de aceitação e nas condições de conclusão registradas na História, conforme o template do Jira, e registra o resultado no ticket. A validação de QA ocorre em `In Review` (`Em análise`), pois o quadro atual não possui uma coluna exclusiva para QA.
   - Se QA reprovar a implementação, o Agent técnico principal move o ticket de volta para `In Progress` (`Em andamento`) para correção.

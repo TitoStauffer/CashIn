@@ -56,6 +56,8 @@ Marque o que se aplica e descreva impactos relevantes.
 
 Marque somente verificações realmente executadas.
 
+O Agent técnico principal informa os comandos e resultados. O Agent de Product Manager mantém os checkboxes factuais atualizados com base nessas evidências; as aprovações de Code Review e QA são marcadas por seus respectivos agentes na seção 13.
+
 - [ ] Testes unitários.
 - [ ] Testes de integração.
 - [ ] Testes de contrato/API, quando aplicável.
@@ -107,6 +109,8 @@ Adicione evidências relevantes para a revisão.
 Se não houver riscos ou limitações conhecidos, declare isso explicitamente.
 
 ## 12. Checklist de conclusão
+
+O Agent de Product Manager é responsável por conferir e atualizar este checklist com base nas evidências fornecidas pelo Agent técnico principal. Faça a conferência final após Code Review, QA e checks configurados, antes do merge.
 
 - [ ] O PR está vinculado ao ticket correto do Jira.
 - [ ] O escopo implementado corresponde ao ticket.
