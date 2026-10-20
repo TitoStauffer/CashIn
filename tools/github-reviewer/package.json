@@ -1,0 +1,14 @@
+{
+  "name": "@saldocerto/github-reviewer",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Submits formal pull request reviews as the CashIn GitHub App.",
+  "scripts": {
+    "test": "node --test test/*.test.mjs",
+    "review": "node src/cli.mjs"
+  },
+  "engines": {
+    "node": ">=22.12"
+  }
+}
