@@ -44,14 +44,15 @@ export function parseBrazilianCurrencyInput(value: string) {
 }
 
 export function formatBrazilianCurrency(amount: string) {
-  const match = /^(\d+)(?:\.(\d{1,2}))?$/.exec(amount)
+  const match = /^(-?)(\d+)(?:\.(\d{1,2}))?$/.exec(amount)
   if (!match) return 'R$ 0,00'
 
-  const integer = match[1].replace(/^0+(?=\d)/, '')
+  const sign = match[1]
+  const integer = match[2].replace(/^0+(?=\d)/, '')
   if (integer.length > MAX_INTEGER_DIGITS) return 'R$ 0,00'
-  const fraction = (match[2] ?? '').padEnd(2, '0')
+  const fraction = (match[3] ?? '').padEnd(2, '0')
   const groupedInteger = integer.replace(/\B(?=(\d{3})+(?!\d))/g, '.')
-  return `R$ ${groupedInteger},${fraction}`
+  return `${sign}R$ ${groupedInteger},${fraction}`
 }
 
 export function formatBrazilianCurrencyInput(amount: string) {

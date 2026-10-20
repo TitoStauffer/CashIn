@@ -150,7 +150,7 @@ export function DashboardPage({ userEmail, isLoggingOut, onLogout }: DashboardPa
                 <article className="dashboard-summary-card dashboard-summary-card--contribution">
                   <span>Aportes</span><strong>{formatAmount(summary.contributionTotal)}</strong><small>destinados às metas</small>
                 </article>
-                <article className={`dashboard-summary-card dashboard-summary-card--balance${Number(summary.availableBalance) < 0 ? ' dashboard-summary-card--negative' : ''}`}>
+                <article className={`dashboard-summary-card dashboard-summary-card--balance${summary.availableBalance.startsWith('-') ? ' dashboard-summary-card--negative' : ''}`}>
                   <span>Saldo disponível</span><strong>{formatAmount(summary.availableBalance)}</strong><small>entradas menos despesas e aportes</small>
                 </article>
               </div>

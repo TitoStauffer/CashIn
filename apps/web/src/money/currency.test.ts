@@ -44,6 +44,7 @@ describe('Brazilian currency helpers', () => {
   it('formats canonical values without converting them to JavaScript numbers', () => {
     expect(formatBrazilianCurrency('999999999999.99')).toBe('R$ 999.999.999.999,99')
     expect(formatBrazilianCurrency('0.01')).toBe('R$ 0,01')
+    expect(formatBrazilianCurrency('-1234.56')).toBe('-R$ 1.234,56')
     expect(formatBrazilianCurrencyInput('1234.5')).toBe('1.234,50')
     expect(formatBrazilianCurrency('1000000000000.00')).toBe('R$ 0,00')
   })
