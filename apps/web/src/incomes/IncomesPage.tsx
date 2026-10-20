@@ -4,6 +4,7 @@ import type { Category } from '../categories/categoriesApi'
 import { categoriesApi } from '../categories/categoriesApi'
 import type { Income, IncomeInput } from './incomesApi'
 import { IncomeApiError, incomesApi } from './incomesApi'
+import { FinancialSidebar } from '../layout/FinancialSidebar'
 import './IncomesPage.css'
 
 type IncomeEditor = {
@@ -245,26 +246,10 @@ export function IncomesPage({ userEmail, isLoggingOut, onLogout }: IncomesPagePr
   }
 
   return (
+    <>
+    <FinancialSidebar activePage="incomes" userEmail={userEmail} isLoggingOut={isLoggingOut} onLogout={onLogout} />
     <main className="incomes-page">
       <div className="incomes-shell">
-        <header className="incomes-topbar">
-          <a className="incomes-brand" href="/dashboard" aria-label="Saldo Certo, visão geral">
-            <span className="incomes-brand__mark" aria-hidden="true">SC</span>
-            <span>saldo<span>certo</span></span>
-          </a>
-          <nav className="incomes-account" aria-label="Navegação da área financeira">
-            <a className="incomes-account__link" href="/dashboard">Visão geral</a>
-            <a className="incomes-account__link" href="/incomes" aria-current="page">Entradas</a>
-            <a className="incomes-account__link" href="/expenses">Despesas</a>
-            <a className="incomes-account__link" href="/goals">Metas</a>
-            <a className="incomes-account__link" href="/categories">Categorias</a>
-            <span className="incomes-account__email">{userEmail}</span>
-            <button className="incomes-signout" type="button" onClick={onLogout} disabled={isLoggingOut}>
-              {isLoggingOut ? 'Saindo…' : 'Sair'}
-            </button>
-          </nav>
-        </header>
-
         <section className="incomes-content" aria-labelledby="incomes-title">
           <div className="incomes-heading">
             <div>
@@ -414,6 +399,7 @@ export function IncomesPage({ userEmail, isLoggingOut, onLogout }: IncomesPagePr
         </footer>
       </div>
     </main>
+    </>
   )
 }
 

@@ -1,4 +1,4 @@
-.dashboard-page { min-height: 100vh; padding: 0 6.2vw; background: radial-gradient(ellipse at 8% 90%, rgb(210 225 214 / 35%), transparent 30%), #f7f8f4; }
+.dashboard-page { min-height: 100vh; padding: 0 6.2vw 0 calc(var(--financial-sidebar-width, 248px) + 4vw); background: radial-gradient(ellipse at 8% 90%, rgb(210 225 214 / 35%), transparent 30%), #f7f8f4; }
 .dashboard-shell { width: min(100%, 1280px); min-height: 100vh; margin: 0 auto; display: flex; flex-direction: column; }
 .dashboard-topbar { min-height: 82px; display: flex; align-items: center; justify-content: space-between; gap: 20px; border-bottom: 1px solid #e8ebe4; }
 .dashboard-brand { display: inline-flex; flex: 0 0 auto; align-items: center; gap: 10px; color: #183c2e; text-decoration: none; font-size: 19px; font-weight: 750; letter-spacing: -.055em; }
@@ -97,8 +97,8 @@
   .dashboard-account__email { display: none; }
   .dashboard-summary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
-@media (max-width: 650px) {
-  .dashboard-page { padding: 0 20px; }
+@media (max-width: 760px) {
+  .dashboard-page { padding: 92px 20px 0; }
   .dashboard-topbar { min-height: 72px; align-items: center; gap: 12px; }
   .dashboard-brand { gap: 7px; font-size: 17px; }
   .dashboard-brand__mark { width: 32px; height: 32px; }
@@ -117,7 +117,6 @@
   .dashboard-categories__grid { grid-template-columns: 1fr; }
 }
 @media (max-width: 390px) {
-  .dashboard-page { padding: 0 14px; }
   .dashboard-topbar { align-items: flex-start; }
   .dashboard-account { max-width: 215px; gap: 7px 10px; }
   .dashboard-summary-card { padding: 12px 10px; }
