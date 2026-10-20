@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { creditCardsApi } from './creditCardsApi'
+import { CreditCardApiError, creditCardsApi } from './creditCardsApi'
 
 const card = { id: 'card-1', nickname: 'Principal', closingDay: 10, dueDay: 17, isActive: true }
 const statement = { id: 'statement-1', creditCardId: 'card-1', creditCardName: 'Principal', closingDate: '2026-10-10', dueDate: '2026-10-17', paidDate: null, paidAmount: null, totalAmount: '123.45', purchases: [] }
@@ -34,5 +34,29 @@ describe('creditCardsApi', () => {
     expect(fetchMock).toHaveBeenNthCalledWith(2, '/api/credit-cards/card%20%2F1/statements/statement%2F1/pay', expect.objectContaining({
       method: 'POST', body: JSON.stringify({ date: '2026-10-18' }),
     }))
+  })
+
+  it('patches a card activation and sends JSON headers', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => ({ ...card, isActive: false }) })
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(creditCardsApi.update('card-1', { isActive: false })).resolves.toMatchObject({ isActive: false })
+    expect(fetchMock).toHaveBeenCalledWith('/api/credit-cards/card-1', expect.objectContaining({
+      method: 'PATCH',
+      headers: expect.objectContaining({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify({ isActive: false }),
+    }))
+  })
+
+  it('handles API errors with and without a JSON message and supports empty responses', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({ ok: false, status: 409, json: async () => ({ message: 'Cartão em uso' }) })
+      .mockResolvedValueOnce({ ok: false, status: 503, json: async () => { throw new Error('invalid json') } })
+      .mockResolvedValueOnce({ ok: true, status: 204, json: async () => { throw new Error('should not parse') } })
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(creditCardsApi.list()).rejects.toMatchObject({ name: 'CreditCardApiError', status: 409, message: 'Cartão em uso' })
+    await expect(creditCardsApi.list()).rejects.toBeInstanceOf(CreditCardApiError)
+    await expect(creditCardsApi.update('card-1', { isActive: false })).resolves.toBeUndefined()
   })
 })

@@ -41,6 +41,8 @@ export default defineConfig({
         'src/wallets/walletApi.ts',
         'src/paymentMethods/PaymentMethodsPage.tsx',
         'src/paymentMethods/paymentMethodsApi.ts',
+        'src/creditCards/CreditCardsPage.tsx',
+        'src/creditCards/creditCardsApi.ts',
       ],
       exclude: ['src/**/*.test.ts', 'src/**/*.test.tsx', 'src/test/**'],
       thresholds: {
@@ -53,6 +55,7 @@ export default defineConfig({
         'src/incomes/IncomesPage.tsx': { lines: 61, functions: 57, branches: 54, statements: 58 },
         'src/wallets/**': { lines: 80, functions: 80, branches: 80, statements: 80 },
         'src/paymentMethods/**': { lines: 80, functions: 80, branches: 80, statements: 80 },
+        'src/creditCards/**': { lines: 80, functions: 80, branches: 80, statements: 80 },
       },
     },
   },
