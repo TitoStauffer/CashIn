@@ -42,7 +42,8 @@
 - No fluxo de uma issue do projeto, o Agent de Product Manager está autorizado a criar a branch, fazer push e abrir ou atualizar o PR sem solicitar aprovação separada. Essa autorização vale para as mudanças necessárias à entrega da issue; não inclui deploy.
 - O Agent de Product Manager pode fazer merge somente depois da aprovação do Code Review e de QA e da aprovação de todas as verificações configuradas. Deploy continua exigindo solicitação explícita.
 - Todo PR deve seguir o padrão de título e descrição definido em `.github/pull_request_template.md`. Use links diretos do Jira no formato `https://titostauffer.atlassian.net/browse/DEV-XXX` para a História e, quando aplicável, para o épico. Não marque verificações que não foram executadas.
-- O autor preenche o PR e mantém desmarcadas as aprovações. O Agent de Code Review marca somente o checkbox de Code Review após aprovar; o Agent de QA marca somente o checkbox de QA após aprovar. Se forem solicitados ajustes ou houver reprovação, o checkbox correspondente permanece desmarcado até nova aprovação.
+- O Agent técnico principal fornece ao PR o escopo, as evidências, os comandos executados e seus resultados. O Agent de Product Manager é responsável por manter os checklists factuais do PR atualizados: confere e marca os itens sustentados por evidência antes de mover a issue para `In Review` e faz uma conferência final após Code Review, QA e checks configurados, antes do merge. Não marque itens sem validação.
+- As aprovações formais são de responsabilidade exclusiva dos respectivos agentes: Code Review marca somente seu checkbox após aprovar e QA marca somente seu checkbox após aprovar. O Product Manager não marca esses dois checkboxes em nome deles. Se forem solicitados ajustes ou houver reprovação, o checkbox correspondente permanece desmarcado até nova aprovação.
 
 
 ## Workflow
