@@ -28,7 +28,11 @@ function normalizeInput(input: ExpenseInput): Required<ExpenseInput> {
     throw new ExpenseError("A subcategoria informada é inválida.", 400);
   }
   const description = input.description?.trim() || null;
-  return { ...input, amount: input.amount, description, subcategoryId };
+  const paymentMethodId = input.paymentMethodId ?? null;
+  if (paymentMethodId !== null && !UUID_PATTERN.test(paymentMethodId)) {
+    throw new ExpenseError("A forma de pagamento informada é inválida.", 400);
+  }
+  return { ...input, amount: input.amount, description, subcategoryId, paymentMethodId };
 }
 
 function mapReferenceError(error: unknown): never {

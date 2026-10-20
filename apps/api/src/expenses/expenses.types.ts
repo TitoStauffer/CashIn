@@ -7,6 +7,9 @@ export interface Expense {
   categoryName: string;
   subcategoryId: string | null;
   subcategoryName: string | null;
+  paymentMethodId: string | null;
+  paymentMethodName: string | null;
+  paymentMethodNature: import("../payment-methods/payment-methods.types.js").PaymentMethodNature | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -17,6 +20,7 @@ export interface ExpenseInput {
   description?: string | null;
   categoryId: string;
   subcategoryId?: string | null;
+  paymentMethodId?: string | null;
 }
 
 export interface ExpenseRepository {

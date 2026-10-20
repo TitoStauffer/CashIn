@@ -23,6 +23,7 @@ const navigationItems: NavigationItem[] = [
   { href: '/expenses', label: 'Despesas', icon: '↘', key: 'expenses' },
   { href: '/goals', label: 'Metas', icon: '◎', key: 'goals' },
   { href: '/categories', label: 'Categorias', icon: '▤', key: 'categories' },
+  { href: '/payment-methods', label: 'Formas de pagamento', icon: '◉', key: 'payment-methods' },
   { href: '/wallet-sharing', label: 'Compartilhamento', icon: '♧', key: 'wallet-sharing' },
 ]
 

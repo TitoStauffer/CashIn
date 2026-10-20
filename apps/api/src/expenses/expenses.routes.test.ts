@@ -12,6 +12,7 @@ const USER_B = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
 const CATEGORY_A = "11111111-1111-4111-8111-111111111111";
 const CATEGORY_B = "22222222-2222-4222-8222-222222222222";
 const SUBCATEGORY_A = "33333333-3333-4333-8333-333333333333";
+const PAYMENT_METHOD_A = "55555555-5555-4555-8555-555555555555";
 const SESSION_A = "a".repeat(43);
 const SESSION_B = "b".repeat(43);
 
@@ -29,9 +30,11 @@ class MemoryExpenseRepository implements ExpenseRepository {
   private isValidReference(userId: string, input: Required<ExpenseInput>): boolean {
     const category = this.categories.get(input.categoryId);
     if (!category || category.userId !== userId || category.nature !== "expense") return false;
-    if (!input.subcategoryId) return true;
-    const subcategory = this.subcategories.get(input.subcategoryId);
-    return subcategory?.userId === userId && subcategory.categoryId === input.categoryId;
+    if (input.subcategoryId) {
+      const subcategory = this.subcategories.get(input.subcategoryId);
+      if (subcategory?.userId !== userId || subcategory.categoryId !== input.categoryId) return false;
+    }
+    return input.paymentMethodId === null || input.paymentMethodId === PAYMENT_METHOD_A;
   }
 
   async listExpenses(userId: string, _walletId: string, from?: string, to?: string): Promise<Expense[]> {
@@ -58,6 +61,9 @@ class MemoryExpenseRepository implements ExpenseRepository {
       categoryName: category.name,
       subcategoryId: input.subcategoryId,
       subcategoryName: subcategory?.name ?? null,
+      paymentMethodId: input.paymentMethodId,
+      paymentMethodName: input.paymentMethodId ? "Pix" : null,
+      paymentMethodNature: input.paymentMethodId ? "immediate" as const : null,
       createdAt: now,
       updatedAt: now,
     };
@@ -80,6 +86,9 @@ class MemoryExpenseRepository implements ExpenseRepository {
       categoryName: category.name,
       subcategoryId: input.subcategoryId,
       subcategoryName: subcategory?.name ?? null,
+      paymentMethodId: input.paymentMethodId,
+      paymentMethodName: input.paymentMethodId ? "Pix" : null,
+      paymentMethodNature: input.paymentMethodId ? "immediate" as const : null,
       updatedAt: new Date().toISOString(),
     };
     this.items.set(expenseId, updated);
@@ -209,5 +218,31 @@ test("expense filters are inclusive, ordered, and reject invalid values or refer
     method: "GET", url: "/expenses?from=2026-10-20&to=2026-10-18", headers: { cookie: authCookie() },
   });
   assert.equal(reversedRange.statusCode, 400);
+  await app.close();
+});
+
+test("expenses can reference a payment method and reject invalid or cross-wallet ids", async () => {
+  const { app } = createTestApp();
+  const created = await app.inject({
+    method: "POST", url: "/expenses", headers: { cookie: authCookie() },
+    payload: { ...validPayload, paymentMethodId: PAYMENT_METHOD_A },
+  });
+  assert.equal(created.statusCode, 201);
+  assert.equal(created.json().paymentMethodId, PAYMENT_METHOD_A);
+  assert.equal(created.json().paymentMethodName, "Pix");
+  assert.equal(created.json().paymentMethodNature, "immediate");
+
+  const updated = await app.inject({
+    method: "PUT", url: `/expenses/${created.json().id}`, headers: { cookie: authCookie() },
+    payload: { ...validPayload, paymentMethodId: null },
+  });
+  assert.equal(updated.statusCode, 200);
+  assert.equal(updated.json().paymentMethodId, null);
+
+  const invalid = await app.inject({
+    method: "POST", url: "/expenses", headers: { cookie: authCookie() },
+    payload: { ...validPayload, paymentMethodId: CATEGORY_B },
+  });
+  assert.equal(invalid.statusCode, 400);
   await app.close();
 });

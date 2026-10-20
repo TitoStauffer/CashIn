@@ -4,6 +4,7 @@ import { AuthApiError, authApi } from './authApi'
 import type { User } from './authApi'
 import { CategoriesPage } from './categories/CategoriesPage'
 import { ExpensesPage } from './expenses/ExpensesPage'
+import { PaymentMethodsPage } from './paymentMethods/PaymentMethodsPage'
 import { IncomesPage } from './incomes/IncomesPage'
 import { GoalsPage } from './goals/GoalsPage'
 import { DashboardPage } from './dashboard/DashboardPage'
@@ -14,7 +15,7 @@ import { WalletSharingPage } from './wallets/WalletSharingPage'
 import { getPendingInviteToken, storePendingInviteToken } from './wallets/walletApi'
 import './App.css'
 
-type Page = 'login' | 'register' | 'verify-email' | 'wallet-invite' | 'wallet-access-request' | 'wallet-sharing' | 'dashboard' | 'categories' | 'incomes' | 'expenses' | 'goals'
+type Page = 'login' | 'register' | 'verify-email' | 'wallet-invite' | 'wallet-access-request' | 'wallet-sharing' | 'dashboard' | 'categories' | 'incomes' | 'expenses' | 'goals' | 'payment-methods'
 const pendingVerifications = new Map<string, Promise<unknown>>()
 const passwordPolicyMessage =
   'A senha deve ter pelo menos 8 caracteres, incluindo uma letra maiúscula, uma letra minúscula, um número e um caractere especial.'
@@ -72,6 +73,7 @@ function getPage(): Page {
   if (path.endsWith('/wallet-sharing')) return 'wallet-sharing'
   if (path.endsWith('/dashboard')) return 'dashboard'
   if (path.endsWith('/categories')) return 'categories'
+  if (path.endsWith('/payment-methods')) return 'payment-methods'
   if (path.endsWith('/incomes')) return 'incomes'
   if (path.endsWith('/expenses')) return 'expenses'
   if (path.endsWith('/goals')) return 'goals'
@@ -252,6 +254,14 @@ function App() {
     return (
       <WalletProvider userId={user.id}>
         <ExpensesPage userEmail={user.email} isLoggingOut={isSubmitting} onLogout={handleLogout} />
+      </WalletProvider>
+    )
+  }
+
+  if (!checkingSession && user && page === 'payment-methods') {
+    return (
+      <WalletProvider userId={user.id}>
+        <PaymentMethodsPage userEmail={user.email} isLoggingOut={isSubmitting} onLogout={handleLogout} />
       </WalletProvider>
     )
   }

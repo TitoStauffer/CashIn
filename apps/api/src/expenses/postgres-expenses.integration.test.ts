@@ -55,6 +55,11 @@ test("PostgreSQL expense CRUD enforces ownership, category nature, references, a
       [userId, walletId, expenseCategory],
     );
     const subcategoryId = subcategoryResult.rows[0]!.id;
+    const paymentMethodResult = await database.query<{ id: string }>(
+      "SELECT id FROM payment_methods WHERE wallet_id = $1 AND name_normalized = 'pix'",
+      [walletId],
+    );
+    const paymentMethodId = paymentMethodResult.rows[0]!.id;
 
     const first = await service.createExpense(userId, walletId, {
       amount: "123456789012.34",
@@ -62,6 +67,7 @@ test("PostgreSQL expense CRUD enforces ownership, category nature, references, a
       description: "Salário",
       categoryId: expenseCategory,
       subcategoryId,
+      paymentMethodId,
     });
     await service.createExpense(userId, walletId, {
       amount: "0.01",
@@ -70,6 +76,9 @@ test("PostgreSQL expense CRUD enforces ownership, category nature, references, a
     });
     assert.equal(first.amount, "123456789012.34");
     assert.equal(first.subcategoryName, "Mensal");
+    assert.equal(first.paymentMethodId, paymentMethodId);
+    assert.equal(first.paymentMethodName, "Pix");
+    assert.equal(first.paymentMethodNature, "immediate");
     assert.deepEqual((await service.listExpenses(userId, walletId, "2026-10-18", "2026-10-18")).map((item) => item.id), [first.id]);
     assert.equal((await service.listExpenses(otherUserId, otherWalletId)).length, 0);
 
@@ -87,10 +96,22 @@ test("PostgreSQL expense CRUD enforces ownership, category nature, references, a
       date: "2026-10-20",
       description: null,
       categoryId: expenseCategory,
+      paymentMethodId,
     });
     assert.equal(updated.amount, "99.90");
     assert.equal(updated.description, null);
     assert.equal(updated.subcategoryId, null);
+    assert.equal(updated.paymentMethodId, paymentMethodId);
+
+    await database.query("UPDATE payment_methods SET is_active = false WHERE id = $1", [paymentMethodId]);
+    const preservedInactive = await service.updateExpense(userId, walletId, first.id, {
+      amount: "100.00", date: "2026-10-20", categoryId: expenseCategory, paymentMethodId,
+    });
+    assert.equal(preservedInactive.paymentMethodName, "Pix");
+    await assert.rejects(
+      service.createExpense(userId, walletId, { amount: "5.00", date: "2026-10-20", categoryId: expenseCategory, paymentMethodId }),
+      (error: unknown) => typeof error === "object" && error !== null && "statusCode" in error && error.statusCode === 400,
+    );
     await assert.rejects(
       service.updateExpense(otherUserId, otherWalletId, first.id, {
         amount: "10", date: "2026-10-20", categoryId: expenseCategory,

@@ -194,7 +194,7 @@ describe('authenticated financial routes', () => {
     window.localStorage.clear()
   })
 
-  it.each(['/categories', '/dashboard', '/incomes', '/expenses', '/goals'])(
+  it.each(['/categories', '/dashboard', '/incomes', '/expenses', '/goals', '/payment-methods'])(
     'loads the active wallet before rendering %s', async (path) => {
       window.history.replaceState({}, '', path)
       render(<App />)
