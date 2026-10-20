@@ -73,4 +73,3 @@ export const expensesApi = {
     return request<void>(expensePath(expenseId), { method: 'DELETE' })
   },
 }
-

@@ -429,4 +429,3 @@ function addDecimalAmounts(first: string, second: string) {
   const integerTotal = BigInt(firstInteger) + BigInt(secondInteger) + carry
   return `${integerTotal}.${fraction}`
 }
-
