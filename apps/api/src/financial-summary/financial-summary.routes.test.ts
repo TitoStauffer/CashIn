@@ -13,6 +13,8 @@ const expected: FinancialSummary = {
   expenseTotal: "25.00",
   contributionTotal: "10.00",
   availableBalance: "65.00",
+  incomeByCategory: [],
+  expenseByCategory: [],
 };
 
 class SessionAuthRepository implements AuthRepository {

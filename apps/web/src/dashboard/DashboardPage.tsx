@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import type { FinancialSummary } from './dashboardApi'
+import type { CategorySummary, FinancialSummary } from './dashboardApi'
 import { DashboardApiError, dashboardApi } from './dashboardApi'
 import type { InvestmentGoal } from '../goals/goalsApi'
 import './DashboardPage.css'
@@ -34,6 +34,35 @@ function formatAmount(value: string) {
   const amount = Number(value)
   return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' })
     .format(Number.isFinite(amount) ? amount : 0)
+}
+
+function CategoryBreakdown({ title, items, tone }: { title: string; items: CategorySummary[]; tone: 'income' | 'expense' }) {
+  const amountsInCents = items.map((item) => amountToCents(item.amount))
+  const maximum = Math.max(0, ...amountsInCents)
+
+  return (
+    <section className={`dashboard-category dashboard-category--${tone}`} aria-label={`${title} por categoria`}>
+      <h3>{title}</h3>
+      {items.length === 0 ? (
+        <p className="dashboard-category__empty">Nenhuma {tone === 'income' ? 'entrada' : 'despesa'} neste período.</p>
+      ) : (
+        <ul className="dashboard-category__list">
+          {items.map((item, index) => {
+            const amountInCents = amountsInCents[index]
+            const width = maximum > 0 ? amountInCents / maximum * 100 : 0
+            return (
+              <li className="dashboard-category__item" key={item.categoryId}>
+                <div className="dashboard-category__label"><span>{item.categoryName}</span><strong>{formatAmount(item.amount)}</strong></div>
+                <div className="dashboard-category__track" role="img" aria-label={`${item.categoryName}: ${formatAmount(item.amount)}`}>
+                  <span style={{ width: `${width}%` }} />
+                </div>
+              </li>
+            )
+          })}
+        </ul>
+      )}
+    </section>
+  )
 }
 
 function amountToCents(value: string) {
@@ -96,10 +125,9 @@ export function DashboardPage({ userEmail, isLoggingOut, onLogout }: DashboardPa
   const incomeCents = summary ? amountToCents(summary.incomeTotal) : 0
   const outflow = centsToAmount(outflowCents)
   const scale = Math.max(incomeCents, outflowCents)
-  const visibleGoals = useMemo(() => [...goals].sort((a, b) => {
-    if (a.status !== b.status) return a.status === 'active' ? -1 : 1
-    return a.title.localeCompare(b.title, 'pt-BR')
-  }), [goals])
+  const visibleGoals = useMemo(() => goals
+    .filter((goal) => goal.status === 'active')
+    .sort((a, b) => a.title.localeCompare(b.title, 'pt-BR')), [goals])
 
   function changeMonth(offset: number) {
     setLoadError('')
@@ -168,6 +196,12 @@ export function DashboardPage({ userEmail, isLoggingOut, onLogout }: DashboardPa
                 </article>
               </div>
 
+              <nav className="dashboard-quick-actions" aria-label="Ações rápidas">
+                <a className="dashboard-primary-button" href="/incomes">＋ Registrar entrada</a>
+                <a className="dashboard-secondary-button" href="/expenses">＋ Registrar despesa</a>
+                <a className="dashboard-secondary-button" href="/goals">＋ Registrar aporte</a>
+              </nav>
+
               <section className="dashboard-panel dashboard-flow" aria-labelledby="flow-title">
                 <div className="dashboard-panel__heading">
                   <div><p className="dashboard-eyebrow">MOVIMENTO DO MÊS</p><h2 id="flow-title">Entradas e saídas</h2></div>
@@ -177,7 +211,7 @@ export function DashboardPage({ userEmail, isLoggingOut, onLogout }: DashboardPa
                   <div className="dashboard-empty dashboard-empty--compact">
                     <span className="dashboard-empty__icon" aria-hidden="true">↗</span>
                     <p>Nenhuma entrada, despesa ou aporte neste mês.</p>
-                    <div><a href="/incomes">Registrar entrada</a><a href="/expenses">Registrar despesa</a></div>
+                    <div><a href="/incomes">Registrar entrada</a><a href="/expenses">Registrar despesa</a><a href="/goals">Registrar aporte</a></div>
                   </div>
                 ) : (
                   <div className="dashboard-flow__rows">
@@ -192,6 +226,17 @@ export function DashboardPage({ userEmail, isLoggingOut, onLogout }: DashboardPa
                     <p className="dashboard-flow__note">Os aportes aparecem separados no resumo e também compõem as saídas para calcular o saldo disponível.</p>
                   </div>
                 )}
+              </section>
+
+              <section className="dashboard-panel dashboard-categories" aria-labelledby="categories-title">
+                <div className="dashboard-panel__heading">
+                  <div><p className="dashboard-eyebrow">PARA ONDE VAI E DE ONDE VEM</p><h2 id="categories-title">Movimentações por categoria</h2></div>
+                  <a href="/categories">Gerenciar categorias <span aria-hidden="true">→</span></a>
+                </div>
+                <div className="dashboard-categories__grid">
+                  <CategoryBreakdown title="Entradas" items={summary.incomeByCategory ?? []} tone="income" />
+                  <CategoryBreakdown title="Despesas" items={summary.expenseByCategory ?? []} tone="expense" />
+                </div>
               </section>
             </>
           ) : null}
