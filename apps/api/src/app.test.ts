@@ -1,15 +1,26 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { createApp } from "./app.js";
+import type { Database, QueryExecutor } from "./database.js";
+
+function createHealthDatabase(
+  query: (queryText: string) => Promise<{ rows: unknown[]; rowCount?: number | null }>,
+): Database {
+  const executor: QueryExecutor = {
+    query: async <Row extends import("pg").QueryResultRow>(queryText: string) => {
+      const result = await query(queryText);
+      return { rows: result.rows as Row[], rowCount: result.rowCount ?? null };
+    },
+  };
+  return { ...executor, transaction: async (work) => work(executor) };
+}
 
 test("GET /health reports the API and database as healthy", async () => {
   let queryCalled = false;
-  const app = createApp({
-    query: async (queryText) => {
+  const app = createApp(createHealthDatabase(async (queryText) => {
       queryCalled = queryText === "SELECT 1";
       return { rows: [{ "?column?": 1 }] };
-    },
-  });
+    }));
 
   const response = await app.inject({ method: "GET", url: "/health" });
 
@@ -20,11 +31,9 @@ test("GET /health reports the API and database as healthy", async () => {
 });
 
 test("GET /health reports database failures without exposing internals", async () => {
-  const app = createApp({
-    query: async () => {
+  const app = createApp(createHealthDatabase(async () => {
       throw new Error("private connection details");
-    },
-  });
+    }));
 
   const response = await app.inject({ method: "GET", url: "/health" });
 

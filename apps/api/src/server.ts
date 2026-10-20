@@ -1,5 +1,7 @@
 import { Pool } from "pg";
 import { createApp } from "./app.js";
+import { createDatabase, runMigrations } from "./database.js";
+import { createEmailSenderFromEnvironment } from "./auth/email-sender.js";
 
 const databaseUrl = process.env.DATABASE_URL;
 
@@ -8,14 +10,28 @@ if (!databaseUrl) {
 }
 
 const pool = new Pool({ connectionString: databaseUrl });
-const app = createApp(
-  { query: (queryText) => pool.query(queryText) },
-  { logger: true },
-);
+const database = createDatabase(pool);
+
+function positiveIntegerFromEnvironment(name: string, fallback: number): number {
+  const value = Number(process.env[name]);
+  return Number.isSafeInteger(value) && value > 0 ? value : fallback;
+}
+
+const app = createApp(database, {
+  logger: true,
+  emailSender: createEmailSenderFromEnvironment(),
+  authConfiguration: {
+    webBaseUrl: process.env.WEB_BASE_URL ?? "http://localhost:5173",
+    verificationTokenTtlHours: positiveIntegerFromEnvironment("EMAIL_VERIFICATION_TOKEN_TTL_HOURS", 24),
+    sessionTtlDays: positiveIntegerFromEnvironment("AUTH_SESSION_TTL_DAYS", 7),
+  },
+  secureCookies: process.env.NODE_ENV === "production",
+});
 
 const port = Number(process.env.PORT ?? 3000);
 
 try {
+  await runMigrations(database);
   await app.listen({ port, host: "0.0.0.0" });
 } catch (error) {
   app.log.error(error);
