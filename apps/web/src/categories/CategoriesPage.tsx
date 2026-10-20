@@ -293,11 +293,12 @@ export function CategoriesPage({ userEmail, isLoggingOut, onLogout }: Categories
     <main className="categories-page">
       <div className="categories-shell">
         <header className="categories-topbar">
-          <a className="categories-brand" href="/" aria-label="Saldo Certo, página inicial">
+          <a className="categories-brand" href="/dashboard" aria-label="Saldo Certo, visão geral">
             <span className="categories-brand__mark" aria-hidden="true">SC</span>
             <span>saldo<span>certo</span></span>
           </a>
           <nav className="categories-account" aria-label="Conta">
+            <a className="categories-account__link" href="/dashboard">Visão geral</a>
             <a className="categories-account__link" href="/incomes">Entradas</a>
             <a className="categories-account__link" href="/expenses">Despesas</a>
             <a className="categories-account__link" href="/goals">Metas</a>
