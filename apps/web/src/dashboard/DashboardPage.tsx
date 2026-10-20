@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import type { CategorySummary, FinancialSummary } from './dashboardApi'
 import { DashboardApiError, dashboardApi } from './dashboardApi'
 import type { InvestmentGoal } from '../goals/goalsApi'
+import { FinancialSidebar } from '../layout/FinancialSidebar'
 import './DashboardPage.css'
 
 type DashboardPageProps = { userEmail: string; isLoggingOut: boolean; onLogout: () => void }
@@ -136,26 +137,10 @@ export function DashboardPage({ userEmail, isLoggingOut, onLogout }: DashboardPa
   }
 
   return (
+    <>
+    <FinancialSidebar activePage="dashboard" userEmail={userEmail} isLoggingOut={isLoggingOut} onLogout={onLogout} />
     <main className="dashboard-page">
       <div className="dashboard-shell">
-        <header className="dashboard-topbar">
-          <a className="dashboard-brand" href="/dashboard" aria-label="Saldo Certo, visão geral">
-            <span className="dashboard-brand__mark" aria-hidden="true">SC</span>
-            <span>saldo<span>certo</span></span>
-          </a>
-          <nav className="dashboard-account" aria-label="Navegação da área financeira">
-            <a className="dashboard-account__link" href="/dashboard" aria-current="page">Visão geral</a>
-            <a className="dashboard-account__link" href="/incomes">Entradas</a>
-            <a className="dashboard-account__link" href="/expenses">Despesas</a>
-            <a className="dashboard-account__link" href="/goals">Metas</a>
-            <a className="dashboard-account__link" href="/categories">Categorias</a>
-            <span className="dashboard-account__email">{userEmail}</span>
-            <button className="dashboard-signout" type="button" onClick={onLogout} disabled={isLoggingOut}>
-              {isLoggingOut ? 'Saindo…' : 'Sair'}
-            </button>
-          </nav>
-        </header>
-
         <section className="dashboard-content" aria-labelledby="dashboard-title">
           <div className="dashboard-heading">
             <div>
@@ -279,5 +264,6 @@ export function DashboardPage({ userEmail, isLoggingOut, onLogout }: DashboardPa
         <footer className="dashboard-footer"><span>Saldo Certo · clareza para cada escolha</span><a href="/categories">Gerenciar categorias</a></footer>
       </div>
     </main>
+    </>
   )
 }

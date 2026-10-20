@@ -4,6 +4,7 @@ import type { Category } from '../categories/categoriesApi'
 import { categoriesApi } from '../categories/categoriesApi'
 import type { Expense, ExpenseInput } from './expensesApi'
 import { ExpenseApiError, expensesApi } from './expensesApi'
+import { FinancialSidebar } from '../layout/FinancialSidebar'
 import './ExpensesPage.css'
 
 type ExpenseEditor = {
@@ -245,26 +246,10 @@ export function ExpensesPage({ userEmail, isLoggingOut, onLogout }: ExpensesPage
   }
 
   return (
+    <>
+    <FinancialSidebar activePage="expenses" userEmail={userEmail} isLoggingOut={isLoggingOut} onLogout={onLogout} />
     <main className="expenses-page">
       <div className="expenses-shell">
-        <header className="expenses-topbar">
-          <a className="expenses-brand" href="/dashboard" aria-label="Saldo Certo, visão geral">
-            <span className="expenses-brand__mark" aria-hidden="true">SC</span>
-            <span>saldo<span>certo</span></span>
-          </a>
-          <nav className="expenses-account" aria-label="Navegação da área financeira">
-            <a className="expenses-account__link" href="/dashboard">Visão geral</a>
-            <a className="expenses-account__link" href="/incomes">Entradas</a>
-            <a className="expenses-account__link" href="/expenses" aria-current="page">Despesas</a>
-            <a className="expenses-account__link" href="/goals">Metas</a>
-            <a className="expenses-account__link" href="/categories">Categorias</a>
-            <span className="expenses-account__email">{userEmail}</span>
-            <button className="expenses-signout" type="button" onClick={onLogout} disabled={isLoggingOut}>
-              {isLoggingOut ? 'Saindo…' : 'Sair'}
-            </button>
-          </nav>
-        </header>
-
         <section className="expenses-content" aria-labelledby="expenses-title">
           <div className="expenses-heading">
             <div>
@@ -414,6 +399,7 @@ export function ExpensesPage({ userEmail, isLoggingOut, onLogout }: ExpensesPage
         </footer>
       </div>
     </main>
+    </>
   )
 }
 

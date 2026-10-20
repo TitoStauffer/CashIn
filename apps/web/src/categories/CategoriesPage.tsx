@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import type { FormEvent } from 'react'
 import type { Category, CategoryNature } from './categoriesApi'
 import { CategoryApiError, categoriesApi } from './categoriesApi'
+import { FinancialSidebar } from '../layout/FinancialSidebar'
 import './CategoriesPage.css'
 
 type CategoryEditor = {
@@ -290,26 +291,10 @@ export function CategoriesPage({ userEmail, isLoggingOut, onLogout }: Categories
   const activeNatureLabel = natureOptions.find((option) => option.value === nature)?.label ?? ''
 
   return (
+    <>
+    <FinancialSidebar activePage="categories" userEmail={userEmail} isLoggingOut={isLoggingOut} onLogout={onLogout} />
     <main className="categories-page">
       <div className="categories-shell">
-        <header className="categories-topbar">
-          <a className="categories-brand" href="/dashboard" aria-label="Saldo Certo, visão geral">
-            <span className="categories-brand__mark" aria-hidden="true">SC</span>
-            <span>saldo<span>certo</span></span>
-          </a>
-          <nav className="categories-account" aria-label="Conta">
-            <a className="categories-account__link" href="/dashboard">Visão geral</a>
-            <a className="categories-account__link" href="/incomes">Entradas</a>
-            <a className="categories-account__link" href="/expenses">Despesas</a>
-            <a className="categories-account__link" href="/goals">Metas</a>
-            <a className="categories-account__link" href="/categories" aria-current="page">Categorias</a>
-            <span className="categories-account__email">{userEmail}</span>
-            <button className="categories-signout" type="button" onClick={onLogout} disabled={isLoggingOut}>
-              {isLoggingOut ? 'Saindo…' : 'Sair'}
-            </button>
-          </nav>
-        </header>
-
         <section className="categories-content" aria-labelledby="categories-title">
           <div className="categories-heading">
             <div>
@@ -403,6 +388,7 @@ export function CategoriesPage({ userEmail, isLoggingOut, onLogout }: Categories
         </footer>
       </div>
     </main>
+    </>
   )
 }
 

@@ -1,0 +1,71 @@
+.financial-sidebar {
+  position: fixed;
+  z-index: 20;
+  inset: 0 auto 0 0;
+  width: 248px;
+  display: flex;
+  flex-direction: column;
+  padding: 22px 14px 16px;
+  border-right: 1px solid #e5ebe4;
+  background: #fff;
+  box-shadow: 8px 0 28px rgb(31 60 42 / 3%);
+  transition: width .18s ease;
+}
+
+.financial-sidebar--collapsed { width: 76px; padding-right: 10px; padding-left: 10px; }
+.financial-sidebar__header { min-height: 42px; display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.financial-sidebar__brand { min-width: 0; display: inline-flex; align-items: center; gap: 10px; color: #183c2e; text-decoration: none; }
+.financial-sidebar__brand-mark { width: 36px; height: 36px; flex: 0 0 auto; display: grid; place-items: center; border-radius: 12px 12px 12px 4px; background: #24654b; color: #fff; font-size: 12px; font-weight: 800; }
+.financial-sidebar__brand-name { overflow: hidden; font-size: 18px; font-weight: 750; letter-spacing: -.055em; white-space: nowrap; }
+.financial-sidebar__brand-name > span { color: #648071; font-weight: 500; }
+.financial-sidebar__toggle { width: 34px; height: 34px; flex: 0 0 auto; display: grid; place-items: center; border: 1px solid #e1e8df; border-radius: 8px; background: #fff; color: #315c43; font: inherit; font-size: 18px; cursor: pointer; }
+.financial-sidebar__toggle:hover { background: #f1f6f1; }
+.financial-sidebar__nav { display: flex; flex-direction: column; gap: 5px; margin-top: 42px; }
+.financial-sidebar__link { position: relative; min-height: 46px; display: flex; align-items: center; gap: 13px; padding: 0 13px; border-radius: 9px; color: #52645a; font-size: 13px; font-weight: 650; text-decoration: none; transition: background .15s ease, color .15s ease; }
+.financial-sidebar__link:hover { background: #f3f7f2; color: #1d5a3d; }
+.financial-sidebar__link--active { background: #eaf3eb; color: #1d5a3d; }
+.financial-sidebar__link--active::before { position: absolute; inset: 8px auto 8px 0; width: 3px; border-radius: 0 3px 3px 0; background: #27714e; content: ''; }
+.financial-sidebar__icon { width: 24px; flex: 0 0 24px; color: #568069; text-align: center; font-size: 19px; line-height: 1; }
+.financial-sidebar__link--active .financial-sidebar__icon { color: #1d6a46; }
+.financial-sidebar__label { overflow: hidden; white-space: nowrap; }
+.financial-sidebar__account { display: flex; flex-direction: column; gap: 10px; margin-top: auto; padding-top: 16px; border-top: 1px solid #edf0ea; }
+.financial-sidebar__email { overflow: hidden; padding: 0 10px; color: #78837b; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.financial-sidebar__logout { min-height: 42px; display: flex; align-items: center; gap: 13px; padding: 0 13px; border: 0; border-radius: 8px; background: transparent; color: #52645a; font: inherit; font-size: 12px; font-weight: 650; text-align: left; cursor: pointer; }
+.financial-sidebar__logout:hover:not(:disabled) { background: #f3f7f2; color: #1d5a3d; }
+.financial-sidebar__logout:disabled { cursor: wait; opacity: .65; }
+.financial-sidebar__logout > span:first-child { width: 24px; flex: 0 0 24px; color: #568069; text-align: center; font-size: 18px; }
+.financial-sidebar__toggle:focus-visible, .financial-sidebar__brand:focus-visible, .financial-sidebar__link:focus-visible, .financial-sidebar__logout:focus-visible { outline: 3px solid rgb(69 132 94 / 40%); outline-offset: 3px; }
+
+.financial-sidebar--collapsed .financial-sidebar__header { flex-direction: column; }
+.financial-sidebar--collapsed .financial-sidebar__brand-name,
+.financial-sidebar--collapsed .financial-sidebar__label,
+.financial-sidebar--collapsed .financial-sidebar__email { display: none; }
+.financial-sidebar--collapsed .financial-sidebar__nav { margin-top: 34px; }
+.financial-sidebar--collapsed .financial-sidebar__link,
+.financial-sidebar--collapsed .financial-sidebar__logout { justify-content: center; padding-right: 0; padding-left: 0; }
+.financial-sidebar--collapsed .financial-sidebar__account { align-items: center; }
+.financial-sidebar--collapsed .financial-sidebar__brand { justify-content: center; }
+
+@media (max-width: 760px) {
+  .financial-sidebar,
+  .financial-sidebar--collapsed { inset: 0 0 auto; width: auto; height: auto; min-height: 68px; padding: 12px 5vw; border-right: 0; border-bottom: 1px solid #e5ebe4; box-shadow: 0 5px 20px rgb(31 60 42 / 4%); }
+  .financial-sidebar__header { width: 100%; }
+  .financial-sidebar--collapsed .financial-sidebar__header { flex-direction: row; }
+  .financial-sidebar--collapsed .financial-sidebar__brand-name { display: inline; }
+  .financial-sidebar__toggle { width: 40px; height: 40px; font-size: 21px; }
+  .financial-sidebar__nav,
+  .financial-sidebar--collapsed .financial-sidebar__nav { display: none; margin: 12px 0 0; padding-top: 10px; border-top: 1px solid #edf0ea; }
+  .financial-sidebar--mobile-open .financial-sidebar__nav { display: flex; }
+  .financial-sidebar--collapsed .financial-sidebar__link { justify-content: flex-start; padding: 0 13px; }
+  .financial-sidebar--collapsed .financial-sidebar__label { display: inline; }
+  .financial-sidebar__account,
+  .financial-sidebar--collapsed .financial-sidebar__account { display: none; align-items: stretch; margin-top: 10px; padding-top: 10px; }
+  .financial-sidebar--mobile-open .financial-sidebar__account { display: flex; }
+  .financial-sidebar--collapsed .financial-sidebar__logout { justify-content: flex-start; padding: 0 13px; }
+  .financial-sidebar__email,
+  .financial-sidebar--collapsed .financial-sidebar__email { display: block; padding: 0 13px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .financial-sidebar, .financial-sidebar__link { transition-duration: .01ms; }
+}

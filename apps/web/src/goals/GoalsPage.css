@@ -1,4 +1,4 @@
-.goals-page { min-height: 100vh; padding: 0 6.2vw; background: radial-gradient(ellipse at 8% 90%, rgb(210 225 214 / 35%), transparent 30%), #f7f8f4; }
+.goals-page { min-height: 100vh; padding: 0 6.2vw 0 calc(var(--financial-sidebar-width, 248px) + 4vw); background: radial-gradient(ellipse at 8% 90%, rgb(210 225 214 / 35%), transparent 30%), #f7f8f4; }
 .goals-shell { width: min(100%, 1280px); min-height: 100vh; margin: 0 auto; display: flex; flex-direction: column; }
 .goals-topbar { min-height: 82px; display: flex; align-items: center; justify-content: space-between; gap: 20px; border-bottom: 1px solid #e8ebe4; }
 .goals-brand { display: inline-flex; align-items: center; gap: 10px; color: #183c2e; text-decoration: none; font-size: 19px; font-weight: 750; letter-spacing: -.055em; }
@@ -97,7 +97,7 @@
 .goals-footer a:hover { text-decoration: underline; }
 
 @media (max-width: 760px) {
-  .goals-page { padding: 0 20px; }
+  .goals-page { padding: 92px 20px 0; }
   .goals-topbar { min-height: 72px; align-items: center; }
   .goals-account { gap: 11px; }
   .goals-account__email { display: none; }
@@ -111,7 +111,6 @@
   .goal-contributions { margin-left: 18px; }
 }
 @media (max-width: 500px) {
-  .goals-page { padding: 0 15px; }
   .goals-account { gap: 8px; }
   .goals-account__link, .goals-signout { font-size: 10px; }
   .goals-brand { gap: 7px; font-size: 17px; }

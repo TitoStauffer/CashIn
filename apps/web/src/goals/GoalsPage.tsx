@@ -4,6 +4,7 @@ import type { Category } from '../categories/categoriesApi'
 import { categoriesApi } from '../categories/categoriesApi'
 import type { InvestmentContribution, InvestmentGoal, InvestmentGoalInput } from './goalsApi'
 import { GoalApiError, goalsApi } from './goalsApi'
+import { FinancialSidebar } from '../layout/FinancialSidebar'
 import './GoalsPage.css'
 
 type GoalEditor = {
@@ -262,17 +263,10 @@ export function GoalsPage({ userEmail, isLoggingOut, onLogout }: GoalsPageProps)
   }
 
   return (
+    <>
+    <FinancialSidebar activePage="goals" userEmail={userEmail} isLoggingOut={isLoggingOut} onLogout={onLogout} />
     <main className="goals-page">
       <div className="goals-shell">
-        <header className="goals-topbar">
-          <a className="goals-brand" href="/dashboard" aria-label="Saldo Certo, visão geral"><span className="goals-brand__mark" aria-hidden="true">SC</span><span>saldo<span>certo</span></span></a>
-          <nav className="goals-account" aria-label="Navegação da área financeira">
-            <a className="goals-account__link" href="/dashboard">Visão geral</a>
-            <a className="goals-account__link" href="/incomes">Entradas</a><a className="goals-account__link" href="/expenses">Despesas</a><a className="goals-account__link" href="/goals" aria-current="page">Metas</a><a className="goals-account__link" href="/categories">Categorias</a>
-            <span className="goals-account__email">{userEmail}</span><button className="goals-signout" type="button" onClick={onLogout} disabled={isLoggingOut}>{isLoggingOut ? 'Saindo…' : 'Sair'}</button>
-          </nav>
-        </header>
-
         <section className="goals-content" aria-labelledby="goals-title">
           <div className="goals-heading"><div><p className="goals-eyebrow">PLANOS PARA O FUTURO</p><h1 id="goals-title">Metas de investimento</h1><p>Defina objetivos e acompanhe cada valor destinado a eles.</p></div><button className="goals-primary-button" type="button" onClick={createGoal} disabled={saving}><span aria-hidden="true">＋</span> Nova meta</button></div>
           <div className="goals-filters" role="group" aria-label="Filtrar metas">
@@ -317,5 +311,6 @@ export function GoalsPage({ userEmail, isLoggingOut, onLogout }: GoalsPageProps)
         <footer className="goals-footer"><span>Saldo Certo · seus objetivos, no seu ritmo</span><a href="/categories">Gerenciar categorias</a></footer>
       </div>
     </main>
+    </>
   )
 }
