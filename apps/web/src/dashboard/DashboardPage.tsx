@@ -3,33 +3,11 @@ import type { CategorySummary, FinancialSummary } from './dashboardApi'
 import { DashboardApiError, dashboardApi } from './dashboardApi'
 import type { InvestmentGoal } from '../goals/goalsApi'
 import { FinancialSidebar } from '../layout/FinancialSidebar'
+import { MonthYearSelector } from '../period/MonthYearSelector'
+import { formatMonth, getCurrentMonth, getMonthRange } from '../period/month'
 import './DashboardPage.css'
 
 type DashboardPageProps = { userEmail: string; isLoggingOut: boolean; onLogout: () => void }
-
-function getCurrentMonth() {
-  const now = new Date()
-  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
-}
-
-function getMonthRange(month: string) {
-  const [year, monthNumber] = month.split('-').map(Number)
-  const lastDay = new Date(year, monthNumber, 0).getDate()
-  return { from: `${month}-01`, to: `${month}-${String(lastDay).padStart(2, '0')}` }
-}
-
-function shiftMonth(month: string, offset: number) {
-  const [year, monthNumber] = month.split('-').map(Number)
-  const shifted = new Date(year, monthNumber - 1 + offset, 1)
-  return `${shifted.getFullYear()}-${String(shifted.getMonth() + 1).padStart(2, '0')}`
-}
-
-function formatMonth(month: string) {
-  const [year, monthNumber] = month.split('-').map(Number)
-  const formatted = new Intl.DateTimeFormat('pt-BR', { month: 'long', year: 'numeric' })
-    .format(new Date(year, monthNumber - 1, 1))
-  return formatted.charAt(0).toLocaleUpperCase('pt-BR') + formatted.slice(1)
-}
 
 function formatAmount(value: string) {
   const amount = Number(value)
@@ -130,10 +108,11 @@ export function DashboardPage({ userEmail, isLoggingOut, onLogout }: DashboardPa
     .filter((goal) => goal.status === 'active')
     .sort((a, b) => a.title.localeCompare(b.title, 'pt-BR')), [goals])
 
-  function changeMonth(offset: number) {
+  function selectMonth(selectedMonth: string) {
+    if (selectedMonth === month) return
     setLoadError('')
     setIsLoading(true)
-    setMonth((value) => shiftMonth(value, offset))
+    setMonth(selectedMonth)
   }
 
   return (
@@ -148,11 +127,7 @@ export function DashboardPage({ userEmail, isLoggingOut, onLogout }: DashboardPa
               <h1 id="dashboard-title">Visão geral</h1>
               <p>Acompanhe o movimento do mês e o caminho até suas metas.</p>
             </div>
-            <div className="dashboard-month" aria-label="Navegação por mês">
-              <button type="button" onClick={() => changeMonth(-1)} aria-label="Mês anterior">‹</button>
-              <span aria-live="polite">{formatMonth(month)}</span>
-              <button type="button" onClick={() => changeMonth(1)} aria-label="Próximo mês">›</button>
-            </div>
+            <MonthYearSelector month={month} onMonthChange={selectMonth} />
           </div>
 
           {loadError && (

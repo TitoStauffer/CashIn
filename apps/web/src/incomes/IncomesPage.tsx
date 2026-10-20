@@ -5,6 +5,8 @@ import { categoriesApi } from '../categories/categoriesApi'
 import type { Income, IncomeInput } from './incomesApi'
 import { IncomeApiError, incomesApi } from './incomesApi'
 import { FinancialSidebar } from '../layout/FinancialSidebar'
+import { MonthYearSelector } from '../period/MonthYearSelector'
+import { formatMonth, getCurrentMonth, getMonthRange } from '../period/month'
 import './IncomesPage.css'
 
 type IncomeEditor = {
@@ -15,33 +17,6 @@ type IncomeEditor = {
   categoryId: string
   subcategoryId: string
 } | null
-
-function getCurrentMonth() {
-  const now = new Date()
-  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
-}
-
-function getMonthRange(month: string) {
-  const [year, monthNumber] = month.split('-').map(Number)
-  const lastDay = new Date(year, monthNumber, 0).getDate()
-  return {
-    from: `${month}-${'01'}`,
-    to: `${month}-${String(lastDay).padStart(2, '0')}`,
-  }
-}
-
-function shiftMonth(month: string, offset: number) {
-  const [year, monthNumber] = month.split('-').map(Number)
-  const shifted = new Date(year, monthNumber - 1 + offset, 1)
-  return `${shifted.getFullYear()}-${String(shifted.getMonth() + 1).padStart(2, '0')}`
-}
-
-function formatMonth(month: string) {
-  const [year, monthNumber] = month.split('-').map(Number)
-  return new Intl.DateTimeFormat('pt-BR', { month: 'long', year: 'numeric' }).format(
-    new Date(year, monthNumber - 1, 1),
-  )
-}
 
 function formatDate(date: string) {
   const [year, month, day] = date.split('-')
@@ -238,10 +213,11 @@ export function IncomesPage({ userEmail, isLoggingOut, onLogout }: IncomesPagePr
     setReloadKey((previous) => previous + 1)
   }
 
-  function changeMonth(offset: number) {
+  function selectMonth(selectedMonth: string) {
+    if (selectedMonth === month) return
     setIsLoading(true)
     setLoadError('')
-    setMonth((current) => shiftMonth(current, offset))
+    setMonth(selectedMonth)
     closeEditor()
   }
 
@@ -262,11 +238,7 @@ export function IncomesPage({ userEmail, isLoggingOut, onLogout }: IncomesPagePr
             </button>
           </div>
 
-          <div className="incomes-period" aria-label="Selecionar mês">
-            <button type="button" className="incomes-period__arrow" onClick={() => changeMonth(-1)} aria-label="Mês anterior">‹</button>
-            <h2 aria-live="polite">{formatMonth(month)}</h2>
-            <button type="button" className="incomes-period__arrow" onClick={() => changeMonth(1)} aria-label="Próximo mês">›</button>
-          </div>
+          <MonthYearSelector month={month} onMonthChange={selectMonth} />
 
           {formError && <p className="incomes-alert incomes-alert--error" role="alert">{formError}</p>}
           {successMessage && <p className="incomes-alert incomes-alert--success" role="status">{successMessage}</p>}

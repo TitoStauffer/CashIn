@@ -28,12 +28,8 @@
 .incomes-secondary-button { border-color: #d5e1d7; background: #fff; color: #315c43; }
 .incomes-secondary-button:hover:not(:disabled) { background: #f0f6f1; }
 .incomes-primary-button:disabled, .incomes-secondary-button:disabled { cursor: wait; opacity: .65; }
-.incomes-primary-button:focus-visible, .incomes-secondary-button:focus-visible, .incomes-account__link:focus-visible, .incomes-signout:focus-visible, .income-text-action:focus-visible, .incomes-period__arrow:focus-visible { outline: 3px solid rgb(69 132 94 / 35%); outline-offset: 3px; }
+.incomes-primary-button:focus-visible, .incomes-secondary-button:focus-visible, .incomes-account__link:focus-visible, .incomes-signout:focus-visible, .income-text-action:focus-visible { outline: 3px solid rgb(69 132 94 / 35%); outline-offset: 3px; }
 
-.incomes-period { min-height: 53px; display: flex; align-items: center; justify-content: center; gap: 24px; margin-bottom: 20px; border: 1px solid #e5ebe4; border-radius: 11px; background: rgb(255 255 255 / 80%); }
-.incomes-period h2 { min-width: 175px; margin: 0; color: #294a36; font-size: 14px; font-weight: 680; text-align: center; text-transform: capitalize; }
-.incomes-period__arrow { width: 34px; height: 34px; display: grid; place-items: center; border: 0; border-radius: 7px; background: transparent; color: #52715c; font-family: inherit; font-size: 27px; line-height: 1; cursor: pointer; }
-.incomes-period__arrow:hover { background: #edf3ed; color: #245d40; }
 .incomes-alert { margin: 0 0 15px; padding: 12px 14px; border: 1px solid; border-radius: 8px; font-size: 12px; line-height: 1.6; }
 .incomes-alert--error { border-color: #f0d4d0; background: #fff8f6; color: #96483f; }
 .incomes-alert--success { border-color: #d2e6d5; background: #f3faf3; color: #326c45; }
@@ -117,8 +113,6 @@
   .income-card { gap: 10px; }
   .income-card__details h2 { max-width: 170px; }
   .income-card__details p { max-width: 185px; font-size: 9px; }
-  .incomes-period { gap: 12px; }
-  .incomes-period h2 { min-width: 150px; font-size: 13px; }
 }
 
 @media (prefers-reduced-motion: reduce) {

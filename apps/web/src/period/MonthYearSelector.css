@@ -1,0 +1,18 @@
+.month-year-selector { min-height: 48px; display: flex; align-items: center; justify-content: center; gap: 8px; margin-bottom: 20px; padding: 5px 9px; border: 1px solid #e5ebe4; border-radius: 11px; background: rgb(255 255 255 / 80%); }
+.month-year-selector__arrow { width: 34px; height: 34px; flex: 0 0 auto; display: grid; place-items: center; border: 0; border-radius: 7px; background: transparent; color: #52715c; font-family: inherit; font-size: 27px; line-height: 1; cursor: pointer; }
+.month-year-selector__arrow:hover:not(:disabled) { background: #edf3ed; color: #245d40; }
+.month-year-selector__picker { position: relative; min-width: 150px; }
+.month-year-selector__picker input { width: 100%; min-height: 36px; padding: 0 10px; border: 1px solid #e1e8df; border-radius: 7px; background: #fff; color: #294a36; font: inherit; font-size: 12px; font-weight: 680; cursor: pointer; }
+.month-year-selector__formatted { min-width: 138px; color: #294a36; font-size: 12px; font-weight: 680; text-align: center; text-transform: capitalize; }
+.month-year-selector__today { min-height: 34px; padding: 0 11px; border: 1px solid #d8e4d9; border-radius: 7px; background: #f5f9f4; color: #315c43; font: inherit; font-size: 11px; font-weight: 650; cursor: pointer; }
+.month-year-selector__today:hover:not(:disabled) { background: #eaf3eb; }
+.month-year-selector__today:disabled { color: #98a39a; cursor: default; }
+.month-year-selector__arrow:focus-visible, .month-year-selector__picker input:focus-visible, .month-year-selector__today:focus-visible { outline: 3px solid rgb(69 132 94 / 35%); outline-offset: 2px; }
+.month-year-selector__sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; clip-path: inset(50%); }
+
+@media (max-width: 520px) {
+  .month-year-selector { justify-content: space-between; gap: 5px; padding: 5px; }
+  .month-year-selector__picker { min-width: 120px; }
+  .month-year-selector__formatted { display: none; }
+  .month-year-selector__today { padding: 0 8px; font-size: 10px; }
+}
