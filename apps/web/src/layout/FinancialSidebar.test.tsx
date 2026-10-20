@@ -195,7 +195,7 @@ describe('FinancialSidebar', () => {
     unmount()
     await renderSidebar()
     expect(document.querySelector('.financial-sidebar')).toHaveClass('financial-sidebar--collapsed')
-    expect(document.documentElement.style.getPropertyValue('--financial-sidebar-width')).toBe('76px')
+    await waitFor(() => expect(document.documentElement.style.getPropertyValue('--financial-sidebar-width')).toBe('76px'))
   })
 
   it('opens the mobile menu, closes it after choosing a section, and tracks viewport changes', async () => {
