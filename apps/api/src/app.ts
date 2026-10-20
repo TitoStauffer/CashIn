@@ -5,11 +5,16 @@ import { UnconfiguredEmailSender } from "./auth/email-sender.js";
 import { PostgresAuthRepository } from "./auth/postgres-auth.repository.js";
 import { registerAuthRoutes } from "./auth/auth.routes.js";
 import type { AuthConfiguration, AuthRepository, EmailSender } from "./auth/auth.types.js";
+import { CategoriesService } from "./categories/categories.service.js";
+import { PostgresCategoriesRepository } from "./categories/postgres-categories.repository.js";
+import { registerCategoryRoutes } from "./categories/categories.routes.js";
+import type { CategoryRepository } from "./categories/categories.types.js";
 
 export interface AppOptions {
   logger?: boolean;
   emailSender?: EmailSender;
   authRepository?: AuthRepository;
+  categoryRepository?: CategoryRepository;
   authConfiguration?: Partial<AuthConfiguration>;
   secureCookies?: boolean;
 }
@@ -68,6 +73,12 @@ export function createApp(
   registerAuthRoutes(app, {
     authService,
     secureCookies: options.secureCookies ?? false,
+  });
+
+  registerCategoryRoutes(app, {
+    categoriesService: new CategoriesService(
+      options.categoryRepository ?? new PostgresCategoriesRepository(database),
+    ),
   });
 
   return app;

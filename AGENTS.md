@@ -33,14 +33,9 @@
 ## Git e entrega
 - Use a chave de issue atribuída pelo Jira para identificar cada ticket; não invente nem mantenha uma sequência de números manualmente.
 - Use prefixos `feature/`, `fix/` e `chore/`, seguidos pela chave da issue e uma descrição curta, por exemplo: `feature/DEV-123-desc-da-feature`. Para iniciar o desenvolvimento de uma issue, crie a branch a partir da branch padrão do repositório.
-  - Ao concluir uma feature, pode criar um commit com mensagem objetiva neste formato, substituindo pela chave e pelo conteúdo reais do ticket:
-    ```text
-    [DEV-123] - título objetivo do ticket
-    * Primeira mudança de impacto
-    * Segunda mudança de impacto
-    ```
-    Cada item iniciado por `*` deve ficar em uma linha separada. Preserve a identidade Git configurada e não inclua coautoria do agente.
-- No fluxo de uma issue, o Agent de Product Manager pode criar a branch, fazer push e abrir o PR sem solicitação separada. O Agent de Product Manager pode fazer merge somente depois da aprovação do Code Review e de QA e da aprovação de todas as verificações configuradas. Deploy continua exigindo solicitação explícita.
+  - Ao concluir uma feature, pode criar um commit com Conventional Commits em português e mensagem objetiva, por exemplo: `feat(dev-123): gerenciar categorias`. Preserve a identidade Git configurada e não inclua coautoria do agente.
+- No fluxo de uma issue do projeto, o Agent de Product Manager está autorizado a criar a branch, fazer push e abrir ou atualizar o PR sem solicitar aprovação separada. Essa autorização vale para as mudanças necessárias à entrega da issue; não inclui deploy.
+- O Agent de Product Manager pode fazer merge somente depois da aprovação do Code Review e de QA e da aprovação de todas as verificações configuradas. Deploy continua exigindo solicitação explícita.
 
 
 ## Workflow
@@ -64,6 +59,7 @@
   - Aprovação do Code Review: `Code Review aprovado em [data e horário]. [Resumo da revisão ou link para a revisão].`
   - Aprovação do QA: `QA aprovado em [data e horário]. [Critérios validados e resultado].`
   - `In Review` → `Done` após o merge: `Merge concluído em [data e horário]. PR: [URL]. Code Review e QA aprovados.`
+- Quando uma História do MVP 1 chegar a `Done`, o Agent de Product Manager deve verificar se há outra História do épico `DEV-6` em `To Do` na sprint ativa. Se houver, deve ler a descrição, os critérios de aceitação, as dependências e o papel técnico principal; iniciar somente a próxima História priorizada pelo Jira, respeitando a ordem do quadro em caso de empate. Antes de iniciá-la, criar sua branch a partir da branch padrão e então movê-la de `To Do` para `In Progress`, registrando o comentário de início conforme a regra acima. Se o contexto, as dependências ou a ordem de prioridade não permitirem identificar com segurança qual ticket iniciar, perguntar ao usuário antes da transição. Não puxe automaticamente tickets de outras sprints ou épicos.
 - O workflow de uma entrega deve envolver somente os responsáveis pelas áreas incluídas no escopo:
   - Agent de Product Manager cria a História seguindo o template configurado e cria a branch conforme as regras de Git.
   - Agent de Product Manager indica na História o papel do Agent técnico principal conforme a principal área de implementação. Esse Agent puxa o ticket, movendo-o de `To Do` (`Tarefas pendentes`) para `In Progress` (`Em andamento`) pelas transições disponíveis no Jira, usando a conta Jira do usuário. Em Histórias que envolvam várias áreas, há um único Agent técnico principal; os demais Agents necessários colaboram na mesma História.

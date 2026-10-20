@@ -2,9 +2,10 @@ import { useEffect, useState } from 'react'
 import type { FormEvent } from 'react'
 import { AuthApiError, authApi } from './authApi'
 import type { User } from './authApi'
+import { CategoriesPage } from './categories/CategoriesPage'
 import './App.css'
 
-type Page = 'login' | 'register' | 'verify-email'
+type Page = 'login' | 'register' | 'verify-email' | 'categories'
 const pendingVerifications = new Map<string, Promise<unknown>>()
 const passwordPolicyMessage =
   'A senha deve ter pelo menos 8 caracteres, incluindo uma letra maiúscula, uma letra minúscula, um número e um caractere especial.'
@@ -57,6 +58,7 @@ function getPage(): Page {
   const path = window.location.pathname.replace(/\/$/, '')
   if (path.endsWith('/register')) return 'register'
   if (path.endsWith('/verify-email')) return 'verify-email'
+  if (path.endsWith('/categories')) return 'categories'
   return 'login'
 }
 
@@ -147,6 +149,7 @@ function App() {
       const response = await authApi.login(email.trim(), password)
       setUser(response.user)
       setPassword('')
+      window.location.assign('/categories')
     } catch (error) {
       setFormError(getErrorMessage(error, 'login'))
     } finally {
@@ -181,12 +184,22 @@ function App() {
     try {
       await authApi.logout()
       setUser(null)
-      window.history.replaceState(null, '', '/')
+      window.location.assign('/login')
     } catch (error) {
       setFormError(getErrorMessage(error, 'logout'))
     } finally {
       setIsSubmitting(false)
     }
+  }
+
+  if (!checkingSession && user && page === 'categories') {
+    return (
+      <CategoriesPage
+        userEmail={user.email}
+        isLoggingOut={isSubmitting}
+        onLogout={handleLogout}
+      />
+    )
   }
 
   return (
@@ -283,6 +296,7 @@ function App() {
                 <h2 id="form-title">Olá, que bom ter você por aqui.</h2>
                 <p className="form-description">Você entrou como <strong>{user.email}</strong>.</p>
                 {formError && <p className="alert alert--error" role="alert">{formError}</p>}
+                <a className="button" href="/categories">Gerenciar categorias <span aria-hidden="true">→</span></a>
                 <button className="button button--secondary" type="button" onClick={handleLogout} disabled={isSubmitting}>
                   {isSubmitting ? 'Encerrando sessão…' : 'Sair da conta'}
                 </button>
@@ -291,15 +305,26 @@ function App() {
               <>
                 <div className="form-heading">
                   <p className="form-eyebrow">{page === 'register' ? 'COMECE POR AQUI' : 'BEM-VINDO DE VOLTA'}</p>
-                  <h2 id="form-title">{page === 'register' ? 'Crie sua conta' : 'Entre na sua conta'}</h2>
+                  <h2 id="form-title">
+                    {page === 'register'
+                      ? 'Crie sua conta'
+                      : page === 'categories'
+                        ? 'Entre para acessar suas categorias'
+                        : 'Entre na sua conta'}
+                  </h2>
                   <p className="form-description">
                     {page === 'register'
                       ? 'Seus próximos passos financeiros começam aqui.'
-                      : 'Acesse seu espaço para continuar de onde parou.'}
+                      : page === 'categories'
+                        ? 'Acesse sua conta para organizar categorias e subcategorias.'
+                        : 'Acesse seu espaço para continuar de onde parou.'}
                   </p>
                 </div>
 
                 {sessionError && <p className="alert alert--info" role="status">{sessionError}</p>}
+                {page === 'categories' && (
+                  <p className="alert alert--info" role="status">Entre com sua conta para acessar suas categorias pessoais.</p>
+                )}
                 {formError && <p className="alert alert--error" role="alert">{formError}</p>}
                 {formMessage && <p className="alert alert--success" role="status">{formMessage}</p>}
 
