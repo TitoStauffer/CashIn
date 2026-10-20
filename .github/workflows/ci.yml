@@ -89,9 +89,12 @@ jobs:
           echo "::error::PostgreSQL did not become ready."
           exit 1
 
-      - name: Test (unit + integration)
-        # Single run of the project's own test command; the log feeds the next step.
-        run: npm test 2>&1 | tee "${RUNNER_TEMP}/api-test.log"
+      - name: Test with coverage (unit + integration)
+        # Single run of the suite: it validates the code and produces the LCOV report for SonarQube.
+        # The log feeds the skipped-test check below.
+        run: |
+          mkdir -p coverage
+          npm run test:coverage 2>&1 | tee "${RUNNER_TEMP}/api-test.log"
 
       - name: Ensure no test was skipped
         # Integration tests skip themselves when TEST_DATABASE_URL is missing.
@@ -108,6 +111,20 @@ jobs:
             exit 1
           fi
           echo "No skipped tests."
+
+      - name: Prepare coverage report for SonarQube
+        # SonarQube needs paths relative to the repository root in a monorepo (apps/api/src/...).
+        run: |
+          test -s coverage/lcov.info
+          sed -i 's#^SF:src/#SF:apps/api/src/#' coverage/lcov.info
+
+      - name: Upload coverage report
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: api-coverage
+          path: apps/api/coverage/lcov.info
+          if-no-files-found: error
+          retention-days: 7
 
       - name: Build
         run: npm run build
@@ -142,3 +159,33 @@ jobs:
       - name: Typecheck and build
         # The build script runs tsc -b before vite build.
         run: npm run build
+
+  sonarqube:
+    name: SonarQube
+    needs: [api, web]
+    # Secrets are not available to PRs from forks; skip instead of failing.
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Full history so SonarQube Cloud can detect new code and assign blame.
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Download coverage report
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: api-coverage
+          path: apps/api/coverage
+
+      - name: SonarQube Cloud scan
+        # The scanner waits for the Quality Gate so a failure is visible as a failed PR check.
+        uses: SonarSource/sonarqube-scan-action@d209202bc7d53ff1cc128f7f907dac145c9d6ae9 # v8.3.0
+        with:
+          args: -Dsonar.qualitygate.wait=true
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
