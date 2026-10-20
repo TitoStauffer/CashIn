@@ -85,4 +85,15 @@ describe('GoalsPage currency inputs', () => {
     await user.click(screen.getByRole('button', { name: 'Registrar aporte' }))
     await waitFor(() => expect(goalsApi.createContribution).toHaveBeenCalledWith('goal-1', expect.objectContaining({ amount: '12.34' })))
   })
+
+  it('opens the contribution form from the collapsed goal card', async () => {
+    const user = userEvent.setup()
+    render(<GoalsPage userEmail="tito@example.com" isLoggingOut={false} onLogout={vi.fn()} />)
+
+    await user.click(await screen.findByRole('button', { name: '＋ Registrar aporte' }))
+
+    expect(await screen.findByLabelText('Valor *')).toBeVisible()
+    await waitFor(() => expect(goalsApi.contributions).toHaveBeenCalledWith('goal-1'))
+    expect(goalsApi.createContribution).not.toHaveBeenCalled()
+  })
 })

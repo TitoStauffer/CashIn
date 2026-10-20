@@ -183,14 +183,7 @@ export function GoalsPage({ userEmail, isLoggingOut, onLogout }: GoalsPageProps)
     } finally { setSaving(false) }
   }
 
-  async function showContributions(goalId: string) {
-    if (expandedId === goalId) {
-      setExpandedId(null)
-      setContributionEditor(null)
-      return
-    }
-    setExpandedId(goalId)
-    setContributionEditor(null)
+  async function loadContributions(goalId: string) {
     if (contributions[goalId]) return
     setSaving(true)
     setError('')
@@ -202,9 +195,24 @@ export function GoalsPage({ userEmail, isLoggingOut, onLogout }: GoalsPageProps)
     } finally { setSaving(false) }
   }
 
+  async function showContributions(goalId: string) {
+    if (expandedId === goalId) {
+      setExpandedId(null)
+      setContributionEditor(null)
+      return
+    }
+    setExpandedId(goalId)
+    setContributionEditor(null)
+    await loadContributions(goalId)
+  }
+
   function createContribution(goalId: string) {
     setError('')
     setMessage('')
+    if (expandedId !== goalId) {
+      setExpandedId(goalId)
+      void loadContributions(goalId)
+    }
     setContributionGoalId(goalId)
     setContributionAmountInvalid(false)
     setContributionEditor({ id: null, amount: '', date: getToday(), description: '' })
