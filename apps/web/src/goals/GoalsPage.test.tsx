@@ -96,4 +96,29 @@ describe('GoalsPage currency inputs', () => {
     await waitFor(() => expect(goalsApi.contributions).toHaveBeenCalledWith('goal-1'))
     expect(goalsApi.createContribution).not.toHaveBeenCalled()
   })
+
+  it('reuses loaded contributions when the goal panel is reopened', async () => {
+    const user = userEvent.setup()
+    render(<GoalsPage userEmail="tito@example.com" isLoggingOut={false} onLogout={vi.fn()} />)
+
+    await user.click(await screen.findByRole('button', { name: 'Ver aportes' }))
+    expect(await screen.findByText(/Aporte mensal/)).toBeVisible()
+    await user.click(screen.getByRole('button', { name: 'Ocultar aportes' }))
+    await user.click(screen.getByRole('button', { name: 'Ver aportes' }))
+
+    expect(goalsApi.contributions).toHaveBeenCalledTimes(1)
+    expect(screen.getByText(/Aporte mensal/)).toBeVisible()
+  })
+
+  it('shows an error when contributions cannot be loaded from the goal card', async () => {
+    const user = userEvent.setup()
+    vi.mocked(goalsApi.contributions).mockRejectedValueOnce(new Error('offline'))
+    render(<GoalsPage userEmail="tito@example.com" isLoggingOut={false} onLogout={vi.fn()} />)
+
+    await user.click(await screen.findByRole('button', { name: '＋ Registrar aporte' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Não foi possível carregar os aportes.')
+    expect(screen.getByLabelText('Valor *')).toBeVisible()
+    expect(goalsApi.createContribution).not.toHaveBeenCalled()
+  })
 })
