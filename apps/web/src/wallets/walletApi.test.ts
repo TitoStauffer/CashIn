@@ -127,6 +127,6 @@ describe('financial wallet request context', () => {
     expect(fetch).toHaveBeenNthCalledWith(3, '/api/wallets/wallet%2Fone/invites/invite%2F1', expect.objectContaining({ method: 'DELETE' }))
     expect(fetch).toHaveBeenNthCalledWith(4, '/api/wallets/wallet%2Fone/members', expect.any(Object))
     expect(fetch).toHaveBeenNthCalledWith(5, '/api/wallets/wallet%2Fone/members/member%2F1', expect.objectContaining({ method: 'DELETE' }))
-    expect(fetch).toHaveBeenNthCalledWith(6, '/api/wallet-invites/accept', expect.objectContaining({ method: 'POST', body: JSON.stringify({ token: 'token' }) }))
+    expect(fetch).toHaveBeenNthCalledWith(6, '/api/wallet-invitations/accept', expect.objectContaining({ method: 'POST', body: JSON.stringify({ token: 'token' }) }))
   })
 })

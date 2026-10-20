@@ -88,7 +88,7 @@ export const walletApi = {
     })
   },
   acceptInvitation(token: string) {
-    return request<WalletInvitationAcceptResponse>('/wallet-invites/accept', {
+    return request<WalletInvitationAcceptResponse>('/wallet-invitations/accept', {
       method: 'POST',
       body: JSON.stringify({ token }),
     })
