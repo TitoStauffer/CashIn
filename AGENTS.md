@@ -55,6 +55,15 @@
 - Para cada feature do MVP 1 do CashIn, o Agent de Product Manager cria diretamente no Jira uma issue do tipo `História`, no projeto `DEV`, associa-a ao épico [DEV-6 — CashIn MVP 1](https://titostauffer.atlassian.net/browse/DEV-6) e a deixa em `To Do` (`Tarefas pendentes`). Use a chave atribuída pelo Jira e siga o template configurado na ferramenta, sem manter um template paralelo neste arquivo.
 - Como os Agents são papéis do fluxo, e não usuários Jira separados, mantenha as issues atribuídas à conta Jira do usuário. Registre na História o papel do Agent técnico principal.
 - Quando uma tarefa técnica precisar de acompanhamento separado, crie uma issue do tipo `Tarefa` e vincule-a à História correspondente.
+- Toda transição de status de uma issue Jira deve ser seguida por um comentário na própria issue, registrando o evento, o horário local no formato `DD/MM/AAAA HH:mm (America/Sao_Paulo)` e o contexto pertinente. Não presuma que a transição, o PR ou a revisão criará esse comentário automaticamente. Se a transição funcionar e o comentário falhar, tente novamente somente o comentário; não repita a transição.
+- Use mensagens claras conforme o evento:
+  - `To Do` → `In Progress`: `Iniciado em [data e horário].`
+  - `In Progress` → `In Review`: `Pronto para review em [data e horário]. PR: [URL].`
+  - `In Review` → `In Progress` por solicitação do Code Review: `De volta para In Progress em [data e horário]. Motivo: [resumo objetivo dos bloqueios].`
+  - `In Review` → `In Progress` por reprovação do QA: `De volta para In Progress em [data e horário]. Motivo: [critério não atendido e evidência].`
+  - Aprovação do Code Review: `Code Review aprovado em [data e horário]. [Resumo da revisão ou link para a revisão].`
+  - Aprovação do QA: `QA aprovado em [data e horário]. [Critérios validados e resultado].`
+  - `In Review` → `Done` após o merge: `Merge concluído em [data e horário]. PR: [URL]. Code Review e QA aprovados.`
 - O workflow de uma entrega deve envolver somente os responsáveis pelas áreas incluídas no escopo:
   - Agent de Product Manager cria a História seguindo o template configurado e cria a branch conforme as regras de Git.
   - Agent de Product Manager indica na História o papel do Agent técnico principal conforme a principal área de implementação. Esse Agent puxa o ticket, movendo-o de `To Do` (`Tarefas pendentes`) para `In Progress` (`Em andamento`) pelas transições disponíveis no Jira, usando a conta Jira do usuário. Em Histórias que envolvam várias áreas, há um único Agent técnico principal; os demais Agents necessários colaboram na mesma História.
