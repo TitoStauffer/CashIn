@@ -42,18 +42,18 @@ function mapReferenceError(error: unknown): never {
 export class ExpensesService {
   constructor(private readonly repository: ExpenseRepository) {}
 
-  listExpenses(userId: string, from?: string, to?: string): Promise<Expense[]> {
+  listExpenses(userId: string, walletId: string, from?: string, to?: string): Promise<Expense[]> {
     if (from) validateDate(from, "O filtro from");
     if (to) validateDate(to, "O filtro to");
     if (from && to && from > to) {
       throw new ExpenseError("O filtro from deve ser anterior ou igual ao filtro to.", 400);
     }
-    return this.repository.listExpenses(userId, from, to);
+    return this.repository.listExpenses(userId, walletId, from, to);
   }
 
-  async createExpense(userId: string, input: ExpenseInput): Promise<Expense> {
+  async createExpense(userId: string, walletId: string, input: ExpenseInput): Promise<Expense> {
     try {
-      const expense = await this.repository.createExpense(userId, normalizeInput(input));
+      const expense = await this.repository.createExpense(userId, walletId, normalizeInput(input));
       if (!expense) throw new InvalidExpenseReferenceError();
       return expense;
     } catch (error) {
@@ -61,12 +61,12 @@ export class ExpensesService {
     }
   }
 
-  async updateExpense(userId: string, expenseId: string, input: ExpenseInput): Promise<Expense> {
+  async updateExpense(userId: string, walletId: string, expenseId: string, input: ExpenseInput): Promise<Expense> {
     if (!UUID_PATTERN.test(expenseId)) throw new ExpenseError("Lançamento não encontrado.", 404);
     try {
-      const expense = await this.repository.updateExpense(userId, expenseId, normalizeInput(input));
+      const expense = await this.repository.updateExpense(userId, walletId, expenseId, normalizeInput(input));
       if (!expense) {
-        if (await this.repository.hasExpense(userId, expenseId)) throw new InvalidExpenseReferenceError();
+        if (await this.repository.hasExpense(userId, walletId, expenseId)) throw new InvalidExpenseReferenceError();
         throw new ExpenseError("Lançamento não encontrado.", 404);
       }
       return expense;
@@ -75,9 +75,9 @@ export class ExpensesService {
     }
   }
 
-  async deleteExpense(userId: string, expenseId: string): Promise<void> {
+  async deleteExpense(userId: string, walletId: string, expenseId: string): Promise<void> {
     if (!UUID_PATTERN.test(expenseId)) throw new ExpenseError("Lançamento não encontrado.", 404);
-    const deleted = await this.repository.deleteExpense(userId, expenseId);
+    const deleted = await this.repository.deleteExpense(userId, walletId, expenseId);
     if (!deleted) throw new ExpenseError("Lançamento não encontrado.", 404);
   }
 }

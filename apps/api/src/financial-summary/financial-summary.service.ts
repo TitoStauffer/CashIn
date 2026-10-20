@@ -14,12 +14,12 @@ function validateDate(value: string, label: string): void {
 export class FinancialSummaryService {
   constructor(private readonly repository: FinancialSummaryRepository) {}
 
-  getSummary(userId: string, from?: string, to?: string): Promise<FinancialSummary> {
+  getSummary(walletId: string, from?: string, to?: string): Promise<FinancialSummary> {
     if (from) validateDate(from, "O filtro from");
     if (to) validateDate(to, "O filtro to");
     if (from && to && from > to) {
       throw new FinancialSummaryError("O filtro from deve ser anterior ou igual ao filtro to.", 400);
     }
-    return this.repository.getSummary(userId, from, to);
+    return this.repository.getSummary(walletId, from, to);
   }
 }

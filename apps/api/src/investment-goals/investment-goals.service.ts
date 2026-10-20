@@ -76,20 +76,20 @@ function mapReferenceError(error: unknown): never {
 export class InvestmentGoalsService {
   constructor(private readonly repository: InvestmentGoalsRepository) {}
 
-  listGoals(userId: string): Promise<InvestmentGoal[]> {
-    return this.repository.listGoals(userId);
+  listGoals(userId: string, walletId: string): Promise<InvestmentGoal[]> {
+    return this.repository.listGoals(userId, walletId);
   }
 
-  async getGoal(userId: string, goalId: string): Promise<InvestmentGoal> {
+  async getGoal(userId: string, walletId: string, goalId: string): Promise<InvestmentGoal> {
     if (!UUID_PATTERN.test(goalId)) throw new InvestmentGoalError("Meta de investimento não encontrada.", 404);
-    const goal = await this.repository.getGoal(userId, goalId);
+    const goal = await this.repository.getGoal(userId, walletId, goalId);
     if (!goal) throw new InvestmentGoalError("Meta de investimento não encontrada.", 404);
     return goal;
   }
 
-  async createGoal(userId: string, input: InvestmentGoalInput): Promise<InvestmentGoal> {
+  async createGoal(userId: string, walletId: string, input: InvestmentGoalInput): Promise<InvestmentGoal> {
     try {
-      const goal = await this.repository.createGoal(userId, normalizeGoal(input));
+      const goal = await this.repository.createGoal(userId, walletId, normalizeGoal(input));
       if (!goal) throw new InvalidInvestmentGoalReferenceError();
       return goal;
     } catch (error) {
@@ -97,13 +97,13 @@ export class InvestmentGoalsService {
     }
   }
 
-  async updateGoal(userId: string, goalId: string, input: InvestmentGoalInput): Promise<InvestmentGoal> {
+  async updateGoal(userId: string, walletId: string, goalId: string, input: InvestmentGoalInput): Promise<InvestmentGoal> {
     if (!UUID_PATTERN.test(goalId)) throw new InvestmentGoalError("Meta de investimento não encontrada.", 404);
     try {
-      const goal = await this.repository.updateGoal(userId, goalId, normalizeGoal(input));
+      const goal = await this.repository.updateGoal(userId, walletId, goalId, normalizeGoal(input));
       if (!goal) {
-        if (await this.repository.hasGoal(userId, goalId)) {
-          if ((await this.repository.getGoal(userId, goalId))?.status === "closed") throw new ClosedInvestmentGoalError();
+        if (await this.repository.hasGoal(userId, walletId, goalId)) {
+          if ((await this.repository.getGoal(userId, walletId, goalId))?.status === "closed") throw new ClosedInvestmentGoalError();
           throw new InvalidInvestmentGoalReferenceError();
         }
         throw new InvestmentGoalError("Meta de investimento não encontrada.", 404);
@@ -114,28 +114,29 @@ export class InvestmentGoalsService {
     }
   }
 
-  async closeGoal(userId: string, goalId: string): Promise<InvestmentGoal> {
+  async closeGoal(userId: string, walletId: string, goalId: string): Promise<InvestmentGoal> {
     if (!UUID_PATTERN.test(goalId)) throw new InvestmentGoalError("Meta de investimento não encontrada.", 404);
-    const goal = await this.repository.closeGoal(userId, goalId);
+    const goal = await this.repository.closeGoal(userId, walletId, goalId);
     if (!goal) throw new InvestmentGoalError("Meta de investimento não encontrada.", 404);
     return goal;
   }
 
-  async listContributions(userId: string, goalId: string): Promise<InvestmentContribution[]> {
-    await this.requireGoal(userId, goalId);
-    return this.repository.listContributions(userId, goalId);
+  async listContributions(userId: string, walletId: string, goalId: string): Promise<InvestmentContribution[]> {
+    await this.requireGoal(userId, walletId, goalId);
+    return this.repository.listContributions(userId, walletId, goalId);
   }
 
   async createContribution(
     userId: string,
+    walletId: string,
     goalId: string,
     input: InvestmentContributionInput,
   ): Promise<InvestmentContribution> {
-    await this.requireGoal(userId, goalId);
+    await this.requireGoal(userId, walletId, goalId);
     try {
-      const contribution = await this.repository.createContribution(userId, goalId, normalizeContribution(input));
+      const contribution = await this.repository.createContribution(userId, walletId, goalId, normalizeContribution(input));
       if (!contribution) {
-        if (!(await this.repository.hasGoal(userId, goalId))) throw new InvestmentGoalError("Meta de investimento não encontrada.", 404);
+        if (!(await this.repository.hasGoal(userId, walletId, goalId))) throw new InvestmentGoalError("Meta de investimento não encontrada.", 404);
         throw new ClosedInvestmentGoalError();
       }
       return contribution;
@@ -146,20 +147,22 @@ export class InvestmentGoalsService {
 
   async updateContribution(
     userId: string,
+    walletId: string,
     goalId: string,
     contributionId: string,
     input: InvestmentContributionInput,
   ): Promise<InvestmentContribution> {
-    await this.requireGoal(userId, goalId);
+    await this.requireGoal(userId, walletId, goalId);
     if (!UUID_PATTERN.test(contributionId)) throw new InvestmentGoalError("Aporte não encontrado.", 404);
     const contribution = await this.repository.updateContribution(
       userId,
+      walletId,
       goalId,
       contributionId,
       normalizeContribution(input),
     );
     if (!contribution) {
-      if (await this.repository.hasContribution(userId, goalId, contributionId)) {
+      if (await this.repository.hasContribution(userId, walletId, goalId, contributionId)) {
         throw new ClosedInvestmentGoalError();
       }
       throw new InvestmentGoalError("Aporte não encontrado.", 404);
@@ -167,20 +170,20 @@ export class InvestmentGoalsService {
     return contribution;
   }
 
-  async deleteContribution(userId: string, goalId: string, contributionId: string): Promise<void> {
-    await this.requireGoal(userId, goalId);
+  async deleteContribution(userId: string, walletId: string, goalId: string, contributionId: string): Promise<void> {
+    await this.requireGoal(userId, walletId, goalId);
     if (!UUID_PATTERN.test(contributionId)) throw new InvestmentGoalError("Aporte não encontrado.", 404);
-    const deleted = await this.repository.deleteContribution(userId, goalId, contributionId);
+    const deleted = await this.repository.deleteContribution(userId, walletId, goalId, contributionId);
     if (!deleted) {
-      if (await this.repository.hasContribution(userId, goalId, contributionId)) {
+      if (await this.repository.hasContribution(userId, walletId, goalId, contributionId)) {
         throw new ClosedInvestmentGoalError();
       }
       throw new InvestmentGoalError("Aporte não encontrado.", 404);
     }
   }
 
-  private async requireGoal(userId: string, goalId: string): Promise<void> {
-    if (!UUID_PATTERN.test(goalId) || !(await this.repository.hasGoal(userId, goalId))) {
+  private async requireGoal(userId: string, walletId: string, goalId: string): Promise<void> {
+    if (!UUID_PATTERN.test(goalId) || !(await this.repository.hasGoal(userId, walletId, goalId))) {
       throw new InvestmentGoalError("Meta de investimento não encontrada.", 404);
     }
   }

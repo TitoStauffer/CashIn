@@ -20,9 +20,9 @@ export interface IncomeInput {
 }
 
 export interface IncomeRepository {
-  listIncomes(userId: string, from?: string, to?: string): Promise<Income[]>;
-  createIncome(userId: string, input: Required<IncomeInput>): Promise<Income | null>;
-  updateIncome(userId: string, incomeId: string, input: Required<IncomeInput>): Promise<Income | null>;
-  deleteIncome(userId: string, incomeId: string): Promise<boolean>;
-  hasIncome(userId: string, incomeId: string): Promise<boolean>;
+  listIncomes(userId: string, walletId: string, from?: string, to?: string): Promise<Income[]>;
+  createIncome(userId: string, walletId: string, input: Required<IncomeInput>): Promise<Income | null>;
+  updateIncome(userId: string, walletId: string, incomeId: string, input: Required<IncomeInput>): Promise<Income | null>;
+  deleteIncome(userId: string, walletId: string, incomeId: string): Promise<boolean>;
+  hasIncome(userId: string, walletId: string, incomeId: string): Promise<boolean>;
 }

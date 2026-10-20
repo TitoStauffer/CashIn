@@ -4,12 +4,20 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { categoriesApi } from '../categories/categoriesApi'
 import { ExpensesPage } from './ExpensesPage'
 import { expensesApi } from './expensesApi'
+import { WalletProvider } from '../wallets/WalletContext'
+import { walletApi } from '../wallets/walletApi'
 
 const category = { id: 'expense-category', name: 'Moradia', nature: 'expense' as const, subcategories: [] }
 const expense = {
   id: 'expense-1', amount: '1234.56', date: '2026-10-02', description: 'Aluguel',
   categoryId: category.id, categoryName: category.name, subcategoryId: null, subcategoryName: null,
   createdAt: '2026-10-02T12:00:00.000Z', updatedAt: '2026-10-02T12:00:00.000Z',
+}
+const personalWallet = { id: 'wallet-personal', name: 'Pessoal', isPersonal: true, role: 'owner' as const }
+async function renderPage() {
+  const result = render(<WalletProvider userId="user-1"><ExpensesPage userEmail="tito@example.com" isLoggingOut={false} onLogout={vi.fn()} /></WalletProvider>)
+  await screen.findByRole('combobox', { name: /Carteira ativa/ })
+  return result
 }
 
 function deferred<T>() {
@@ -25,6 +33,7 @@ describe('ExpensesPage currency input', () => {
       addEventListener: vi.fn(), removeEventListener: vi.fn(), addListener: vi.fn(), removeListener: vi.fn(), dispatchEvent: vi.fn(),
     })))
     vi.spyOn(categoriesApi, 'list').mockResolvedValue({ items: [category] })
+    vi.spyOn(walletApi, 'list').mockResolvedValue({ items: [personalWallet] })
     vi.spyOn(expensesApi, 'list').mockResolvedValue({ items: [expense] })
     vi.spyOn(expensesApi, 'create').mockResolvedValue(expense)
     vi.spyOn(expensesApi, 'update').mockResolvedValue(expense)
@@ -38,7 +47,7 @@ describe('ExpensesPage currency input', () => {
 
   it('formats saved values, rejects invalid pasted values, and sends a canonical decimal on create', async () => {
     const user = userEvent.setup()
-    render(<ExpensesPage userEmail="tito@example.com" isLoggingOut={false} onLogout={vi.fn()} />)
+    await renderPage()
     await user.click(await screen.findByRole('button', { name: /Nova despesa/ }))
 
     const amount = screen.getByLabelText('Valor *')
@@ -56,7 +65,7 @@ describe('ExpensesPage currency input', () => {
 
   it('loads an existing amount into the edit field and updates it without losing cents', async () => {
     const user = userEvent.setup()
-    render(<ExpensesPage userEmail="tito@example.com" isLoggingOut={false} onLogout={vi.fn()} />)
+    await renderPage()
     await user.click(await screen.findByRole('button', { name: 'Editar despesa Aluguel' }))
 
     const amount = screen.getByLabelText('Valor *')
@@ -70,7 +79,7 @@ describe('ExpensesPage currency input', () => {
   it('shows a recoverable error when expenses cannot be loaded', async () => {
     const user = userEvent.setup()
     vi.mocked(expensesApi.list).mockRejectedValueOnce(new Error('offline'))
-    render(<ExpensesPage userEmail="tito@example.com" isLoggingOut={false} onLogout={vi.fn()} />)
+    await renderPage()
 
     expect(await screen.findByRole('alert')).toHaveTextContent('Não foi possível conectar ao serviço.')
     await user.click(screen.getByRole('button', { name: 'Tentar novamente' }))
@@ -86,7 +95,7 @@ describe('ExpensesPage currency input', () => {
       .mockReturnValueOnce(initialLoad.promise)
       .mockResolvedValueOnce({ items: [expense] })
     vi.mocked(expensesApi.create).mockReturnValueOnce(createRequest.promise)
-    render(<ExpensesPage userEmail="tito@example.com" isLoggingOut={false} onLogout={vi.fn()} />)
+    await renderPage()
 
     expect(screen.getByRole('status')).toHaveTextContent('Carregando despesas')
     initialLoad.resolve({ items: [expense] })

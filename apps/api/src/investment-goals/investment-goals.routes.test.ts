@@ -12,6 +12,7 @@ import type {
   InvestmentGoalInput,
   InvestmentGoalsRepository,
 } from "./investment-goals.types.js";
+import { WalletsTestFixture } from "../wallets/wallets-test-fixture.js";
 
 const USER_A = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const USER_B = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
@@ -54,14 +55,14 @@ class MemoryInvestmentGoalsRepository implements InvestmentGoalsRepository {
     return { ...result, contributedAmount: (total / 100).toFixed(2), progressPercentage: Number((total / 100 / Number(goal.targetAmount) * 100).toFixed(2)) };
   }
 
-  async listGoals(userId: string): Promise<InvestmentGoal[]> {
+  async listGoals(userId: string, _walletId: string): Promise<InvestmentGoal[]> {
     return [...this.goals.values()].filter((goal) => goal.userId === userId).map((goal) => this.toGoal(goal));
   }
-  async getGoal(userId: string, goalId: string): Promise<InvestmentGoal | null> {
+  async getGoal(userId: string, _walletId: string, goalId: string): Promise<InvestmentGoal | null> {
     const goal = this.goals.get(goalId);
     return goal?.userId === userId ? this.toGoal(goal) : null;
   }
-  async createGoal(userId: string, input: Required<InvestmentGoalInput>): Promise<InvestmentGoal> {
+  async createGoal(userId: string, _walletId: string, input: Required<InvestmentGoalInput>): Promise<InvestmentGoal> {
     if ([...this.goals.values()].some((goal) => goal.userId === userId && normalizeName(goal.title) === normalizeName(input.title))) {
       throw new DuplicateInvestmentGoalError();
     }
@@ -73,7 +74,7 @@ class MemoryInvestmentGoalsRepository implements InvestmentGoalsRepository {
     this.goals.set(goal.id, goal);
     return this.toGoal(goal);
   }
-  async updateGoal(userId: string, goalId: string, input: Required<InvestmentGoalInput>): Promise<InvestmentGoal | null> {
+  async updateGoal(userId: string, _walletId: string, goalId: string, input: Required<InvestmentGoalInput>): Promise<InvestmentGoal | null> {
     const goal = this.goals.get(goalId);
     if (!goal || goal.userId !== userId || goal.status === "closed") return null;
     if ([...this.goals.values()].some((candidate) =>
@@ -83,18 +84,18 @@ class MemoryInvestmentGoalsRepository implements InvestmentGoalsRepository {
     Object.assign(goal, input);
     return this.toGoal(goal);
   }
-  async closeGoal(userId: string, goalId: string): Promise<InvestmentGoal | null> {
+  async closeGoal(userId: string, _walletId: string, goalId: string): Promise<InvestmentGoal | null> {
     const goal = this.goals.get(goalId);
     if (!goal || goal.userId !== userId) return null;
     goal.status = "closed";
     return this.toGoal(goal);
   }
-  async hasGoal(userId: string, goalId: string): Promise<boolean> { return this.goals.get(goalId)?.userId === userId; }
-  async listContributions(userId: string, goalId: string): Promise<InvestmentContribution[]> {
+  async hasGoal(userId: string, _walletId: string, goalId: string): Promise<boolean> { return this.goals.get(goalId)?.userId === userId; }
+  async listContributions(userId: string, _walletId: string, goalId: string): Promise<InvestmentContribution[]> {
     return [...this.contributions.values()].filter((item) => item.userId === userId && item.goalId === goalId)
       .map(({ userId: _userId, goalId: _goalId, ...item }) => item);
   }
-  async createContribution(userId: string, goalId: string, input: Required<InvestmentContributionInput>): Promise<InvestmentContribution | null> {
+  async createContribution(userId: string, _walletId: string, goalId: string, input: Required<InvestmentContributionInput>): Promise<InvestmentContribution | null> {
     const goal = this.goals.get(goalId);
     if (!goal || goal.userId !== userId || goal.status === "closed") return null;
     const contribution = { id: this.createId(), userId, goalId, ...input, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
@@ -102,7 +103,7 @@ class MemoryInvestmentGoalsRepository implements InvestmentGoalsRepository {
     const { userId: _userId, goalId: _goalId, ...result } = contribution;
     return result;
   }
-  async updateContribution(userId: string, goalId: string, contributionId: string, input: Required<InvestmentContributionInput>): Promise<InvestmentContribution | null> {
+  async updateContribution(userId: string, _walletId: string, goalId: string, contributionId: string, input: Required<InvestmentContributionInput>): Promise<InvestmentContribution | null> {
     const item = this.contributions.get(contributionId);
     const goal = this.goals.get(goalId);
     if (!item || item.userId !== userId || item.goalId !== goalId || goal?.status === "closed") return null;
@@ -110,14 +111,14 @@ class MemoryInvestmentGoalsRepository implements InvestmentGoalsRepository {
     const { userId: _userId, goalId: _goalId, ...result } = item;
     return result;
   }
-  async deleteContribution(userId: string, goalId: string, contributionId: string): Promise<boolean> {
+  async deleteContribution(userId: string, _walletId: string, goalId: string, contributionId: string): Promise<boolean> {
     const item = this.contributions.get(contributionId);
     const goal = this.goals.get(goalId);
     return item?.userId === userId && item.goalId === goalId && goal?.status === "active"
       ? this.contributions.delete(contributionId)
       : false;
   }
-  async hasContribution(userId: string, goalId: string, contributionId: string): Promise<boolean> {
+  async hasContribution(userId: string, _walletId: string, goalId: string, contributionId: string): Promise<boolean> {
     const item = this.contributions.get(contributionId);
     return item?.userId === userId && item.goalId === goalId;
   }
@@ -132,6 +133,7 @@ function createTestApp(repository = new MemoryInvestmentGoalsRepository()) {
   const app = createApp(createDatabase(), {
     authRepository: new SessionAuthRepository(),
     investmentGoalsRepository: repository,
+    walletRepository: new WalletsTestFixture(),
   });
   return { app, repository };
 }

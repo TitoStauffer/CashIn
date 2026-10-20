@@ -7,6 +7,7 @@ import { ExpensesPage } from './expenses/ExpensesPage'
 import { IncomesPage } from './incomes/IncomesPage'
 import { GoalsPage } from './goals/GoalsPage'
 import { DashboardPage } from './dashboard/DashboardPage'
+import { WalletProvider } from './wallets/WalletContext'
 import './App.css'
 
 type Page = 'login' | 'register' | 'verify-email' | 'dashboard' | 'categories' | 'incomes' | 'expenses' | 'goals'
@@ -202,51 +203,41 @@ function App() {
 
   if (!checkingSession && user && page === 'categories') {
     return (
-      <CategoriesPage
-        userEmail={user.email}
-        isLoggingOut={isSubmitting}
-        onLogout={handleLogout}
-      />
+      <WalletProvider userId={user.id}>
+        <CategoriesPage userEmail={user.email} isLoggingOut={isSubmitting} onLogout={handleLogout} />
+      </WalletProvider>
     )
   }
 
   if (!checkingSession && user && page === 'dashboard') {
     return (
-      <DashboardPage
-        userEmail={user.email}
-        isLoggingOut={isSubmitting}
-        onLogout={handleLogout}
-      />
+      <WalletProvider userId={user.id}>
+        <DashboardPage userEmail={user.email} isLoggingOut={isSubmitting} onLogout={handleLogout} />
+      </WalletProvider>
     )
   }
 
   if (!checkingSession && user && page === 'incomes') {
     return (
-      <IncomesPage
-        userEmail={user.email}
-        isLoggingOut={isSubmitting}
-        onLogout={handleLogout}
-      />
+      <WalletProvider userId={user.id}>
+        <IncomesPage userEmail={user.email} isLoggingOut={isSubmitting} onLogout={handleLogout} />
+      </WalletProvider>
     )
   }
 
   if (!checkingSession && user && page === 'expenses') {
     return (
-      <ExpensesPage
-        userEmail={user.email}
-        isLoggingOut={isSubmitting}
-        onLogout={handleLogout}
-      />
+      <WalletProvider userId={user.id}>
+        <ExpensesPage userEmail={user.email} isLoggingOut={isSubmitting} onLogout={handleLogout} />
+      </WalletProvider>
     )
   }
 
   if (!checkingSession && user && page === 'goals') {
     return (
-      <GoalsPage
-        userEmail={user.email}
-        isLoggingOut={isSubmitting}
-        onLogout={handleLogout}
-      />
+      <WalletProvider userId={user.id}>
+        <GoalsPage userEmail={user.email} isLoggingOut={isSubmitting} onLogout={handleLogout} />
+      </WalletProvider>
     )
   }
 

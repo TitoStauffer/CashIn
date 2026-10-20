@@ -3,6 +3,8 @@ import userEvent from '@testing-library/user-event'
 import type { ComponentProps } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { FinancialSidebar } from './FinancialSidebar'
+import { WalletProvider } from '../wallets/WalletContext'
+import { walletApi } from '../wallets/walletApi'
 
 const collapsedStorageKey = 'saldocerto.navigation.collapsed'
 const mediaListeners = new Set<(event: MediaQueryListEvent) => void>()
@@ -31,16 +33,20 @@ function setViewport(isMobile: boolean) {
   mediaListeners.forEach((listener) => listener(event))
 }
 
-function renderSidebar(props: Partial<ComponentProps<typeof FinancialSidebar>> = {}) {
-  return render(
-    <FinancialSidebar
-      activePage="dashboard"
-      userEmail="tito@example.com"
-      isLoggingOut={false}
-      onLogout={vi.fn()}
-      {...props}
-    />,
+async function renderSidebar(props: Partial<ComponentProps<typeof FinancialSidebar>> = {}) {
+  const result = render(
+    <WalletProvider userId="user-1">
+      <FinancialSidebar
+        activePage="dashboard"
+        userEmail="tito@example.com"
+        isLoggingOut={false}
+        onLogout={vi.fn()}
+        {...props}
+      />
+    </WalletProvider>,
   )
+  await screen.findByRole('combobox', { name: /Carteira ativa/ })
+  return result
 }
 
 describe('FinancialSidebar', () => {
@@ -49,6 +55,11 @@ describe('FinancialSidebar', () => {
     mediaListeners.clear()
     window.localStorage.clear()
     vi.stubGlobal('matchMedia', vi.fn(createMediaQueryList))
+    vi.spyOn(walletApi, 'list').mockResolvedValue({ items: [
+      { id: 'wallet-personal', name: 'Pessoal', isPersonal: true, role: 'owner' },
+      { id: 'wallet-shared', name: 'Família', isPersonal: false, role: 'member' },
+    ] })
+    vi.spyOn(walletApi, 'create').mockResolvedValue({ id: 'wallet-new', name: 'Viagem', isPersonal: false, role: 'owner' })
   })
 
   afterEach(() => {
@@ -61,7 +72,7 @@ describe('FinancialSidebar', () => {
   it('shows all sections, marks the active page, and invokes logout', async () => {
     const user = userEvent.setup()
     const onLogout = vi.fn()
-    renderSidebar({ activePage: 'expenses', onLogout })
+    await renderSidebar({ activePage: 'expenses', onLogout })
 
     expect(screen.getByRole('navigation', { name: 'Navegação principal' })).toBeVisible()
     expect(screen.getByRole('link', { name: 'Despesas' })).toHaveAttribute('aria-current', 'page')
@@ -75,9 +86,83 @@ describe('FinancialSidebar', () => {
     expect(onLogout).toHaveBeenCalledOnce()
   })
 
+  it('keeps the selected wallet for this account and creates a new wallet as active', async () => {
+    const user = userEvent.setup()
+    await renderSidebar()
+
+    const selector = await screen.findByRole('combobox', { name: 'Carteira ativa: Pessoal' })
+    await user.selectOptions(selector, 'wallet-shared')
+    expect(window.localStorage.getItem('saldocerto.active-wallet.user-1')).toBe('wallet-shared')
+
+    await user.click(screen.getByRole('button', { name: /Nova carteira/ }))
+    await user.type(screen.getByLabelText('Nome da carteira'), 'Viagem')
+    await user.click(screen.getByRole('button', { name: 'Criar carteira' }))
+
+    await waitFor(() => expect(walletApi.create).toHaveBeenCalledWith('Viagem'))
+    expect(await screen.findByRole('combobox', { name: 'Carteira ativa: Viagem' })).toHaveValue('wallet-new')
+    expect(window.localStorage.getItem('saldocerto.active-wallet.user-1')).toBe('wallet-new')
+  })
+
+  it('restores the saved wallet when it still belongs to the account', async () => {
+    window.localStorage.setItem('saldocerto.active-wallet.user-1', 'wallet-shared')
+    renderSidebar()
+
+    expect(await screen.findByRole('combobox', { name: 'Carteira ativa: Família' })).toHaveValue('wallet-shared')
+  })
+
+  it('falls back to the personal wallet when the saved selection is no longer available', async () => {
+    window.localStorage.setItem('saldocerto.active-wallet.user-1', 'wallet-removed')
+    renderSidebar()
+
+    expect(await screen.findByRole('combobox', { name: 'Carteira ativa: Pessoal' })).toHaveValue('wallet-personal')
+    expect(window.localStorage.getItem('saldocerto.active-wallet.user-1')).toBe('wallet-personal')
+  })
+
+  it('shows a retry action when the wallet list cannot be loaded', async () => {
+    const user = userEvent.setup()
+    vi.mocked(walletApi.list)
+      .mockRejectedValueOnce(new Error('offline'))
+      .mockResolvedValueOnce({ items: [{ id: 'wallet-personal', name: 'Pessoal', isPersonal: true, role: 'owner' }] })
+    render(
+      <WalletProvider userId="user-1">
+        <FinancialSidebar activePage="dashboard" userEmail="tito@example.com" isLoggingOut={false} onLogout={vi.fn()} />
+      </WalletProvider>,
+    )
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('offline')
+    await user.click(screen.getByRole('button', { name: 'Tentar novamente' }))
+    expect(await screen.findByRole('combobox', { name: 'Carteira ativa: Pessoal' })).toBeVisible()
+    expect(walletApi.list).toHaveBeenCalledTimes(2)
+  })
+
+  it('shows an empty-state retry when no wallets are returned', async () => {
+    vi.mocked(walletApi.list).mockResolvedValueOnce({ items: [] })
+    render(
+      <WalletProvider userId="user-1">
+        <FinancialSidebar activePage="dashboard" userEmail="tito@example.com" isLoggingOut={false} onLogout={vi.fn()} />
+      </WalletProvider>,
+    )
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Nenhuma carteira está disponível')
+    expect(screen.getByRole('button', { name: 'Tentar novamente' })).toBeEnabled()
+  })
+
+  it('keeps the active wallet and reports an error when creation fails', async () => {
+    const user = userEvent.setup()
+    vi.mocked(walletApi.create).mockRejectedValueOnce(new Error('Falha de criação'))
+    await renderSidebar()
+
+    await user.click(screen.getByRole('button', { name: /Nova carteira/ }))
+    await user.type(screen.getByLabelText('Nome da carteira'), 'Viagem')
+    await user.click(screen.getByRole('button', { name: 'Criar carteira' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Falha de criação')
+    expect(screen.getByRole('combobox', { name: 'Carteira ativa: Pessoal' })).toHaveValue('wallet-personal')
+  })
+
   it('collapses with the keyboard and restores the saved preference on the next render', async () => {
     const user = userEvent.setup()
-    const { container, unmount } = renderSidebar()
+    const { container, unmount } = await renderSidebar()
     const collapseButton = screen.getByRole('button', { name: 'Recolher menu' })
 
     await user.tab()
@@ -91,7 +176,7 @@ describe('FinancialSidebar', () => {
     expect(screen.getByRole('link', { name: 'Entradas' })).toHaveAttribute('title', 'Entradas')
 
     unmount()
-    renderSidebar()
+    await renderSidebar()
     expect(document.querySelector('.financial-sidebar')).toHaveClass('financial-sidebar--collapsed')
     expect(document.documentElement.style.getPropertyValue('--financial-sidebar-width')).toBe('76px')
   })
@@ -99,7 +184,7 @@ describe('FinancialSidebar', () => {
   it('opens the mobile menu, closes it after choosing a section, and tracks viewport changes', async () => {
     isMobileViewport = true
     const user = userEvent.setup()
-    const { container } = renderSidebar({ activePage: 'incomes' })
+    const { container } = await renderSidebar({ activePage: 'incomes' })
     const navigation = container.querySelector('nav')
     expect(navigation).not.toBeNull()
     navigation?.addEventListener('click', (event) => event.preventDefault())
@@ -118,8 +203,8 @@ describe('FinancialSidebar', () => {
     expect(container.querySelector('.financial-sidebar')).toHaveClass('financial-sidebar--collapsed')
   })
 
-  it('shows a disabled logout state while a logout request is running', () => {
-    renderSidebar({ isLoggingOut: true })
+  it('shows a disabled logout state while a logout request is running', async () => {
+    await renderSidebar({ isLoggingOut: true })
     expect(screen.getByRole('button', { name: 'Saindo da conta' })).toBeDisabled()
     expect(screen.getByText('Saindo…')).toBeVisible()
   })
@@ -128,7 +213,7 @@ describe('FinancialSidebar', () => {
     vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => { throw new Error('Storage unavailable') })
     vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new Error('Storage unavailable') })
     const user = userEvent.setup()
-    const { container } = renderSidebar()
+    const { container } = await renderSidebar()
 
     await user.click(screen.getByRole('button', { name: 'Recolher menu' }))
     expect(container.querySelector('.financial-sidebar')).toHaveClass('financial-sidebar--collapsed')

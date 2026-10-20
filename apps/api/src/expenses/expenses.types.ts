@@ -20,9 +20,9 @@ export interface ExpenseInput {
 }
 
 export interface ExpenseRepository {
-  listExpenses(userId: string, from?: string, to?: string): Promise<Expense[]>;
-  createExpense(userId: string, input: Required<ExpenseInput>): Promise<Expense | null>;
-  updateExpense(userId: string, expenseId: string, input: Required<ExpenseInput>): Promise<Expense | null>;
-  deleteExpense(userId: string, expenseId: string): Promise<boolean>;
-  hasExpense(userId: string, expenseId: string): Promise<boolean>;
+  listExpenses(userId: string, walletId: string, from?: string, to?: string): Promise<Expense[]>;
+  createExpense(userId: string, walletId: string, input: Required<ExpenseInput>): Promise<Expense | null>;
+  updateExpense(userId: string, walletId: string, expenseId: string, input: Required<ExpenseInput>): Promise<Expense | null>;
+  deleteExpense(userId: string, walletId: string, expenseId: string): Promise<boolean>;
+  hasExpense(userId: string, walletId: string, expenseId: string): Promise<boolean>;
 }

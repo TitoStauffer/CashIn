@@ -63,14 +63,17 @@ export async function runMigrations(database: Database): Promise<void> {
     .sort();
 
   for (const fileName of fileNames) {
-    const alreadyApplied = await database.query<{ version: string }>(
-      "SELECT version FROM schema_migrations WHERE version = $1",
-      [fileName],
-    );
-    if (alreadyApplied.rows.length > 0) continue;
-
     const migration = await readFile(join(directoryPath, fileName), "utf8");
     await database.transaction(async (transaction) => {
+      // Serialize the check-and-apply sequence across API replicas. The lock is
+      // released automatically when the transaction commits or rolls back.
+      await transaction.query("SELECT pg_advisory_xact_lock(6052252091476)");
+      const alreadyApplied = await transaction.query<{ version: string }>(
+        "SELECT version FROM schema_migrations WHERE version = $1",
+        [fileName],
+      );
+      if (alreadyApplied.rows.length > 0) return;
+
       await transaction.query(migration);
       await transaction.query(
         "INSERT INTO schema_migrations (version) VALUES ($1)",

@@ -16,16 +16,17 @@ export interface Category {
 }
 
 export interface CategoryRepository {
-  listCategories(userId: string, nature?: CategoryNature): Promise<Category[]>;
-  createCategory(userId: string, name: string, nature: CategoryNature): Promise<Category>;
-  updateCategoryName(userId: string, categoryId: string, name: string): Promise<Category | null>;
-  deleteCategory(userId: string, categoryId: string): Promise<boolean>;
-  createSubcategory(userId: string, categoryId: string, name: string): Promise<CategorySubcategory | null>;
+  listCategories(userId: string, walletId: string, nature?: CategoryNature): Promise<Category[]>;
+  createCategory(userId: string, walletId: string, name: string, nature: CategoryNature): Promise<Category>;
+  updateCategoryName(userId: string, walletId: string, categoryId: string, name: string): Promise<Category | null>;
+  deleteCategory(userId: string, walletId: string, categoryId: string): Promise<boolean>;
+  createSubcategory(userId: string, walletId: string, categoryId: string, name: string): Promise<CategorySubcategory | null>;
   updateSubcategoryName(
     userId: string,
+    walletId: string,
     categoryId: string,
     subcategoryId: string,
     name: string,
   ): Promise<CategorySubcategory | null>;
-  deleteSubcategory(userId: string, categoryId: string, subcategoryId: string): Promise<boolean>;
+  deleteSubcategory(userId: string, walletId: string, categoryId: string, subcategoryId: string): Promise<boolean>;
 }

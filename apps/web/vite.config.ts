@@ -32,6 +32,10 @@ export default defineConfig({
         'src/expenses/ExpensesPage.tsx',
         'src/goals/GoalsPage.tsx',
         'src/incomes/IncomesPage.tsx',
+        'src/App.tsx',
+        'src/wallets/WalletContext.tsx',
+        'src/wallets/useWallet.ts',
+        'src/wallets/walletApi.ts',
       ],
       exclude: ['src/**/*.test.ts', 'src/**/*.test.tsx', 'src/test/**'],
       thresholds: {
@@ -42,6 +46,7 @@ export default defineConfig({
         'src/expenses/ExpensesPage.tsx': { lines: 61, functions: 57, branches: 54, statements: 58 },
         'src/goals/GoalsPage.tsx': { lines: 64, functions: 56, branches: 60, statements: 58 },
         'src/incomes/IncomesPage.tsx': { lines: 61, functions: 57, branches: 54, statements: 58 },
+        'src/wallets/**': { lines: 80, functions: 80, branches: 80, statements: 80 },
       },
     },
   },

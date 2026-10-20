@@ -40,24 +40,26 @@ export interface InvestmentContributionInput {
 }
 
 export interface InvestmentGoalsRepository {
-  listGoals(userId: string): Promise<InvestmentGoal[]>;
-  getGoal(userId: string, goalId: string): Promise<InvestmentGoal | null>;
-  createGoal(userId: string, input: Required<InvestmentGoalInput>): Promise<InvestmentGoal | null>;
-  updateGoal(userId: string, goalId: string, input: Required<InvestmentGoalInput>): Promise<InvestmentGoal | null>;
-  closeGoal(userId: string, goalId: string): Promise<InvestmentGoal | null>;
-  hasGoal(userId: string, goalId: string): Promise<boolean>;
-  listContributions(userId: string, goalId: string): Promise<InvestmentContribution[]>;
+  listGoals(userId: string, walletId: string): Promise<InvestmentGoal[]>;
+  getGoal(userId: string, walletId: string, goalId: string): Promise<InvestmentGoal | null>;
+  createGoal(userId: string, walletId: string, input: Required<InvestmentGoalInput>): Promise<InvestmentGoal | null>;
+  updateGoal(userId: string, walletId: string, goalId: string, input: Required<InvestmentGoalInput>): Promise<InvestmentGoal | null>;
+  closeGoal(userId: string, walletId: string, goalId: string): Promise<InvestmentGoal | null>;
+  hasGoal(userId: string, walletId: string, goalId: string): Promise<boolean>;
+  listContributions(userId: string, walletId: string, goalId: string): Promise<InvestmentContribution[]>;
   createContribution(
     userId: string,
+    walletId: string,
     goalId: string,
     input: Required<InvestmentContributionInput>,
   ): Promise<InvestmentContribution | null>;
   updateContribution(
     userId: string,
+    walletId: string,
     goalId: string,
     contributionId: string,
     input: Required<InvestmentContributionInput>,
   ): Promise<InvestmentContribution | null>;
-  deleteContribution(userId: string, goalId: string, contributionId: string): Promise<boolean>;
-  hasContribution(userId: string, goalId: string, contributionId: string): Promise<boolean>;
+  deleteContribution(userId: string, walletId: string, goalId: string, contributionId: string): Promise<boolean>;
+  hasContribution(userId: string, walletId: string, goalId: string, contributionId: string): Promise<boolean>;
 }

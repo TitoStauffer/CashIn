@@ -4,6 +4,7 @@ import { DashboardApiError, dashboardApi } from './dashboardApi'
 import type { InvestmentGoal } from '../goals/goalsApi'
 import { formatBrazilianCurrency } from '../money/currency'
 import { FinancialSidebar } from '../layout/FinancialSidebar'
+import { useWallet } from '../wallets/useWallet'
 import { MonthYearSelector } from '../period/MonthYearSelector'
 import { formatMonth, getCurrentMonth, getMonthRange } from '../period/month'
 import './DashboardPage.css'
@@ -71,10 +72,12 @@ function getErrorMessage(error: unknown) {
 }
 
 export function DashboardPage({ userEmail, isLoggingOut, onLogout }: DashboardPageProps) {
+  const { activeWalletId } = useWallet()
   const [month, setMonth] = useState(getCurrentMonth)
   const [summary, setSummary] = useState<FinancialSummary | null>(null)
   const [goals, setGoals] = useState<InvestmentGoal[]>([])
   const [isLoading, setIsLoading] = useState(true)
+  const [loadedWalletId, setLoadedWalletId] = useState<string | null>(null)
   const [loadError, setLoadError] = useState('')
   const [reloadKey, setReloadKey] = useState(0)
   const range = useMemo(() => getMonthRange(month), [month])
@@ -88,14 +91,19 @@ export function DashboardPage({ userEmail, isLoggingOut, onLogout }: DashboardPa
       .then(([nextSummary, goalResponse]) => {
         setSummary(nextSummary)
         setGoals(goalResponse.items)
+        setLoadedWalletId(activeWalletId)
+        setLoadError('')
       })
       .catch((error: unknown) => {
         if (error instanceof Error && error.name === 'AbortError') return
+        setLoadedWalletId(activeWalletId)
         setLoadError(getErrorMessage(error))
       })
       .finally(() => { if (!controller.signal.aborted) setIsLoading(false) })
     return () => controller.abort()
-  }, [range.from, range.to, reloadKey])
+  }, [activeWalletId, range.from, range.to, reloadKey])
+
+  const isWalletLoading = loadedWalletId !== activeWalletId
 
   const outflowCents = summary
     ? amountToCents(summary.expenseTotal) + amountToCents(summary.contributionTotal)
@@ -129,14 +137,14 @@ export function DashboardPage({ userEmail, isLoggingOut, onLogout }: DashboardPa
             <MonthYearSelector month={month} onMonthChange={selectMonth} />
           </div>
 
-          {loadError && (
+          {loadError && !isWalletLoading && (
             <div className="dashboard-alert" role="alert">
               <span>{loadError}</span>
               <button type="button" onClick={() => { setLoadError(''); setIsLoading(true); setReloadKey((value) => value + 1) }}>Tentar novamente</button>
             </div>
           )}
 
-          {isLoading ? (
+          {isLoading || isWalletLoading ? (
             <div className="dashboard-loading" role="status" aria-live="polite"><span className="dashboard-spinner" />Carregando sua visão financeira…</div>
           ) : !loadError && summary ? (
             <>
@@ -200,7 +208,7 @@ export function DashboardPage({ userEmail, isLoggingOut, onLogout }: DashboardPa
             </>
           ) : null}
 
-          {!isLoading && !loadError && (
+          {!isLoading && !isWalletLoading && !loadError && (
             <section className="dashboard-panel dashboard-goals" aria-labelledby="goals-title">
               <div className="dashboard-panel__heading">
                 <div><p className="dashboard-eyebrow">PLANOS PARA O FUTURO</p><h2 id="goals-title">Progresso das metas</h2></div>

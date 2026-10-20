@@ -67,7 +67,7 @@ export function registerExpenseRoutes(app: FastifyInstance, options: RouteOption
   app.get<{ Querystring: ExpenseQuery }>(
     "/expenses",
     {
-      preHandler: app.authenticate,
+      preHandler: [app.authenticate, app.resolveWalletContext],
       preValidation: rejectUnexpectedQueryProperties(["from", "to"]),
       schema: {
         querystring: {
@@ -81,6 +81,7 @@ export function registerExpenseRoutes(app: FastifyInstance, options: RouteOption
       try {
         const items = await options.expensesService.listExpenses(
           request.currentUser!.id,
+          request.currentWalletId!,
           request.query.from,
           request.query.to,
         );
@@ -94,13 +95,13 @@ export function registerExpenseRoutes(app: FastifyInstance, options: RouteOption
   app.post<{ Body: ExpenseInput }>(
     "/expenses",
     {
-      preHandler: app.authenticate,
+      preHandler: [app.authenticate, app.resolveWalletContext],
       preValidation: rejectUnexpectedProperties(["amount", "date", "description", "categoryId", "subcategoryId"]),
       schema: { body: expenseBodySchema },
     },
     async (request, reply) => {
       try {
-        const item = await options.expensesService.createExpense(request.currentUser!.id, request.body);
+        const item = await options.expensesService.createExpense(request.currentUser!.id, request.currentWalletId!, request.body);
         return reply.code(201).send(item);
       } catch (error) {
         return sendExpenseError(error, reply);
@@ -111,7 +112,7 @@ export function registerExpenseRoutes(app: FastifyInstance, options: RouteOption
   app.put<{ Params: ExpenseParams; Body: ExpenseInput }>(
     "/expenses/:expenseId",
     {
-      preHandler: app.authenticate,
+      preHandler: [app.authenticate, app.resolveWalletContext],
       preValidation: rejectUnexpectedProperties(["amount", "date", "description", "categoryId", "subcategoryId"]),
       schema: {
         params: { type: "object", required: ["expenseId"], properties: { expenseId: uuidSchema } },
@@ -122,6 +123,7 @@ export function registerExpenseRoutes(app: FastifyInstance, options: RouteOption
       try {
         const item = await options.expensesService.updateExpense(
           request.currentUser!.id,
+          request.currentWalletId!,
           request.params.expenseId,
           request.body,
         );
@@ -135,12 +137,12 @@ export function registerExpenseRoutes(app: FastifyInstance, options: RouteOption
   app.delete<{ Params: ExpenseParams }>(
     "/expenses/:expenseId",
     {
-      preHandler: app.authenticate,
+      preHandler: [app.authenticate, app.resolveWalletContext],
       schema: { params: { type: "object", required: ["expenseId"], properties: { expenseId: uuidSchema } } },
     },
     async (request, reply) => {
       try {
-        await options.expensesService.deleteExpense(request.currentUser!.id, request.params.expenseId);
+        await options.expensesService.deleteExpense(request.currentUser!.id, request.currentWalletId!, request.params.expenseId);
         return reply.code(204).send();
       } catch (error) {
         return sendExpenseError(error, reply);

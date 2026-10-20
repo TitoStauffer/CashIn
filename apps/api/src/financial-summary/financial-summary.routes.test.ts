@@ -5,6 +5,7 @@ import type { Database, QueryExecutor } from "../database.js";
 import type { AuthRepository, AuthUser, PendingAccount, StoredUser } from "../auth/auth.types.js";
 import { hashToken } from "../auth/token.js";
 import type { FinancialSummary, FinancialSummaryRepository } from "./financial-summary.types.js";
+import { WalletsTestFixture } from "../wallets/wallets-test-fixture.js";
 
 const USER_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const SESSION = "a".repeat(43);
@@ -46,6 +47,7 @@ test("GET /financial-summary is authenticated, returns separate totals and forwa
   const summaryRepository = new MemorySummaryRepository();
   const app = createApp(createDatabase(), {
     authRepository: new SessionAuthRepository(),
+    walletRepository: new WalletsTestFixture(),
     financialSummaryRepository: summaryRepository,
   });
 

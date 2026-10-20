@@ -35,13 +35,13 @@ function mapConflict(error: unknown): never {
 export class CategoriesService {
   constructor(private readonly repository: CategoryRepository) {}
 
-  listCategories(userId: string, nature?: CategoryNature): Promise<Category[]> {
-    return this.repository.listCategories(userId, nature);
+  listCategories(userId: string, walletId: string, nature?: CategoryNature): Promise<Category[]> {
+    return this.repository.listCategories(userId, walletId, nature);
   }
 
-  async createCategory(userId: string, name: string, nature: CategoryNature): Promise<Category> {
+  async createCategory(userId: string, walletId: string, name: string, nature: CategoryNature): Promise<Category> {
     try {
-      return await this.repository.createCategory(userId, normalizeName(name), nature);
+      return await this.repository.createCategory(userId, walletId, normalizeName(name), nature);
     } catch (error) {
       return mapConflict(error);
     }
@@ -49,11 +49,12 @@ export class CategoriesService {
 
   async updateCategoryName(
     userId: string,
+    walletId: string,
     categoryId: string,
     name: string,
   ): Promise<Category> {
     try {
-      const category = await this.repository.updateCategoryName(userId, categoryId, normalizeName(name));
+      const category = await this.repository.updateCategoryName(userId, walletId, categoryId, normalizeName(name));
       if (!category) throw new CategoryError("Categoria não encontrada.", 404);
       return category;
     } catch (error) {
@@ -61,9 +62,9 @@ export class CategoriesService {
     }
   }
 
-  async deleteCategory(userId: string, categoryId: string): Promise<void> {
+  async deleteCategory(userId: string, walletId: string, categoryId: string): Promise<void> {
     try {
-      const deleted = await this.repository.deleteCategory(userId, categoryId);
+      const deleted = await this.repository.deleteCategory(userId, walletId, categoryId);
       if (!deleted) throw new CategoryError("Categoria não encontrada.", 404);
     } catch (error) {
       return mapConflict(error);
@@ -72,11 +73,12 @@ export class CategoriesService {
 
   async createSubcategory(
     userId: string,
+    walletId: string,
     categoryId: string,
     name: string,
   ): Promise<CategorySubcategory> {
     try {
-      const subcategory = await this.repository.createSubcategory(userId, categoryId, normalizeName(name));
+      const subcategory = await this.repository.createSubcategory(userId, walletId, categoryId, normalizeName(name));
       if (!subcategory) throw new CategoryError("Categoria não encontrada.", 404);
       return subcategory;
     } catch (error) {
@@ -86,6 +88,7 @@ export class CategoriesService {
 
   async updateSubcategoryName(
     userId: string,
+    walletId: string,
     categoryId: string,
     subcategoryId: string,
     name: string,
@@ -93,6 +96,7 @@ export class CategoriesService {
     try {
       const subcategory = await this.repository.updateSubcategoryName(
         userId,
+        walletId,
         categoryId,
         subcategoryId,
         normalizeName(name),
@@ -106,11 +110,12 @@ export class CategoriesService {
 
   async deleteSubcategory(
     userId: string,
+    walletId: string,
     categoryId: string,
     subcategoryId: string,
   ): Promise<void> {
     try {
-      const deleted = await this.repository.deleteSubcategory(userId, categoryId, subcategoryId);
+      const deleted = await this.repository.deleteSubcategory(userId, walletId, categoryId, subcategoryId);
       if (!deleted) throw new CategoryError("Subcategoria não encontrada.", 404);
     } catch (error) {
       return mapConflict(error);

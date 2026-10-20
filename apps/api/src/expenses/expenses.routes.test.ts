@@ -5,6 +5,7 @@ import type { Database, QueryExecutor } from "../database.js";
 import { hashToken } from "../auth/token.js";
 import type { AuthRepository, AuthUser, PendingAccount, StoredUser } from "../auth/auth.types.js";
 import type { Expense, ExpenseInput, ExpenseRepository } from "./expenses.types.js";
+import { WalletsTestFixture } from "../wallets/wallets-test-fixture.js";
 
 const USER_A = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const USER_B = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
@@ -33,14 +34,14 @@ class MemoryExpenseRepository implements ExpenseRepository {
     return subcategory?.userId === userId && subcategory.categoryId === input.categoryId;
   }
 
-  async listExpenses(userId: string, from?: string, to?: string): Promise<Expense[]> {
+  async listExpenses(userId: string, _walletId: string, from?: string, to?: string): Promise<Expense[]> {
     return [...this.items.values()]
       .filter((item) => item.userId === userId && (!from || item.date >= from) && (!to || item.date <= to))
       .sort((left, right) => right.date.localeCompare(left.date) || right.createdAt.localeCompare(left.createdAt))
       .map(({ userId: _userId, ...item }) => item);
   }
 
-  async createExpense(userId: string, input: Required<ExpenseInput>): Promise<Expense | null> {
+  async createExpense(userId: string, _walletId: string, input: Required<ExpenseInput>): Promise<Expense | null> {
     if (!this.isValidReference(userId, input)) return null;
     const id = `44444444-4444-4444-8444-${this.nextId.toString().padStart(12, "0")}`;
     this.nextId += 1;
@@ -65,7 +66,7 @@ class MemoryExpenseRepository implements ExpenseRepository {
     return result;
   }
 
-  async updateExpense(userId: string, expenseId: string, input: Required<ExpenseInput>): Promise<Expense | null> {
+  async updateExpense(userId: string, _walletId: string, expenseId: string, input: Required<ExpenseInput>): Promise<Expense | null> {
     const previous = this.items.get(expenseId);
     if (!previous || previous.userId !== userId || !this.isValidReference(userId, input)) return null;
     const category = this.categories.get(input.categoryId)!;
@@ -86,13 +87,13 @@ class MemoryExpenseRepository implements ExpenseRepository {
     return result;
   }
 
-  async deleteExpense(userId: string, expenseId: string): Promise<boolean> {
+  async deleteExpense(userId: string, _walletId: string, expenseId: string): Promise<boolean> {
     const item = this.items.get(expenseId);
     if (!item || item.userId !== userId) return false;
     return this.items.delete(expenseId);
   }
 
-  async hasExpense(userId: string, expenseId: string): Promise<boolean> {
+  async hasExpense(userId: string, _walletId: string, expenseId: string): Promise<boolean> {
     return this.items.get(expenseId)?.userId === userId;
   }
 }
@@ -123,7 +124,7 @@ function createTestApp(repository = new MemoryExpenseRepository()) {
   const executor: QueryExecutor = { query: async <Row>() => ({ rows: [] as Row[], rowCount: 0 }) };
   const database: Database = { ...executor, transaction: async (work) => work(executor) };
   return {
-    app: createApp(database, { authRepository: new SessionAuthRepository(), expenseRepository: repository }),
+    app: createApp(database, { authRepository: new SessionAuthRepository(), expenseRepository: repository, walletRepository: new WalletsTestFixture() }),
     repository,
   };
 }

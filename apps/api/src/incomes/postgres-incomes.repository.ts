@@ -52,41 +52,41 @@ const resultColumns = `
 export class PostgresIncomesRepository implements IncomeRepository {
   constructor(private readonly database: Database) {}
 
-  async listIncomes(userId: string, from?: string, to?: string): Promise<Income[]> {
+  async listIncomes(_userId: string, walletId: string, from?: string, to?: string): Promise<Income[]> {
     const result = await this.database.query<IncomeRow>(
       `SELECT ${resultColumns}
        FROM incomes AS income
        JOIN categories AS category
          ON category.id = income.category_id
-        AND category.user_id = income.user_id
+        AND category.wallet_id = income.wallet_id
         AND category.nature = 'income'
        LEFT JOIN subcategories AS subcategory
          ON subcategory.id = income.subcategory_id
-        AND subcategory.user_id = income.user_id
+        AND subcategory.wallet_id = income.wallet_id
         AND subcategory.category_id = income.category_id
-       WHERE income.user_id = $1
+       WHERE income.wallet_id = $1
          AND ($2::date IS NULL OR income.date >= $2::date)
          AND ($3::date IS NULL OR income.date <= $3::date)
        ORDER BY income.date DESC, income.created_at DESC, income.id DESC`,
-      [userId, from ?? null, to ?? null],
+      [walletId, from ?? null, to ?? null],
     );
     return result.rows.map(mapIncome);
   }
 
-  async createIncome(userId: string, input: Required<IncomeInput>): Promise<Income | null> {
+  async createIncome(userId: string, walletId: string, input: Required<IncomeInput>): Promise<Income | null> {
     const result = await this.database.query<IncomeRow>(
       `WITH inserted AS (
-         INSERT INTO incomes (user_id, category_id, subcategory_id, amount, date, description)
-         SELECT $1, category.id, $3, $4::numeric, $5::date, $6
+         INSERT INTO incomes (user_id, wallet_id, category_id, subcategory_id, amount, date, description)
+         SELECT $1, $2, category.id, $4, $5::numeric, $6::date, $7
          FROM categories AS category
-         WHERE category.id = $2
-           AND category.user_id = $1
+         WHERE category.id = $3
+           AND category.wallet_id = $2
            AND category.nature = 'income'
-           AND ($3::uuid IS NULL OR EXISTS (
+           AND ($4::uuid IS NULL OR EXISTS (
              SELECT 1
              FROM subcategories AS subcategory
-             WHERE subcategory.id = $3::uuid
-               AND subcategory.user_id = $1
+             WHERE subcategory.id = $4::uuid
+               AND subcategory.wallet_id = $2
                AND subcategory.category_id = category.id
            ))
          RETURNING *
@@ -95,19 +95,20 @@ export class PostgresIncomesRepository implements IncomeRepository {
        FROM inserted
        JOIN categories AS category
          ON category.id = inserted.category_id
-        AND category.user_id = inserted.user_id
+        AND category.wallet_id = inserted.wallet_id
        LEFT JOIN subcategories AS subcategory
          ON subcategory.id = inserted.subcategory_id
-        AND subcategory.user_id = inserted.user_id
+        AND subcategory.wallet_id = inserted.wallet_id
         AND subcategory.category_id = inserted.category_id`,
-      [userId, input.categoryId, input.subcategoryId, input.amount, input.date, input.description],
+      [userId, walletId, input.categoryId, input.subcategoryId, input.amount, input.date, input.description],
     );
     const row = result.rows[0];
     return row ? mapIncome(row) : null;
   }
 
   async updateIncome(
-    userId: string,
+    _userId: string,
+    walletId: string,
     incomeId: string,
     input: Required<IncomeInput>,
   ): Promise<Income | null> {
@@ -122,15 +123,15 @@ export class PostgresIncomesRepository implements IncomeRepository {
              updated_at = now()
          FROM categories AS category
          WHERE income.id = $1
-           AND income.user_id = $2
+           AND income.wallet_id = $2
            AND category.id = $3
-           AND category.user_id = $2
+           AND category.wallet_id = $2
            AND category.nature = 'income'
            AND ($4::uuid IS NULL OR EXISTS (
              SELECT 1
              FROM subcategories AS subcategory
              WHERE subcategory.id = $4::uuid
-               AND subcategory.user_id = $2
+               AND subcategory.wallet_id = $2
                AND subcategory.category_id = category.id
            ))
          RETURNING income.*
@@ -139,29 +140,29 @@ export class PostgresIncomesRepository implements IncomeRepository {
        FROM updated
        JOIN categories AS category
          ON category.id = updated.category_id
-        AND category.user_id = updated.user_id
+        AND category.wallet_id = updated.wallet_id
        LEFT JOIN subcategories AS subcategory
          ON subcategory.id = updated.subcategory_id
-        AND subcategory.user_id = updated.user_id
+        AND subcategory.wallet_id = updated.wallet_id
         AND subcategory.category_id = updated.category_id`,
-      [incomeId, userId, input.categoryId, input.subcategoryId, input.amount, input.date, input.description],
+      [incomeId, walletId, input.categoryId, input.subcategoryId, input.amount, input.date, input.description],
     );
     const row = result.rows[0];
     return row ? mapIncome(row) : null;
   }
 
-  async deleteIncome(userId: string, incomeId: string): Promise<boolean> {
+  async deleteIncome(_userId: string, walletId: string, incomeId: string): Promise<boolean> {
     const result = await this.database.query(
-      "DELETE FROM incomes WHERE id = $1 AND user_id = $2",
-      [incomeId, userId],
+      "DELETE FROM incomes WHERE id = $1 AND wallet_id = $2",
+      [incomeId, walletId],
     );
     return result.rowCount === 1;
   }
 
-  async hasIncome(userId: string, incomeId: string): Promise<boolean> {
+  async hasIncome(_userId: string, walletId: string, incomeId: string): Promise<boolean> {
     const result = await this.database.query<{ exists: boolean }>(
-      "SELECT EXISTS (SELECT 1 FROM incomes WHERE id = $1 AND user_id = $2) AS exists",
-      [incomeId, userId],
+      "SELECT EXISTS (SELECT 1 FROM incomes WHERE id = $1 AND wallet_id = $2) AS exists",
+      [incomeId, walletId],
     );
     return result.rows[0]?.exists ?? false;
   }

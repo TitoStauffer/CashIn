@@ -1,8 +1,9 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import type { Category, CategoryNature } from './categoriesApi'
 import { CategoryApiError, categoriesApi } from './categoriesApi'
 import { FinancialSidebar } from '../layout/FinancialSidebar'
+import { useWallet } from '../wallets/useWallet'
 import './CategoriesPage.css'
 
 type CategoryEditor = {
@@ -71,9 +72,11 @@ type CategoriesPageProps = {
 }
 
 export function CategoriesPage({ userEmail, isLoggingOut, onLogout }: CategoriesPageProps) {
+  const { activeWalletId } = useWallet()
   const [nature, setNature] = useState<CategoryNature>('income')
   const [categories, setCategories] = useState<Category[]>([])
   const [isLoading, setIsLoading] = useState(true)
+  const [loadedWalletId, setLoadedWalletId] = useState<string | null>(null)
   const [loadError, setLoadError] = useState('')
   const [formError, setFormError] = useState('')
   const [successMessage, setSuccessMessage] = useState('')
@@ -81,17 +84,27 @@ export function CategoriesPage({ userEmail, isLoggingOut, onLogout }: Categories
   const [subcategoryEditor, setSubcategoryEditor] = useState<SubcategoryEditor>(null)
   const [isSaving, setIsSaving] = useState(false)
   const [reloadKey, setReloadKey] = useState(0)
+  const lastLoadedWalletId = useRef<string | null>(null)
 
   useEffect(() => {
     const controller = new AbortController()
     categoriesApi
       .list(nature, controller.signal)
       .then(({ items }) => {
+        if (lastLoadedWalletId.current !== activeWalletId) {
+          setCategoryEditor(null)
+          setSubcategoryEditor(null)
+          setFormError('')
+          setSuccessMessage('')
+        }
+        lastLoadedWalletId.current = activeWalletId
         setCategories(items)
+        setLoadedWalletId(activeWalletId)
         setLoadError('')
       })
       .catch((error: unknown) => {
         if (error instanceof Error && error.name === 'AbortError') return
+        setLoadedWalletId(activeWalletId)
         setLoadError(getErrorMessage(error))
       })
       .finally(() => {
@@ -99,7 +112,9 @@ export function CategoriesPage({ userEmail, isLoggingOut, onLogout }: Categories
       })
 
     return () => controller.abort()
-  }, [nature, reloadKey])
+  }, [activeWalletId, nature, reloadKey])
+
+  const isWalletLoading = loadedWalletId !== activeWalletId
 
   async function refreshCategories() {
     try {
@@ -325,7 +340,7 @@ export function CategoriesPage({ userEmail, isLoggingOut, onLogout }: Categories
           {formError && <p className="categories-alert categories-alert--error" role="alert">{formError}</p>}
           {successMessage && <p className="categories-alert categories-alert--success" role="status">{successMessage}</p>}
 
-          {categoryEditor?.categoryId === null && (
+          {categoryEditor?.categoryId === null && !isWalletLoading && (
             <CategoryForm
               title="Nova categoria"
               name={categoryEditor.name}
@@ -336,11 +351,11 @@ export function CategoriesPage({ userEmail, isLoggingOut, onLogout }: Categories
             />
           )}
 
-          {isLoading ? (
+          {isLoading || isWalletLoading ? (
             <div className="categories-loading" role="status" aria-live="polite">
               <span className="categories-spinner" /> Carregando categorias de {activeNatureLabel.toLowerCase()}…
             </div>
-          ) : loadError ? (
+          ) : loadError && !isWalletLoading ? (
             <div className="categories-state-card">
               <div className="categories-state-icon" aria-hidden="true">!</div>
               <h2>Não foi possível carregar suas categorias.</h2>

@@ -28,10 +28,12 @@ interface LoginBody {
 declare module "fastify" {
   interface FastifyRequest {
     currentUser: AuthUser | null;
+    currentWalletId: string | null;
   }
 
   interface FastifyInstance {
     authenticate: (request: FastifyRequest, reply: FastifyReply) => Promise<void>;
+    resolveWalletContext: (request: FastifyRequest, reply: FastifyReply) => Promise<void>;
   }
 }
 

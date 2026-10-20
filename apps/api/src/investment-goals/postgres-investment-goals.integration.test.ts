@@ -28,24 +28,29 @@ test("PostgreSQL investment goal and contribution CRUD preserves progress and ow
     const userId = users.rows.find((row) => row.email === `goal-${schemaName}@example.com`)?.id;
     const otherUserId = users.rows.find((row) => row.email === `other-${schemaName}@example.com`)?.id;
     assert.ok(userId && otherUserId);
+    const walletRows = await database.query<{ owner_user_id: string; id: string }>(
+      "SELECT owner_user_id, id FROM wallets WHERE owner_user_id = ANY($1::uuid[])", [[userId, otherUserId]],
+    );
+    const walletId = walletRows.rows.find((row) => row.owner_user_id === userId)!.id;
+    const otherWalletId = walletRows.rows.find((row) => row.owner_user_id === otherUserId)!.id;
     const service = new InvestmentGoalsService(new PostgresInvestmentGoalsRepository(database));
 
     const categories = await database.query<{ id: string; nature: string; user_id: string }>(
-      `INSERT INTO categories (user_id, name, nature)
-       VALUES ($1, 'Reserva', 'investment'), ($1, 'Reserva antiga', 'investment_goal'), ($1, 'Mercado', 'expense'), ($2, 'Reserva', 'investment')
+      `INSERT INTO categories (user_id, wallet_id, name, nature)
+       VALUES ($1, $3, 'Reserva', 'investment'), ($1, $3, 'Reserva antiga', 'investment_goal'), ($1, $3, 'Mercado', 'expense'), ($2, $4, 'Reserva', 'investment')
        RETURNING id, nature, user_id`,
-      [userId, otherUserId],
+      [userId, otherUserId, walletId, otherWalletId],
     );
     const investmentCategory = categories.rows.find((row) => row.nature === "investment" && row.user_id === userId)!.id;
     const legacyInvestmentCategory = categories.rows.find((row) => row.nature === "investment_goal" && row.user_id === userId)!.id;
     const expenseCategory = categories.rows.find((row) => row.nature === "expense" && row.user_id === userId)!.id;
     const foreignCategory = categories.rows.find((row) => row.user_id === otherUserId)!.id;
     const subcategory = await database.query<{ id: string }>(
-      "INSERT INTO subcategories (user_id, category_id, name) VALUES ($1, $2, 'Emergência') RETURNING id",
-      [userId, investmentCategory],
+      "INSERT INTO subcategories (user_id, wallet_id, category_id, name) VALUES ($1, $2, $3, 'Emergência') RETURNING id",
+      [userId, walletId, investmentCategory],
     );
 
-    const goal = await service.createGoal(userId, {
+    const goal = await service.createGoal(userId, walletId, {
       title: "Reserva de emergência", description: "Guardar uma reserva financeira.", targetAmount: "1000.00",
       categoryId: investmentCategory, subcategoryId: subcategory.rows[0]!.id,
     });
@@ -56,68 +61,68 @@ test("PostgreSQL investment goal and contribution CRUD preserves progress and ow
     assert.equal(goal.contributedAmount, "0");
     assert.equal(goal.progressPercentage, 0);
     await assert.rejects(
-      service.createGoal(userId, {
+      service.createGoal(userId, walletId, {
         title: "reserva de EMERGENCIA", description: "Nome com caixa e acento diferentes.", targetAmount: "1000.00",
       }),
       (error: unknown) => typeof error === "object" && error !== null && "statusCode" in error && error.statusCode === 409,
     );
     await assert.rejects(
-      service.createGoal(userId, { title: "Precisão", description: "Três casas decimais", targetAmount: "1.001" }),
+      service.createGoal(userId, walletId, { title: "Precisão", description: "Três casas decimais", targetAmount: "1.001" }),
       (error: unknown) => typeof error === "object" && error !== null && "statusCode" in error && error.statusCode === 400,
     );
 
-    const legacyGoal = await service.createGoal(userId, {
+    const legacyGoal = await service.createGoal(userId, walletId, {
       title: "Meta antiga", description: "Categoria legada", targetAmount: "25.00", categoryId: legacyInvestmentCategory,
     });
     assert.equal(legacyGoal.categoryName, "Reserva antiga");
 
     await assert.rejects(
-      service.createGoal(userId, { title: "Inválida", description: "Natureza de despesa", targetAmount: "10", categoryId: expenseCategory }),
+      service.createGoal(userId, walletId, { title: "Inválida", description: "Natureza de despesa", targetAmount: "10", categoryId: expenseCategory }),
       (error: unknown) => typeof error === "object" && error !== null && "statusCode" in error && error.statusCode === 400,
     );
     await assert.rejects(
-      service.createGoal(userId, { title: "Inválida", description: "Outra conta", targetAmount: "10", categoryId: foreignCategory }),
+      service.createGoal(userId, walletId, { title: "Inválida", description: "Outra conta", targetAmount: "10", categoryId: foreignCategory }),
       (error: unknown) => typeof error === "object" && error !== null && "statusCode" in error && error.statusCode === 400,
     );
 
-    const contribution = await service.createContribution(userId, goal.id, {
+    const contribution = await service.createContribution(userId, walletId, goal.id, {
       amount: "125.50", date: "2026-10-19", description: "Primeiro aporte",
     });
-    const afterCreate = await service.getGoal(userId, goal.id);
+    const afterCreate = await service.getGoal(userId, walletId, goal.id);
     assert.equal(afterCreate.contributedAmount, "125.50");
     assert.equal(afterCreate.progressPercentage, 12.55);
-    await service.updateContribution(userId, goal.id, contribution.id, {
+    await service.updateContribution(userId, walletId, goal.id, contribution.id, {
       amount: "200.00", date: "2026-10-20", description: null,
     });
-    assert.equal((await service.getGoal(userId, goal.id)).contributedAmount, "200.00");
-    const removable = await service.createContribution(userId, goal.id, { amount: "5.00", date: "2026-10-20" });
-    await service.deleteContribution(userId, goal.id, removable.id);
-    assert.equal((await service.getGoal(userId, goal.id)).contributedAmount, "200.00");
-    assert.equal((await service.listGoals(otherUserId)).length, 0);
+    assert.equal((await service.getGoal(userId, walletId, goal.id)).contributedAmount, "200.00");
+    const removable = await service.createContribution(userId, walletId, goal.id, { amount: "5.00", date: "2026-10-20" });
+    await service.deleteContribution(userId, walletId, goal.id, removable.id);
+    assert.equal((await service.getGoal(userId, walletId, goal.id)).contributedAmount, "200.00");
+    assert.equal((await service.listGoals(otherUserId, otherWalletId)).length, 0);
     await assert.rejects(
-      service.getGoal(otherUserId, goal.id),
+      service.getGoal(otherUserId, otherWalletId, goal.id),
       (error: unknown) => typeof error === "object" && error !== null && "statusCode" in error && error.statusCode === 404,
     );
-    assert.equal((await service.closeGoal(userId, goal.id)).status, "closed");
+    assert.equal((await service.closeGoal(userId, walletId, goal.id)).status, "closed");
     await assert.rejects(
-      service.createContribution(userId, goal.id, { amount: "10", date: "2026-10-20" }),
+      service.createContribution(userId, walletId, goal.id, { amount: "10", date: "2026-10-20" }),
       (error: unknown) => typeof error === "object" && error !== null && "statusCode" in error && error.statusCode === 409,
     );
     await assert.rejects(
-      service.updateGoal(userId, goal.id, { title: "Meta alterada", description: "Meta fechada", targetAmount: "1000" }),
+      service.updateGoal(userId, walletId, goal.id, { title: "Meta alterada", description: "Meta fechada", targetAmount: "1000" }),
       (error: unknown) => typeof error === "object" && error !== null && "statusCode" in error && error.statusCode === 409,
     );
     await assert.rejects(
-      service.updateContribution(userId, goal.id, contribution.id, { amount: "300", date: "2026-10-21" }),
+      service.updateContribution(userId, walletId, goal.id, contribution.id, { amount: "300", date: "2026-10-21" }),
       (error: unknown) => typeof error === "object" && error !== null && "statusCode" in error && error.statusCode === 409,
     );
     await assert.rejects(
-      service.deleteContribution(userId, goal.id, contribution.id),
+      service.deleteContribution(userId, walletId, goal.id, contribution.id),
       (error: unknown) => typeof error === "object" && error !== null && "statusCode" in error && error.statusCode === 409,
     );
-    assert.equal((await service.getGoal(userId, goal.id)).contributedAmount, "200.00");
+    assert.equal((await service.getGoal(userId, walletId, goal.id)).contributedAmount, "200.00");
 
-    const concurrentGoal = await service.createGoal(userId, {
+    const concurrentGoal = await service.createGoal(userId, walletId, {
       title: "Meta concorrente", description: "Validar serialização do encerramento.", targetAmount: "500.00",
     });
     let signalLockAcquired!: () => void;
@@ -138,10 +143,10 @@ test("PostgreSQL investment goal and contribution CRUD preserves progress and ow
       })),
     };
     const closingService = new InvestmentGoalsService(new PostgresInvestmentGoalsRepository(closeDatabase));
-    const closing = closingService.closeGoal(userId, concurrentGoal.id);
+    const closing = closingService.closeGoal(userId, walletId, concurrentGoal.id);
     await lockAcquired;
 
-    const concurrentMutation = service.createContribution(userId, concurrentGoal.id, {
+    const concurrentMutation = service.createContribution(userId, walletId, concurrentGoal.id, {
       amount: "50.00", date: "2026-10-21", description: "Concorrente ao fechamento",
     });
     let mutationWaitingForLock = false;
@@ -168,7 +173,7 @@ test("PostgreSQL investment goal and contribution CRUD preserves progress and ow
       concurrentMutation,
       (error: unknown) => typeof error === "object" && error !== null && "statusCode" in error && error.statusCode === 409,
     );
-    assert.deepEqual(await service.listContributions(userId, concurrentGoal.id), []);
+    assert.deepEqual(await service.listContributions(userId, walletId, concurrentGoal.id), []);
   } finally {
     await scopedPool?.end();
     await adminPool.query(`DROP SCHEMA IF EXISTS ${schemaName} CASCADE`);
