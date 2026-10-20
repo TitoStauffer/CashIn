@@ -13,6 +13,10 @@ import { IncomesService } from "./incomes/incomes.service.js";
 import { PostgresIncomesRepository } from "./incomes/postgres-incomes.repository.js";
 import { registerIncomeRoutes } from "./incomes/incomes.routes.js";
 import type { IncomeRepository } from "./incomes/incomes.types.js";
+import { ExpensesService } from "./expenses/expenses.service.js";
+import { PostgresExpensesRepository } from "./expenses/postgres-expenses.repository.js";
+import { registerExpenseRoutes } from "./expenses/expenses.routes.js";
+import type { ExpenseRepository } from "./expenses/expenses.types.js";
 
 export interface AppOptions {
   logger?: boolean;
@@ -20,6 +24,7 @@ export interface AppOptions {
   authRepository?: AuthRepository;
   categoryRepository?: CategoryRepository;
   incomeRepository?: IncomeRepository;
+  expenseRepository?: ExpenseRepository;
   authConfiguration?: Partial<AuthConfiguration>;
   secureCookies?: boolean;
 }
@@ -89,6 +94,12 @@ export function createApp(
   registerIncomeRoutes(app, {
     incomesService: new IncomesService(
       options.incomeRepository ?? new PostgresIncomesRepository(database),
+    ),
+  });
+
+  registerExpenseRoutes(app, {
+    expensesService: new ExpensesService(
+      options.expenseRepository ?? new PostgresExpensesRepository(database),
     ),
   });
 
