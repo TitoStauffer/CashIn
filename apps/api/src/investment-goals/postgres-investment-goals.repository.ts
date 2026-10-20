@@ -95,17 +95,17 @@ const goalColumns = `
 const goalJoins = `
   LEFT JOIN categories AS category
     ON category.id = goal.category_id
-   AND category.user_id = goal.user_id
+   AND category.wallet_id = goal.wallet_id
    AND category.nature IN ('investment', 'investment_goal')
   LEFT JOIN subcategories AS subcategory
     ON subcategory.id = goal.subcategory_id
-   AND subcategory.user_id = goal.user_id
+   AND subcategory.wallet_id = goal.wallet_id
    AND subcategory.category_id = goal.category_id
   LEFT JOIN LATERAL (
     SELECT SUM(contribution.amount) AS total
     FROM investment_contributions AS contribution
     WHERE contribution.goal_id = goal.id
-      AND contribution.user_id = goal.user_id
+      AND contribution.wallet_id = goal.wallet_id
   ) AS contribution_totals ON true`;
 
 const contributionColumns = `
@@ -119,70 +119,70 @@ const contributionColumns = `
 export class PostgresInvestmentGoalsRepository implements InvestmentGoalsRepository {
   constructor(private readonly database: Database) {}
 
-  private async lockGoal(executor: QueryExecutor, userId: string, goalId: string): Promise<{ closed: boolean } | null> {
+  private async lockGoal(executor: QueryExecutor, walletId: string, goalId: string): Promise<{ closed: boolean } | null> {
     const result = await executor.query<{ closed_at: string | Date | null }>(
       `SELECT closed_at
        FROM investment_goals
-       WHERE id = $1 AND user_id = $2
+       WHERE id = $1 AND wallet_id = $2
        FOR UPDATE`,
-      [goalId, userId],
+      [goalId, walletId],
     );
     const row = result.rows[0];
     return row ? { closed: row.closed_at !== null } : null;
   }
 
-  private async getGoalWithExecutor(executor: QueryExecutor, userId: string, goalId: string): Promise<InvestmentGoal | null> {
+  private async getGoalWithExecutor(executor: QueryExecutor, walletId: string, goalId: string): Promise<InvestmentGoal | null> {
     const result = await executor.query<GoalRow>(
       `SELECT ${goalColumns}
        FROM investment_goals AS goal
        ${goalJoins}
-       WHERE goal.user_id = $1 AND goal.id = $2`,
-      [userId, goalId],
+       WHERE goal.wallet_id = $1 AND goal.id = $2`,
+      [walletId, goalId],
     );
     const row = result.rows[0];
     return row ? mapGoal(row) : null;
   }
 
-  async listGoals(userId: string): Promise<InvestmentGoal[]> {
+  async listGoals(_userId: string, walletId: string): Promise<InvestmentGoal[]> {
     const result = await this.database.query<GoalRow>(
       `SELECT ${goalColumns}
        FROM investment_goals AS goal
        ${goalJoins}
-       WHERE goal.user_id = $1
+       WHERE goal.wallet_id = $1
        ORDER BY goal.created_at DESC, goal.id DESC`,
-      [userId],
+      [walletId],
     );
     return result.rows.map(mapGoal);
   }
 
-  async getGoal(userId: string, goalId: string): Promise<InvestmentGoal | null> {
+  async getGoal(_userId: string, walletId: string, goalId: string): Promise<InvestmentGoal | null> {
     const result = await this.database.query<GoalRow>(
       `SELECT ${goalColumns}
        FROM investment_goals AS goal
        ${goalJoins}
-       WHERE goal.user_id = $1 AND goal.id = $2`,
-      [userId, goalId],
+       WHERE goal.wallet_id = $1 AND goal.id = $2`,
+      [walletId, goalId],
     );
     const row = result.rows[0];
     return row ? mapGoal(row) : null;
   }
 
-  async createGoal(userId: string, input: Required<InvestmentGoalInput>): Promise<InvestmentGoal | null> {
+  async createGoal(userId: string, walletId: string, input: Required<InvestmentGoalInput>): Promise<InvestmentGoal | null> {
     return this.database.transaction(async (executor) => {
       const result = await executor.query<GoalRow>(
         `WITH inserted AS (
-           INSERT INTO investment_goals (user_id, title, description, target_amount, due_date, category_id, subcategory_id, category_nature)
-           SELECT $1, $2, $3, $4::numeric, $5::date, category.id, $7::uuid, COALESCE(category.nature, 'investment')
+           INSERT INTO investment_goals (user_id, wallet_id, title, description, target_amount, due_date, category_id, subcategory_id, category_nature)
+           SELECT $1, $2, $3, $4, $5::numeric, $6::date, category.id, $8::uuid, COALESCE(category.nature, 'investment')
            FROM (SELECT 1) AS source
            LEFT JOIN categories AS category
-             ON category.id = $6::uuid
-            AND category.user_id = $1
+             ON category.id = $7::uuid
+            AND category.wallet_id = $2
             AND category.nature IN ('investment', 'investment_goal')
-           WHERE ($6::uuid IS NULL OR category.id IS NOT NULL)
-             AND ($7::uuid IS NULL OR EXISTS (
+           WHERE ($7::uuid IS NULL OR category.id IS NOT NULL)
+             AND ($8::uuid IS NULL OR EXISTS (
                SELECT 1 FROM subcategories AS subcategory
-               WHERE subcategory.id = $7::uuid
-                 AND subcategory.user_id = $1
+               WHERE subcategory.id = $8::uuid
+                 AND subcategory.wallet_id = $2
                  AND subcategory.category_id = category.id
              ))
            RETURNING *
@@ -190,7 +190,7 @@ export class PostgresInvestmentGoalsRepository implements InvestmentGoalsReposit
          SELECT ${goalColumns.replaceAll("goal.", "inserted.")}
          FROM inserted
          ${goalJoins.replaceAll("goal.", "inserted.")}`,
-        [userId, input.title, input.description, input.targetAmount, input.dueDate, input.categoryId, input.subcategoryId],
+        [userId, walletId, input.title, input.description, input.targetAmount, input.dueDate, input.categoryId, input.subcategoryId],
       );
       const row = result.rows[0];
       return row ? mapGoal(row) : null;
@@ -199,36 +199,37 @@ export class PostgresInvestmentGoalsRepository implements InvestmentGoalsReposit
 
   async updateGoal(
     userId: string,
+    walletId: string,
     goalId: string,
     input: Required<InvestmentGoalInput>,
   ): Promise<InvestmentGoal | null> {
     return this.database.transaction(async (executor) => {
-      const state = await this.lockGoal(executor, userId, goalId);
+      const state = await this.lockGoal(executor, walletId, goalId);
       if (!state || state.closed) return null;
       const result = await executor.query<GoalRow>(
         `WITH updated AS (
            UPDATE investment_goals AS goal
-           SET title = $3,
-               description = $4,
-               target_amount = $5::numeric,
-               due_date = $6::date,
+           SET title = $4,
+               description = $5,
+               target_amount = $6::numeric,
+               due_date = $7::date,
                category_id = category.id,
-               subcategory_id = $8::uuid,
+               subcategory_id = $9::uuid,
                category_nature = COALESCE(category.nature, 'investment'),
                updated_at = now()
            FROM (SELECT 1) AS source
            LEFT JOIN categories AS category
-             ON category.id = $7::uuid
-            AND category.user_id = $2
+             ON category.id = $8::uuid
+            AND category.wallet_id = $3
             AND category.nature IN ('investment', 'investment_goal')
            WHERE goal.id = $1
-             AND goal.user_id = $2
+             AND goal.wallet_id = $3
              AND goal.closed_at IS NULL
-             AND ($7::uuid IS NULL OR category.id IS NOT NULL)
-             AND ($8::uuid IS NULL OR EXISTS (
+             AND ($8::uuid IS NULL OR category.id IS NOT NULL)
+             AND ($9::uuid IS NULL OR EXISTS (
                SELECT 1 FROM subcategories AS subcategory
-               WHERE subcategory.id = $8::uuid
-                 AND subcategory.user_id = $2
+               WHERE subcategory.id = $9::uuid
+                 AND subcategory.wallet_id = $3
                  AND subcategory.category_id = category.id
              ))
            RETURNING goal.*
@@ -236,60 +237,61 @@ export class PostgresInvestmentGoalsRepository implements InvestmentGoalsReposit
          SELECT ${goalColumns.replaceAll("goal.", "updated.")}
          FROM updated
          ${goalJoins.replaceAll("goal.", "updated.")}`,
-        [goalId, userId, input.title, input.description, input.targetAmount, input.dueDate, input.categoryId, input.subcategoryId],
+        [goalId, userId, walletId, input.title, input.description, input.targetAmount, input.dueDate, input.categoryId, input.subcategoryId],
       );
       const row = result.rows[0];
       return row ? mapGoal(row) : null;
     });
   }
 
-  async closeGoal(userId: string, goalId: string): Promise<InvestmentGoal | null> {
+  async closeGoal(_userId: string, walletId: string, goalId: string): Promise<InvestmentGoal | null> {
     return this.database.transaction(async (executor) => {
-      const state = await this.lockGoal(executor, userId, goalId);
+      const state = await this.lockGoal(executor, walletId, goalId);
       if (!state) return null;
-      if (state.closed) return this.getGoalWithExecutor(executor, userId, goalId);
+      if (state.closed) return this.getGoalWithExecutor(executor, walletId, goalId);
       await executor.query(
         `UPDATE investment_goals
          SET closed_at = now(), updated_at = now()
-         WHERE id = $1 AND user_id = $2 AND closed_at IS NULL`,
-        [goalId, userId],
+         WHERE id = $1 AND wallet_id = $2 AND closed_at IS NULL`,
+        [goalId, walletId],
       );
-      return this.getGoalWithExecutor(executor, userId, goalId);
+      return this.getGoalWithExecutor(executor, walletId, goalId);
     });
   }
 
-  async hasGoal(userId: string, goalId: string): Promise<boolean> {
+  async hasGoal(_userId: string, walletId: string, goalId: string): Promise<boolean> {
     const result = await this.database.query<{ exists: boolean }>(
-      "SELECT EXISTS (SELECT 1 FROM investment_goals WHERE id = $1 AND user_id = $2) AS exists",
-      [goalId, userId],
+      "SELECT EXISTS (SELECT 1 FROM investment_goals WHERE id = $1 AND wallet_id = $2) AS exists",
+      [goalId, walletId],
     );
     return result.rows[0]?.exists ?? false;
   }
 
-  async listContributions(userId: string, goalId: string): Promise<InvestmentContribution[]> {
+  async listContributions(_userId: string, walletId: string, goalId: string): Promise<InvestmentContribution[]> {
     const result = await this.database.query<ContributionRow>(
       `SELECT ${contributionColumns}
        FROM investment_contributions AS contribution
-       WHERE contribution.user_id = $1 AND contribution.goal_id = $2
+       WHERE contribution.wallet_id = $1 AND contribution.goal_id = $2
        ORDER BY contribution.date DESC, contribution.created_at DESC, contribution.id DESC`,
-      [userId, goalId],
+      [walletId, goalId],
     );
     return result.rows.map(mapContribution);
   }
 
   async createContribution(
     userId: string,
+    walletId: string,
     goalId: string,
     input: Required<InvestmentContributionInput>,
   ): Promise<InvestmentContribution | null> {
     return this.database.transaction(async (executor) => {
-      const state = await this.lockGoal(executor, userId, goalId);
+      const state = await this.lockGoal(executor, walletId, goalId);
       if (!state || state.closed) return null;
       const result = await executor.query<ContributionRow>(
-        `INSERT INTO investment_contributions (user_id, goal_id, amount, date, description)
-         VALUES ($1, $2, $3::numeric, $4::date, $5)
+        `INSERT INTO investment_contributions (user_id, wallet_id, goal_id, amount, date, description)
+         VALUES ($1, $2, $3, $4::numeric, $5::date, $6)
          RETURNING ${contributionColumns.replaceAll("contribution.", "")}`,
-        [userId, goalId, input.amount, input.date, input.description],
+        [userId, walletId, goalId, input.amount, input.date, input.description],
       );
       const row = result.rows[0];
       return row ? mapContribution(row) : null;
@@ -297,48 +299,49 @@ export class PostgresInvestmentGoalsRepository implements InvestmentGoalsReposit
   }
 
   async updateContribution(
-    userId: string,
+    _userId: string,
+    walletId: string,
     goalId: string,
     contributionId: string,
     input: Required<InvestmentContributionInput>,
   ): Promise<InvestmentContribution | null> {
     return this.database.transaction(async (executor) => {
-      const state = await this.lockGoal(executor, userId, goalId);
+      const state = await this.lockGoal(executor, walletId, goalId);
       if (!state || state.closed) return null;
       const result = await executor.query<ContributionRow>(
         `UPDATE investment_contributions AS contribution
          SET amount = $4::numeric, date = $5::date, description = $6, updated_at = now()
          WHERE contribution.id = $1
-           AND contribution.user_id = $2
+           AND contribution.wallet_id = $2
            AND contribution.goal_id = $3
          RETURNING ${contributionColumns}`,
-        [contributionId, userId, goalId, input.amount, input.date, input.description],
+        [contributionId, walletId, goalId, input.amount, input.date, input.description],
       );
       const row = result.rows[0];
       return row ? mapContribution(row) : null;
     });
   }
 
-  async deleteContribution(userId: string, goalId: string, contributionId: string): Promise<boolean> {
+  async deleteContribution(_userId: string, walletId: string, goalId: string, contributionId: string): Promise<boolean> {
     return this.database.transaction(async (executor) => {
-      const state = await this.lockGoal(executor, userId, goalId);
+      const state = await this.lockGoal(executor, walletId, goalId);
       if (!state || state.closed) return false;
       const result = await executor.query(
         `DELETE FROM investment_contributions
-         WHERE id = $1 AND user_id = $2 AND goal_id = $3`,
-        [contributionId, userId, goalId],
+         WHERE id = $1 AND wallet_id = $2 AND goal_id = $3`,
+        [contributionId, walletId, goalId],
       );
       return result.rowCount === 1;
     });
   }
 
-  async hasContribution(userId: string, goalId: string, contributionId: string): Promise<boolean> {
+  async hasContribution(_userId: string, walletId: string, goalId: string, contributionId: string): Promise<boolean> {
     const result = await this.database.query<{ exists: boolean }>(
       `SELECT EXISTS (
          SELECT 1 FROM investment_contributions
-         WHERE id = $1 AND user_id = $2 AND goal_id = $3
+         WHERE id = $1 AND wallet_id = $2 AND goal_id = $3
        ) AS exists`,
-      [contributionId, userId, goalId],
+      [contributionId, walletId, goalId],
     );
     return result.rows[0]?.exists ?? false;
   }

@@ -2,6 +2,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { AuthApiError, authApi } from './authApi'
+import { walletApi } from './wallets/walletApi'
 import App from './App'
 
 function deferred<T>() {
@@ -144,4 +145,39 @@ describe('authentication forms', () => {
     expect(screen.getByRole('heading', { name: 'Não foi possível confirmar.' })).toBeVisible()
     expect(authApi.verifyEmail).toHaveBeenCalledWith('expired-token')
   })
+})
+
+describe('authenticated financial routes', () => {
+  beforeEach(() => {
+    vi.stubGlobal('matchMedia', vi.fn((media: string) => ({
+      matches: false,
+      media,
+      onchange: null,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    })))
+    vi.spyOn(authApi, 'me').mockResolvedValue({ user: { id: 'user-1', email: 'tito@example.com' } })
+    vi.spyOn(walletApi, 'list').mockResolvedValue({
+      items: [{ id: 'wallet-personal', name: 'Pessoal', isPersonal: true, role: 'owner' }],
+    })
+  })
+
+  afterEach(() => {
+    cleanup()
+    vi.restoreAllMocks()
+    window.localStorage.clear()
+  })
+
+  it.each(['/categories', '/dashboard', '/incomes', '/expenses', '/goals'])(
+    'loads the active wallet before rendering %s', async (path) => {
+      window.history.replaceState({}, '', path)
+      render(<App />)
+
+      await waitFor(() => expect(walletApi.list).toHaveBeenCalledTimes(1))
+      await waitFor(() => expect(window.localStorage.getItem('saldocerto.active-wallet.user-1')).toBe('wallet-personal'))
+    },
+  )
 })

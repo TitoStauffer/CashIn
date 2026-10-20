@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import type { Category } from '../categories/categoriesApi'
 import { categoriesApi } from '../categories/categoriesApi'
 import type { InvestmentContribution, InvestmentGoal, InvestmentGoalInput } from './goalsApi'
 import { GoalApiError, goalsApi } from './goalsApi'
 import { FinancialSidebar } from '../layout/FinancialSidebar'
+import { useWallet } from '../wallets/useWallet'
 import { formatBrazilianCurrency, formatBrazilianCurrencyInput, hasInvalidBrazilianCurrencyInput, isPositiveCurrencyAmount, maskBrazilianCurrencyInput, parseBrazilianCurrencyInput } from '../money/currency'
 import './GoalsPage.css'
 
@@ -61,6 +62,7 @@ function emptyGoal(): GoalEditor {
 }
 
 export function GoalsPage({ userEmail, isLoggingOut, onLogout }: GoalsPageProps) {
+  const { activeWalletId } = useWallet()
   const [goals, setGoals] = useState<InvestmentGoal[]>([])
   const [categories, setCategories] = useState<Category[]>([])
   const [contributions, setContributions] = useState<Record<string, InvestmentContribution[]>>({})
@@ -72,11 +74,13 @@ export function GoalsPage({ userEmail, isLoggingOut, onLogout }: GoalsPageProps)
   const [contributionAmountInvalid, setContributionAmountInvalid] = useState(false)
   const [contributionGoalId, setContributionGoalId] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
+  const [loadedWalletId, setLoadedWalletId] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [loadError, setLoadError] = useState('')
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
   const [reloadKey, setReloadKey] = useState(0)
+  const lastLoadedWalletId = useRef<string | null>(null)
 
   useEffect(() => {
     const controller = new AbortController()
@@ -88,17 +92,31 @@ export function GoalsPage({ userEmail, isLoggingOut, onLogout }: GoalsPageProps)
       ]),
     ])
       .then(([goalResponse, categoryResponses]) => {
+        if (lastLoadedWalletId.current !== activeWalletId) {
+          setEditor(null)
+          setContributionEditor(null)
+          setContributionGoalId(null)
+          setError('')
+          setMessage('')
+        }
+        lastLoadedWalletId.current = activeWalletId
         setGoals(goalResponse.items)
         setCategories(categoryResponses.flatMap((response) => response.items))
+        setContributions({})
+        setExpandedId(null)
+        setLoadedWalletId(activeWalletId)
         setLoadError('')
       })
       .catch((cause: unknown) => {
         if (cause instanceof Error && cause.name === 'AbortError') return
+        setLoadedWalletId(activeWalletId)
         setLoadError(getErrorMessage(cause, 'carregar suas metas'))
       })
       .finally(() => { if (!controller.signal.aborted) setLoading(false) })
     return () => controller.abort()
-  }, [reloadKey])
+  }, [activeWalletId, reloadKey])
+
+  const isWalletLoading = loadedWalletId !== activeWalletId
 
   const visibleGoals = useMemo(() => goals.filter((goal) => filter === 'all' || goal.status === filter), [filter, goals])
   const selectedCategory = categories.find((category) => category.id === editor?.categoryId)
@@ -292,7 +310,7 @@ export function GoalsPage({ userEmail, isLoggingOut, onLogout }: GoalsPageProps)
           {error && <p className="goals-alert goals-alert--error" role="alert">{error}</p>}
           {message && <p className="goals-alert goals-alert--success" role="status">{message}</p>}
 
-          {editor && <form className="goal-editor" onSubmit={(event) => void saveGoal(event)} aria-labelledby="goal-editor-title">
+          {editor && !isWalletLoading && <form className="goal-editor" onSubmit={(event) => void saveGoal(event)} aria-labelledby="goal-editor-title">
             <div className="goal-editor__heading"><h2 id="goal-editor-title">{editor.id ? 'Editar meta' : 'Criar meta'}</h2><p>O prazo e a categoria são opcionais. Aportes ficam separados das despesas.</p></div>
             <div className="goal-editor__grid">
               <div className="goal-field"><label htmlFor="goal-title">Título *</label><input id="goal-title" maxLength={120} value={editor.title} onChange={(event) => setEditor({ ...editor, title: event.target.value })} placeholder="Ex.: Reserva de emergência" required /></div>
@@ -305,8 +323,8 @@ export function GoalsPage({ userEmail, isLoggingOut, onLogout }: GoalsPageProps)
             <div className="goal-editor__actions"><button className="goals-secondary-button" type="button" onClick={() => setEditor(null)} disabled={saving}>Cancelar</button><button className="goals-primary-button" type="submit" disabled={saving}>{saving ? 'Salvando…' : editor.id ? 'Salvar alterações' : 'Criar meta'}</button></div>
           </form>}
 
-          {loadError ? <div className="goals-state-card" role="alert"><span className="goals-state-icon" aria-hidden="true">!</span><h2>Não foi possível carregar</h2><p>{loadError}</p><button className="goals-secondary-button" type="button" onClick={() => { setLoading(true); setReloadKey((key) => key + 1) }}>Tentar novamente</button></div>
-            : loading ? <div className="goals-loading" role="status"><span className="goals-spinner" aria-hidden="true" />Carregando metas…</div>
+          {loadError && !isWalletLoading ? <div className="goals-state-card" role="alert"><span className="goals-state-icon" aria-hidden="true">!</span><h2>Não foi possível carregar</h2><p>{loadError}</p><button className="goals-secondary-button" type="button" onClick={() => { setLoading(true); setReloadKey((key) => key + 1) }}>Tentar novamente</button></div>
+            : loading || isWalletLoading ? <div className="goals-loading" role="status"><span className="goals-spinner" aria-hidden="true" />Carregando metas…</div>
               : visibleGoals.length === 0 ? <div className="goals-state-card"><span className="goals-state-icon" aria-hidden="true">◎</span><h2>{filter === 'closed' ? 'Nenhuma meta encerrada' : filter === 'all' ? 'Nenhuma meta cadastrada' : 'Você ainda não tem metas'}</h2><p>{filter === 'active' ? 'Crie uma meta para acompanhar seus aportes e seu progresso.' : 'Quando houver metas neste filtro, elas aparecerão aqui.'}</p>{filter === 'active' && <button type="button" className="goals-secondary-button" onClick={createGoal}>Criar primeira meta</button>}</div>
                 : <ul className="goal-list" aria-label="Metas de investimento">{visibleGoals.map((goal) => {
                   const items = contributions[goal.id]
@@ -319,7 +337,7 @@ export function GoalsPage({ userEmail, isLoggingOut, onLogout }: GoalsPageProps)
                     <div className="goal-progress" role="progressbar" aria-label={`Progresso da meta ${goal.title}`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(progress)}><span style={{ width: `${progress}%` }} /></div>
                     <div className="goal-card__actions"><button className="goal-text-action" type="button" onClick={() => void showContributions(goal.id)} disabled={saving}>{expandedId === goal.id ? 'Ocultar aportes' : 'Ver aportes'}</button>{goal.status === 'active' && <><button className="goal-text-action" type="button" onClick={() => editGoal(goal)} disabled={saving}>Editar meta</button><button className="goal-text-action" type="button" onClick={() => createContribution(goal.id)} disabled={saving}>＋ Registrar aporte</button><button className="goal-text-action goal-text-action--danger" type="button" onClick={() => void closeGoal(goal)} disabled={saving}>Encerrar meta</button></>}</div>
                     {expandedId === goal.id && <div className="goal-contributions"><div className="goal-contributions__heading"><h3>Aportes</h3>{goal.status === 'active' && <button className="goal-text-action" type="button" onClick={() => createContribution(goal.id)} disabled={saving}>＋ Novo aporte</button>}</div>
-                      {contributionEditor && contributionGoalId === goal.id && <form className="contribution-editor" onSubmit={(event) => void saveContribution(event)}><div className="goal-editor__grid"><div className="goal-field"><label htmlFor="contribution-amount">Valor *</label><div className="goal-amount-input"><span aria-hidden="true">R$</span><input id="contribution-amount" type="text" inputMode="decimal" autoComplete="off" value={contributionEditor.amount} onChange={(event) => { setContributionAmountInvalid(hasInvalidBrazilianCurrencyInput(event.target.value)); setContributionEditor({ ...contributionEditor, amount: maskBrazilianCurrencyInput(event.target.value) }) }} aria-invalid={contributionAmountInvalid} aria-describedby={contributionAmountInvalid ? 'contribution-amount-hint contribution-amount-error' : 'contribution-amount-hint'} placeholder="0,00" required /></div><small id="contribution-amount-hint">Use vírgula para os centavos, por exemplo 1.234,56.</small>{contributionAmountInvalid && <small id="contribution-amount-error" role="alert">Use apenas números, até duas casas decimais e respeite o limite de R$ 999.999.999.999,99.</small>}</div><div className="goal-field"><label htmlFor="contribution-date">Data *</label><input id="contribution-date" type="date" value={contributionEditor.date} onChange={(event) => setContributionEditor({ ...contributionEditor, date: event.target.value })} required /></div><div className="goal-field goal-field--wide"><label htmlFor="contribution-description">Descrição <span>(opcional)</span></label><input id="contribution-description" maxLength={500} value={contributionEditor.description} onChange={(event) => setContributionEditor({ ...contributionEditor, description: event.target.value })} placeholder="Ex.: aporte mensal" /></div></div><div className="goal-editor__actions"><button className="goals-secondary-button" type="button" onClick={() => setContributionEditor(null)} disabled={saving}>Cancelar</button><button className="goals-primary-button" type="submit" disabled={saving}>{saving ? 'Salvando…' : contributionEditor.id ? 'Salvar aporte' : 'Registrar aporte'}</button></div></form>}
+                      {contributionEditor && !isWalletLoading && contributionGoalId === goal.id && <form className="contribution-editor" onSubmit={(event) => void saveContribution(event)}><div className="goal-editor__grid"><div className="goal-field"><label htmlFor="contribution-amount">Valor *</label><div className="goal-amount-input"><span aria-hidden="true">R$</span><input id="contribution-amount" type="text" inputMode="decimal" autoComplete="off" value={contributionEditor.amount} onChange={(event) => { setContributionAmountInvalid(hasInvalidBrazilianCurrencyInput(event.target.value)); setContributionEditor({ ...contributionEditor, amount: maskBrazilianCurrencyInput(event.target.value) }) }} aria-invalid={contributionAmountInvalid} aria-describedby={contributionAmountInvalid ? 'contribution-amount-hint contribution-amount-error' : 'contribution-amount-hint'} placeholder="0,00" required /></div><small id="contribution-amount-hint">Use vírgula para os centavos, por exemplo 1.234,56.</small>{contributionAmountInvalid && <small id="contribution-amount-error" role="alert">Use apenas números, até duas casas decimais e respeite o limite de R$ 999.999.999.999,99.</small>}</div><div className="goal-field"><label htmlFor="contribution-date">Data *</label><input id="contribution-date" type="date" value={contributionEditor.date} onChange={(event) => setContributionEditor({ ...contributionEditor, date: event.target.value })} required /></div><div className="goal-field goal-field--wide"><label htmlFor="contribution-description">Descrição <span>(opcional)</span></label><input id="contribution-description" maxLength={500} value={contributionEditor.description} onChange={(event) => setContributionEditor({ ...contributionEditor, description: event.target.value })} placeholder="Ex.: aporte mensal" /></div></div><div className="goal-editor__actions"><button className="goals-secondary-button" type="button" onClick={() => setContributionEditor(null)} disabled={saving}>Cancelar</button><button className="goals-primary-button" type="submit" disabled={saving}>{saving ? 'Salvando…' : contributionEditor.id ? 'Salvar aporte' : 'Registrar aporte'}</button></div></form>}
                       {items === undefined ? <p className="goal-contribution-note">Carregando aportes…</p> : items.length === 0 ? <p className="goal-contribution-note">Nenhum aporte registrado nesta meta.</p> : <ul className="contribution-list">{items.map((item) => <li className="contribution-row" key={item.id}><div><strong>{formatAmount(item.amount)}</strong><span>{formatDate(item.date)}{item.description ? ` · ${item.description}` : ''}</span></div>{goal.status === 'active' && <div className="contribution-row__actions"><button className="goal-text-action" type="button" onClick={() => editContribution(goal.id, item)} disabled={saving}>Editar</button><button className="goal-text-action goal-text-action--danger" type="button" onClick={() => void deleteContribution(goal.id, item)} disabled={saving}>Excluir</button></div>}</li>)}</ul>}
                     </div>}
                   </article></li>

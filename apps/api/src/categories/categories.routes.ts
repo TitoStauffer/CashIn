@@ -66,7 +66,7 @@ export function registerCategoryRoutes(app: FastifyInstance, options: RouteOptio
   app.get<{ Querystring: CategoryQuery }>(
     "/categories",
     {
-      preHandler: app.authenticate,
+      preHandler: [app.authenticate, app.resolveWalletContext],
       preValidation: rejectUnexpectedQueryProperties(["nature"]),
       schema: {
         querystring: {
@@ -80,6 +80,7 @@ export function registerCategoryRoutes(app: FastifyInstance, options: RouteOptio
       try {
         const items = await options.categoriesService.listCategories(
           request.currentUser!.id,
+          request.currentWalletId!,
           request.query.nature,
         );
         return reply.code(200).send({ items });
@@ -92,7 +93,7 @@ export function registerCategoryRoutes(app: FastifyInstance, options: RouteOptio
   app.post<{ Body: CreateCategoryBody }>(
     "/categories",
     {
-      preHandler: app.authenticate,
+      preHandler: [app.authenticate, app.resolveWalletContext],
       preValidation: rejectUnexpectedProperties(["name", "nature"]),
       schema: {
         body: {
@@ -110,6 +111,7 @@ export function registerCategoryRoutes(app: FastifyInstance, options: RouteOptio
       try {
         const item = await options.categoriesService.createCategory(
           request.currentUser!.id,
+          request.currentWalletId!,
           request.body.name,
           request.body.nature,
         );
@@ -123,7 +125,7 @@ export function registerCategoryRoutes(app: FastifyInstance, options: RouteOptio
   app.patch<{ Params: CategoryParams; Body: UpdateNameBody }>(
     "/categories/:categoryId",
     {
-      preHandler: app.authenticate,
+      preHandler: [app.authenticate, app.resolveWalletContext],
       preValidation: rejectUnexpectedProperties(["name"]),
       schema: {
         params: { type: "object", required: ["categoryId"], properties: { categoryId: uuidSchema } },
@@ -139,6 +141,7 @@ export function registerCategoryRoutes(app: FastifyInstance, options: RouteOptio
       try {
         const item = await options.categoriesService.updateCategoryName(
           request.currentUser!.id,
+          request.currentWalletId!,
           request.params.categoryId,
           request.body.name,
         );
@@ -152,12 +155,12 @@ export function registerCategoryRoutes(app: FastifyInstance, options: RouteOptio
   app.delete<{ Params: CategoryParams }>(
     "/categories/:categoryId",
     {
-      preHandler: app.authenticate,
+      preHandler: [app.authenticate, app.resolveWalletContext],
       schema: { params: { type: "object", required: ["categoryId"], properties: { categoryId: uuidSchema } } },
     },
     async (request, reply) => {
       try {
-        await options.categoriesService.deleteCategory(request.currentUser!.id, request.params.categoryId);
+        await options.categoriesService.deleteCategory(request.currentUser!.id, request.currentWalletId!, request.params.categoryId);
         return reply.code(204).send();
       } catch (error) {
         return sendCategoryError(error, reply);
@@ -168,7 +171,7 @@ export function registerCategoryRoutes(app: FastifyInstance, options: RouteOptio
   app.post<{ Params: CategoryParams; Body: UpdateNameBody }>(
     "/categories/:categoryId/subcategories",
     {
-      preHandler: app.authenticate,
+      preHandler: [app.authenticate, app.resolveWalletContext],
       preValidation: rejectUnexpectedProperties(["name"]),
       schema: {
         params: { type: "object", required: ["categoryId"], properties: { categoryId: uuidSchema } },
@@ -184,6 +187,7 @@ export function registerCategoryRoutes(app: FastifyInstance, options: RouteOptio
       try {
         const item = await options.categoriesService.createSubcategory(
           request.currentUser!.id,
+          request.currentWalletId!,
           request.params.categoryId,
           request.body.name,
         );
@@ -197,7 +201,7 @@ export function registerCategoryRoutes(app: FastifyInstance, options: RouteOptio
   app.patch<{ Params: SubcategoryParams; Body: UpdateNameBody }>(
     "/categories/:categoryId/subcategories/:subcategoryId",
     {
-      preHandler: app.authenticate,
+      preHandler: [app.authenticate, app.resolveWalletContext],
       preValidation: rejectUnexpectedProperties(["name"]),
       schema: {
         params: {
@@ -217,6 +221,7 @@ export function registerCategoryRoutes(app: FastifyInstance, options: RouteOptio
       try {
         const item = await options.categoriesService.updateSubcategoryName(
           request.currentUser!.id,
+          request.currentWalletId!,
           request.params.categoryId,
           request.params.subcategoryId,
           request.body.name,
@@ -231,7 +236,7 @@ export function registerCategoryRoutes(app: FastifyInstance, options: RouteOptio
   app.delete<{ Params: SubcategoryParams }>(
     "/categories/:categoryId/subcategories/:subcategoryId",
     {
-      preHandler: app.authenticate,
+      preHandler: [app.authenticate, app.resolveWalletContext],
       schema: {
         params: {
           type: "object",
@@ -244,6 +249,7 @@ export function registerCategoryRoutes(app: FastifyInstance, options: RouteOptio
       try {
         await options.categoriesService.deleteSubcategory(
           request.currentUser!.id,
+          request.currentWalletId!,
           request.params.categoryId,
           request.params.subcategoryId,
         );

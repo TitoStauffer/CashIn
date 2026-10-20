@@ -38,9 +38,18 @@ As senhas de novas contas devem ter pelo menos 8 caracteres e incluir uma letra 
 
 Cadastro e login têm limites temporários de tentativas por endereço IP para reduzir abuso. O controle é mantido em memória e atende ao MVP com uma única instância da API; para múltiplas instâncias, será necessário compartilhar o estado do limitador.
 
+## Carteiras e escopo dos dados
+
+Os dados financeiros são organizados por carteira. Toda conta possui uma carteira pessoal; um usuário também pode ter acesso a outras carteiras quando estiver cadastrado como membro.
+
+- `GET /wallets` lista as carteiras às quais o usuário autenticado pertence. A resposta tem o formato `{ "items": [{ "id": "<uuid>", "name": "Pessoal", "isPersonal": true, "role": "owner" }] }`.
+- `POST /wallets` cria uma carteira adicional para o usuário autenticado, com `{ "name": "Viagem" }`, e retorna a carteira criada com status `201`.
+
+Envie `X-Wallet-Id: <uuid>` nas operações de categorias, entradas, saídas, metas de investimento, aportes e resumo financeiro para selecionar a carteira. Se o header for omitido, a API usa a carteira pessoal do usuário. A API só permite acessar uma carteira quando há um registro de membership para o usuário autenticado; carteira inexistente ou sem acesso retorna `404`.
+
 ## Categorias financeiras
 
-Categorias e subcategorias são gerenciadas por usuário autenticado. As naturezas disponíveis são `income` (entrada), `expense` (saída), `investment` (meta de investimento) e `investment_goal` (natureza legada, mantida por compatibilidade). Uma subcategoria herda a natureza da categoria.
+Categorias e subcategorias são gerenciadas dentro da carteira selecionada. As naturezas disponíveis são `income` (entrada), `expense` (saída), `investment` (meta de investimento) e `investment_goal` (natureza legada, mantida por compatibilidade). Uma subcategoria herda a natureza da categoria.
 
 - `GET /categories?nature=income|expense|investment|investment_goal` lista categorias e suas subcategorias; o filtro `nature` é opcional.
 - `POST /categories` cria uma categoria com `{ "name": "...", "nature": "income" }`.
@@ -50,39 +59,39 @@ Categorias e subcategorias são gerenciadas por usuário autenticado. As naturez
 - `PATCH /categories/:categoryId/subcategories/:subcategoryId` renomeia uma subcategoria com `{ "name": "..." }`.
 - `DELETE /categories/:categoryId/subcategories/:subcategoryId` exclui uma subcategoria, desde que não esteja referenciada.
 
-Os nomes são normalizados sem espaços nas extremidades e não diferenciam maiúsculas de minúsculas: categorias devem ser únicas por usuário e natureza; subcategorias, dentro da categoria. A natureza de uma categoria não pode ser alterada. A API responde `409` para nomes duplicados ou tentativas de excluir itens em uso.
+Os nomes são normalizados sem espaços nas extremidades e não diferenciam maiúsculas de minúsculas: categorias devem ser únicas por carteira e natureza; subcategorias, dentro da categoria. A natureza de uma categoria não pode ser alterada. A API responde `409` para nomes duplicados ou tentativas de excluir itens em uso.
 
 Para parar os containers, use docker compose down. Para remover também os dados locais do banco, use docker compose down -v.
 
 ## Lançamentos de entrada
 
-Todas as operações de entrada exigem uma sessão autenticada e são isoladas pelo usuário da sessão. Os valores monetários são enviados e retornados como strings decimais, com até duas casas, para preservar a precisão.
+Todas as operações de entrada exigem uma sessão autenticada e são isoladas pela carteira selecionada. Os valores monetários são enviados e retornados como strings decimais, com até duas casas, para preservar a precisão.
 
 - `GET /incomes?from=AAAA-MM-DD&to=AAAA-MM-DD` lista entradas; os filtros de data são opcionais e inclusivos, com ordenação por data e criação mais recentes primeiro.
 - `POST /incomes` cria uma entrada com `{ "amount": "1250.50", "date": "2026-10-19", "description": "Salário", "categoryId": "<uuid>", "subcategoryId": "<uuid-ou-null>" }`.
 - `PUT /incomes/:incomeId` substitui os campos editáveis e aceita a mesma estrutura do cadastro; descrição e subcategoria podem ser omitidas ou nulas.
 - `DELETE /incomes/:incomeId` exclui uma entrada e retorna `204`.
 
-As categorias precisam pertencer ao usuário autenticado e ter natureza `income`. A subcategoria, quando informada, precisa pertencer à categoria selecionada.
+As categorias precisam pertencer à carteira selecionada e ter natureza `income`. A subcategoria, quando informada, precisa pertencer à categoria selecionada.
 
 ## Lançamentos de saída
 
-Todas as operações de saída exigem uma sessão autenticada e são isoladas pelo usuário da sessão. Os valores monetários são enviados e retornados como strings decimais, com até duas casas, para preservar a precisão.
+Todas as operações de saída exigem uma sessão autenticada e são isoladas pela carteira selecionada. Os valores monetários são enviados e retornados como strings decimais, com até duas casas, para preservar a precisão.
 
 - `GET /expenses?from=AAAA-MM-DD&to=AAAA-MM-DD` lista saídas; os filtros de data são opcionais e inclusivos, com ordenação por data e criação mais recentes primeiro.
 - `POST /expenses` cria uma saída com `{ "amount": "1250.50", "date": "2026-10-19", "description": "Mercado", "categoryId": "<uuid>", "subcategoryId": "<uuid-ou-null>" }`.
 - `PUT /expenses/:expenseId` substitui os campos editáveis e aceita a mesma estrutura do cadastro; descrição e subcategoria podem ser omitidas ou nulas.
 - `DELETE /expenses/:expenseId` exclui uma saída e retorna `204`.
 
-O valor deve ser positivo. As categorias precisam pertencer ao usuário autenticado e ter natureza `expense`; a subcategoria, quando informada, precisa pertencer à categoria selecionada. IDs de saídas de outros usuários não podem ser consultados, alterados ou excluídos.
+O valor deve ser positivo. As categorias precisam pertencer à carteira selecionada e ter natureza `expense`; a subcategoria, quando informada, precisa pertencer à categoria selecionada. IDs de saídas de outras carteiras não podem ser consultados, alterados ou excluídos.
 
 ## Resumo financeiro
 
-`GET /financial-summary?from=AAAA-MM-DD&to=AAAA-MM-DD` retorna os totais do usuário autenticado, com filtros de data opcionais e inclusivos. A resposta separa as entradas, despesas de consumo e aportes: `{ "incomeTotal": "500.00", "expenseTotal": "100.00", "contributionTotal": "50.00", "availableBalance": "350.00" }`. O saldo disponível é calculado como entradas menos despesas menos aportes; aportes não são somados às despesas.
+`GET /financial-summary?from=AAAA-MM-DD&to=AAAA-MM-DD` retorna os totais da carteira selecionada, com filtros de data opcionais e inclusivos. A resposta separa as entradas, despesas de consumo e aportes: `{ "incomeTotal": "500.00", "expenseTotal": "100.00", "contributionTotal": "50.00", "availableBalance": "350.00" }`. O saldo disponível é calculado como entradas menos despesas menos aportes; aportes não são somados às despesas.
 
 ## Metas de investimento e aportes
 
-Todas as operações de metas e aportes exigem autenticação e usam o usuário da sessão como proprietário. Valores monetários são decimais enviados e retornados como strings, preservando até duas casas decimais. A natureza de categoria `investment` pode ser usada para associar uma meta; `investment_goal` permanece válida para compatibilidade com categorias existentes.
+Todas as operações de metas e aportes exigem autenticação e usam a carteira selecionada como escopo. Valores monetários são decimais enviados e retornados como strings, preservando até duas casas decimais. A natureza de categoria `investment` pode ser usada para associar uma meta; `investment_goal` permanece válida para compatibilidade com categorias existentes.
 
 - `GET /investment-goals` lista metas com `contributedAmount` e `progressPercentage` calculados a partir dos aportes atuais.
 - `GET /investment-goals/:goalId` consulta uma meta e seu progresso.

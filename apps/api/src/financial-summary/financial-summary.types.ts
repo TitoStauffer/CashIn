@@ -14,5 +14,5 @@ export interface FinancialSummaryCategory {
 }
 
 export interface FinancialSummaryRepository {
-  getSummary(userId: string, from?: string, to?: string): Promise<FinancialSummary>;
+  getSummary(walletId: string, from?: string, to?: string): Promise<FinancialSummary>;
 }

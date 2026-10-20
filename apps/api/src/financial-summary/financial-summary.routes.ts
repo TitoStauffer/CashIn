@@ -20,7 +20,7 @@ export function registerFinancialSummaryRoutes(app: FastifyInstance, options: Ro
   app.get<{ Querystring: SummaryQuery }>(
     "/financial-summary",
     {
-      preHandler: app.authenticate,
+      preHandler: [app.authenticate, app.resolveWalletContext],
       preValidation: rejectUnexpectedQueryProperties(["from", "to"]),
       schema: {
         querystring: {
@@ -33,7 +33,7 @@ export function registerFinancialSummaryRoutes(app: FastifyInstance, options: Ro
     async (request, reply) => {
       try {
         const summary = await options.financialSummaryService.getSummary(
-          request.currentUser!.id,
+          request.currentWalletId!,
           request.query.from,
           request.query.to,
         );

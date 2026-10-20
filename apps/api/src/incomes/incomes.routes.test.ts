@@ -5,6 +5,7 @@ import type { Database, QueryExecutor } from "../database.js";
 import { hashToken } from "../auth/token.js";
 import type { AuthRepository, AuthUser, PendingAccount, StoredUser } from "../auth/auth.types.js";
 import type { Income, IncomeInput, IncomeRepository } from "./incomes.types.js";
+import { WalletsTestFixture } from "../wallets/wallets-test-fixture.js";
 
 const USER_A = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const USER_B = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
@@ -33,14 +34,14 @@ class MemoryIncomeRepository implements IncomeRepository {
     return subcategory?.userId === userId && subcategory.categoryId === input.categoryId;
   }
 
-  async listIncomes(userId: string, from?: string, to?: string): Promise<Income[]> {
+  async listIncomes(userId: string, _walletId: string, from?: string, to?: string): Promise<Income[]> {
     return [...this.items.values()]
       .filter((item) => item.userId === userId && (!from || item.date >= from) && (!to || item.date <= to))
       .sort((left, right) => right.date.localeCompare(left.date) || right.createdAt.localeCompare(left.createdAt))
       .map(({ userId: _userId, ...item }) => item);
   }
 
-  async createIncome(userId: string, input: Required<IncomeInput>): Promise<Income | null> {
+  async createIncome(userId: string, _walletId: string, input: Required<IncomeInput>): Promise<Income | null> {
     if (!this.isValidReference(userId, input)) return null;
     const id = `44444444-4444-4444-8444-${this.nextId.toString().padStart(12, "0")}`;
     this.nextId += 1;
@@ -65,7 +66,7 @@ class MemoryIncomeRepository implements IncomeRepository {
     return result;
   }
 
-  async updateIncome(userId: string, incomeId: string, input: Required<IncomeInput>): Promise<Income | null> {
+  async updateIncome(userId: string, _walletId: string, incomeId: string, input: Required<IncomeInput>): Promise<Income | null> {
     const previous = this.items.get(incomeId);
     if (!previous || previous.userId !== userId || !this.isValidReference(userId, input)) return null;
     const category = this.categories.get(input.categoryId)!;
@@ -86,13 +87,13 @@ class MemoryIncomeRepository implements IncomeRepository {
     return result;
   }
 
-  async deleteIncome(userId: string, incomeId: string): Promise<boolean> {
+  async deleteIncome(userId: string, _walletId: string, incomeId: string): Promise<boolean> {
     const item = this.items.get(incomeId);
     if (!item || item.userId !== userId) return false;
     return this.items.delete(incomeId);
   }
 
-  async hasIncome(userId: string, incomeId: string): Promise<boolean> {
+  async hasIncome(userId: string, _walletId: string, incomeId: string): Promise<boolean> {
     return this.items.get(incomeId)?.userId === userId;
   }
 }
@@ -123,7 +124,7 @@ function createTestApp(repository = new MemoryIncomeRepository()) {
   const executor: QueryExecutor = { query: async <Row>() => ({ rows: [] as Row[], rowCount: 0 }) };
   const database: Database = { ...executor, transaction: async (work) => work(executor) };
   return {
-    app: createApp(database, { authRepository: new SessionAuthRepository(), incomeRepository: repository }),
+    app: createApp(database, { authRepository: new SessionAuthRepository(), incomeRepository: repository, walletRepository: new WalletsTestFixture() }),
     repository,
   };
 }

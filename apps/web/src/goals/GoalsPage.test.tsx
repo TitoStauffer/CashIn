@@ -4,6 +4,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { categoriesApi } from '../categories/categoriesApi'
 import { GoalsPage } from './GoalsPage'
 import { goalsApi } from './goalsApi'
+import { WalletProvider } from '../wallets/WalletContext'
+import { walletApi } from '../wallets/walletApi'
 
 const goal = {
   id: 'goal-1', title: 'Carro novo', description: 'Reserva para o carro', targetAmount: '120000.00',
@@ -11,6 +13,12 @@ const goal = {
   subcategoryId: null, subcategoryName: null, contributedAmount: '15000.00', progressPercentage: 12.5,
 }
 const contribution = { id: 'contribution-1', amount: '15.25', date: '2026-10-01', description: 'Aporte mensal' }
+const personalWallet = { id: 'wallet-personal', name: 'Pessoal', isPersonal: true, role: 'owner' as const }
+async function renderPage() {
+  const result = render(<WalletProvider userId="user-1"><GoalsPage userEmail="tito@example.com" isLoggingOut={false} onLogout={vi.fn()} /></WalletProvider>)
+  await screen.findByRole('combobox', { name: /Carteira ativa/ })
+  return result
+}
 
 function deferred<T>() {
   let resolve!: (value: T) => void
@@ -25,6 +33,7 @@ describe('GoalsPage currency inputs', () => {
       addEventListener: vi.fn(), removeEventListener: vi.fn(), addListener: vi.fn(), removeListener: vi.fn(), dispatchEvent: vi.fn(),
     })))
     vi.spyOn(categoriesApi, 'list').mockResolvedValue({ items: [] })
+    vi.spyOn(walletApi, 'list').mockResolvedValue({ items: [personalWallet] })
     vi.spyOn(goalsApi, 'list').mockResolvedValue({ items: [goal] })
     vi.spyOn(goalsApi, 'create').mockResolvedValue(goal)
     vi.spyOn(goalsApi, 'update').mockResolvedValue(goal)
@@ -41,7 +50,7 @@ describe('GoalsPage currency inputs', () => {
 
   it('masks and validates a new goal amount, then sends the canonical decimal on create', async () => {
     const user = userEvent.setup()
-    render(<GoalsPage userEmail="tito@example.com" isLoggingOut={false} onLogout={vi.fn()} />)
+    await renderPage()
     await user.click(await screen.findByRole('button', { name: /Nova meta/ }))
     await user.type(screen.getByLabelText('Título *'), 'Viagem')
     await user.type(screen.getByLabelText('Descrição *'), 'Reserva para viagem')
@@ -60,7 +69,7 @@ describe('GoalsPage currency inputs', () => {
 
   it('formats saved goal and contribution amounts for editing and preserves cents on update', async () => {
     const user = userEvent.setup()
-    render(<GoalsPage userEmail="tito@example.com" isLoggingOut={false} onLogout={vi.fn()} />)
+    await renderPage()
     await user.click(await screen.findByRole('button', { name: 'Editar meta' }))
 
     const goalAmount = screen.getByLabelText('Valor-alvo *')
@@ -94,7 +103,7 @@ describe('GoalsPage currency inputs', () => {
 
   it('opens the contribution form from the collapsed goal card', async () => {
     const user = userEvent.setup()
-    render(<GoalsPage userEmail="tito@example.com" isLoggingOut={false} onLogout={vi.fn()} />)
+    await renderPage()
 
     await user.click(await screen.findByRole('button', { name: '＋ Registrar aporte' }))
 
@@ -105,7 +114,7 @@ describe('GoalsPage currency inputs', () => {
 
   it('reuses loaded contributions when the goal panel is reopened', async () => {
     const user = userEvent.setup()
-    render(<GoalsPage userEmail="tito@example.com" isLoggingOut={false} onLogout={vi.fn()} />)
+    await renderPage()
 
     await user.click(await screen.findByRole('button', { name: 'Ver aportes' }))
     expect(await screen.findByText(/Aporte mensal/)).toBeVisible()
@@ -119,7 +128,7 @@ describe('GoalsPage currency inputs', () => {
   it('shows an error when contributions cannot be loaded from the goal card', async () => {
     const user = userEvent.setup()
     vi.mocked(goalsApi.contributions).mockRejectedValueOnce(new Error('offline'))
-    render(<GoalsPage userEmail="tito@example.com" isLoggingOut={false} onLogout={vi.fn()} />)
+    await renderPage()
 
     await user.click(await screen.findByRole('button', { name: '＋ Registrar aporte' }))
 
@@ -131,7 +140,7 @@ describe('GoalsPage currency inputs', () => {
   it('shows a recoverable error when goals cannot be loaded', async () => {
     const user = userEvent.setup()
     vi.mocked(goalsApi.list).mockRejectedValueOnce(new Error('offline'))
-    render(<GoalsPage userEmail="tito@example.com" isLoggingOut={false} onLogout={vi.fn()} />)
+    await renderPage()
 
     expect(await screen.findByText('Não foi possível carregar suas metas. Verifique sua conexão e tente novamente.')).toBeVisible()
     await user.click(screen.getByRole('button', { name: 'Tentar novamente' }))
@@ -147,7 +156,7 @@ describe('GoalsPage currency inputs', () => {
       .mockReturnValueOnce(initialLoad.promise)
       .mockResolvedValueOnce({ items: [goal] })
     vi.mocked(goalsApi.create).mockReturnValueOnce(createRequest.promise)
-    render(<GoalsPage userEmail="tito@example.com" isLoggingOut={false} onLogout={vi.fn()} />)
+    await renderPage()
 
     expect(screen.getByRole('status')).toHaveTextContent('Carregando metas')
     initialLoad.resolve({ items: [goal] })
@@ -167,7 +176,7 @@ describe('GoalsPage currency inputs', () => {
     const user = userEvent.setup()
     const createRequest = deferred<typeof contribution>()
     vi.mocked(goalsApi.createContribution).mockReturnValueOnce(createRequest.promise)
-    render(<GoalsPage userEmail="tito@example.com" isLoggingOut={false} onLogout={vi.fn()} />)
+    await renderPage()
 
     await user.click(await screen.findByRole('button', { name: '＋ Registrar aporte' }))
     await user.type(await screen.findByLabelText('Valor *'), '250,00')

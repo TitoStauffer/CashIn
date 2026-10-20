@@ -1,3 +1,5 @@
+import { withActiveWallet } from '../wallets/walletApi'
+
 export type InvestmentContribution = {
   id: string
   amount: string
@@ -49,14 +51,14 @@ export class GoalApiError extends Error {
 }
 
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const response = await fetch(`/api${path}`, {
+  const response = await fetch(`/api${path}`, withActiveWallet({
     ...init,
     credentials: 'include',
     headers: {
       ...(init.body ? { 'Content-Type': 'application/json' } : {}),
       ...init.headers,
     },
-  })
+  }))
 
   if (!response.ok) {
     const body = (await response.json().catch(() => null)) as ErrorResponse | null

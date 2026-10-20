@@ -66,9 +66,9 @@ function rejectUnexpectedProperties(allowedProperties: string[]) {
 }
 
 export function registerInvestmentGoalRoutes(app: FastifyInstance, options: RouteOptions): void {
-  app.get("/investment-goals", { preHandler: app.authenticate }, async (request, reply) => {
+  app.get("/investment-goals", { preHandler: [app.authenticate, app.resolveWalletContext] }, async (request, reply) => {
     try {
-      const items = await options.investmentGoalsService.listGoals(request.currentUser!.id);
+      const items = await options.investmentGoalsService.listGoals(request.currentUser!.id, request.currentWalletId!);
       return reply.code(200).send({ items });
     } catch (error) {
       return sendError(error, reply);
@@ -78,13 +78,13 @@ export function registerInvestmentGoalRoutes(app: FastifyInstance, options: Rout
   app.post<{ Body: InvestmentGoalInput }>(
     "/investment-goals",
     {
-      preHandler: app.authenticate,
+      preHandler: [app.authenticate, app.resolveWalletContext],
       preValidation: rejectUnexpectedProperties(["title", "description", "targetAmount", "dueDate", "categoryId", "subcategoryId"]),
       schema: { body: goalBodySchema },
     },
     async (request, reply) => {
       try {
-        const item = await options.investmentGoalsService.createGoal(request.currentUser!.id, request.body);
+        const item = await options.investmentGoalsService.createGoal(request.currentUser!.id, request.currentWalletId!, request.body);
         return reply.code(201).send(item);
       } catch (error) {
         return sendError(error, reply);
@@ -94,10 +94,10 @@ export function registerInvestmentGoalRoutes(app: FastifyInstance, options: Rout
 
   app.get<{ Params: GoalParams }>(
     "/investment-goals/:goalId",
-    { preHandler: app.authenticate, schema: { params: { type: "object", required: ["goalId"], properties: { goalId: uuidSchema } } } },
+    { preHandler: [app.authenticate, app.resolveWalletContext], schema: { params: { type: "object", required: ["goalId"], properties: { goalId: uuidSchema } } } },
     async (request, reply) => {
       try {
-        return reply.code(200).send(await options.investmentGoalsService.getGoal(request.currentUser!.id, request.params.goalId));
+        return reply.code(200).send(await options.investmentGoalsService.getGoal(request.currentUser!.id, request.currentWalletId!, request.params.goalId));
       } catch (error) {
         return sendError(error, reply);
       }
@@ -107,7 +107,7 @@ export function registerInvestmentGoalRoutes(app: FastifyInstance, options: Rout
   app.put<{ Params: GoalParams; Body: InvestmentGoalInput }>(
     "/investment-goals/:goalId",
     {
-      preHandler: app.authenticate,
+      preHandler: [app.authenticate, app.resolveWalletContext],
       preValidation: rejectUnexpectedProperties(["title", "description", "targetAmount", "dueDate", "categoryId", "subcategoryId"]),
       schema: {
         params: { type: "object", required: ["goalId"], properties: { goalId: uuidSchema } },
@@ -116,7 +116,7 @@ export function registerInvestmentGoalRoutes(app: FastifyInstance, options: Rout
     },
     async (request, reply) => {
       try {
-        const item = await options.investmentGoalsService.updateGoal(request.currentUser!.id, request.params.goalId, request.body);
+        const item = await options.investmentGoalsService.updateGoal(request.currentUser!.id, request.currentWalletId!, request.params.goalId, request.body);
         return reply.code(200).send(item);
       } catch (error) {
         return sendError(error, reply);
@@ -126,10 +126,10 @@ export function registerInvestmentGoalRoutes(app: FastifyInstance, options: Rout
 
   app.post<{ Params: GoalParams }>(
     "/investment-goals/:goalId/close",
-    { preHandler: app.authenticate, schema: { params: { type: "object", required: ["goalId"], properties: { goalId: uuidSchema } } } },
+    { preHandler: [app.authenticate, app.resolveWalletContext], schema: { params: { type: "object", required: ["goalId"], properties: { goalId: uuidSchema } } } },
     async (request, reply) => {
       try {
-        return reply.code(200).send(await options.investmentGoalsService.closeGoal(request.currentUser!.id, request.params.goalId));
+        return reply.code(200).send(await options.investmentGoalsService.closeGoal(request.currentUser!.id, request.currentWalletId!, request.params.goalId));
       } catch (error) {
         return sendError(error, reply);
       }
@@ -138,10 +138,10 @@ export function registerInvestmentGoalRoutes(app: FastifyInstance, options: Rout
 
   app.get<{ Params: GoalParams }>(
     "/investment-goals/:goalId/contributions",
-    { preHandler: app.authenticate, schema: { params: { type: "object", required: ["goalId"], properties: { goalId: uuidSchema } } } },
+    { preHandler: [app.authenticate, app.resolveWalletContext], schema: { params: { type: "object", required: ["goalId"], properties: { goalId: uuidSchema } } } },
     async (request, reply) => {
       try {
-        const items = await options.investmentGoalsService.listContributions(request.currentUser!.id, request.params.goalId);
+        const items = await options.investmentGoalsService.listContributions(request.currentUser!.id, request.currentWalletId!, request.params.goalId);
         return reply.code(200).send({ items });
       } catch (error) {
         return sendError(error, reply);
@@ -152,7 +152,7 @@ export function registerInvestmentGoalRoutes(app: FastifyInstance, options: Rout
   app.post<{ Params: GoalParams; Body: InvestmentContributionInput }>(
     "/investment-goals/:goalId/contributions",
     {
-      preHandler: app.authenticate,
+      preHandler: [app.authenticate, app.resolveWalletContext],
       preValidation: rejectUnexpectedProperties(["amount", "date", "description"]),
       schema: {
         params: { type: "object", required: ["goalId"], properties: { goalId: uuidSchema } },
@@ -161,7 +161,7 @@ export function registerInvestmentGoalRoutes(app: FastifyInstance, options: Rout
     },
     async (request, reply) => {
       try {
-        const item = await options.investmentGoalsService.createContribution(request.currentUser!.id, request.params.goalId, request.body);
+        const item = await options.investmentGoalsService.createContribution(request.currentUser!.id, request.currentWalletId!, request.params.goalId, request.body);
         return reply.code(201).send(item);
       } catch (error) {
         return sendError(error, reply);
@@ -172,7 +172,7 @@ export function registerInvestmentGoalRoutes(app: FastifyInstance, options: Rout
   app.put<{ Params: ContributionParams; Body: InvestmentContributionInput }>(
     "/investment-goals/:goalId/contributions/:contributionId",
     {
-      preHandler: app.authenticate,
+      preHandler: [app.authenticate, app.resolveWalletContext],
       preValidation: rejectUnexpectedProperties(["amount", "date", "description"]),
       schema: {
         params: { type: "object", required: ["goalId", "contributionId"], properties: { goalId: uuidSchema, contributionId: uuidSchema } },
@@ -183,6 +183,7 @@ export function registerInvestmentGoalRoutes(app: FastifyInstance, options: Rout
       try {
         const item = await options.investmentGoalsService.updateContribution(
           request.currentUser!.id,
+          request.currentWalletId!,
           request.params.goalId,
           request.params.contributionId,
           request.body,
@@ -197,14 +198,14 @@ export function registerInvestmentGoalRoutes(app: FastifyInstance, options: Rout
   app.delete<{ Params: ContributionParams }>(
     "/investment-goals/:goalId/contributions/:contributionId",
     {
-      preHandler: app.authenticate,
+      preHandler: [app.authenticate, app.resolveWalletContext],
       schema: {
         params: { type: "object", required: ["goalId", "contributionId"], properties: { goalId: uuidSchema, contributionId: uuidSchema } },
       },
     },
     async (request, reply) => {
       try {
-        await options.investmentGoalsService.deleteContribution(request.currentUser!.id, request.params.goalId, request.params.contributionId);
+        await options.investmentGoalsService.deleteContribution(request.currentUser!.id, request.currentWalletId!, request.params.goalId, request.params.contributionId);
         return reply.code(204).send();
       } catch (error) {
         return sendError(error, reply);

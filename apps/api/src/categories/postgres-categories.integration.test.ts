@@ -38,54 +38,60 @@ test("PostgreSQL category CRUD, uniqueness, ownership, and referenced deletion b
     );
     const userId = userResult.rows[0]!.id;
     const secondUserId = secondUserResult.rows[0]!.id;
+    const walletIds = await database.query<{ owner_user_id: string; id: string }>(
+      "SELECT owner_user_id, id FROM wallets WHERE owner_user_id = ANY($1::uuid[])",
+      [[userId, secondUserId]],
+    );
+    const walletId = walletIds.rows.find((row) => row.owner_user_id === userId)!.id;
+    const secondWalletId = walletIds.rows.find((row) => row.owner_user_id === secondUserId)!.id;
     const service = new CategoriesService(new PostgresCategoriesRepository(database));
 
-    const category = await service.createCategory(userId, "  Casa ", "expense");
-    const sameNameOtherNature = await service.createCategory(userId, "Casa", "income");
-    const sameNameOtherUser = await service.createCategory(secondUserId, "Casa", "expense");
+    const category = await service.createCategory(userId, walletId, "  Casa ", "expense");
+    const sameNameOtherNature = await service.createCategory(userId, walletId, "Casa", "income");
+    const sameNameOtherUser = await service.createCategory(secondUserId, secondWalletId, "Casa", "expense");
     assert.equal(category.name, "Casa");
     assert.equal(sameNameOtherNature.nature, "income");
     assert.notEqual(sameNameOtherUser.id, category.id);
 
     const displayName = "  Árvore  ";
     const persistedDisplayName = await database.query<{ name: string; name_normalized: string }>(
-      `INSERT INTO categories (user_id, name, nature)
-       VALUES ($1, $2, 'income')
+      `INSERT INTO categories (user_id, wallet_id, name, nature)
+       VALUES ($1, $2, $3, 'income')
        RETURNING name, name_normalized`,
-      [userId, displayName],
+      [userId, walletId, displayName],
     );
     assert.equal(persistedDisplayName.rows[0]?.name, displayName);
     assert.equal(persistedDisplayName.rows[0]?.name_normalized, "arvore");
     await database.query("DELETE FROM categories WHERE name = $1 AND user_id = $2", [displayName, userId]);
 
     await assert.rejects(
-      service.createCategory(userId, " casa ", "expense"),
+      service.createCategory(userId, walletId, " casa ", "expense"),
       (error: unknown) => typeof error === "object" && error !== null && "statusCode" in error && error.statusCode === 409,
     );
-    const salaryCategory = await service.createCategory(userId, "Salário", "expense");
+    const salaryCategory = await service.createCategory(userId, walletId, "Salário", "expense");
     await assert.rejects(
-      service.createCategory(userId, "salario", "expense"),
+      service.createCategory(userId, walletId, "salario", "expense"),
       (error: unknown) => typeof error === "object" && error !== null && "statusCode" in error && error.statusCode === 409,
     );
-    await service.deleteCategory(userId, salaryCategory.id);
+    await service.deleteCategory(userId, walletId, salaryCategory.id);
 
-    const subcategory = await service.createSubcategory(userId, category.id, "Moradia");
+    const subcategory = await service.createSubcategory(userId, walletId, category.id, "Moradia");
     await assert.rejects(
-      service.createSubcategory(userId, category.id, " moradia "),
+      service.createSubcategory(userId, walletId, category.id, " moradia "),
       (error: unknown) => typeof error === "object" && error !== null && "statusCode" in error && error.statusCode === 409,
     );
     await assert.rejects(
-      service.createSubcategory(userId, category.id, "moradía"),
+      service.createSubcategory(userId, walletId, category.id, "moradía"),
       (error: unknown) => typeof error === "object" && error !== null && "statusCode" in error && error.statusCode === 409,
     );
-    const listed = await service.listCategories(userId, "expense");
+    const listed = await service.listCategories(userId, walletId, "expense");
     assert.deepEqual(listed, [{
       id: category.id,
       name: "Casa",
       nature: "expense",
       subcategories: [subcategory],
     }]);
-    assert.deepEqual(await service.listCategories(secondUserId), [{
+    assert.deepEqual(await service.listCategories(secondUserId, secondWalletId), [{
       id: sameNameOtherUser.id,
       name: "Casa",
       nature: "expense",
@@ -113,30 +119,30 @@ test("PostgreSQL category CRUD, uniqueness, ownership, and referenced deletion b
     );
 
     await assert.rejects(
-      service.deleteSubcategory(userId, category.id, subcategory.id),
+      service.deleteSubcategory(userId, walletId, category.id, subcategory.id),
       (error: unknown) => typeof error === "object" && error !== null && "statusCode" in error && error.statusCode === 409,
     );
     await assert.rejects(
-      service.deleteCategory(userId, category.id),
+      service.deleteCategory(userId, walletId, category.id),
       (error: unknown) => typeof error === "object" && error !== null && "statusCode" in error && error.statusCode === 409,
     );
 
     await database.query("DELETE FROM financial_movements WHERE category_id = $1", [category.id]);
-    await service.deleteCategory(userId, category.id);
-    assert.deepEqual(await service.listCategories(userId), [sameNameOtherNature]);
+    await service.deleteCategory(userId, walletId, category.id);
+    assert.deepEqual(await service.listCategories(userId, walletId), [sameNameOtherNature]);
 
-    const investmentCategory = await service.createCategory(userId, "Reserva", "investment_goal");
+    const investmentCategory = await service.createCategory(userId, walletId, "Reserva", "investment_goal");
     await database.query(
-      `INSERT INTO investment_goals (user_id, title, description, target_amount, category_id, category_nature)
-       VALUES ($1, 'Reserva', 'Meta de investimento', 100, $2, 'investment_goal')`,
-      [userId, investmentCategory.id],
+      `INSERT INTO investment_goals (user_id, wallet_id, title, description, target_amount, category_id, category_nature)
+       VALUES ($1, $2, 'Reserva', 'Meta de investimento', 100, $3, 'investment_goal')`,
+      [userId, walletId, investmentCategory.id],
     );
     await assert.rejects(
-      service.deleteCategory(userId, investmentCategory.id),
+      service.deleteCategory(userId, walletId, investmentCategory.id),
       (error: unknown) => typeof error === "object" && error !== null && "statusCode" in error && error.statusCode === 409,
     );
     await database.query("DELETE FROM investment_goals WHERE category_id = $1", [investmentCategory.id]);
-    await service.deleteCategory(userId, investmentCategory.id);
+    await service.deleteCategory(userId, walletId, investmentCategory.id);
   } finally {
     await scopedPool?.end();
     await adminPool.query(`DROP SCHEMA IF EXISTS ${schemaName} CASCADE`);

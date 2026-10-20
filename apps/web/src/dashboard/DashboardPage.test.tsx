@@ -3,6 +3,15 @@ import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { DashboardPage } from './DashboardPage'
 import { dashboardApi } from './dashboardApi'
+import { WalletProvider } from '../wallets/WalletContext'
+import { walletApi } from '../wallets/walletApi'
+
+const personalWallet = { id: 'wallet-personal', name: 'Pessoal', isPersonal: true, role: 'owner' as const }
+async function renderPage() {
+  const result = render(<WalletProvider userId="user-1"><DashboardPage userEmail="tito@example.com" isLoggingOut={false} onLogout={vi.fn()} /></WalletProvider>)
+  await screen.findByRole('combobox', { name: /Carteira ativa/ })
+  return result
+}
 
 function deferred<T>() {
   let resolve!: (value: T) => void
@@ -31,6 +40,7 @@ describe('DashboardPage', () => {
       expenseByCategory: [],
     })
     vi.spyOn(dashboardApi, 'goals').mockResolvedValue({ items: [] })
+    vi.spyOn(walletApi, 'list').mockResolvedValue({ items: [personalWallet] })
   })
 
   afterEach(() => {
@@ -40,7 +50,7 @@ describe('DashboardPage', () => {
   })
 
   it('shows a negative available balance with its sign and negative styling', async () => {
-    render(<DashboardPage userEmail="tito@example.com" isLoggingOut={false} onLogout={vi.fn()} />)
+    await renderPage()
 
     expect(await screen.findByText('-R$ 1.234,56')).toBeVisible()
     await waitFor(() => expect(screen.getByText('Saldo disponível').closest('article')).toHaveClass('dashboard-summary-card--negative'))
@@ -55,7 +65,7 @@ describe('DashboardPage', () => {
       incomeByCategory: [],
       expenseByCategory: [],
     })
-    render(<DashboardPage userEmail="tito@example.com" isLoggingOut={false} onLogout={vi.fn()} />)
+    await renderPage()
 
     const balanceCard = (await screen.findByText('Saldo disponível')).closest('article')
     expect(balanceCard).toHaveTextContent('R$ 1.500,00')
@@ -65,7 +75,7 @@ describe('DashboardPage', () => {
   it('shows a recoverable error when the overview cannot be loaded', async () => {
     const user = userEvent.setup()
     vi.mocked(dashboardApi.summary).mockRejectedValueOnce(new Error('offline'))
-    render(<DashboardPage userEmail="tito@example.com" isLoggingOut={false} onLogout={vi.fn()} />)
+    await renderPage()
 
     expect(await screen.findByRole('alert')).toHaveTextContent('Não foi possível carregar a visão geral.')
     await user.click(screen.getByRole('button', { name: 'Tentar novamente' }))
@@ -76,7 +86,7 @@ describe('DashboardPage', () => {
   it('shows a visible loading state until both dashboard requests finish', async () => {
     const summaryRequest = deferred<Awaited<ReturnType<typeof dashboardApi.summary>>>()
     vi.mocked(dashboardApi.summary).mockReturnValueOnce(summaryRequest.promise)
-    render(<DashboardPage userEmail="tito@example.com" isLoggingOut={false} onLogout={vi.fn()} />)
+    await renderPage()
 
     expect(screen.getByRole('status')).toHaveTextContent('Carregando sua visão financeira')
     summaryRequest.resolve({

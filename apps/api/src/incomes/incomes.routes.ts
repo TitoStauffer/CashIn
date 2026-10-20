@@ -67,7 +67,7 @@ export function registerIncomeRoutes(app: FastifyInstance, options: RouteOptions
   app.get<{ Querystring: IncomeQuery }>(
     "/incomes",
     {
-      preHandler: app.authenticate,
+      preHandler: [app.authenticate, app.resolveWalletContext],
       preValidation: rejectUnexpectedQueryProperties(["from", "to"]),
       schema: {
         querystring: {
@@ -81,6 +81,7 @@ export function registerIncomeRoutes(app: FastifyInstance, options: RouteOptions
       try {
         const items = await options.incomesService.listIncomes(
           request.currentUser!.id,
+          request.currentWalletId!,
           request.query.from,
           request.query.to,
         );
@@ -94,13 +95,13 @@ export function registerIncomeRoutes(app: FastifyInstance, options: RouteOptions
   app.post<{ Body: IncomeInput }>(
     "/incomes",
     {
-      preHandler: app.authenticate,
+      preHandler: [app.authenticate, app.resolveWalletContext],
       preValidation: rejectUnexpectedProperties(["amount", "date", "description", "categoryId", "subcategoryId"]),
       schema: { body: incomeBodySchema },
     },
     async (request, reply) => {
       try {
-        const item = await options.incomesService.createIncome(request.currentUser!.id, request.body);
+        const item = await options.incomesService.createIncome(request.currentUser!.id, request.currentWalletId!, request.body);
         return reply.code(201).send(item);
       } catch (error) {
         return sendIncomeError(error, reply);
@@ -111,7 +112,7 @@ export function registerIncomeRoutes(app: FastifyInstance, options: RouteOptions
   app.put<{ Params: IncomeParams; Body: IncomeInput }>(
     "/incomes/:incomeId",
     {
-      preHandler: app.authenticate,
+      preHandler: [app.authenticate, app.resolveWalletContext],
       preValidation: rejectUnexpectedProperties(["amount", "date", "description", "categoryId", "subcategoryId"]),
       schema: {
         params: { type: "object", required: ["incomeId"], properties: { incomeId: uuidSchema } },
@@ -122,6 +123,7 @@ export function registerIncomeRoutes(app: FastifyInstance, options: RouteOptions
       try {
         const item = await options.incomesService.updateIncome(
           request.currentUser!.id,
+          request.currentWalletId!,
           request.params.incomeId,
           request.body,
         );
@@ -135,12 +137,12 @@ export function registerIncomeRoutes(app: FastifyInstance, options: RouteOptions
   app.delete<{ Params: IncomeParams }>(
     "/incomes/:incomeId",
     {
-      preHandler: app.authenticate,
+      preHandler: [app.authenticate, app.resolveWalletContext],
       schema: { params: { type: "object", required: ["incomeId"], properties: { incomeId: uuidSchema } } },
     },
     async (request, reply) => {
       try {
-        await options.incomesService.deleteIncome(request.currentUser!.id, request.params.incomeId);
+        await options.incomesService.deleteIncome(request.currentUser!.id, request.currentWalletId!, request.params.incomeId);
         return reply.code(204).send();
       } catch (error) {
         return sendIncomeError(error, reply);

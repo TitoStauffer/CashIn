@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import type { Category } from '../categories/categoriesApi'
 import { categoriesApi } from '../categories/categoriesApi'
 import type { Income, IncomeInput } from './incomesApi'
 import { IncomeApiError, incomesApi } from './incomesApi'
 import { FinancialSidebar } from '../layout/FinancialSidebar'
+import { useWallet } from '../wallets/useWallet'
 import { MonthYearSelector } from '../period/MonthYearSelector'
 import { formatMonth, getCurrentMonth, getMonthRange } from '../period/month'
 import { formatBrazilianCurrency, formatBrazilianCurrencyInput, hasInvalidBrazilianCurrencyInput, maskBrazilianCurrencyInput, parseBrazilianCurrencyInput } from '../money/currency'
@@ -52,10 +53,12 @@ type IncomesPageProps = {
 }
 
 export function IncomesPage({ userEmail, isLoggingOut, onLogout }: IncomesPageProps) {
+  const { activeWalletId } = useWallet()
   const [month, setMonth] = useState(getCurrentMonth)
   const [categories, setCategories] = useState<Category[]>([])
   const [incomes, setIncomes] = useState<Income[]>([])
   const [isLoading, setIsLoading] = useState(true)
+  const [loadedWalletId, setLoadedWalletId] = useState<string | null>(null)
   const [isSaving, setIsSaving] = useState(false)
   const [loadError, setLoadError] = useState('')
   const [formError, setFormError] = useState('')
@@ -64,6 +67,7 @@ export function IncomesPage({ userEmail, isLoggingOut, onLogout }: IncomesPagePr
   const [amountInput, setAmountInput] = useState('')
   const [amountInputInvalid, setAmountInputInvalid] = useState(false)
   const [reloadKey, setReloadKey] = useState(0)
+  const lastLoadedWalletId = useRef<string | null>(null)
   const range = useMemo(() => getMonthRange(month), [month])
 
   useEffect(() => {
@@ -73,11 +77,22 @@ export function IncomesPage({ userEmail, isLoggingOut, onLogout }: IncomesPagePr
       incomesApi.list(range.from, range.to, controller.signal),
     ])
       .then(([categoryResponse, incomeResponse]) => {
+        if (lastLoadedWalletId.current !== activeWalletId) {
+          setEditor(null)
+          setAmountInput('')
+          setAmountInputInvalid(false)
+          setFormError('')
+          setSuccessMessage('')
+        }
+        lastLoadedWalletId.current = activeWalletId
         setCategories(categoryResponse.items)
         setIncomes(incomeResponse.items)
+        setLoadedWalletId(activeWalletId)
+        setLoadError('')
       })
       .catch((error: unknown) => {
         if (error instanceof Error && error.name === 'AbortError') return
+        setLoadedWalletId(activeWalletId)
         setLoadError(getErrorMessage(error, 'load'))
       })
       .finally(() => {
@@ -85,7 +100,9 @@ export function IncomesPage({ userEmail, isLoggingOut, onLogout }: IncomesPagePr
       })
 
     return () => controller.abort()
-  }, [range.from, range.to, reloadKey])
+  }, [activeWalletId, range.from, range.to, reloadKey])
+
+  const isWalletLoading = loadedWalletId !== activeWalletId
 
   const selectedCategory = categories.find((category) => category.id === editor?.categoryId)
   const availableSubcategories = selectedCategory?.subcategories ?? []
@@ -239,7 +256,7 @@ export function IncomesPage({ userEmail, isLoggingOut, onLogout }: IncomesPagePr
           {formError && <p className="incomes-alert incomes-alert--error" role="alert">{formError}</p>}
           {successMessage && <p className="incomes-alert incomes-alert--success" role="status">{successMessage}</p>}
 
-          {editor && (
+          {editor && !isWalletLoading && (
             <form className="income-editor" onSubmit={handleSave} aria-labelledby="income-editor-title">
               <div className="income-editor__heading">
                 <h2 id="income-editor-title">{editor.incomeId ? 'Editar entrada' : 'Nova entrada'}</h2>
@@ -319,14 +336,14 @@ export function IncomesPage({ userEmail, isLoggingOut, onLogout }: IncomesPagePr
             </form>
           )}
 
-          {loadError ? (
+          {loadError && !isWalletLoading ? (
             <div className="incomes-state-card" role="alert">
               <span className="incomes-state-icon" aria-hidden="true">!</span>
               <h2>Não foi possível carregar</h2>
               <p>{loadError}</p>
               <button type="button" className="incomes-secondary-button" onClick={retryLoad}>Tentar novamente</button>
             </div>
-          ) : isLoading ? (
+          ) : isLoading || isWalletLoading ? (
             <div className="incomes-loading" role="status"><span className="incomes-spinner" aria-hidden="true" />Carregando entradas…</div>
           ) : incomes.length === 0 ? (
             <div className="incomes-state-card">

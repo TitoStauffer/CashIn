@@ -25,6 +25,11 @@ import { FinancialSummaryService } from "./financial-summary/financial-summary.s
 import { PostgresFinancialSummaryRepository } from "./financial-summary/postgres-financial-summary.repository.js";
 import { registerFinancialSummaryRoutes } from "./financial-summary/financial-summary.routes.js";
 import type { FinancialSummaryRepository } from "./financial-summary/financial-summary.types.js";
+import { WalletsService } from "./wallets/wallets.service.js";
+import { PostgresWalletsRepository } from "./wallets/postgres-wallets.repository.js";
+import { registerWalletRoutes } from "./wallets/wallets.routes.js";
+import type { WalletRepository } from "./wallets/wallets.types.js";
+import { WalletError } from "./wallets/wallets.errors.js";
 
 export interface AppOptions {
   logger?: boolean;
@@ -35,6 +40,7 @@ export interface AppOptions {
   expenseRepository?: ExpenseRepository;
   investmentGoalsRepository?: InvestmentGoalsRepository;
   financialSummaryRepository?: FinancialSummaryRepository;
+  walletRepository?: WalletRepository;
   authConfiguration?: Partial<AuthConfiguration>;
   secureCookies?: boolean;
 }
@@ -44,6 +50,10 @@ export function createApp(
   options: AppOptions = {},
 ): FastifyInstance {
   const app = Fastify({ logger: options.logger ?? false });
+  const walletsService = new WalletsService(
+    options.walletRepository ?? new PostgresWalletsRepository(database),
+  );
+  app.decorateRequest("currentWalletId", null);
 
   const authService = new AuthService(
     options.authRepository ?? new PostgresAuthRepository(database),
@@ -94,6 +104,25 @@ export function createApp(
     authService,
     secureCookies: options.secureCookies ?? false,
   });
+
+  app.decorate("resolveWalletContext", async (request, reply) => {
+    try {
+      const walletHeader = request.headers["x-wallet-id"];
+      if (Array.isArray(walletHeader)) throw new WalletError("Carteira não encontrada.", 404);
+      request.currentWalletId = await walletsService.resolveActiveWallet(
+        request.currentUser!.id,
+        walletHeader,
+      );
+    } catch (error) {
+      if (error instanceof WalletError) {
+        return reply.code(error.statusCode).send({ message: error.message });
+      }
+      request.log.error({ errorName: error instanceof Error ? error.name : "UnknownError" }, "Wallet context resolution failed");
+      return reply.code(500).send({ message: "Não foi possível concluir a solicitação." });
+    }
+  });
+
+  registerWalletRoutes(app, { walletsService });
 
   registerCategoryRoutes(app, {
     categoriesService: new CategoriesService(

@@ -11,6 +11,7 @@ import type {
   CategoryRepository,
   CategorySubcategory,
 } from "./categories.types.js";
+import { WalletsTestFixture } from "../wallets/wallets-test-fixture.js";
 
 const USER_A = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const USER_B = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
@@ -39,7 +40,7 @@ class MemoryCategoryRepository implements CategoryRepository {
     return category?.userId === userId ? category : null;
   }
 
-  async listCategories(userId: string, nature?: CategoryNature): Promise<Category[]> {
+  async listCategories(userId: string, _walletId: string, nature?: CategoryNature): Promise<Category[]> {
     return [...this.categories.values()]
       .filter((category) => category.userId === userId && (!nature || category.nature === nature))
       .map(({ userId: _userId, ...category }) => ({
@@ -50,7 +51,7 @@ class MemoryCategoryRepository implements CategoryRepository {
       }));
   }
 
-  async createCategory(userId: string, name: string, nature: CategoryNature): Promise<Category> {
+  async createCategory(userId: string, _walletId: string, name: string, nature: CategoryNature): Promise<Category> {
     const duplicate = [...this.categories.values()].some((category) =>
       category.userId === userId
       && category.nature === nature
@@ -69,7 +70,7 @@ class MemoryCategoryRepository implements CategoryRepository {
     return result;
   }
 
-  async updateCategoryName(userId: string, categoryId: string, name: string): Promise<Category | null> {
+  async updateCategoryName(userId: string, _walletId: string, categoryId: string, name: string): Promise<Category | null> {
     const category = this.categoryFor(userId, categoryId);
     if (!category) return null;
     const duplicate = [...this.categories.values()].some((candidate) =>
@@ -82,7 +83,7 @@ class MemoryCategoryRepository implements CategoryRepository {
     return { id: category.id, name: category.name, nature: category.nature, subcategories: [] };
   }
 
-  async deleteCategory(userId: string, categoryId: string): Promise<boolean> {
+  async deleteCategory(userId: string, _walletId: string, categoryId: string): Promise<boolean> {
     const category = this.categoryFor(userId, categoryId);
     if (!category) return false;
     const children = [...this.subcategories.values()].filter((item) => item.categoryId === categoryId);
@@ -94,7 +95,7 @@ class MemoryCategoryRepository implements CategoryRepository {
     return true;
   }
 
-  async createSubcategory(userId: string, categoryId: string, name: string): Promise<CategorySubcategory | null> {
+  async createSubcategory(userId: string, _walletId: string, categoryId: string, name: string): Promise<CategorySubcategory | null> {
     if (!this.categoryFor(userId, categoryId)) return null;
     const duplicate = [...this.subcategories.values()].some((subcategory) =>
       subcategory.userId === userId
@@ -108,6 +109,7 @@ class MemoryCategoryRepository implements CategoryRepository {
 
   async updateSubcategoryName(
     userId: string,
+    _walletId: string,
     categoryId: string,
     subcategoryId: string,
     name: string,
@@ -129,7 +131,7 @@ class MemoryCategoryRepository implements CategoryRepository {
     return { id: subcategory.id, name: subcategory.name, categoryId: subcategory.categoryId };
   }
 
-  async deleteSubcategory(userId: string, categoryId: string, subcategoryId: string): Promise<boolean> {
+  async deleteSubcategory(userId: string, _walletId: string, categoryId: string, subcategoryId: string): Promise<boolean> {
     const subcategory = this.subcategories.get(subcategoryId);
     if (
       !subcategory
@@ -183,6 +185,7 @@ function createTestApp(repository = new MemoryCategoryRepository()) {
   const app = createApp(createDatabase(), {
     authRepository: new SessionAuthRepository(),
     categoryRepository: repository,
+    walletRepository: new WalletsTestFixture(),
   });
   return { app, repository };
 }
@@ -293,8 +296,8 @@ test("category uniqueness is scoped to owner and nature, and category nature can
 
 test("category and subcategory identifiers from another account are hidden as not found", async () => {
   const { app, repository } = createTestApp();
-  const category = await repository.createCategory(USER_B, "Mercado", "expense");
-  const subcategory = await repository.createSubcategory(USER_B, category.id, "Feira");
+  const category = await repository.createCategory(USER_B, USER_B, "Mercado", "expense");
+  const subcategory = await repository.createSubcategory(USER_B, USER_B, category.id, "Feira");
   assert.ok(subcategory);
 
   const foreignCategory = await app.inject({
@@ -360,8 +363,8 @@ test("subcategories can be edited and duplicate names within a category are reje
 
 test("deleting a category cascades unreferenced subcategories but returns 409 when one is in use", async () => {
   const { app, repository } = createTestApp();
-  const category = await repository.createCategory(USER_A, "Investimentos", "investment_goal");
-  const subcategory = await repository.createSubcategory(USER_A, category.id, "Reserva");
+  const category = await repository.createCategory(USER_A, USER_A, "Investimentos", "investment_goal");
+  const subcategory = await repository.createSubcategory(USER_A, USER_A, category.id, "Reserva");
   assert.ok(subcategory);
   repository.usedSubcategories.add(subcategory.id);
 
@@ -388,8 +391,8 @@ test("deleting a category cascades unreferenced subcategories but returns 409 wh
 
 test("deleting an in-use subcategory returns a conflict and preserves it", async () => {
   const { app, repository } = createTestApp();
-  const category = await repository.createCategory(USER_A, "Saúde", "expense");
-  const subcategory = await repository.createSubcategory(USER_A, category.id, "Farmácia");
+  const category = await repository.createCategory(USER_A, USER_A, "Saúde", "expense");
+  const subcategory = await repository.createSubcategory(USER_A, USER_A, category.id, "Farmácia");
   assert.ok(subcategory);
   repository.usedSubcategories.add(subcategory.id);
 

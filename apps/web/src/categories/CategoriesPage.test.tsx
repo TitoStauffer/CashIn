@@ -3,12 +3,20 @@ import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { CategoriesPage } from './CategoriesPage'
 import { categoriesApi } from './categoriesApi'
+import { WalletProvider } from '../wallets/WalletContext'
+import { walletApi } from '../wallets/walletApi'
 
 const category = {
   id: 'income-category',
   name: 'Salário',
   nature: 'income' as const,
   subcategories: [{ id: 'income-subcategory', name: 'Salário mensal', categoryId: 'income-category' }],
+}
+const personalWallet = { id: 'wallet-personal', name: 'Pessoal', isPersonal: true, role: 'owner' as const }
+async function renderPage() {
+  const result = render(<WalletProvider userId="user-1"><CategoriesPage userEmail="tito@example.com" isLoggingOut={false} onLogout={vi.fn()} /></WalletProvider>)
+  await screen.findByRole('combobox', { name: /Carteira ativa/ })
+  return result
 }
 
 function deferred<T>() {
@@ -30,6 +38,7 @@ describe('CategoriesPage duplicate names', () => {
       dispatchEvent: vi.fn(),
     })))
     vi.spyOn(categoriesApi, 'list').mockResolvedValue({ items: [category] })
+    vi.spyOn(walletApi, 'list').mockResolvedValue({ items: [personalWallet] })
     vi.spyOn(categoriesApi, 'create').mockResolvedValue(undefined)
     vi.spyOn(categoriesApi, 'createSubcategory').mockResolvedValue(undefined)
   })
@@ -42,7 +51,7 @@ describe('CategoriesPage duplicate names', () => {
 
   it('rejects a category duplicate when the only difference is diacritics', async () => {
     const user = userEvent.setup()
-    render(<CategoriesPage userEmail="tito@example.com" isLoggingOut={false} onLogout={vi.fn()} />)
+    await renderPage()
 
     await screen.findByRole('heading', { name: 'Salário' })
     await user.click(screen.getByRole('button', { name: 'Nova categoria' }))
@@ -55,7 +64,7 @@ describe('CategoriesPage duplicate names', () => {
 
   it('rejects a subcategory duplicate when the only difference is diacritics', async () => {
     const user = userEvent.setup()
-    render(<CategoriesPage userEmail="tito@example.com" isLoggingOut={false} onLogout={vi.fn()} />)
+    await renderPage()
 
     await user.click(await screen.findByRole('button', { name: /Adicionar subcategoria/ }))
     await user.type(screen.getByLabelText('Nome da nova subcategoria'), 'salario mensal')
@@ -68,7 +77,7 @@ describe('CategoriesPage duplicate names', () => {
   it('shows a recoverable error when categories cannot be loaded', async () => {
     const user = userEvent.setup()
     vi.mocked(categoriesApi.list).mockRejectedValueOnce(new Error('offline'))
-    render(<CategoriesPage userEmail="tito@example.com" isLoggingOut={false} onLogout={vi.fn()} />)
+    await renderPage()
 
     expect(await screen.findByRole('alert')).toHaveTextContent('Não foi possível conectar ao serviço.')
     await user.click(screen.getByRole('button', { name: 'Tentar novamente' }))
@@ -83,7 +92,7 @@ describe('CategoriesPage duplicate names', () => {
     vi.mocked(categoriesApi.list).mockReturnValueOnce(initialLoad.promise)
     vi.mocked(categoriesApi.list).mockResolvedValueOnce({ items: [category, { ...category, id: 'new-category', name: 'Freelance', subcategories: [] }] })
     vi.mocked(categoriesApi.create).mockReturnValueOnce(createRequest.promise)
-    render(<CategoriesPage userEmail="tito@example.com" isLoggingOut={false} onLogout={vi.fn()} />)
+    await renderPage()
 
     expect(screen.getByRole('status')).toHaveTextContent('Carregando categorias de entradas')
     initialLoad.resolve({ items: [category] })

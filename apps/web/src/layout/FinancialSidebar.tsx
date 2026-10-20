@@ -1,4 +1,6 @@
 import { useEffect, useState } from 'react'
+import type { FormEvent } from 'react'
+import { useWallet } from '../wallets/useWallet'
 import './FinancialSidebar.css'
 
 type NavigationItem = {
@@ -34,9 +36,13 @@ function readCollapsedPreference() {
 }
 
 export function FinancialSidebar({ activePage, userEmail, isLoggingOut, onLogout }: FinancialSidebarProps) {
+  const { wallets, activeWalletId, activeWallet, selectWallet, createWallet, isCreating } = useWallet()
   const [isCollapsed, setIsCollapsed] = useState(readCollapsedPreference)
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
   const [isMobileViewport, setIsMobileViewport] = useState(() => window.matchMedia('(max-width: 760px)').matches)
+  const [isWalletFormOpen, setIsWalletFormOpen] = useState(false)
+  const [walletName, setWalletName] = useState('')
+  const [walletError, setWalletError] = useState('')
 
   useEffect(() => {
     const mediaQuery = window.matchMedia('(max-width: 760px)')
@@ -62,6 +68,25 @@ export function FinancialSidebar({ activePage, userEmail, isLoggingOut, onLogout
 
   function toggleCollapsed() {
     setIsCollapsed((collapsed) => !collapsed)
+  }
+
+  async function handleCreateWallet(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    const name = walletName.trim()
+    if (!name) {
+      setWalletError('Informe um nome para a carteira.')
+      return
+    }
+    setWalletError('')
+    try {
+      await createWallet(name)
+      setWalletName('')
+      setIsWalletFormOpen(false)
+    } catch (error) {
+      setWalletError(error instanceof Error && error.message.trim()
+        ? error.message
+        : 'Não foi possível criar a carteira. Tente novamente.')
+    }
   }
 
   return (
@@ -90,6 +115,46 @@ export function FinancialSidebar({ activePage, userEmail, isLoggingOut, onLogout
           <span aria-hidden="true">{isMobileMenuOpen ? '×' : isCollapsed ? '☰' : '‹'}</span>
         </button>
       </div>
+
+      <section className="financial-sidebar__wallet" aria-label="Carteira ativa">
+        <label className="financial-sidebar__wallet-label" htmlFor="active-wallet">Carteira ativa</label>
+        <select
+          id="active-wallet"
+          value={activeWalletId ?? ''}
+          onChange={(event) => selectWallet(event.target.value)}
+          aria-label={`Carteira ativa: ${activeWallet?.name ?? 'nenhuma selecionada'}`}
+          title={activeWallet?.name}
+        >
+          {wallets.map((wallet) => (
+            <option key={wallet.id} value={wallet.id}>{wallet.name}{wallet.isPersonal ? ' (pessoal)' : ''}</option>
+          ))}
+        </select>
+        <button
+          type="button"
+          className="financial-sidebar__wallet-create"
+          onClick={() => { setWalletError(''); setIsWalletFormOpen((open) => !open) }}
+          aria-expanded={isWalletFormOpen}
+          aria-controls="create-wallet-form"
+        >
+          <span aria-hidden="true">＋</span>
+          <span className="financial-sidebar__label">Nova carteira</span>
+        </button>
+        {isWalletFormOpen && (
+          <form className="financial-sidebar__wallet-form" id="create-wallet-form" onSubmit={handleCreateWallet}>
+            <label htmlFor="new-wallet-name">Nome da carteira</label>
+            <input
+              id="new-wallet-name"
+              value={walletName}
+              onChange={(event) => setWalletName(event.target.value)}
+              maxLength={80}
+              required
+              autoFocus
+            />
+            {walletError && <p className="financial-sidebar__wallet-error" role="alert">{walletError}</p>}
+            <button type="submit" disabled={isCreating}>{isCreating ? 'Criando…' : 'Criar carteira'}</button>
+          </form>
+        )}
+      </section>
 
       <nav
         className="financial-sidebar__nav"

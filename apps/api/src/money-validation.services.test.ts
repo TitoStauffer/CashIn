@@ -24,7 +24,7 @@ test("income and expense services reject decimal strings that bypass route valid
     createIncome: async () => { incomeRepositoryCalled = true; return null; },
   } as unknown as IncomeRepository);
   await assert.rejects(
-    incomes.createIncome(USER_ID, { ...validMovement, amount: "1.001" }),
+    incomes.createIncome(USER_ID, USER_ID, { ...validMovement, amount: "1.001" }),
     (error: unknown) => error instanceof Error && "statusCode" in error && error.statusCode === 400,
   );
   assert.equal(incomeRepositoryCalled, false);
@@ -34,7 +34,7 @@ test("income and expense services reject decimal strings that bypass route valid
     createExpense: async () => { expenseRepositoryCalled = true; return null; },
   } as unknown as ExpenseRepository);
   await assert.rejects(
-    expenses.createExpense(USER_ID, { ...validMovement, amount: "999999999999.999" }),
+    expenses.createExpense(USER_ID, USER_ID, { ...validMovement, amount: "999999999999.999" }),
     (error: unknown) => error instanceof Error && "statusCode" in error && error.statusCode === 400,
   );
   assert.equal(expenseRepositoryCalled, false);
@@ -51,11 +51,11 @@ test("investment goal and contribution services reject invalid precision before 
   const service = new InvestmentGoalsService(repository);
 
   await assert.rejects(
-    service.createGoal(USER_ID, { title: "Reserva", description: "Fundo", targetAmount: "1.001" }),
+    service.createGoal(USER_ID, USER_ID, { title: "Reserva", description: "Fundo", targetAmount: "1.001" }),
     (error: unknown) => error instanceof InvestmentGoalError && error.statusCode === 400,
   );
   await assert.rejects(
-    service.createContribution(USER_ID, GOAL_ID, { amount: "0.00", date: "2026-10-20" }),
+    service.createContribution(USER_ID, USER_ID, GOAL_ID, { amount: "0.00", date: "2026-10-20" }),
     (error: unknown) => error instanceof InvestmentGoalError && error.statusCode === 400,
   );
   assert.equal(createGoalCalled, false);
@@ -69,7 +69,7 @@ test("investment goal service maps database reference violations to a client err
   const service = new InvestmentGoalsService(repository);
 
   await assert.rejects(
-    service.createGoal(USER_ID, { title: "Reserva", description: "Fundo", targetAmount: "1.00" }),
+    service.createGoal(USER_ID, USER_ID, { title: "Reserva", description: "Fundo", targetAmount: "1.00" }),
     (error: unknown) => error instanceof InvestmentGoalError && error.statusCode === 400,
   );
 });

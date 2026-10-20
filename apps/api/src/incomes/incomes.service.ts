@@ -42,18 +42,18 @@ function mapReferenceError(error: unknown): never {
 export class IncomesService {
   constructor(private readonly repository: IncomeRepository) {}
 
-  listIncomes(userId: string, from?: string, to?: string): Promise<Income[]> {
+  listIncomes(userId: string, walletId: string, from?: string, to?: string): Promise<Income[]> {
     if (from) validateDate(from, "O filtro from");
     if (to) validateDate(to, "O filtro to");
     if (from && to && from > to) {
       throw new IncomeError("O filtro from deve ser anterior ou igual ao filtro to.", 400);
     }
-    return this.repository.listIncomes(userId, from, to);
+    return this.repository.listIncomes(userId, walletId, from, to);
   }
 
-  async createIncome(userId: string, input: IncomeInput): Promise<Income> {
+  async createIncome(userId: string, walletId: string, input: IncomeInput): Promise<Income> {
     try {
-      const income = await this.repository.createIncome(userId, normalizeInput(input));
+      const income = await this.repository.createIncome(userId, walletId, normalizeInput(input));
       if (!income) throw new InvalidIncomeReferenceError();
       return income;
     } catch (error) {
@@ -61,12 +61,12 @@ export class IncomesService {
     }
   }
 
-  async updateIncome(userId: string, incomeId: string, input: IncomeInput): Promise<Income> {
+  async updateIncome(userId: string, walletId: string, incomeId: string, input: IncomeInput): Promise<Income> {
     if (!UUID_PATTERN.test(incomeId)) throw new IncomeError("Lançamento não encontrado.", 404);
     try {
-      const income = await this.repository.updateIncome(userId, incomeId, normalizeInput(input));
+      const income = await this.repository.updateIncome(userId, walletId, incomeId, normalizeInput(input));
       if (!income) {
-        if (await this.repository.hasIncome(userId, incomeId)) throw new InvalidIncomeReferenceError();
+        if (await this.repository.hasIncome(userId, walletId, incomeId)) throw new InvalidIncomeReferenceError();
         throw new IncomeError("Lançamento não encontrado.", 404);
       }
       return income;
@@ -75,9 +75,9 @@ export class IncomesService {
     }
   }
 
-  async deleteIncome(userId: string, incomeId: string): Promise<void> {
+  async deleteIncome(userId: string, walletId: string, incomeId: string): Promise<void> {
     if (!UUID_PATTERN.test(incomeId)) throw new IncomeError("Lançamento não encontrado.", 404);
-    const deleted = await this.repository.deleteIncome(userId, incomeId);
+    const deleted = await this.repository.deleteIncome(userId, walletId, incomeId);
     if (!deleted) throw new IncomeError("Lançamento não encontrado.", 404);
   }
 }

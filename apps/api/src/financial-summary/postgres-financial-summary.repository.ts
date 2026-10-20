@@ -13,28 +13,28 @@ interface SummaryRow {
 export class PostgresFinancialSummaryRepository implements FinancialSummaryRepository {
   constructor(private readonly database: Database) {}
 
-  async getSummary(userId: string, from?: string, to?: string): Promise<FinancialSummary> {
+  async getSummary(walletId: string, from?: string, to?: string): Promise<FinancialSummary> {
     const result = await this.database.query<SummaryRow>(
       `WITH totals AS (
          SELECT
            COALESCE((
              SELECT SUM(income.amount)
              FROM incomes AS income
-             WHERE income.user_id = $1
+             WHERE income.wallet_id = $1
                AND ($2::date IS NULL OR income.date >= $2::date)
                AND ($3::date IS NULL OR income.date <= $3::date)
            ), 0.00) AS income_total,
            COALESCE((
              SELECT SUM(expense.amount)
              FROM expenses AS expense
-             WHERE expense.user_id = $1
+             WHERE expense.wallet_id = $1
                AND ($2::date IS NULL OR expense.date >= $2::date)
                AND ($3::date IS NULL OR expense.date <= $3::date)
            ), 0.00) AS expense_total,
            COALESCE((
              SELECT SUM(contribution.amount)
              FROM investment_contributions AS contribution
-             WHERE contribution.user_id = $1
+             WHERE contribution.wallet_id = $1
                AND ($2::date IS NULL OR contribution.date >= $2::date)
                AND ($3::date IS NULL OR contribution.date <= $3::date)
            ), 0.00) AS contribution_total
@@ -52,14 +52,14 @@ export class PostgresFinancialSummaryRepository implements FinancialSummaryRepos
          FROM (
            SELECT income.category_id, SUM(income.amount) AS amount
            FROM incomes AS income
-           WHERE income.user_id = $1
+           WHERE income.wallet_id = $1
              AND ($2::date IS NULL OR income.date >= $2::date)
              AND ($3::date IS NULL OR income.date <= $3::date)
            GROUP BY income.category_id
          ) AS grouped
          JOIN categories AS category
            ON category.id = grouped.category_id
-          AND category.user_id = $1
+          AND category.wallet_id = $1
           AND category.nature = 'income'
        ),
        expense_categories AS (
@@ -75,14 +75,14 @@ export class PostgresFinancialSummaryRepository implements FinancialSummaryRepos
          FROM (
            SELECT expense.category_id, SUM(expense.amount) AS amount
            FROM expenses AS expense
-           WHERE expense.user_id = $1
+           WHERE expense.wallet_id = $1
              AND ($2::date IS NULL OR expense.date >= $2::date)
              AND ($3::date IS NULL OR expense.date <= $3::date)
            GROUP BY expense.category_id
          ) AS grouped
          JOIN categories AS category
            ON category.id = grouped.category_id
-          AND category.user_id = $1
+          AND category.wallet_id = $1
           AND category.nature = 'expense'
        )
        SELECT
@@ -93,7 +93,7 @@ export class PostgresFinancialSummaryRepository implements FinancialSummaryRepos
          income_categories.items AS income_by_category,
          expense_categories.items AS expense_by_category
        FROM totals, income_categories, expense_categories`,
-      [userId, from ?? null, to ?? null],
+      [walletId, from ?? null, to ?? null],
     );
     const row = result.rows[0];
     if (!row) throw new Error("Financial summary query returned no row");
