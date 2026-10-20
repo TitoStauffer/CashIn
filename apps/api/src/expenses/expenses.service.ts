@@ -32,7 +32,11 @@ function normalizeInput(input: ExpenseInput): Required<ExpenseInput> {
   if (paymentMethodId !== null && !UUID_PATTERN.test(paymentMethodId)) {
     throw new ExpenseError("A forma de pagamento informada é inválida.", 400);
   }
-  return { ...input, amount: input.amount, description, subcategoryId, paymentMethodId };
+  const creditCardId = input.creditCardId ?? null;
+  if (creditCardId !== null && !UUID_PATTERN.test(creditCardId)) {
+    throw new ExpenseError("O cartão de crédito informado é inválido.", 400);
+  }
+  return { ...input, amount: input.amount, description, subcategoryId, paymentMethodId, creditCardId };
 }
 
 function mapReferenceError(error: unknown): never {
