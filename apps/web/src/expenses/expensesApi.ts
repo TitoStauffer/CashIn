@@ -12,6 +12,9 @@ export type Expense = {
   paymentMethodId: string | null
   paymentMethodName: string | null
   paymentMethodNature: import('../paymentMethods/paymentMethodsApi').PaymentMethodNature | null
+  creditCardId?: string | null
+  creditCardStatementId?: string | null
+  creditCardName?: string | null
   createdAt: string
   updatedAt: string
 }
@@ -23,6 +26,7 @@ export type ExpenseInput = {
   categoryId: string
   subcategoryId?: string | null
   paymentMethodId?: string | null
+  creditCardId?: string | null
 }
 
 type ExpenseListResponse = { items: Expense[] }

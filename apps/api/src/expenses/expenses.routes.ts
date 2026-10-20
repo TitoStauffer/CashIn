@@ -34,6 +34,7 @@ const expenseBodySchema = {
     categoryId: uuidSchema,
     subcategoryId: { anyOf: [uuidSchema, { type: "null" }] },
     paymentMethodId: { anyOf: [uuidSchema, { type: "null" }] },
+    creditCardId: { anyOf: [uuidSchema, { type: "null" }] },
   },
 };
 
@@ -97,7 +98,7 @@ export function registerExpenseRoutes(app: FastifyInstance, options: RouteOption
     "/expenses",
     {
       preHandler: [app.authenticate, app.resolveWalletContext],
-      preValidation: rejectUnexpectedProperties(["amount", "date", "description", "categoryId", "subcategoryId", "paymentMethodId"]),
+      preValidation: rejectUnexpectedProperties(["amount", "date", "description", "categoryId", "subcategoryId", "paymentMethodId", "creditCardId"]),
       schema: { body: expenseBodySchema },
     },
     async (request, reply) => {
@@ -114,7 +115,7 @@ export function registerExpenseRoutes(app: FastifyInstance, options: RouteOption
     "/expenses/:expenseId",
     {
       preHandler: [app.authenticate, app.resolveWalletContext],
-      preValidation: rejectUnexpectedProperties(["amount", "date", "description", "categoryId", "subcategoryId", "paymentMethodId"]),
+      preValidation: rejectUnexpectedProperties(["amount", "date", "description", "categoryId", "subcategoryId", "paymentMethodId", "creditCardId"]),
       schema: {
         params: { type: "object", required: ["expenseId"], properties: { expenseId: uuidSchema } },
         body: expenseBodySchema,

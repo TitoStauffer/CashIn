@@ -24,6 +24,7 @@ const navigationItems: NavigationItem[] = [
   { href: '/goals', label: 'Metas', icon: '◎', key: 'goals' },
   { href: '/categories', label: 'Categorias', icon: '▤', key: 'categories' },
   { href: '/payment-methods', label: 'Formas de pagamento', icon: '◉', key: 'payment-methods' },
+  { href: '/credit-cards', label: 'Cartões e faturas', icon: '▣', key: 'credit-cards' },
   { href: '/wallet-sharing', label: 'Compartilhamento', icon: '♧', key: 'wallet-sharing' },
 ]
 
