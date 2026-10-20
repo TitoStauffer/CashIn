@@ -4,6 +4,7 @@ import { createApp } from "../app.js";
 import type { Database, QueryExecutor } from "../database.js";
 import type { AuthRepository, AuthUser, PendingAccount, StoredUser } from "../auth/auth.types.js";
 import { hashToken } from "../auth/token.js";
+import { DuplicateInvestmentGoalError } from "./investment-goals.errors.js";
 import type {
   InvestmentContribution,
   InvestmentContributionInput,
@@ -16,6 +17,10 @@ const USER_A = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const USER_B = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
 const SESSION_A = "a".repeat(43);
 const SESSION_B = "b".repeat(43);
+
+function normalizeName(name: string): string {
+  return name.trim().normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+}
 
 class SessionAuthRepository implements AuthRepository {
   private readonly sessions = new Map([[hashToken(SESSION_A), USER_A], [hashToken(SESSION_B), USER_B]]);
@@ -57,6 +62,9 @@ class MemoryInvestmentGoalsRepository implements InvestmentGoalsRepository {
     return goal?.userId === userId ? this.toGoal(goal) : null;
   }
   async createGoal(userId: string, input: Required<InvestmentGoalInput>): Promise<InvestmentGoal> {
+    if ([...this.goals.values()].some((goal) => goal.userId === userId && normalizeName(goal.title) === normalizeName(input.title))) {
+      throw new DuplicateInvestmentGoalError();
+    }
     const goal = {
       id: this.createId(), userId, ...input, status: "active" as const,
       categoryName: null, subcategoryName: null, contributedAmount: "0.00", progressPercentage: 0,
@@ -68,6 +76,10 @@ class MemoryInvestmentGoalsRepository implements InvestmentGoalsRepository {
   async updateGoal(userId: string, goalId: string, input: Required<InvestmentGoalInput>): Promise<InvestmentGoal | null> {
     const goal = this.goals.get(goalId);
     if (!goal || goal.userId !== userId || goal.status === "closed") return null;
+    if ([...this.goals.values()].some((candidate) =>
+      candidate.id !== goalId && candidate.userId === userId && normalizeName(candidate.title) === normalizeName(input.title))) {
+      throw new DuplicateInvestmentGoalError();
+    }
     Object.assign(goal, input);
     return this.toGoal(goal);
   }
@@ -205,5 +217,32 @@ test("investment goal progress follows contribution CRUD and goals stay isolated
   assert.equal(closedContributionDelete.statusCode, 409);
   const afterDelete = await app.inject({ method: "GET", url: `/investment-goals/${goalId}`, headers: { cookie: authCookie() } });
   assert.equal(afterDelete.json().contributedAmount, "40.00");
+  await app.close();
+});
+
+test("investment goal names ignore case and accents for create and update", async () => {
+  const { app } = createTestApp();
+  const first = await app.inject({
+    method: "POST", url: "/investment-goals", headers: { cookie: authCookie() },
+    payload: { title: "Carro novo", description: "Trocar de carro", targetAmount: "120000.00" },
+  });
+  assert.equal(first.statusCode, 201);
+
+  const duplicate = await app.inject({
+    method: "POST", url: "/investment-goals", headers: { cookie: authCookie() },
+    payload: { title: "carro NOVO", description: "Outro objetivo", targetAmount: "100.00" },
+  });
+  assert.equal(duplicate.statusCode, 409);
+
+  const second = await app.inject({
+    method: "POST", url: "/investment-goals", headers: { cookie: authCookie() },
+    payload: { title: "Salário", description: "Reserva", targetAmount: "100.00" },
+  });
+  assert.equal(second.statusCode, 201);
+  const accentCollision = await app.inject({
+    method: "PUT", url: `/investment-goals/${first.json().id}`, headers: { cookie: authCookie() },
+    payload: { title: "salario", description: "Reserva", targetAmount: "100.00" },
+  });
+  assert.equal(accentCollision.statusCode, 409);
   await app.close();
 });

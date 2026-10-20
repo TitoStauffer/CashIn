@@ -7,6 +7,7 @@ import { IncomeApiError, incomesApi } from './incomesApi'
 import { FinancialSidebar } from '../layout/FinancialSidebar'
 import { MonthYearSelector } from '../period/MonthYearSelector'
 import { formatMonth, getCurrentMonth, getMonthRange } from '../period/month'
+import { formatBrazilianCurrency, formatBrazilianCurrencyInput, hasInvalidBrazilianCurrencyInput, maskBrazilianCurrencyInput, parseBrazilianCurrencyInput } from '../money/currency'
 import './IncomesPage.css'
 
 type IncomeEditor = {
@@ -24,21 +25,7 @@ function formatDate(date: string) {
 }
 
 function formatAmount(amount: string) {
-  const [integerPart, fraction = '00'] = amount.split('.')
-  const groupedInteger = integerPart.replace(/\B(?=(\d{3})+(?!\d))/g, '.')
-  return `R$ ${groupedInteger},${fraction.padEnd(2, '0')}`
-}
-
-function parseBrazilianAmount(value: string) {
-  const normalized = value.trim().replace(/^R\$\s*/i, '').replace(/\s/g, '')
-  if (!normalized || !/^\d+(?:\.\d{3})*(?:,\d{0,2})?$/.test(normalized)) return null
-
-  const [integerPart, fractionPart = ''] = normalized.replace(/\./g, '').split(',')
-  const cleanInteger = integerPart.replace(/^0+(?=\d)/, '')
-  const fraction = fractionPart.padEnd(2, '0')
-  const canonical = `${cleanInteger}.${fraction}`
-  if (/^0+\.0{2}$/.test(canonical)) return null
-  return canonical
+  return formatBrazilianCurrency(amount)
 }
 
 function getErrorMessage(error: unknown, action: 'load' | 'save' | 'delete') {
@@ -75,6 +62,7 @@ export function IncomesPage({ userEmail, isLoggingOut, onLogout }: IncomesPagePr
   const [successMessage, setSuccessMessage] = useState('')
   const [editor, setEditor] = useState<IncomeEditor>(null)
   const [amountInput, setAmountInput] = useState('')
+  const [amountInputInvalid, setAmountInputInvalid] = useState(false)
   const [reloadKey, setReloadKey] = useState(0)
   const range = useMemo(() => getMonthRange(month), [month])
 
@@ -111,6 +99,7 @@ export function IncomesPage({ userEmail, isLoggingOut, onLogout }: IncomesPagePr
   function startCreate() {
     resetMessages()
     setAmountInput('')
+    setAmountInputInvalid(false)
     const day = Math.min(new Date().getDate(), Number(range.to.slice(-2)))
     setEditor({
       incomeId: null,
@@ -124,7 +113,8 @@ export function IncomesPage({ userEmail, isLoggingOut, onLogout }: IncomesPagePr
 
   function startEdit(income: Income) {
     resetMessages()
-    setAmountInput(formatInputAmount(income.amount))
+    setAmountInput(formatBrazilianCurrencyInput(income.amount))
+    setAmountInputInvalid(false)
     setEditor({
       incomeId: income.id,
       amount: income.amount,
@@ -138,6 +128,7 @@ export function IncomesPage({ userEmail, isLoggingOut, onLogout }: IncomesPagePr
   function closeEditor() {
     setEditor(null)
     setAmountInput('')
+    setAmountInputInvalid(false)
     resetMessages()
   }
 
@@ -154,7 +145,11 @@ export function IncomesPage({ userEmail, isLoggingOut, onLogout }: IncomesPagePr
   async function handleSave(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     if (!editor) return
-    const amount = parseBrazilianAmount(amountInput)
+    if (amountInputInvalid) {
+      setFormError('Use apenas números, até duas casas decimais e respeite o limite de R$ 999.999.999.999,99.')
+      return
+    }
+    const amount = parseBrazilianCurrencyInput(amountInput)
     if (!amount) {
       setFormError('Informe um valor maior que zero, usando o formato 1.234,56.')
       return
@@ -183,6 +178,7 @@ export function IncomesPage({ userEmail, isLoggingOut, onLogout }: IncomesPagePr
       }
       setEditor(null)
       setAmountInput('')
+      setAmountInputInvalid(false)
       await reloadIncomes()
     } catch (error) {
       setFormError(getErrorMessage(error, 'save'))
@@ -261,12 +257,17 @@ export function IncomesPage({ userEmail, isLoggingOut, onLogout }: IncomesPagePr
                       autoComplete="off"
                       placeholder="0,00"
                       value={amountInput}
-                      onChange={(event) => setAmountInput(event.target.value)}
-                      aria-describedby="income-amount-hint"
+                      onChange={(event) => {
+                        setAmountInputInvalid(hasInvalidBrazilianCurrencyInput(event.target.value))
+                        setAmountInput(maskBrazilianCurrencyInput(event.target.value))
+                      }}
+                      aria-invalid={amountInputInvalid}
+                      aria-describedby={amountInputInvalid ? 'income-amount-hint income-amount-error' : 'income-amount-hint'}
                       required
                     />
                   </div>
                   <small id="income-amount-hint">Use vírgula para os centavos, por exemplo 1.234,56.</small>
+                  {amountInputInvalid && <small id="income-amount-error" role="alert">Use apenas números, até duas casas decimais e respeite o limite de R$ 999.999.999.999,99.</small>}
                 </div>
                 <div className="income-field">
                   <label htmlFor="income-date">Data *</label>
@@ -373,11 +374,6 @@ export function IncomesPage({ userEmail, isLoggingOut, onLogout }: IncomesPagePr
     </main>
     </>
   )
-}
-
-function formatInputAmount(amount: string) {
-  const [integerPart, fraction = '00'] = amount.split('.')
-  return `${integerPart.replace(/\B(?=(\d{3})+(?!\d))/g, '.')},${fraction.padEnd(2, '0')}`
 }
 
 function addDecimalAmounts(first: string, second: string) {

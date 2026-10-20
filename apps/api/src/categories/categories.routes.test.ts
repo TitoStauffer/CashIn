@@ -17,6 +17,10 @@ const USER_B = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
 const SESSION_A = "a".repeat(43);
 const SESSION_B = "b".repeat(43);
 
+function normalizeName(name: string): string {
+  return name.trim().normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+}
+
 class MemoryCategoryRepository implements CategoryRepository {
   readonly categories = new Map<string, Category & { userId: string }>();
   readonly subcategories = new Map<string, CategorySubcategory & { userId: string }>();
@@ -50,7 +54,7 @@ class MemoryCategoryRepository implements CategoryRepository {
     const duplicate = [...this.categories.values()].some((category) =>
       category.userId === userId
       && category.nature === nature
-      && category.name.trim().toLowerCase() === name.trim().toLowerCase());
+      && normalizeName(category.name) === normalizeName(name));
     if (duplicate) throw new CategoryConflictError("Já existe uma categoria com esse nome.");
 
     const category: Category & { userId: string } = {
@@ -72,7 +76,7 @@ class MemoryCategoryRepository implements CategoryRepository {
       candidate.id !== categoryId
       && candidate.userId === userId
       && candidate.nature === category.nature
-      && candidate.name.trim().toLowerCase() === name.trim().toLowerCase());
+      && normalizeName(candidate.name) === normalizeName(name));
     if (duplicate) throw new CategoryConflictError("Já existe uma categoria com esse nome.");
     category.name = name;
     return { id: category.id, name: category.name, nature: category.nature, subcategories: [] };
@@ -95,7 +99,7 @@ class MemoryCategoryRepository implements CategoryRepository {
     const duplicate = [...this.subcategories.values()].some((subcategory) =>
       subcategory.userId === userId
       && subcategory.categoryId === categoryId
-      && subcategory.name.trim().toLowerCase() === name.trim().toLowerCase());
+      && normalizeName(subcategory.name) === normalizeName(name));
     if (duplicate) throw new CategoryConflictError("Já existe uma subcategoria com esse nome.");
     const subcategory = { id: this.createId(), userId, name, categoryId };
     this.subcategories.set(subcategory.id, subcategory);
@@ -119,7 +123,7 @@ class MemoryCategoryRepository implements CategoryRepository {
       candidate.id !== subcategoryId
       && candidate.userId === userId
       && candidate.categoryId === categoryId
-      && candidate.name.trim().toLowerCase() === name.trim().toLowerCase());
+      && normalizeName(candidate.name) === normalizeName(name));
     if (duplicate) throw new CategoryConflictError("Já existe uma subcategoria com esse nome.");
     subcategory.name = name;
     return { id: subcategory.id, name: subcategory.name, categoryId: subcategory.categoryId };
@@ -246,7 +250,7 @@ test("category uniqueness is scoped to owner and nature, and category nature can
     method: "POST",
     url: "/categories",
     headers: { cookie: authCookie() },
-    payload: { name: "Transporte", nature: "expense" },
+    payload: { name: "Salário", nature: "expense" },
   });
   const categoryId = create.json().id as string;
 
@@ -254,7 +258,7 @@ test("category uniqueness is scoped to owner and nature, and category nature can
     method: "POST",
     url: "/categories",
     headers: { cookie: authCookie() },
-    payload: { name: " transporte ", nature: "expense" },
+    payload: { name: " salario ", nature: "expense" },
   });
   assert.equal(duplicate.statusCode, 409);
   assert.equal(typeof duplicate.json().message, "string");
@@ -263,7 +267,7 @@ test("category uniqueness is scoped to owner and nature, and category nature can
     method: "POST",
     url: "/categories",
     headers: { cookie: authCookie() },
-    payload: { name: "Transporte", nature: "income" },
+    payload: { name: "Salario", nature: "income" },
   });
   assert.equal(sameNameOtherNature.statusCode, 201);
 
@@ -331,7 +335,7 @@ test("subcategories can be edited and duplicate names within a category are reje
     method: "POST",
     url: `/categories/${categoryId}/subcategories`,
     headers: { cookie: authCookie() },
-    payload: { name: "Cinema" },
+    payload: { name: "Férias" },
   });
   const subcategoryId = subcategoryResponse.json().id as string;
 
@@ -339,7 +343,7 @@ test("subcategories can be edited and duplicate names within a category are reje
     method: "POST",
     url: `/categories/${categoryId}/subcategories`,
     headers: { cookie: authCookie() },
-    payload: { name: " cinema " },
+    payload: { name: " ferias " },
   });
   assert.equal(duplicate.statusCode, 409);
 

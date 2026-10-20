@@ -55,6 +55,16 @@ test("PostgreSQL investment goal and contribution CRUD preserves progress and ow
     assert.equal(goal.subcategoryName, "Emergência");
     assert.equal(goal.contributedAmount, "0");
     assert.equal(goal.progressPercentage, 0);
+    await assert.rejects(
+      service.createGoal(userId, {
+        title: "reserva de EMERGENCIA", description: "Nome com caixa e acento diferentes.", targetAmount: "1000.00",
+      }),
+      (error: unknown) => typeof error === "object" && error !== null && "statusCode" in error && error.statusCode === 409,
+    );
+    await assert.rejects(
+      service.createGoal(userId, { title: "Precisão", description: "Três casas decimais", targetAmount: "1.001" }),
+      (error: unknown) => typeof error === "object" && error !== null && "statusCode" in error && error.statusCode === 400,
+    );
 
     const legacyGoal = await service.createGoal(userId, {
       title: "Meta antiga", description: "Categoria legada", targetAmount: "25.00", categoryId: legacyInvestmentCategory,

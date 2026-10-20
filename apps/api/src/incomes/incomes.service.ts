@@ -1,7 +1,7 @@
 import { IncomeError, InvalidIncomeReferenceError } from "./incomes.errors.js";
 import type { Income, IncomeInput, IncomeRepository } from "./incomes.types.js";
+import { isPositiveMoneyAmount } from "../shared/money.js";
 
-const AMOUNT_PATTERN = /^(?:0|[1-9]\d{0,11})(?:\.\d{1,2})?$/;
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -16,7 +16,7 @@ function validateDate(value: string, field: string): void {
 }
 
 function normalizeInput(input: IncomeInput): Required<IncomeInput> {
-  if (!AMOUNT_PATTERN.test(input.amount) || Number(input.amount) <= 0) {
+  if (!isPositiveMoneyAmount(input.amount)) {
     throw new IncomeError("O valor deve ser positivo e ter no máximo duas casas decimais.", 400);
   }
   validateDate(input.date, "A data");

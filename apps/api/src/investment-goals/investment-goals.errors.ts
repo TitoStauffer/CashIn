@@ -18,3 +18,10 @@ export class ClosedInvestmentGoalError extends InvestmentGoalError {
     this.name = "ClosedInvestmentGoalError";
   }
 }
+
+export class DuplicateInvestmentGoalError extends InvestmentGoalError {
+  constructor() {
+    super("Já existe uma meta de investimento com esse nome.", 409);
+    this.name = "DuplicateInvestmentGoalError";
+  }
+}

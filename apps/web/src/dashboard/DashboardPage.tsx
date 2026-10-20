@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import type { CategorySummary, FinancialSummary } from './dashboardApi'
 import { DashboardApiError, dashboardApi } from './dashboardApi'
 import type { InvestmentGoal } from '../goals/goalsApi'
+import { formatBrazilianCurrency } from '../money/currency'
 import { FinancialSidebar } from '../layout/FinancialSidebar'
 import { MonthYearSelector } from '../period/MonthYearSelector'
 import { formatMonth, getCurrentMonth, getMonthRange } from '../period/month'
@@ -10,9 +11,7 @@ import './DashboardPage.css'
 type DashboardPageProps = { userEmail: string; isLoggingOut: boolean; onLogout: () => void }
 
 function formatAmount(value: string) {
-  const amount = Number(value)
-  return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' })
-    .format(Number.isFinite(amount) ? amount : 0)
+  return formatBrazilianCurrency(value)
 }
 
 function CategoryBreakdown({ title, items, tone }: { title: string; items: CategorySummary[]; tone: 'income' | 'expense' }) {
