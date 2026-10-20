@@ -65,6 +65,24 @@ describe('IncomesPage currency input', () => {
     expect(amount).toHaveValue('1.234,56')
     await user.click(screen.getByRole('button', { name: 'Registrar entrada' }))
     await waitFor(() => expect(incomesApi.create).toHaveBeenCalledWith(expect.objectContaining({ amount: '1234.56' })))
+    expect(incomesApi.create).toHaveBeenCalledWith(expect.objectContaining({ balanceType: 'cash' }))
+  })
+
+  it('lets the user classify an income as a benefit and shows that destination in the list', async () => {
+    const user = userEvent.setup()
+    const benefitIncome = { ...income, balanceType: 'meal_benefit' as const }
+    vi.mocked(incomesApi.create).mockResolvedValueOnce(benefitIncome)
+    vi.mocked(incomesApi.list)
+      .mockResolvedValueOnce({ items: [income] })
+      .mockResolvedValueOnce({ items: [benefitIncome] })
+    await renderPage()
+    await user.click(await screen.findByRole('button', { name: /Nova entrada/ }))
+    await user.selectOptions(screen.getByLabelText('Destino do valor *'), 'meal_benefit')
+    fireEvent.change(screen.getByLabelText('Valor *'), { target: { value: '500,00' } })
+    await user.click(screen.getByRole('button', { name: 'Registrar entrada' }))
+
+    await waitFor(() => expect(incomesApi.create).toHaveBeenCalledWith(expect.objectContaining({ balanceType: 'meal_benefit' })))
+    expect(await screen.findByText(/Vale-refeição \(VR\)/)).toBeVisible()
   })
 
   it('loads an existing amount into the edit field and updates it without losing cents', async () => {
@@ -78,6 +96,7 @@ describe('IncomesPage currency input', () => {
     await user.click(screen.getByRole('button', { name: 'Editar entrada Salário mensal' }))
     await user.click(screen.getByRole('button', { name: 'Salvar alterações' }))
     await waitFor(() => expect(incomesApi.update).toHaveBeenCalledWith('income-1', expect.objectContaining({ amount: '1234.56' })))
+    expect(incomesApi.update).toHaveBeenCalledWith('income-1', expect.objectContaining({ balanceType: 'cash' }))
   })
 
   it('shows a recoverable error when incomes cannot be loaded', async () => {

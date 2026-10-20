@@ -24,6 +24,10 @@
 .dashboard-summary-card--contribution strong { color: #807047; }
 .dashboard-summary-card--balance { border-color: #d7e6d8; background: linear-gradient(145deg, #fff, #f5faf4); }
 .dashboard-summary-card--negative strong { color: #a3453d; }
+.dashboard-benefit-balances { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 9px; margin-top: 9px; }
+.dashboard-benefit-balance { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-width: 0; padding: 11px 14px; border: 1px solid #e5ebe4; border-radius: 10px; background: #fdfefc; }
+.dashboard-benefit-balance span { overflow: hidden; color: #718075; font-size: 10px; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
+.dashboard-benefit-balance strong { flex: 0 0 auto; color: #356348; font-size: 11px; }
 .dashboard-panel { margin-top: 16px; padding: 22px 23px 23px; border: 1px solid #e5ebe4; border-radius: 13px; background: rgb(255 255 255 / 92%); box-shadow: 0 7px 24px rgb(31 60 42 / 3%); }
 .dashboard-panel__heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 15px; margin-bottom: 20px; }
 .dashboard-panel__heading .dashboard-eyebrow { margin-bottom: 6px; }

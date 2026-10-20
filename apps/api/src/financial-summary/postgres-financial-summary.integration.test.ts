@@ -50,10 +50,28 @@ test("PostgreSQL financial summary filters inclusive dates and subtracts contrib
       [userId, walletId, otherUserId, otherWalletId, categoryId("Within start", userId), categoryId("Within end", userId), categoryId("Outside", userId), categoryId("Other user", otherUserId)],
     );
     await database.query(
+      `INSERT INTO incomes (user_id, wallet_id, category_id, amount, date, balance_type)
+       VALUES ($1, $2, $3, '150.00', '2026-10-12', 'food_benefit'),
+              ($1, $2, $3, '200.00', '2026-10-15', 'meal_benefit')`,
+      [userId, walletId, categoryId("Within start", userId)],
+    );
+    await database.query(
       `INSERT INTO expenses (user_id, wallet_id, category_id, amount, date)
        VALUES ($1, $2, $5, '75.10', '2026-10-15'), ($1, $2, $5, '4.90', '2026-10-16'),
               ($1, $2, $5, '25.00', '2026-09-30'), ($3, $4, $6, '800.00', '2026-10-15')`,
       [userId, walletId, otherUserId, otherWalletId, categoryId("Market", userId), categoryId("Other market", otherUserId)],
+    );
+    await database.query(
+      `INSERT INTO expenses (user_id, wallet_id, category_id, payment_method_id, payment_method_nature, amount, date)
+       SELECT $1, $2, $3, method.id, method.nature, amounts.amount, '2026-10-17'
+       FROM (VALUES ('vale-alimentacao', 'food_benefit', '20.00'::numeric),
+                    ('vale-refeicao', 'meal_benefit', '35.00'::numeric),
+                    ('credito', 'credit_card', '50.00'::numeric)) AS amounts(method_name, expected_nature, amount)
+       JOIN payment_methods AS method
+         ON method.wallet_id = $2
+        AND method.name_normalized = amounts.method_name
+        AND method.nature = amounts.expected_nature`,
+      [userId, walletId, categoryId("Market", userId)],
     );
     const goal = await database.query<{ id: string }>(
       "INSERT INTO investment_goals (user_id, wallet_id, title, description, target_amount) VALUES ($1, $2, 'Goal', 'Goal', 100) RETURNING id",
@@ -70,22 +88,39 @@ test("PostgreSQL financial summary filters inclusive dates and subtracts contrib
     );
 
     const summary = await repository.getSummary(walletId, "2026-10-01", "2026-10-31");
-    assert.equal(summary.incomeTotal, "502.00");
-    assert.equal(summary.expenseTotal, "80.00");
+    assert.equal(summary.incomeTotal, "852.00");
+    assert.equal(summary.expenseTotal, "185.00");
     assert.equal(summary.contributionTotal, "100.05");
     assert.equal(summary.availableBalance, "321.95");
+    assert.equal(summary.cashBalance, "321.95");
+    assert.deepEqual(summary.benefitBalances, [
+      { balanceType: "food_benefit", amount: "130.00" },
+      { balanceType: "home_office_benefit", amount: "0.00" },
+      { balanceType: "meal_benefit", amount: "165.00" },
+    ]);
     assert.deepEqual(summary.incomeByCategory, [
       { categoryId: categoryId("Within end", userId), categoryName: "Within end", amount: "490.00" },
-      { categoryId: categoryId("Within start", userId), categoryName: "Within start", amount: "12.00" },
+      { categoryId: categoryId("Within start", userId), categoryName: "Within start", amount: "362.00" },
     ]);
     assert.deepEqual(summary.expenseByCategory, [
-      { categoryId: categoryId("Market", userId), categoryName: "Market", amount: "80.00" },
+      { categoryId: categoryId("Market", userId), categoryName: "Market", amount: "185.00" },
     ]);
+    await database.query(
+      "UPDATE payment_methods SET nature = 'immediate' WHERE wallet_id = $1 AND name_normalized = 'vale-alimentacao'",
+      [walletId],
+    );
+    assert.equal((await repository.getSummary(walletId, "2026-10-01", "2026-10-31")).benefitBalances[0]?.amount, "130.00");
     const empty = await repository.getSummary(otherWalletId, "2026-12-01", "2026-12-31");
     assert.equal(empty.incomeTotal, "0.00");
     assert.equal(empty.expenseTotal, "0.00");
     assert.equal(empty.contributionTotal, "0.00");
     assert.equal(empty.availableBalance, "0.00");
+    assert.equal(empty.cashBalance, "0.00");
+    assert.deepEqual(empty.benefitBalances, [
+      { balanceType: "food_benefit", amount: "0.00" },
+      { balanceType: "home_office_benefit", amount: "0.00" },
+      { balanceType: "meal_benefit", amount: "0.00" },
+    ]);
     assert.deepEqual(empty.incomeByCategory, []);
     assert.deepEqual(empty.expenseByCategory, []);
   } finally {

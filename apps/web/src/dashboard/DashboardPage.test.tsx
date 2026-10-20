@@ -49,11 +49,11 @@ describe('DashboardPage', () => {
     vi.unstubAllGlobals()
   })
 
-  it('shows a negative available balance with its sign and negative styling', async () => {
+  it('shows a negative cash balance with its sign and negative styling', async () => {
     await renderPage()
 
     expect(await screen.findByText('-R$ 1.234,56')).toBeVisible()
-    await waitFor(() => expect(screen.getByText('Saldo disponível').closest('article')).toHaveClass('dashboard-summary-card--negative'))
+    await waitFor(() => expect(screen.getByText('Saldo em dinheiro').closest('article')).toHaveClass('dashboard-summary-card--negative'))
   })
 
   it('keeps a positive available balance without negative styling', async () => {
@@ -67,7 +67,7 @@ describe('DashboardPage', () => {
     })
     await renderPage()
 
-    const balanceCard = (await screen.findByText('Saldo disponível')).closest('article')
+    const balanceCard = (await screen.findByText('Saldo em dinheiro')).closest('article')
     expect(balanceCard).toHaveTextContent('R$ 1.500,00')
     expect(balanceCard).not.toHaveClass('dashboard-summary-card--negative')
   })
@@ -80,7 +80,7 @@ describe('DashboardPage', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('Não foi possível carregar a visão geral.')
     await user.click(screen.getByRole('button', { name: 'Tentar novamente' }))
 
-    expect(await screen.findByText('Saldo disponível')).toBeVisible()
+    expect(await screen.findByText('Saldo em dinheiro')).toBeVisible()
   })
 
   it('shows a visible loading state until both dashboard requests finish', async () => {
@@ -97,7 +97,33 @@ describe('DashboardPage', () => {
       incomeByCategory: [],
       expenseByCategory: [],
     })
-    expect(await screen.findByText('Saldo disponível')).toBeVisible()
+    expect(await screen.findByText('Saldo em dinheiro')).toBeVisible()
     expect(screen.queryByRole('status')).not.toBeInTheDocument()
+  })
+
+  it('shows separate balances for cash and each benefit type returned by the API', async () => {
+    vi.mocked(dashboardApi.summary).mockResolvedValueOnce({
+      incomeTotal: '4000.00',
+      expenseTotal: '1000.00',
+      contributionTotal: '0.00',
+      availableBalance: '2000.00',
+      cashBalance: '2000.00',
+      benefitBalances: [
+        { balanceType: 'food_benefit', amount: '300.00' },
+        { balanceType: 'meal_benefit', amount: '500.00' },
+        { balanceType: 'home_office_benefit', amount: '200.00' },
+      ],
+      incomeByCategory: [],
+      expenseByCategory: [],
+    })
+    await renderPage()
+
+    expect(await screen.findByText('Saldo em dinheiro')).toBeVisible()
+    expect(screen.getByText('Vale-alimentação (VA)')).toBeVisible()
+    expect(screen.getByText('Vale-refeição (VR)')).toBeVisible()
+    expect(screen.getByText('Auxílio home office (AHO)')).toBeVisible()
+    expect(screen.getByText('R$ 300,00')).toBeVisible()
+    expect(screen.getByText('R$ 500,00')).toBeVisible()
+    expect(screen.getByText('R$ 200,00')).toBeVisible()
   })
 })

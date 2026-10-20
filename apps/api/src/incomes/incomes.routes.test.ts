@@ -58,6 +58,7 @@ class MemoryIncomeRepository implements IncomeRepository {
       categoryName: category.name,
       subcategoryId: input.subcategoryId,
       subcategoryName: subcategory?.name ?? null,
+      balanceType: input.balanceType,
       createdAt: now,
       updatedAt: now,
     };
@@ -80,6 +81,7 @@ class MemoryIncomeRepository implements IncomeRepository {
       categoryName: category.name,
       subcategoryId: input.subcategoryId,
       subcategoryName: subcategory?.name ?? null,
+      balanceType: input.balanceType,
       updatedAt: new Date().toISOString(),
     };
     this.items.set(incomeId, updated);
@@ -152,6 +154,7 @@ test("income CRUD is authenticated, owner-scoped, and uses decimal strings", asy
   assert.equal(created.json().amount, "1250.50");
   assert.equal(created.json().categoryName, "Salário");
   assert.equal(created.json().subcategoryName, "Mensal");
+  assert.equal(created.json().balanceType, "cash");
   const incomeId = created.json().id as string;
 
   const otherUserList = await app.inject({ method: "GET", url: "/incomes", headers: { cookie: authCookie(SESSION_B) } });
@@ -165,11 +168,12 @@ test("income CRUD is authenticated, owner-scoped, and uses decimal strings", asy
     method: "PUT",
     url: `/incomes/${incomeId}`,
     headers: { cookie: authCookie() },
-    payload: { amount: "200", date: "2026-10-19", categoryId: CATEGORY_A },
+    payload: { amount: "200", date: "2026-10-19", categoryId: CATEGORY_A, balanceType: "meal_benefit" },
   });
   assert.equal(updated.statusCode, 200);
   assert.equal(updated.json().description, null);
   assert.equal(updated.json().subcategoryId, null);
+  assert.equal(updated.json().balanceType, "meal_benefit");
   const deleted = await app.inject({ method: "DELETE", url: `/incomes/${incomeId}`, headers: { cookie: authCookie() } });
   assert.equal(deleted.statusCode, 204);
   await app.close();
@@ -193,6 +197,11 @@ test("income filters are inclusive, ordered, and reject invalid values or refere
     method: "POST", url: "/incomes", headers: { cookie: authCookie() }, payload: { ...validPayload, amount: "1.234" },
   });
   assert.equal(invalidAmount.statusCode, 400);
+  const invalidBalanceType = await app.inject({
+    method: "POST", url: "/incomes", headers: { cookie: authCookie() },
+    payload: { ...validPayload, balanceType: "unknown" },
+  });
+  assert.equal(invalidBalanceType.statusCode, 400);
   const invalidDate = await app.inject({
     method: "POST", url: "/incomes", headers: { cookie: authCookie() }, payload: { ...validPayload, date: "2026-02-30" },
   });

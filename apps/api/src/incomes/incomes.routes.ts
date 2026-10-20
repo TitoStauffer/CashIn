@@ -1,7 +1,7 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { IncomeError } from "./incomes.errors.js";
 import type { IncomesService } from "./incomes.service.js";
-import type { IncomeInput } from "./incomes.types.js";
+import { INCOME_BALANCE_TYPES, type IncomeInput } from "./incomes.types.js";
 import { MONEY_AMOUNT_PATTERN } from "../shared/money.js";
 
 interface RouteOptions {
@@ -33,6 +33,7 @@ const incomeBodySchema = {
     description: { anyOf: [{ type: "string" }, { type: "null" }] },
     categoryId: uuidSchema,
     subcategoryId: { anyOf: [uuidSchema, { type: "null" }] },
+    balanceType: { type: "string", enum: [...INCOME_BALANCE_TYPES] },
   },
 };
 
@@ -96,7 +97,7 @@ export function registerIncomeRoutes(app: FastifyInstance, options: RouteOptions
     "/incomes",
     {
       preHandler: [app.authenticate, app.resolveWalletContext],
-      preValidation: rejectUnexpectedProperties(["amount", "date", "description", "categoryId", "subcategoryId"]),
+      preValidation: rejectUnexpectedProperties(["amount", "date", "description", "categoryId", "subcategoryId", "balanceType"]),
       schema: { body: incomeBodySchema },
     },
     async (request, reply) => {
@@ -113,7 +114,7 @@ export function registerIncomeRoutes(app: FastifyInstance, options: RouteOptions
     "/incomes/:incomeId",
     {
       preHandler: [app.authenticate, app.resolveWalletContext],
-      preValidation: rejectUnexpectedProperties(["amount", "date", "description", "categoryId", "subcategoryId"]),
+      preValidation: rejectUnexpectedProperties(["amount", "date", "description", "categoryId", "subcategoryId", "balanceType"]),
       schema: {
         params: { type: "object", required: ["incomeId"], properties: { incomeId: uuidSchema } },
         body: incomeBodySchema,
