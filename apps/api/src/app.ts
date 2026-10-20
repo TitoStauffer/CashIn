@@ -38,6 +38,10 @@ import { WalletAccessRequestsService } from "./wallet-access-requests/wallet-acc
 import { PostgresWalletAccessRequestRepository } from "./wallet-access-requests/postgres-wallet-access-request.repository.js";
 import { registerWalletAccessRequestRoutes } from "./wallet-access-requests/wallet-access-requests.routes.js";
 import type { WalletAccessRequestRepository } from "./wallet-access-requests/wallet-access-requests.types.js";
+import { PaymentMethodsService } from "./payment-methods/payment-methods.service.js";
+import { PostgresPaymentMethodsRepository } from "./payment-methods/postgres-payment-methods.repository.js";
+import { registerPaymentMethodRoutes } from "./payment-methods/payment-methods.routes.js";
+import type { PaymentMethodRepository } from "./payment-methods/payment-methods.types.js";
 
 export interface AppOptions {
   logger?: boolean;
@@ -51,6 +55,7 @@ export interface AppOptions {
   walletRepository?: WalletRepository;
   walletInvitationRepository?: WalletInvitationRepository;
   walletAccessRequestRepository?: WalletAccessRequestRepository;
+  paymentMethodRepository?: PaymentMethodRepository;
   authConfiguration?: Partial<AuthConfiguration>;
   walletInvitationTokenTtlHours?: number;
   walletAccessLinkTtlHours?: number;
@@ -183,6 +188,12 @@ export function createApp(
   registerCategoryRoutes(app, {
     categoriesService: new CategoriesService(
       options.categoryRepository ?? new PostgresCategoriesRepository(database),
+    ),
+  });
+
+  registerPaymentMethodRoutes(app, {
+    paymentMethodsService: new PaymentMethodsService(
+      options.paymentMethodRepository ?? new PostgresPaymentMethodsRepository(database),
     ),
   });
 

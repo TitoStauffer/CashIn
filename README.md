@@ -80,6 +80,16 @@ Categorias e subcategorias são gerenciadas dentro da carteira selecionada. As n
 
 Os nomes são normalizados sem espaços nas extremidades e não diferenciam maiúsculas de minúsculas: categorias devem ser únicas por carteira e natureza; subcategorias, dentro da categoria. A natureza de uma categoria não pode ser alterada. A API responde `409` para nomes duplicados ou tentativas de excluir itens em uso.
 
+### Formas de pagamento
+
+Cada carteira recebe as formas iniciais Crédito, Débito, Pix, Vale-Alimentação, Vale-Refeição e Auxílio Home Office. Elas podem ser consultadas, cadastradas, renomeadas, reclassificadas e desativadas na carteira ativa. Formas de pagamento não são removidas fisicamente para preservar o histórico das despesas.
+
+- `GET /payment-methods` lista formas ativas e inativas da carteira; a Web usa somente as ativas em novos lançamentos e mantém as inativas visíveis no histórico.
+- `POST /payment-methods` recebe `{ "name": "Cartão de débito", "nature": "immediate" }`.
+- `PATCH /payment-methods/:paymentMethodId` altera `name`, `nature` e/ou `isActive`.
+
+Os valores aceitos para `nature` são `immediate`, `credit_card`, `food_benefit`, `meal_benefit` e `home_office_benefit`. Nomes são únicos por carteira sem diferenciar caixa ou acentuação. A natureza registra o tipo de meio para tratamento futuro; regras de fatura e de saldo de benefícios pertencem a Histórias próprias.
+
 Para parar os containers, use docker compose down. Para remover também os dados locais do banco, use docker compose down -v.
 
 ## Lançamentos de entrada
@@ -98,11 +108,11 @@ As categorias precisam pertencer à carteira selecionada e ter natureza `income`
 Todas as operações de saída exigem uma sessão autenticada e são isoladas pela carteira selecionada. Os valores monetários são enviados e retornados como strings decimais, com até duas casas, para preservar a precisão.
 
 - `GET /expenses?from=AAAA-MM-DD&to=AAAA-MM-DD` lista saídas; os filtros de data são opcionais e inclusivos, com ordenação por data e criação mais recentes primeiro.
-- `POST /expenses` cria uma saída com `{ "amount": "1250.50", "date": "2026-10-19", "description": "Mercado", "categoryId": "<uuid>", "subcategoryId": "<uuid-ou-null>" }`.
-- `PUT /expenses/:expenseId` substitui os campos editáveis e aceita a mesma estrutura do cadastro; descrição e subcategoria podem ser omitidas ou nulas.
+- `POST /expenses` cria uma saída com `{ "amount": "1250.50", "date": "2026-10-19", "description": "Mercado", "categoryId": "<uuid>", "subcategoryId": "<uuid-ou-null>", "paymentMethodId": "<uuid-ou-null>" }`.
+- `PUT /expenses/:expenseId` substitui os campos editáveis e aceita a mesma estrutura do cadastro; descrição, subcategoria e forma de pagamento podem ser omitidas ou nulas.
 - `DELETE /expenses/:expenseId` exclui uma saída e retorna `204`.
 
-O valor deve ser positivo. As categorias precisam pertencer à carteira selecionada e ter natureza `expense`; a subcategoria, quando informada, precisa pertencer à categoria selecionada. IDs de saídas de outras carteiras não podem ser consultados, alterados ou excluídos.
+O valor deve ser positivo. As categorias precisam pertencer à carteira selecionada e ter natureza `expense`; a subcategoria, quando informada, precisa pertencer à categoria selecionada. Uma forma de pagamento informada precisa estar ativa e pertencer à mesma carteira. IDs de saídas de outras carteiras não podem ser consultados, alterados ou excluídos.
 
 ## Resumo financeiro
 

@@ -4,6 +4,8 @@ import type { Category } from '../categories/categoriesApi'
 import { categoriesApi } from '../categories/categoriesApi'
 import type { Expense, ExpenseInput } from './expensesApi'
 import { ExpenseApiError, expensesApi } from './expensesApi'
+import { getPaymentMethodNatureLabel, paymentMethodsApi } from '../paymentMethods/paymentMethodsApi'
+import type { PaymentMethod } from '../paymentMethods/paymentMethodsApi'
 import { FinancialSidebar } from '../layout/FinancialSidebar'
 import { useWallet } from '../wallets/useWallet'
 import { MonthYearSelector } from '../period/MonthYearSelector'
@@ -18,6 +20,7 @@ type ExpenseEditor = {
   description: string
   categoryId: string
   subcategoryId: string
+  paymentMethodId: string
 } | null
 
 function formatDate(date: string) {
@@ -56,6 +59,7 @@ export function ExpensesPage({ userEmail, isLoggingOut, onLogout }: ExpensesPage
   const { activeWalletId } = useWallet()
   const [month, setMonth] = useState(getCurrentMonth)
   const [categories, setCategories] = useState<Category[]>([])
+  const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>([])
   const [expenses, setExpenses] = useState<Expense[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [loadedWalletId, setLoadedWalletId] = useState<string | null>(null)
@@ -74,9 +78,10 @@ export function ExpensesPage({ userEmail, isLoggingOut, onLogout }: ExpensesPage
     const controller = new AbortController()
     Promise.all([
       categoriesApi.list('expense', controller.signal),
+      paymentMethodsApi.list(controller.signal),
       expensesApi.list(range.from, range.to, controller.signal),
     ])
-      .then(([categoryResponse, expenseResponse]) => {
+      .then(([categoryResponse, paymentMethodResponse, expenseResponse]) => {
         if (lastLoadedWalletId.current !== activeWalletId) {
           setEditor(null)
           setAmountInput('')
@@ -86,6 +91,7 @@ export function ExpensesPage({ userEmail, isLoggingOut, onLogout }: ExpensesPage
         }
         lastLoadedWalletId.current = activeWalletId
         setCategories(categoryResponse.items)
+        setPaymentMethods(paymentMethodResponse.items)
         setExpenses(expenseResponse.items)
         setLoadedWalletId(activeWalletId)
         setLoadError('')
@@ -125,6 +131,7 @@ export function ExpensesPage({ userEmail, isLoggingOut, onLogout }: ExpensesPage
       description: '',
       categoryId: categories[0]?.id ?? '',
       subcategoryId: '',
+      paymentMethodId: '',
     })
   }
 
@@ -139,6 +146,7 @@ export function ExpensesPage({ userEmail, isLoggingOut, onLogout }: ExpensesPage
       description: expense.description ?? '',
       categoryId: expense.categoryId,
       subcategoryId: expense.subcategoryId ?? '',
+      paymentMethodId: expense.paymentMethodId ?? '',
     })
   }
 
@@ -182,6 +190,7 @@ export function ExpensesPage({ userEmail, isLoggingOut, onLogout }: ExpensesPage
       description: editor.description.trim() || null,
       categoryId: editor.categoryId,
       subcategoryId: editor.subcategoryId || null,
+      paymentMethodId: editor.paymentMethodId || null,
     }
     resetMessages()
     setIsSaving(true)
@@ -315,6 +324,25 @@ export function ExpensesPage({ userEmail, isLoggingOut, onLogout }: ExpensesPage
                     {availableSubcategories.map((subcategory) => <option key={subcategory.id} value={subcategory.id}>{subcategory.name}</option>)}
                   </select>
                 </div>
+                <div className="expense-field">
+                  <label htmlFor="expense-payment-method">Forma de pagamento <span>(opcional)</span></label>
+                  <select
+                    id="expense-payment-method"
+                    value={editor.paymentMethodId}
+                    onChange={(event) => setEditor({ ...editor, paymentMethodId: event.target.value })}
+                  >
+                    <option value="">Não informada</option>
+                    {editor.paymentMethodId && !paymentMethods.some((method) => method.id === editor.paymentMethodId) && (
+                      <option value={editor.paymentMethodId} disabled>
+                        {expenses.find((expense) => expense.id === editor.expenseId)?.paymentMethodName ?? 'Forma inativa'} (inativa)
+                      </option>
+                    )}
+                    {paymentMethods.filter((method) => method.isActive).map((method) => (
+                      <option key={method.id} value={method.id}>{method.name} · {getPaymentMethodNatureLabel(method.nature)}</option>
+                    ))}
+                  </select>
+                  {paymentMethods.length === 0 && <small>Cadastre formas de pagamento em <a href="/payment-methods">Formas de pagamento</a>.</small>}
+                </div>
                 <div className="expense-field expense-field--wide">
                   <label htmlFor="expense-description">Descrição <span>(opcional)</span></label>
                   <input
@@ -366,7 +394,7 @@ export function ExpensesPage({ userEmail, isLoggingOut, onLogout }: ExpensesPage
                       <span className="expense-card__marker" aria-hidden="true" />
                       <div className="expense-card__details">
                         <h2>{expense.description?.trim() || expense.categoryName}</h2>
-                        <p>{formatDate(expense.date)} <span aria-hidden="true">·</span> {expense.categoryName}{expense.subcategoryName ? ` / ${expense.subcategoryName}` : ''}</p>
+                  <p>{formatDate(expense.date)} <span aria-hidden="true">·</span> {expense.categoryName}{expense.subcategoryName ? ` / ${expense.subcategoryName}` : ''}{expense.paymentMethodName ? ` · ${expense.paymentMethodName}${expense.paymentMethodNature ? ` (${getPaymentMethodNatureLabel(expense.paymentMethodNature)})` : ''}` : ''}</p>
                       </div>
                     </div>
                     <div className="expense-card__side">

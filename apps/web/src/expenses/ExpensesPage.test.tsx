@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { categoriesApi } from '../categories/categoriesApi'
 import { ExpensesPage } from './ExpensesPage'
 import { expensesApi } from './expensesApi'
+import { paymentMethodsApi } from '../paymentMethods/paymentMethodsApi'
 import { WalletProvider } from '../wallets/WalletContext'
 import { walletApi } from '../wallets/walletApi'
 
@@ -11,6 +12,7 @@ const category = { id: 'expense-category', name: 'Moradia', nature: 'expense' as
 const expense = {
   id: 'expense-1', amount: '1234.56', date: '2026-10-02', description: 'Aluguel',
   categoryId: category.id, categoryName: category.name, subcategoryId: null, subcategoryName: null,
+  paymentMethodId: null, paymentMethodName: null, paymentMethodNature: null,
   createdAt: '2026-10-02T12:00:00.000Z', updatedAt: '2026-10-02T12:00:00.000Z',
 }
 const personalWallet = { id: 'wallet-personal', name: 'Pessoal', isPersonal: true, role: 'owner' as const }
@@ -35,6 +37,7 @@ describe('ExpensesPage currency input', () => {
     vi.spyOn(categoriesApi, 'list').mockResolvedValue({ items: [category] })
     vi.spyOn(walletApi, 'list').mockResolvedValue({ items: [personalWallet] })
     vi.spyOn(expensesApi, 'list').mockResolvedValue({ items: [expense] })
+    vi.spyOn(paymentMethodsApi, 'list').mockResolvedValue({ items: [] })
     vi.spyOn(expensesApi, 'create').mockResolvedValue(expense)
     vi.spyOn(expensesApi, 'update').mockResolvedValue(expense)
   })
@@ -107,5 +110,36 @@ describe('ExpensesPage currency input', () => {
     expect(screen.getByRole('button', { name: 'Salvando…' })).toBeVisible()
     createRequest.resolve(expense)
     expect(await screen.findByRole('status')).toHaveTextContent('Despesa registrada.')
+  })
+
+  it('associates an optional payment method when creating an expense and shows its historical label', async () => {
+    const user = userEvent.setup()
+    const paymentMethod = { id: 'pix', name: 'Pix', nature: 'immediate' as const, isActive: true }
+    vi.mocked(paymentMethodsApi.list).mockResolvedValue({ items: [paymentMethod] })
+    const savedExpense = { ...expense, paymentMethodId: 'pix', paymentMethodName: 'Pix', paymentMethodNature: 'immediate' as const }
+    vi.mocked(expensesApi.list).mockResolvedValue({ items: [savedExpense] })
+    vi.mocked(expensesApi.create).mockResolvedValue(savedExpense)
+    await renderPage()
+
+    expect(await screen.findByText(/Pix \(Imediata/)).toBeVisible()
+    await user.click(screen.getByRole('button', { name: /Nova despesa/ }))
+    await user.type(screen.getByLabelText('Valor *'), '250,00')
+    await user.selectOptions(screen.getByLabelText(/Forma de pagamento/), 'pix')
+    await user.click(screen.getByRole('button', { name: 'Registrar despesa' }))
+
+    await waitFor(() => expect(expensesApi.create).toHaveBeenCalledWith(expect.objectContaining({ paymentMethodId: 'pix' })))
+  })
+
+  it('keeps an inactive payment method visible in history and while editing the expense', async () => {
+    const user = userEvent.setup()
+    const historicalExpense = { ...expense, paymentMethodId: 'old-card', paymentMethodName: 'Cartão antigo', paymentMethodNature: 'credit_card' as const }
+    vi.mocked(expensesApi.list).mockResolvedValue({ items: [historicalExpense] })
+    vi.mocked(paymentMethodsApi.list).mockResolvedValue({ items: [] })
+    await renderPage()
+
+    expect(await screen.findByText(/Cartão antigo \(Cartão de crédito\)/)).toBeVisible()
+    await user.click(screen.getByRole('button', { name: 'Editar despesa Aluguel' }))
+    expect(screen.getByRole('option', { name: 'Cartão antigo (inativa)' })).toBeVisible()
+    expect(screen.getByLabelText(/Forma de pagamento/)).toHaveValue('old-card')
   })
 })
