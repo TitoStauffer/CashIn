@@ -248,11 +248,12 @@ export function ExpensesPage({ userEmail, isLoggingOut, onLogout }: ExpensesPage
     <main className="expenses-page">
       <div className="expenses-shell">
         <header className="expenses-topbar">
-          <a className="expenses-brand" href="/categories" aria-label="Saldo Certo, área financeira">
+          <a className="expenses-brand" href="/dashboard" aria-label="Saldo Certo, visão geral">
             <span className="expenses-brand__mark" aria-hidden="true">SC</span>
             <span>saldo<span>certo</span></span>
           </a>
           <nav className="expenses-account" aria-label="Navegação da área financeira">
+            <a className="expenses-account__link" href="/dashboard">Visão geral</a>
             <a className="expenses-account__link" href="/incomes">Entradas</a>
             <a className="expenses-account__link" href="/expenses" aria-current="page">Despesas</a>
             <a className="expenses-account__link" href="/goals">Metas</a>
