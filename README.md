@@ -97,7 +97,10 @@ O total aportado e o percentual são derivados na consulta, portanto criação, 
 
 O MVP 1 será validado com API e Web. A API é independente do cliente e poderá ser consumida pelo aplicativo Mobile quando essa etapa entrar no escopo.
 
+## Integração contínua
+
+O workflow `.github/workflows/ci.yml` (GitHub Actions) valida a API e a Web em todo Pull Request e push para `master`: lint (Web), typecheck, testes unitários e de integração com PostgreSQL (API) e build. Detalhes, checks obrigatórios do GitHub e a preparação para o SonarQube estão em [docs/ci.md](docs/ci.md).
+
 ## Deploy
 
 Deploy em nuvem e domínio próprio estão fora desta etapa. As imagens e configurações locais serão usadas para validar o ambiente antes de escolher o provedor.
-
