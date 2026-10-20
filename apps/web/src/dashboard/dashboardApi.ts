@@ -5,6 +5,14 @@ export type FinancialSummary = {
   expenseTotal: string
   contributionTotal: string
   availableBalance: string
+  incomeByCategory: CategorySummary[]
+  expenseByCategory: CategorySummary[]
+}
+
+export type CategorySummary = {
+  categoryId: string
+  categoryName: string
+  amount: string
 }
 
 type ItemsResponse<T> = { items: T[] }

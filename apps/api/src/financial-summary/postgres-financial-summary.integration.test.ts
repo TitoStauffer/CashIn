@@ -39,13 +39,15 @@ test("PostgreSQL financial summary filters inclusive dates and subtracts contrib
 
     await database.query(
       `INSERT INTO incomes (user_id, category_id, amount, date)
-       VALUES ($1, $3, '10.20', '2026-10-01'), ($1, $4, '490.00', '2026-10-31'),
+       VALUES ($1, $3, '10.20', '2026-10-01'), ($1, $3, '1.80', '2026-10-15'),
+              ($1, $4, '490.00', '2026-10-31'),
               ($1, $5, '999.00', '2026-11-01'), ($2, $6, '777.00', '2026-10-15')`,
       [userId, otherUserId, categoryId("Within start", userId), categoryId("Within end", userId), categoryId("Outside", userId), categoryId("Other user", otherUserId)],
     );
     await database.query(
       `INSERT INTO expenses (user_id, category_id, amount, date)
-       VALUES ($1, $2, '75.10', '2026-10-15'), ($1, $2, '25.00', '2026-09-30'), ($3, $4, '800.00', '2026-10-15')`,
+       VALUES ($1, $2, '75.10', '2026-10-15'), ($1, $2, '4.90', '2026-10-16'),
+              ($1, $2, '25.00', '2026-09-30'), ($3, $4, '800.00', '2026-10-15')`,
       [userId, categoryId("Market", userId), otherUserId, categoryId("Other market", otherUserId)],
     );
     const goal = await database.query<{ id: string }>(
@@ -63,15 +65,24 @@ test("PostgreSQL financial summary filters inclusive dates and subtracts contrib
     );
 
     const summary = await repository.getSummary(userId, "2026-10-01", "2026-10-31");
-    assert.equal(summary.incomeTotal, "500.20");
-    assert.equal(summary.expenseTotal, "75.10");
+    assert.equal(summary.incomeTotal, "502.00");
+    assert.equal(summary.expenseTotal, "80.00");
     assert.equal(summary.contributionTotal, "100.05");
-    assert.equal(summary.availableBalance, "325.05");
+    assert.equal(summary.availableBalance, "321.95");
+    assert.deepEqual(summary.incomeByCategory, [
+      { categoryId: categoryId("Within end", userId), categoryName: "Within end", amount: "490.00" },
+      { categoryId: categoryId("Within start", userId), categoryName: "Within start", amount: "12.00" },
+    ]);
+    assert.deepEqual(summary.expenseByCategory, [
+      { categoryId: categoryId("Market", userId), categoryName: "Market", amount: "80.00" },
+    ]);
     const empty = await repository.getSummary(otherUserId, "2026-12-01", "2026-12-31");
     assert.equal(empty.incomeTotal, "0.00");
     assert.equal(empty.expenseTotal, "0.00");
     assert.equal(empty.contributionTotal, "0.00");
     assert.equal(empty.availableBalance, "0.00");
+    assert.deepEqual(empty.incomeByCategory, []);
+    assert.deepEqual(empty.expenseByCategory, []);
   } finally {
     await scopedPool?.end();
     await adminPool.query(`DROP SCHEMA IF EXISTS ${schemaName} CASCADE`);
