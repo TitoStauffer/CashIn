@@ -1,5 +1,5 @@
 import { IncomeError, InvalidIncomeReferenceError } from "./incomes.errors.js";
-import type { Income, IncomeInput, IncomeRepository } from "./incomes.types.js";
+import { INCOME_BALANCE_TYPES, type Income, type IncomeInput, type IncomeRepository } from "./incomes.types.js";
 import { isPositiveMoneyAmount } from "../shared/money.js";
 
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
@@ -28,7 +28,11 @@ function normalizeInput(input: IncomeInput): Required<IncomeInput> {
     throw new IncomeError("A subcategoria informada é inválida.", 400);
   }
   const description = input.description?.trim() || null;
-  return { ...input, amount: input.amount, description, subcategoryId };
+  const balanceType = input.balanceType ?? "cash";
+  if (!INCOME_BALANCE_TYPES.includes(balanceType)) {
+    throw new IncomeError("O destino da entrada informado é inválido.", 400);
+  }
+  return { ...input, amount: input.amount, description, subcategoryId, balanceType };
 }
 
 function mapReferenceError(error: unknown): never {

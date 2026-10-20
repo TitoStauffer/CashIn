@@ -1,13 +1,21 @@
 import type { InvestmentGoal } from '../goals/goalsApi'
 import { withActiveWallet } from '../wallets/walletApi'
+import type { IncomeBalanceType } from '../incomes/incomesApi'
 
 export type FinancialSummary = {
   incomeTotal: string
   expenseTotal: string
   contributionTotal: string
   availableBalance: string
+  cashBalance?: string
+  benefitBalances?: BenefitBalanceSummary[]
   incomeByCategory: CategorySummary[]
   expenseByCategory: CategorySummary[]
+}
+
+export type BenefitBalanceSummary = {
+  balanceType: Exclude<IncomeBalanceType, 'cash'>
+  amount: string
 }
 
 export type CategorySummary = {

@@ -1,3 +1,7 @@
+export const INCOME_BALANCE_TYPES = ["cash", "food_benefit", "meal_benefit", "home_office_benefit"] as const;
+
+export type IncomeBalanceType = (typeof INCOME_BALANCE_TYPES)[number];
+
 export interface Income {
   id: string;
   amount: string;
@@ -7,6 +11,7 @@ export interface Income {
   categoryName: string;
   subcategoryId: string | null;
   subcategoryName: string | null;
+  balanceType: IncomeBalanceType;
   createdAt: string;
   updatedAt: string;
 }
@@ -17,6 +22,7 @@ export interface IncomeInput {
   description?: string | null;
   categoryId: string;
   subcategoryId?: string | null;
+  balanceType?: IncomeBalanceType;
 }
 
 export interface IncomeRepository {

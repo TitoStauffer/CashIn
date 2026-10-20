@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import type { Category } from '../categories/categoriesApi'
 import { categoriesApi } from '../categories/categoriesApi'
-import type { Income, IncomeInput } from './incomesApi'
+import type { Income, IncomeBalanceType, IncomeInput } from './incomesApi'
 import { IncomeApiError, incomesApi } from './incomesApi'
 import { FinancialSidebar } from '../layout/FinancialSidebar'
 import { useWallet } from '../wallets/useWallet'
@@ -18,7 +18,15 @@ type IncomeEditor = {
   description: string
   categoryId: string
   subcategoryId: string
+  balanceType: IncomeBalanceType
 } | null
+
+const balanceTypeLabels: Record<IncomeBalanceType, string> = {
+  cash: 'Dinheiro',
+  food_benefit: 'Vale-alimentação (VA)',
+  meal_benefit: 'Vale-refeição (VR)',
+  home_office_benefit: 'Auxílio home office (AHO)',
+}
 
 function formatDate(date: string) {
   const [year, month, day] = date.split('-')
@@ -125,6 +133,7 @@ export function IncomesPage({ userEmail, isLoggingOut, onLogout }: IncomesPagePr
       description: '',
       categoryId: categories[0]?.id ?? '',
       subcategoryId: '',
+      balanceType: 'cash',
     })
   }
 
@@ -139,6 +148,7 @@ export function IncomesPage({ userEmail, isLoggingOut, onLogout }: IncomesPagePr
       description: income.description ?? '',
       categoryId: income.categoryId,
       subcategoryId: income.subcategoryId ?? '',
+      balanceType: income.balanceType ?? 'cash',
     })
   }
 
@@ -182,6 +192,7 @@ export function IncomesPage({ userEmail, isLoggingOut, onLogout }: IncomesPagePr
       description: editor.description.trim() || null,
       categoryId: editor.categoryId,
       subcategoryId: editor.subcategoryId || null,
+      balanceType: editor.balanceType,
     }
     resetMessages()
     setIsSaving(true)
@@ -315,6 +326,20 @@ export function IncomesPage({ userEmail, isLoggingOut, onLogout }: IncomesPagePr
                     {availableSubcategories.map((subcategory) => <option key={subcategory.id} value={subcategory.id}>{subcategory.name}</option>)}
                   </select>
                 </div>
+                <div className="income-field">
+                  <label htmlFor="income-balance-type">Destino do valor *</label>
+                  <select
+                    id="income-balance-type"
+                    value={editor.balanceType}
+                    onChange={(event) => setEditor({ ...editor, balanceType: event.target.value as IncomeBalanceType })}
+                    required
+                  >
+                    {Object.entries(balanceTypeLabels).map(([value, label]) => (
+                      <option key={value} value={value}>{label}</option>
+                    ))}
+                  </select>
+                  <small>Benefícios ficam separados do saldo em dinheiro.</small>
+                </div>
                 <div className="income-field income-field--wide">
                   <label htmlFor="income-description">Descrição <span>(opcional)</span></label>
                   <input
@@ -366,7 +391,7 @@ export function IncomesPage({ userEmail, isLoggingOut, onLogout }: IncomesPagePr
                       <span className="income-card__marker" aria-hidden="true" />
                       <div className="income-card__details">
                         <h2>{income.description?.trim() || income.categoryName}</h2>
-                        <p>{formatDate(income.date)} <span aria-hidden="true">·</span> {income.categoryName}{income.subcategoryName ? ` / ${income.subcategoryName}` : ''}</p>
+                        <p>{formatDate(income.date)} <span aria-hidden="true">·</span> {income.categoryName}{income.subcategoryName ? ` / ${income.subcategoryName}` : ''} <span aria-hidden="true">·</span> {balanceTypeLabels[income.balanceType ?? 'cash']}</p>
                       </div>
                     </div>
                     <div className="income-card__side">

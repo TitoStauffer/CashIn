@@ -1,5 +1,7 @@
 import { withActiveWallet } from '../wallets/walletApi'
 
+export type IncomeBalanceType = 'cash' | 'food_benefit' | 'meal_benefit' | 'home_office_benefit'
+
 export type Income = {
   id: string
   amount: string
@@ -9,6 +11,7 @@ export type Income = {
   categoryName: string
   subcategoryId: string | null
   subcategoryName: string | null
+  balanceType?: IncomeBalanceType
   createdAt: string
   updatedAt: string
 }
@@ -19,6 +22,7 @@ export type IncomeInput = {
   description?: string | null
   categoryId: string
   subcategoryId?: string | null
+  balanceType: IncomeBalanceType
 }
 
 type IncomeListResponse = { items: Income[] }

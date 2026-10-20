@@ -10,6 +10,7 @@ interface IncomeRow {
   category_name: string;
   subcategory_id: string | null;
   subcategory_name: string | null;
+  balance_type: import("./incomes.types.js").IncomeBalanceType;
   created_at: string | Date;
   updated_at: string | Date;
 }
@@ -32,6 +33,7 @@ function mapIncome(row: IncomeRow): Income {
     categoryName: row.category_name,
     subcategoryId: row.subcategory_id,
     subcategoryName: row.subcategory_name,
+    balanceType: row.balance_type,
     createdAt: timestampValue(row.created_at),
     updatedAt: timestampValue(row.updated_at),
   };
@@ -46,6 +48,7 @@ const resultColumns = `
   category.name AS category_name,
   income.subcategory_id,
   subcategory.name AS subcategory_name,
+  income.balance_type,
   income.created_at,
   income.updated_at`;
 
@@ -76,8 +79,8 @@ export class PostgresIncomesRepository implements IncomeRepository {
   async createIncome(userId: string, walletId: string, input: Required<IncomeInput>): Promise<Income | null> {
     const result = await this.database.query<IncomeRow>(
       `WITH inserted AS (
-         INSERT INTO incomes (user_id, wallet_id, category_id, subcategory_id, amount, date, description)
-         SELECT $1, $2, category.id, $4, $5::numeric, $6::date, $7
+         INSERT INTO incomes (user_id, wallet_id, category_id, subcategory_id, amount, date, description, balance_type)
+         SELECT $1, $2, category.id, $4, $5::numeric, $6::date, $7, $8
          FROM categories AS category
          WHERE category.id = $3
            AND category.wallet_id = $2
@@ -100,7 +103,7 @@ export class PostgresIncomesRepository implements IncomeRepository {
          ON subcategory.id = inserted.subcategory_id
         AND subcategory.wallet_id = inserted.wallet_id
         AND subcategory.category_id = inserted.category_id`,
-      [userId, walletId, input.categoryId, input.subcategoryId, input.amount, input.date, input.description],
+      [userId, walletId, input.categoryId, input.subcategoryId, input.amount, input.date, input.description, input.balanceType],
     );
     const row = result.rows[0];
     return row ? mapIncome(row) : null;
@@ -117,6 +120,7 @@ export class PostgresIncomesRepository implements IncomeRepository {
          UPDATE incomes AS income
          SET category_id = category.id,
              subcategory_id = $4::uuid,
+             balance_type = $8,
              amount = $5::numeric,
              date = $6::date,
              description = $7,
@@ -145,7 +149,7 @@ export class PostgresIncomesRepository implements IncomeRepository {
          ON subcategory.id = updated.subcategory_id
         AND subcategory.wallet_id = updated.wallet_id
         AND subcategory.category_id = updated.category_id`,
-      [incomeId, walletId, input.categoryId, input.subcategoryId, input.amount, input.date, input.description],
+      [incomeId, walletId, input.categoryId, input.subcategoryId, input.amount, input.date, input.description, input.balanceType],
     );
     const row = result.rows[0];
     return row ? mapIncome(row) : null;

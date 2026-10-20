@@ -14,6 +14,12 @@ const expected: FinancialSummary = {
   expenseTotal: "25.00",
   contributionTotal: "10.00",
   availableBalance: "65.00",
+  cashBalance: "65.00",
+  benefitBalances: [
+    { balanceType: "food_benefit", amount: "0.00" },
+    { balanceType: "meal_benefit", amount: "0.00" },
+    { balanceType: "home_office_benefit", amount: "0.00" },
+  ],
   incomeByCategory: [],
   expenseByCategory: [],
 };

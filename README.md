@@ -97,7 +97,7 @@ Para parar os containers, use docker compose down. Para remover também os dados
 Todas as operações de entrada exigem uma sessão autenticada e são isoladas pela carteira selecionada. Os valores monetários são enviados e retornados como strings decimais, com até duas casas, para preservar a precisão.
 
 - `GET /incomes?from=AAAA-MM-DD&to=AAAA-MM-DD` lista entradas; os filtros de data são opcionais e inclusivos, com ordenação por data e criação mais recentes primeiro.
-- `POST /incomes` cria uma entrada com `{ "amount": "1250.50", "date": "2026-10-19", "description": "Salário", "categoryId": "<uuid>", "subcategoryId": "<uuid-ou-null>" }`.
+- `POST /incomes` cria uma entrada com `{ "amount": "1250.50", "date": "2026-10-19", "description": "Salário", "categoryId": "<uuid>", "subcategoryId": "<uuid-ou-null>", "balanceType": "cash" }`. `balanceType` aceita `cash`, `food_benefit`, `meal_benefit` ou `home_office_benefit`; quando omitido por clientes antigos, a entrada é tratada como dinheiro.
 - `PUT /incomes/:incomeId` substitui os campos editáveis e aceita a mesma estrutura do cadastro; descrição e subcategoria podem ser omitidas ou nulas.
 - `DELETE /incomes/:incomeId` exclui uma entrada e retorna `204`.
 
@@ -116,7 +116,7 @@ O valor deve ser positivo. As categorias precisam pertencer à carteira selecion
 
 ## Resumo financeiro
 
-`GET /financial-summary?from=AAAA-MM-DD&to=AAAA-MM-DD` retorna os totais da carteira selecionada, com filtros de data opcionais e inclusivos. A resposta separa as entradas, despesas de consumo e aportes: `{ "incomeTotal": "500.00", "expenseTotal": "100.00", "contributionTotal": "50.00", "availableBalance": "350.00" }`. O saldo disponível é calculado como entradas menos despesas menos aportes; aportes não são somados às despesas.
+`GET /financial-summary?from=AAAA-MM-DD&to=AAAA-MM-DD` retorna os totais da carteira selecionada, com filtros de data opcionais e inclusivos. `incomeTotal` e `expenseTotal` continuam representando todos os lançamentos do período. `availableBalance` mantém compatibilidade e equivale a `cashBalance`, que considera entradas em dinheiro, despesas pagas em dinheiro e aportes. `benefitBalances` informa separadamente os saldos de VA, VR e AHO; cada despesa paga com um benefício reduz somente o saldo daquele tipo. Entradas antigas sem destino são tratadas como dinheiro. Regras de fatura de cartão permanecem fora deste fluxo.
 
 ## Metas de investimento e aportes
 

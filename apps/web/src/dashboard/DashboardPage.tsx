@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import type { CategorySummary, FinancialSummary } from './dashboardApi'
+import type { BenefitBalanceSummary, CategorySummary, FinancialSummary } from './dashboardApi'
 import { DashboardApiError, dashboardApi } from './dashboardApi'
 import type { InvestmentGoal } from '../goals/goalsApi'
 import { formatBrazilianCurrency } from '../money/currency'
@@ -13,6 +13,12 @@ type DashboardPageProps = { userEmail: string; isLoggingOut: boolean; onLogout: 
 
 function formatAmount(value: string) {
   return formatBrazilianCurrency(value)
+}
+
+const benefitLabels: Record<BenefitBalanceSummary['balanceType'], string> = {
+  food_benefit: 'Vale-alimentação (VA)',
+  meal_benefit: 'Vale-refeição (VR)',
+  home_office_benefit: 'Auxílio home office (AHO)',
 }
 
 function CategoryBreakdown({ title, items, tone }: { title: string; items: CategorySummary[]; tone: 'income' | 'expense' }) {
@@ -158,10 +164,21 @@ export function DashboardPage({ userEmail, isLoggingOut, onLogout }: DashboardPa
                 <article className="dashboard-summary-card dashboard-summary-card--contribution">
                   <span>Aportes</span><strong>{formatAmount(summary.contributionTotal)}</strong><small>destinados às metas</small>
                 </article>
-                <article className={`dashboard-summary-card dashboard-summary-card--balance${summary.availableBalance.startsWith('-') ? ' dashboard-summary-card--negative' : ''}`}>
-                  <span>Saldo disponível</span><strong>{formatAmount(summary.availableBalance)}</strong><small>entradas menos despesas e aportes</small>
+                <article className={`dashboard-summary-card dashboard-summary-card--balance${(summary.cashBalance ?? summary.availableBalance).startsWith('-') ? ' dashboard-summary-card--negative' : ''}`}>
+                  <span>Saldo em dinheiro</span><strong>{formatAmount(summary.cashBalance ?? summary.availableBalance)}</strong><small>disponível após despesas e aportes em dinheiro</small>
                 </article>
               </div>
+
+              {(summary.benefitBalances?.length ?? 0) > 0 && (
+                <section className="dashboard-benefit-balances" aria-label="Saldos de benefícios">
+                  {summary.benefitBalances?.map((balance) => (
+                    <article className="dashboard-benefit-balance" key={balance.balanceType}>
+                      <span>{benefitLabels[balance.balanceType]}</span>
+                      <strong>{formatAmount(balance.amount)}</strong>
+                    </article>
+                  ))}
+                </section>
+              )}
 
               <nav className="dashboard-quick-actions" aria-label="Ações rápidas">
                 <a className="dashboard-primary-button" href="/incomes">＋ Registrar entrada</a>

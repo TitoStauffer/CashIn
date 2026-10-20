@@ -54,7 +54,7 @@ const resultColumns = `
   subcategory.name AS subcategory_name,
   payment_method.id AS payment_method_id,
   payment_method.name AS payment_method_name,
-  payment_method.nature AS payment_method_nature,
+  expense.payment_method_nature,
   expense.created_at,
   expense.updated_at`;
 
@@ -88,9 +88,12 @@ export class PostgresExpensesRepository implements ExpenseRepository {
   async createExpense(userId: string, walletId: string, input: Required<ExpenseInput>): Promise<Expense | null> {
     const result = await this.database.query<ExpenseRow>(
       `WITH inserted AS (
-         INSERT INTO expenses (user_id, wallet_id, category_id, subcategory_id, payment_method_id, amount, date, description)
-         SELECT $1, $2, category.id, $4, $5::uuid, $6::numeric, $7::date, $8
+         INSERT INTO expenses (user_id, wallet_id, category_id, subcategory_id, payment_method_id, payment_method_nature, amount, date, description)
+         SELECT $1, $2, category.id, $4, method.id, method.nature, $6::numeric, $7::date, $8
          FROM categories AS category
+         LEFT JOIN payment_methods AS method
+           ON method.id = $5::uuid
+          AND method.wallet_id = $2
          WHERE category.id = $3
            AND category.wallet_id = $2
            AND category.nature = 'expense'
@@ -139,6 +142,12 @@ export class PostgresExpensesRepository implements ExpenseRepository {
          SET category_id = category.id,
              subcategory_id = $4::uuid,
              payment_method_id = $5::uuid,
+             payment_method_nature = (
+               SELECT payment_method.nature
+               FROM payment_methods AS payment_method
+               WHERE payment_method.id = $5::uuid
+                 AND payment_method.wallet_id = $2
+             ),
              amount = $6::numeric,
              date = $7::date,
              description = $8,
