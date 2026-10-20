@@ -28,6 +28,7 @@ export default defineConfig({
         'src/period/month.ts',
         'src/money/currency.ts',
         'src/dashboard/DashboardPage.tsx',
+        'src/categories/CategoriesPage.tsx',
         'src/expenses/ExpensesPage.tsx',
         'src/goals/GoalsPage.tsx',
         'src/incomes/IncomesPage.tsx',

@@ -30,7 +30,7 @@ const natureOptions: { value: CategoryNature; label: string }[] = [
 ]
 
 function normalizeName(value: string) {
-  return value.trim().toLowerCase()
+  return value.trim().normalize('NFD').replace(/\p{Diacritic}/gu, '').toLowerCase()
 }
 
 function getErrorMessage(error: unknown, action?: MutationAction) {

@@ -12,6 +12,12 @@ const goal = {
 }
 const contribution = { id: 'contribution-1', amount: '15.25', date: '2026-10-01', description: 'Aporte mensal' }
 
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>((resolvePromise) => { resolve = resolvePromise })
+  return { promise, resolve }
+}
+
 describe('GoalsPage currency inputs', () => {
   beforeEach(() => {
     vi.stubGlobal('matchMedia', vi.fn(() => ({
@@ -84,5 +90,91 @@ describe('GoalsPage currency inputs', () => {
     await user.type(newContributionAmount, '12,34')
     await user.click(screen.getByRole('button', { name: 'Registrar aporte' }))
     await waitFor(() => expect(goalsApi.createContribution).toHaveBeenCalledWith('goal-1', expect.objectContaining({ amount: '12.34' })))
+  })
+
+  it('opens the contribution form from the collapsed goal card', async () => {
+    const user = userEvent.setup()
+    render(<GoalsPage userEmail="tito@example.com" isLoggingOut={false} onLogout={vi.fn()} />)
+
+    await user.click(await screen.findByRole('button', { name: '＋ Registrar aporte' }))
+
+    expect(await screen.findByLabelText('Valor *')).toBeVisible()
+    await waitFor(() => expect(goalsApi.contributions).toHaveBeenCalledWith('goal-1'))
+    expect(goalsApi.createContribution).not.toHaveBeenCalled()
+  })
+
+  it('reuses loaded contributions when the goal panel is reopened', async () => {
+    const user = userEvent.setup()
+    render(<GoalsPage userEmail="tito@example.com" isLoggingOut={false} onLogout={vi.fn()} />)
+
+    await user.click(await screen.findByRole('button', { name: 'Ver aportes' }))
+    expect(await screen.findByText(/Aporte mensal/)).toBeVisible()
+    await user.click(screen.getByRole('button', { name: 'Ocultar aportes' }))
+    await user.click(screen.getByRole('button', { name: 'Ver aportes' }))
+
+    expect(goalsApi.contributions).toHaveBeenCalledTimes(1)
+    expect(screen.getByText(/Aporte mensal/)).toBeVisible()
+  })
+
+  it('shows an error when contributions cannot be loaded from the goal card', async () => {
+    const user = userEvent.setup()
+    vi.mocked(goalsApi.contributions).mockRejectedValueOnce(new Error('offline'))
+    render(<GoalsPage userEmail="tito@example.com" isLoggingOut={false} onLogout={vi.fn()} />)
+
+    await user.click(await screen.findByRole('button', { name: '＋ Registrar aporte' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Não foi possível carregar os aportes.')
+    expect(screen.getByLabelText('Valor *')).toBeVisible()
+    expect(goalsApi.createContribution).not.toHaveBeenCalled()
+  })
+
+  it('shows a recoverable error when goals cannot be loaded', async () => {
+    const user = userEvent.setup()
+    vi.mocked(goalsApi.list).mockRejectedValueOnce(new Error('offline'))
+    render(<GoalsPage userEmail="tito@example.com" isLoggingOut={false} onLogout={vi.fn()} />)
+
+    expect(await screen.findByText('Não foi possível carregar suas metas. Verifique sua conexão e tente novamente.')).toBeVisible()
+    await user.click(screen.getByRole('button', { name: 'Tentar novamente' }))
+
+    expect(await screen.findByRole('heading', { name: 'Carro novo' })).toBeVisible()
+  })
+
+  it('shows loading and mutation success states when creating a goal', async () => {
+    const user = userEvent.setup()
+    const initialLoad = deferred<{ items: Array<typeof goal> }>()
+    const createRequest = deferred<typeof goal>()
+    vi.mocked(goalsApi.list)
+      .mockReturnValueOnce(initialLoad.promise)
+      .mockResolvedValueOnce({ items: [goal] })
+    vi.mocked(goalsApi.create).mockReturnValueOnce(createRequest.promise)
+    render(<GoalsPage userEmail="tito@example.com" isLoggingOut={false} onLogout={vi.fn()} />)
+
+    expect(screen.getByRole('status')).toHaveTextContent('Carregando metas')
+    initialLoad.resolve({ items: [goal] })
+    await screen.findByRole('heading', { name: 'Carro novo' })
+    await user.click(screen.getByRole('button', { name: /Nova meta/ }))
+    await user.type(screen.getByLabelText('Título *'), 'Viagem')
+    await user.type(screen.getByLabelText('Descrição *'), 'Reserva para viajar')
+    fireEvent.change(screen.getByLabelText('Valor-alvo *'), { target: { value: '15000,00' } })
+    await user.click(screen.getByRole('button', { name: 'Criar meta' }))
+
+    expect(screen.getByRole('button', { name: 'Salvando…' })).toBeVisible()
+    createRequest.resolve(goal)
+    expect(await screen.findByRole('status')).toHaveTextContent('Meta criada.')
+  })
+
+  it('shows the saving and success states when registering a contribution', async () => {
+    const user = userEvent.setup()
+    const createRequest = deferred<typeof contribution>()
+    vi.mocked(goalsApi.createContribution).mockReturnValueOnce(createRequest.promise)
+    render(<GoalsPage userEmail="tito@example.com" isLoggingOut={false} onLogout={vi.fn()} />)
+
+    await user.click(await screen.findByRole('button', { name: '＋ Registrar aporte' }))
+    await user.type(await screen.findByLabelText('Valor *'), '250,00')
+    await user.click(screen.getByRole('button', { name: 'Registrar aporte' }))
+
+    expect(screen.getByRole('button', { name: 'Salvando…' })).toBeVisible()
+    createRequest.resolve(contribution)
+    expect(await screen.findByRole('status')).toHaveTextContent('Aporte registrado.')
   })
 })

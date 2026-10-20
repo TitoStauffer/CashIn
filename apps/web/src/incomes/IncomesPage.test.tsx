@@ -12,6 +12,12 @@ const income = {
   createdAt: '2026-10-01T12:00:00.000Z', updatedAt: '2026-10-01T12:00:00.000Z',
 }
 
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>((resolvePromise) => { resolve = resolvePromise })
+  return { promise, resolve }
+}
+
 describe('IncomesPage currency input', () => {
   beforeEach(() => {
     vi.stubGlobal('matchMedia', vi.fn(() => ({
@@ -59,5 +65,38 @@ describe('IncomesPage currency input', () => {
     await user.click(screen.getByRole('button', { name: 'Editar entrada Salário mensal' }))
     await user.click(screen.getByRole('button', { name: 'Salvar alterações' }))
     await waitFor(() => expect(incomesApi.update).toHaveBeenCalledWith('income-1', expect.objectContaining({ amount: '1234.56' })))
+  })
+
+  it('shows a recoverable error when incomes cannot be loaded', async () => {
+    const user = userEvent.setup()
+    vi.mocked(incomesApi.list).mockRejectedValueOnce(new Error('offline'))
+    render(<IncomesPage userEmail="tito@example.com" isLoggingOut={false} onLogout={vi.fn()} />)
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Não foi possível conectar ao serviço.')
+    await user.click(screen.getByRole('button', { name: 'Tentar novamente' }))
+
+    expect(await screen.findByText('Salário mensal')).toBeVisible()
+  })
+
+  it('shows loading and mutation success states when creating an income', async () => {
+    const user = userEvent.setup()
+    const initialLoad = deferred<{ items: Array<typeof income> }>()
+    const createRequest = deferred<typeof income>()
+    vi.mocked(incomesApi.list)
+      .mockReturnValueOnce(initialLoad.promise)
+      .mockResolvedValueOnce({ items: [income] })
+    vi.mocked(incomesApi.create).mockReturnValueOnce(createRequest.promise)
+    render(<IncomesPage userEmail="tito@example.com" isLoggingOut={false} onLogout={vi.fn()} />)
+
+    expect(screen.getByRole('status')).toHaveTextContent('Carregando entradas')
+    initialLoad.resolve({ items: [income] })
+    await screen.findByText('Salário mensal')
+    await user.click(screen.getByRole('button', { name: /Nova entrada/ }))
+    fireEvent.change(screen.getByLabelText('Valor *'), { target: { value: '500,00' } })
+    await user.click(screen.getByRole('button', { name: 'Registrar entrada' }))
+
+    expect(screen.getByRole('button', { name: 'Salvando…' })).toBeVisible()
+    createRequest.resolve(income)
+    expect(await screen.findByRole('status')).toHaveTextContent('Entrada registrada.')
   })
 })

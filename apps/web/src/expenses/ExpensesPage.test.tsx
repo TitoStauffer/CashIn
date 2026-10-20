@@ -12,6 +12,12 @@ const expense = {
   createdAt: '2026-10-02T12:00:00.000Z', updatedAt: '2026-10-02T12:00:00.000Z',
 }
 
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>((resolvePromise) => { resolve = resolvePromise })
+  return { promise, resolve }
+}
+
 describe('ExpensesPage currency input', () => {
   beforeEach(() => {
     vi.stubGlobal('matchMedia', vi.fn(() => ({
@@ -59,5 +65,38 @@ describe('ExpensesPage currency input', () => {
     await user.click(screen.getByRole('button', { name: 'Editar despesa Aluguel' }))
     await user.click(screen.getByRole('button', { name: 'Salvar alterações' }))
     await waitFor(() => expect(expensesApi.update).toHaveBeenCalledWith('expense-1', expect.objectContaining({ amount: '1234.56' })))
+  })
+
+  it('shows a recoverable error when expenses cannot be loaded', async () => {
+    const user = userEvent.setup()
+    vi.mocked(expensesApi.list).mockRejectedValueOnce(new Error('offline'))
+    render(<ExpensesPage userEmail="tito@example.com" isLoggingOut={false} onLogout={vi.fn()} />)
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Não foi possível conectar ao serviço.')
+    await user.click(screen.getByRole('button', { name: 'Tentar novamente' }))
+
+    expect(await screen.findByText('Aluguel')).toBeVisible()
+  })
+
+  it('shows loading and mutation success states when creating an expense', async () => {
+    const user = userEvent.setup()
+    const initialLoad = deferred<{ items: Array<typeof expense> }>()
+    const createRequest = deferred<typeof expense>()
+    vi.mocked(expensesApi.list)
+      .mockReturnValueOnce(initialLoad.promise)
+      .mockResolvedValueOnce({ items: [expense] })
+    vi.mocked(expensesApi.create).mockReturnValueOnce(createRequest.promise)
+    render(<ExpensesPage userEmail="tito@example.com" isLoggingOut={false} onLogout={vi.fn()} />)
+
+    expect(screen.getByRole('status')).toHaveTextContent('Carregando despesas')
+    initialLoad.resolve({ items: [expense] })
+    await screen.findByText('Aluguel')
+    await user.click(screen.getByRole('button', { name: /Nova despesa/ }))
+    fireEvent.change(screen.getByLabelText('Valor *'), { target: { value: '250,00' } })
+    await user.click(screen.getByRole('button', { name: 'Registrar despesa' }))
+
+    expect(screen.getByRole('button', { name: 'Salvando…' })).toBeVisible()
+    createRequest.resolve(expense)
+    expect(await screen.findByRole('status')).toHaveTextContent('Despesa registrada.')
   })
 })
