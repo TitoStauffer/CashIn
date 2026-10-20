@@ -1,0 +1,83 @@
+.page {
+  display: grid;
+  min-height: 100vh;
+  place-items: center;
+  padding: 24px;
+}
+
+.welcome-card {
+  width: min(100%, 560px);
+  padding: clamp(28px, 6vw, 52px);
+  border: 1px solid #dce7e1;
+  border-radius: 24px;
+  background: #ffffff;
+  box-shadow: 0 24px 70px rgb(33 66 49 / 9%);
+}
+
+.brand-mark {
+  display: grid;
+  width: 48px;
+  height: 48px;
+  place-items: center;
+  border-radius: 15px;
+  background: #176b4d;
+  color: #ffffff;
+  font-size: 15px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+}
+
+.eyebrow {
+  margin: 30px 0 8px;
+  color: #527362;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+h1 {
+  margin: 0;
+  color: #183a2c;
+  font-size: clamp(36px, 7vw, 54px);
+  letter-spacing: -0.05em;
+  line-height: 1.05;
+}
+
+.intro {
+  max-width: 390px;
+  margin: 18px 0 30px;
+  color: #53665c;
+  font-size: 17px;
+  line-height: 1.6;
+}
+
+.connection {
+  display: flex;
+  min-height: 44px;
+  align-items: center;
+  gap: 10px;
+  padding: 0 14px;
+  border: 1px solid #e2ece6;
+  border-radius: 12px;
+  background: #f7faf8;
+  color: #354f40;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.status-dot {
+  width: 9px;
+  height: 9px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: #23865d;
+}
+
+.status-dot--error {
+  background: #c44141;
+}
+
+.status-dot--loading {
+  background: #d69a22;
+}
