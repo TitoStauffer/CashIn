@@ -178,6 +178,33 @@ test("registration, one-time verification, login, session lookup, and logout wor
   await app.close();
 });
 
+test("registration carries a wallet invitation token only into the confirmation link", async () => {
+  const sentMessages: Array<{ email: string; url: string }> = [];
+  const app = createApp(createTestDatabase(), {
+    authRepository: new MemoryAuthRepository(),
+    emailSender: {
+      sendVerificationEmail: async (email, url) => { sentMessages.push({ email, url }); },
+    },
+  });
+
+  const inviteToken = "i".repeat(43);
+  try {
+    const response = await app.inject({
+      method: "POST",
+      url: "/auth/register",
+      payload: { email: "member@example.com", password: "Abcdef1!secure", inviteToken },
+    });
+    assert.equal(response.statusCode, 202);
+    assert.equal(response.body.includes(inviteToken), false);
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    const confirmationUrl = new URL(sentMessages[0]!.url);
+    assert.equal(confirmationUrl.searchParams.get("invite"), inviteToken);
+    assert.ok(confirmationUrl.searchParams.get("token"));
+  } finally {
+    await app.close();
+  }
+});
+
 test("invalid confirmation tokens are rejected and malformed requests use Portuguese errors", async () => {
   const app = createApp(createTestDatabase(), { authRepository: new MemoryAuthRepository() });
 

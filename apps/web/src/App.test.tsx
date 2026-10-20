@@ -145,6 +145,29 @@ describe('authentication forms', () => {
     expect(screen.getByRole('heading', { name: 'Não foi possível confirmar.' })).toBeVisible()
     expect(authApi.verifyEmail).toHaveBeenCalledWith('expired-token')
   })
+
+  it('propagates the invite token through signup and a separate email confirmation tab', async () => {
+    const user = userEvent.setup()
+    window.sessionStorage.clear()
+    window.history.replaceState({}, '', '/register?invite=single-use-token')
+    render(<App />)
+    await screen.findByRole('heading', { name: 'Crie sua conta' })
+
+    await user.type(screen.getByLabelText('E-mail'), 'guest@example.com')
+    await user.type(screen.getByLabelText('Senha'), 'SenhaForte1!')
+    await user.click(screen.getByRole('button', { name: 'Criar conta' }))
+
+    expect(await screen.findByRole('status')).toHaveTextContent('volte a este convite')
+    await waitFor(() => expect(authApi.register).toHaveBeenCalledWith('guest@example.com', 'SenhaForte1!', 'single-use-token'))
+    expect(window.sessionStorage.getItem('saldocerto.pending-wallet-invite')).toBe('single-use-token')
+
+    cleanup()
+    window.sessionStorage.clear()
+    window.history.replaceState({}, '', '/verify-email?token=email-confirmation-token&invite=single-use-token')
+    render(<App />)
+    expect(await screen.findByRole('heading', { name: 'Seu e-mail foi confirmado.' })).toBeVisible()
+    expect(screen.getByRole('link', { name: 'Ir para o login' })).toHaveAttribute('href', '/login?invite=single-use-token')
+  })
 })
 
 describe('authenticated financial routes', () => {
@@ -180,4 +203,44 @@ describe('authenticated financial routes', () => {
       await waitFor(() => expect(window.localStorage.getItem('saldocerto.active-wallet.user-1')).toBe('wallet-personal'))
     },
   )
+})
+
+describe('wallet invitation routes', () => {
+  beforeEach(() => {
+    window.sessionStorage.clear()
+    vi.spyOn(authApi, 'me').mockRejectedValue(new AuthApiError('', 401))
+    vi.spyOn(walletApi, 'acceptInvitation').mockResolvedValue({
+      wallet: { id: 'wallet-shared', name: 'Família', isPersonal: false, role: 'member' },
+      message: 'Convite aceito.',
+    })
+  })
+
+  afterEach(() => {
+    cleanup()
+    vi.restoreAllMocks()
+    window.localStorage.clear()
+    window.sessionStorage.clear()
+  })
+
+  it('offers account login or registration without losing the invite token', async () => {
+    window.history.replaceState({}, '', '/wallet-invite?token=invite-token')
+    render(<App />)
+
+    expect(await screen.findByRole('heading', { name: 'Entre ou crie uma conta para continuar.' })).toBeVisible()
+    expect(screen.getByRole('link', { name: /Entrar para aceitar/ })).toHaveAttribute('href', '/login?invite=invite-token')
+    expect(screen.getByRole('link', { name: 'Criar conta' })).toHaveAttribute('href', '/register?invite=invite-token')
+  })
+
+  it('accepts an invite for the authenticated account and remembers the shared wallet', async () => {
+    const user = userEvent.setup()
+    vi.mocked(authApi.me).mockResolvedValueOnce({ user: { id: 'user-2', email: 'guest@example.com' } })
+    window.history.replaceState({}, '', '/wallet-invite?token=invite-token')
+    render(<App />)
+
+    await user.click(await screen.findByRole('button', { name: 'Aceitar convite' }))
+
+    await waitFor(() => expect(walletApi.acceptInvitation).toHaveBeenCalledWith('invite-token'))
+    expect(await screen.findByRole('status')).toHaveTextContent('Convite aceito.')
+    expect(window.localStorage.getItem('saldocerto.active-wallet.user-2')).toBe('wallet-shared')
+  })
 })

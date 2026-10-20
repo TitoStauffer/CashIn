@@ -44,10 +44,10 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
 }
 
 export const authApi = {
-  register(email: string, password: string) {
+  register(email: string, password: string, invitationToken?: string) {
     return request<MessageResponse>('register', {
       method: 'POST',
-      body: JSON.stringify({ email, password }),
+      body: JSON.stringify({ email, password, ...(invitationToken ? { invitationToken } : {}) }),
     })
   },
 

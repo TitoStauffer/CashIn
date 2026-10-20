@@ -39,6 +39,26 @@ test("SMTP sender creates a confirmation email with a text and HTML link", async
   assert.match(sentMessage?.html ?? "", /token=abc&amp;source=email/);
 });
 
+test("SMTP sender creates a wallet invitation email without altering the single-use URL", async () => {
+  let sentMessage: { from: string; to: string; subject: string; text: string; html: string } | undefined;
+  const sender = new SmtpEmailSender(smtpConfiguration, async (message) => { sentMessage = message; });
+  const invitationUrl = "http://localhost:5173/wallet-invite?token=opaque-token&wallet=family";
+
+  await sender.sendWalletInvitationEmail!(
+    "member@example.com",
+    invitationUrl,
+    "Carteira Família",
+    "owner@example.com",
+  );
+
+  assert.equal(sentMessage?.to, "member@example.com");
+  assert.equal(sentMessage?.subject, "Convite para uma carteira compartilhada - Saldo Certo");
+  assert.match(sentMessage?.text ?? "", /Carteira Família/);
+  assert.match(sentMessage?.html ?? "", /Carteira Família/);
+  assert.match(sentMessage?.html ?? "", /token=opaque-token&amp;wallet=family/);
+  assert.doesNotMatch(sentMessage?.html ?? "", /<script/i);
+});
+
 test("email sender remains unconfigured when SMTP credentials are absent", async () => {
   const sender = createEmailSenderFromEnvironment({});
 

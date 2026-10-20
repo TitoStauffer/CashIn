@@ -18,10 +18,21 @@ interface VerificationEmailMessage {
   html: string;
 }
 
+interface WalletInvitationEmailMessage extends VerificationEmailMessage {}
+
 type SendMail = (message: VerificationEmailMessage) => Promise<void>;
 
 export class UnconfiguredEmailSender implements EmailSender {
   async sendVerificationEmail(_email: string, _confirmationUrl: string): Promise<void> {
+    throw new Error("Email sender is not configured");
+  }
+
+  async sendWalletInvitationEmail(
+    _email: string,
+    _invitationUrl: string,
+    _walletName: string,
+    _inviterEmail: string,
+  ): Promise<void> {
     throw new Error("Email sender is not configured");
   }
 }
@@ -56,6 +67,36 @@ export class SmtpEmailSender implements EmailSender {
         "<p>Se você não solicitou este cadastro, ignore esta mensagem.</p>",
       ].join(""),
     });
+  }
+
+  async sendWalletInvitationEmail(
+    email: string,
+    invitationUrl: string,
+    walletName: string,
+    inviterEmail: string,
+  ): Promise<void> {
+    const safeUrl = escapeHtml(invitationUrl);
+    const safeWalletName = escapeHtml(walletName);
+    const safeInviterEmail = escapeHtml(inviterEmail);
+    const message: WalletInvitationEmailMessage = {
+      from: `Saldo Certo <${this.fromAddress}>`,
+      to: email,
+      subject: "Convite para uma carteira compartilhada - Saldo Certo",
+      text: [
+        `Você recebeu um convite de ${inviterEmail} para acessar a carteira "${walletName}" no Saldo Certo.`,
+        "",
+        "Para aceitar o convite, acesse o link abaixo:",
+        invitationUrl,
+        "",
+        "Se você não esperava este convite, ignore esta mensagem.",
+      ].join("\n"),
+      html: [
+        `<p>Você recebeu um convite de ${safeInviterEmail} para acessar a carteira <strong>${safeWalletName}</strong> no Saldo Certo.</p>`,
+        `<p><a href="${safeUrl}">Visualizar e aceitar convite</a></p>`,
+        "<p>Se você não esperava este convite, ignore esta mensagem.</p>",
+      ].join(""),
+    };
+    await this.sendMail(message);
   }
 }
 

@@ -1,9 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   getStoredWalletId,
+  getPendingInviteToken,
   getWalletStorageKey,
   setRequestWalletId,
   storeWalletId,
+  storePendingInviteToken,
   walletApi,
   WalletApiError,
   withActiveWallet,
@@ -93,5 +95,38 @@ describe('financial wallet request context', () => {
 
   it('leaves the request unchanged when there is no selected wallet', () => {
     expect(withActiveWallet({ method: 'GET' })).toEqual({ method: 'GET' })
+  })
+
+  it('preserves a pending invitation token through the email confirmation and login flow', () => {
+    storePendingInviteToken('single-use-invitation-token')
+    expect(getPendingInviteToken()).toBe('single-use-invitation-token')
+    storePendingInviteToken(null)
+    expect(getPendingInviteToken()).toBeNull()
+  })
+
+  it('calls the wallet invitation and member endpoints with encoded identifiers', async () => {
+    const invitation = { id: 'invite-1', email: 'person@example.com', status: 'pending', expiresAt: '2026-11-01T00:00:00Z', createdAt: '2026-10-20T00:00:00Z' }
+    const member = { id: 'member-1', email: 'person@example.com', role: 'member', createdAt: '2026-10-20T00:00:00Z' }
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(response({ items: [invitation] }) as unknown as Response)
+      .mockResolvedValueOnce(response({ invitation, message: 'Convite enviado.' }, 202) as unknown as Response)
+      .mockResolvedValueOnce(response(null, 204) as unknown as Response)
+      .mockResolvedValueOnce(response({ items: [member] }) as unknown as Response)
+      .mockResolvedValueOnce(response(null, 204) as unknown as Response)
+      .mockResolvedValueOnce(response({ wallet }) as unknown as Response)
+
+    await expect(walletApi.listInvitations('wallet/one')).resolves.toEqual({ items: [invitation] })
+    await expect(walletApi.createInvitation('wallet/one', 'person@example.com')).resolves.toEqual({ invitation, message: 'Convite enviado.' })
+    await expect(walletApi.cancelInvitation('wallet/one', 'invite/1')).resolves.toBeUndefined()
+    await expect(walletApi.listMembers('wallet/one')).resolves.toEqual({ items: [member] })
+    await expect(walletApi.removeMember('wallet/one', 'member/1')).resolves.toBeUndefined()
+    await expect(walletApi.acceptInvitation('token')).resolves.toEqual({ wallet })
+
+    expect(fetch).toHaveBeenNthCalledWith(1, '/api/wallets/wallet%2Fone/invites', expect.any(Object))
+    expect(fetch).toHaveBeenNthCalledWith(2, '/api/wallets/wallet%2Fone/invites', expect.objectContaining({ method: 'POST', body: JSON.stringify({ email: 'person@example.com' }) }))
+    expect(fetch).toHaveBeenNthCalledWith(3, '/api/wallets/wallet%2Fone/invites/invite%2F1', expect.objectContaining({ method: 'DELETE' }))
+    expect(fetch).toHaveBeenNthCalledWith(4, '/api/wallets/wallet%2Fone/members', expect.any(Object))
+    expect(fetch).toHaveBeenNthCalledWith(5, '/api/wallets/wallet%2Fone/members/member%2F1', expect.objectContaining({ method: 'DELETE' }))
+    expect(fetch).toHaveBeenNthCalledWith(6, '/api/wallet-invitations/accept', expect.objectContaining({ method: 'POST', body: JSON.stringify({ token: 'token' }) }))
   })
 })

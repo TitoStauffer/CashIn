@@ -23,6 +23,7 @@ const navigationItems: NavigationItem[] = [
   { href: '/expenses', label: 'Despesas', icon: '↘', key: 'expenses' },
   { href: '/goals', label: 'Metas', icon: '◎', key: 'goals' },
   { href: '/categories', label: 'Categorias', icon: '▤', key: 'categories' },
+  { href: '/wallet-sharing', label: 'Compartilhamento', icon: '♧', key: 'wallet-sharing' },
 ]
 
 const collapsedStorageKey = 'saldocerto.navigation.collapsed'
@@ -162,7 +163,7 @@ export function FinancialSidebar({ activePage, userEmail, isLoggingOut, onLogout
         aria-label="Navegação principal"
         aria-hidden={isMobileViewport && !isMobileMenuOpen}
       >
-        {navigationItems.map((item) => (
+        {navigationItems.filter((item) => item.key !== 'wallet-sharing' || (activeWallet?.role === 'owner' && !activeWallet.isPersonal)).map((item) => (
           <a
             className={`financial-sidebar__link${activePage === item.key ? ' financial-sidebar__link--active' : ''}`}
             href={item.href}

@@ -30,6 +30,10 @@ import { PostgresWalletsRepository } from "./wallets/postgres-wallets.repository
 import { registerWalletRoutes } from "./wallets/wallets.routes.js";
 import type { WalletRepository } from "./wallets/wallets.types.js";
 import { WalletError } from "./wallets/wallets.errors.js";
+import { WalletInvitationsService } from "./wallet-invitations/wallet-invitations.service.js";
+import { PostgresWalletInvitationRepository } from "./wallet-invitations/postgres-wallet-invitation.repository.js";
+import { registerWalletInvitationRoutes } from "./wallet-invitations/wallet-invitations.routes.js";
+import type { WalletInvitationRepository } from "./wallet-invitations/wallet-invitations.types.js";
 
 export interface AppOptions {
   logger?: boolean;
@@ -41,7 +45,9 @@ export interface AppOptions {
   investmentGoalsRepository?: InvestmentGoalsRepository;
   financialSummaryRepository?: FinancialSummaryRepository;
   walletRepository?: WalletRepository;
+  walletInvitationRepository?: WalletInvitationRepository;
   authConfiguration?: Partial<AuthConfiguration>;
+  walletInvitationTokenTtlHours?: number;
   secureCookies?: boolean;
 }
 
@@ -123,6 +129,28 @@ export function createApp(
   });
 
   registerWalletRoutes(app, { walletsService });
+
+  const emailSender = options.emailSender ?? new UnconfiguredEmailSender();
+  registerWalletInvitationRoutes(app, {
+    walletInvitationsService: new WalletInvitationsService(
+      options.walletInvitationRepository ?? new PostgresWalletInvitationRepository(database),
+      emailSender,
+      {
+        webBaseUrl: options.authConfiguration?.webBaseUrl ?? "http://localhost:5173",
+        invitationTokenTtlHours: options.walletInvitationTokenTtlHours ?? 168,
+      },
+      undefined,
+      (error) => {
+        const metadata = typeof error === "object" && error !== null
+          ? error as { code?: unknown; responseCode?: unknown }
+          : {};
+        app.log.error({
+          smtpCode: typeof metadata.code === "string" ? metadata.code : "UNKNOWN",
+          smtpResponseCode: typeof metadata.responseCode === "number" ? metadata.responseCode : undefined,
+        }, "Wallet invitation email delivery failed");
+      },
+    ),
+  });
 
   registerCategoryRoutes(app, {
     categoriesService: new CategoriesService(
