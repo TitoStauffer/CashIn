@@ -19,6 +19,16 @@ export class WalletInvitationsService {
   ) {}
 
   async createInvitation(walletId: string, ownerUserId: string, rawEmail: string): Promise<WalletInvitation> {
+    const prepared = await this.prepareInvitation(walletId, ownerUserId, rawEmail);
+    prepared.sendInvitationEmail();
+    return prepared.invitation;
+  }
+
+  async prepareInvitation(
+    walletId: string,
+    ownerUserId: string,
+    rawEmail: string,
+  ): Promise<{ invitation: WalletInvitation; sendInvitationEmail: () => void }> {
     const email = rawEmail.trim().toLowerCase();
     if (email.length > 320 || !EMAIL_PATTERN.test(email)) {
       throw new WalletInvitationError("Informe um endereço de e-mail válido.", 400);
@@ -44,19 +54,22 @@ export class WalletInvitationsService {
       throw error;
     }
 
-    const invitationUrl = new URL("/wallet-invite", this.configuration.webBaseUrl);
-    invitationUrl.searchParams.set("token", token);
-    setImmediate(() => {
-      if (!this.emailSender.sendWalletInvitationEmail) {
-        this.onEmailDeliveryFailure(new Error("Wallet invitation email is not configured"));
-        return;
-      }
-      void this.emailSender
-        .sendWalletInvitationEmail(email, invitationUrl.toString(), created.walletName, created.inviterEmail)
-        .catch((error: unknown) => this.onEmailDeliveryFailure(error));
-    });
-
-    return created.invitation;
+    return {
+      invitation: created.invitation,
+      sendInvitationEmail: () => {
+        const invitationUrl = new URL("/wallet-invite", this.configuration.webBaseUrl);
+        invitationUrl.searchParams.set("token", token);
+        setImmediate(() => {
+          if (!this.emailSender.sendWalletInvitationEmail) {
+            this.onEmailDeliveryFailure(new Error("Wallet invitation email is not configured"));
+            return;
+          }
+          void this.emailSender
+            .sendWalletInvitationEmail(email, invitationUrl.toString(), created.walletName, created.inviterEmail)
+            .catch((error: unknown) => this.onEmailDeliveryFailure(error));
+        });
+      },
+    };
   }
 
   async listInvitations(walletId: string, ownerUserId: string): Promise<WalletInvitation[]> {

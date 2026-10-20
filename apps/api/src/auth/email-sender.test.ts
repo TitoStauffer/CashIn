@@ -59,6 +59,25 @@ test("SMTP sender creates a wallet invitation email without altering the single-
   assert.doesNotMatch(sentMessage?.html ?? "", /<script/i);
 });
 
+test("SMTP sender notifies the wallet owner about an access request", async () => {
+  let sentMessage: { from: string; to: string; subject: string; text: string; html: string } | undefined;
+  const sender = new SmtpEmailSender(smtpConfiguration, async (message) => { sentMessage = message; });
+
+  await sender.sendWalletAccessRequestEmail!(
+    "owner@example.com",
+    "Carteira Família",
+    "requester@example.com",
+    "https://app.example.com/wallet-sharing?walletId=abc",
+  );
+
+  assert.equal(sentMessage?.to, "owner@example.com");
+  assert.match(sentMessage?.subject ?? "", /solicitação/i);
+  assert.match(sentMessage?.text ?? "", /requester@example.com/);
+  assert.match(sentMessage?.html ?? "", /Carteira Família/);
+  assert.match(sentMessage?.html ?? "", /wallet-sharing/);
+  assert.doesNotMatch(sentMessage?.html ?? "", /<script/i);
+});
+
 test("email sender remains unconfigured when SMTP credentials are absent", async () => {
   const sender = createEmailSenderFromEnvironment({});
 

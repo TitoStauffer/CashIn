@@ -35,6 +35,7 @@ export default defineConfig({
         'src/App.tsx',
         'src/wallets/WalletContext.tsx',
         'src/wallets/WalletInvitationPage.tsx',
+        'src/wallets/WalletAccessRequestPage.tsx',
         'src/wallets/WalletSharingPage.tsx',
         'src/wallets/useWallet.ts',
         'src/wallets/walletApi.ts',

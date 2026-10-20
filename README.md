@@ -59,6 +59,13 @@ Convites não concedem acesso até a aceitação autenticada. Um membro pode usa
 
 Envie `X-Wallet-Id: <uuid>` nas operações de categorias, entradas, saídas, metas de investimento, aportes e resumo financeiro para selecionar a carteira. Se o header for omitido, a API usa a carteira pessoal do usuário. A API só permite acessar uma carteira quando há um registro de membership para o usuário autenticado; carteira inexistente ou sem acesso retorna `404`.
 
+Links de solicitação de acesso a carteiras compartilhadas são válidos por 168 horas por padrão; configure WALLET_ACCESS_LINK_TTL_HOURS para mudar esse prazo. Cada novo link revoga o anterior e somente seu hash é armazenado. A solicitação válida notifica o proprietário por e-mail, sem revelar informações financeiras ao solicitante. A aprovação envia um convite de uso único; o acesso só é concedido após cadastro ou login, confirmação do e-mail e aceite autenticado.
+
+- POST /wallets/:walletId/access-links (somente proprietário) cria link e retorna seu URL e prazo de expiração.
+- POST /wallet-access-requests recebe token e e-mail sem autenticação; retorna a mesma resposta para links válidos e inválidos e limita tentativas por IP.
+- GET /wallets/:walletId/access-requests lista solicitações somente para o proprietário.
+- POST /wallets/:walletId/access-requests/:requestId/approve aprova e envia convite; /reject recusa. DELETE /wallets/:walletId/access-requests/:requestId cancela solicitações pendentes.
+
 ## Categorias financeiras
 
 Categorias e subcategorias são gerenciadas dentro da carteira selecionada. As naturezas disponíveis são `income` (entrada), `expense` (saída), `investment` (meta de investimento) e `investment_goal` (natureza legada, mantida por compatibilidade). Uma subcategoria herda a natureza da categoria.

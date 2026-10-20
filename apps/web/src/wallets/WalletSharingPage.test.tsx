@@ -1,4 +1,4 @@
-import { cleanup, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { WalletApiError, walletApi } from './walletApi'
@@ -37,9 +37,20 @@ describe('wallet sharing management', () => {
       { id: 'owner-id', email: 'owner@example.com', role: 'owner', createdAt: '2026-10-01T12:00:00Z' },
       { id: 'member-id', email: 'member@example.com', role: 'member', createdAt: '2026-10-12T12:00:00Z' },
     ] })
+    vi.spyOn(walletApi, 'listAccessRequests').mockResolvedValue({ items: [
+      { id: 'request-pending', email: 'requester@example.com', status: 'pending', createdAt: '2026-10-20T12:00:00Z' },
+      { id: 'request-old', email: 'old-requester@example.com', status: 'rejected', createdAt: '2026-10-19T12:00:00Z' },
+      { id: 'request-approved', email: 'approved@example.com', status: 'approved', createdAt: '2026-10-18T12:00:00Z' },
+      { id: 'request-cancelled', email: 'cancelled@example.com', status: 'cancelled', createdAt: '2026-10-17T12:00:00Z' },
+      { id: 'request-expired', email: 'expired@example.com', status: 'expired', createdAt: '2026-10-16T12:00:00Z' },
+      { id: 'request-accepted', email: 'accepted@example.com', status: 'accepted', createdAt: '2026-10-15T12:00:00Z' },
+    ] })
     vi.spyOn(walletApi, 'createInvitation').mockResolvedValue({ invitation: { id: 'new-invite', email: 'new@example.com', status: 'pending', expiresAt: '2026-10-30T12:00:00Z', createdAt: '2026-10-20T12:00:00Z' }, message: 'Convite enviado.' })
     vi.spyOn(walletApi, 'cancelInvitation').mockResolvedValue(undefined)
     vi.spyOn(walletApi, 'removeMember').mockResolvedValue(undefined)
+    vi.spyOn(walletApi, 'createAccessLink').mockResolvedValue({ link: { id: 'link-1', url: 'https://example.test/wallet-access-request?token=secret-token', expiresAt: '2026-10-27T12:00:00Z' } })
+    vi.spyOn(walletApi, 'decideAccessRequest').mockResolvedValue(undefined)
+    vi.spyOn(walletApi, 'cancelAccessRequest').mockResolvedValue(undefined)
     vi.spyOn(window, 'confirm').mockReturnValue(true)
   })
 
@@ -145,5 +156,80 @@ describe('wallet sharing management', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('Falha de rede')
     await user.click(screen.getByRole('button', { name: 'Tentar novamente' }))
     expect(await screen.findByText('Não há convites pendentes.')).toBeVisible()
+  })
+
+  it('creates and displays a shareable access request link', async () => {
+    const user = userEvent.setup()
+    renderPage()
+
+    await user.click(await screen.findByRole('button', { name: 'Gerar link de acesso' }))
+
+    expect(await screen.findByLabelText(/Link compartilhável/)).toHaveValue('https://example.test/wallet-access-request?token=secret-token')
+    expect(walletApi.createAccessLink).toHaveBeenCalledWith('wallet-owner')
+    expect(await screen.findByRole('status')).toHaveTextContent('Link de solicitação criado')
+  })
+
+  it('copies the generated link and shows the access request history', async () => {
+    const user = userEvent.setup()
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
+    renderPage()
+
+    await user.click(await screen.findByRole('button', { name: 'Gerar link de acesso' }))
+    await user.click(await screen.findByRole('button', { name: 'Copiar link' }))
+    expect(writeText).toHaveBeenCalledWith('https://example.test/wallet-access-request?token=secret-token')
+    expect(await screen.findByRole('status')).toHaveTextContent('Link copiado')
+
+    await user.click(screen.getByText('Histórico de solicitações'))
+    expect(screen.getByText('old-requester@example.com')).toBeVisible()
+    expect(screen.getByText(/Recusada · solicitada em/)).toBeVisible()
+    expect(screen.getByText(/Aprovada · solicitada em/)).toBeVisible()
+    expect(screen.getByText(/Cancelada · solicitada em/)).toBeVisible()
+    expect(screen.getByText(/Expirada · solicitada em/)).toBeVisible()
+    expect(screen.getByText(/Aceita · solicitada em/)).toBeVisible()
+  })
+
+  it('approves, rejects, and cancels pending access requests', async () => {
+    const user = userEvent.setup()
+    renderPage()
+
+    expect(await screen.findByText('requester@example.com')).toBeVisible()
+    await user.click(within(screen.getByText('requester@example.com').closest('li') as HTMLElement).getByRole('button', { name: 'Aprovar' }))
+    await waitFor(() => expect(walletApi.decideAccessRequest).toHaveBeenCalledWith('wallet-owner', 'request-pending', 'approve'))
+
+    await user.click(within(screen.getByText('requester@example.com').closest('li') as HTMLElement).getByRole('button', { name: 'Recusar' }))
+    await waitFor(() => expect(walletApi.decideAccessRequest).toHaveBeenCalledWith('wallet-owner', 'request-pending', 'reject'))
+
+    await user.click(within(screen.getByText('requester@example.com').closest('li') as HTMLElement).getByRole('button', { name: 'Cancelar pedido' }))
+    await waitFor(() => expect(walletApi.cancelAccessRequest).toHaveBeenCalledWith('wallet-owner', 'request-pending'))
+  })
+
+  it('does not reject or cancel an access request when the owner declines confirmation', async () => {
+    const user = userEvent.setup()
+    vi.mocked(window.confirm).mockReturnValue(false)
+    renderPage()
+    const getRequestButton = (name: string) => within(screen.getByText('requester@example.com').closest('li') as HTMLElement).getByRole('button', { name })
+
+    await screen.findByText('requester@example.com')
+    await user.click(getRequestButton('Recusar'))
+    await user.click(getRequestButton('Cancelar pedido'))
+
+    expect(walletApi.decideAccessRequest).not.toHaveBeenCalled()
+    expect(walletApi.cancelAccessRequest).not.toHaveBeenCalled()
+  })
+
+  it('allows generating a replacement link and explains clipboard errors', async () => {
+    const user = userEvent.setup()
+    vi.spyOn(walletApi, 'createAccessLink')
+      .mockResolvedValueOnce({ link: { id: 'link-1', url: 'https://example.test/one', expiresAt: '2026-10-27T12:00:00Z' } })
+      .mockResolvedValueOnce({ link: { id: 'link-2', url: 'https://example.test/two', expiresAt: '2026-10-27T12:00:00Z' } })
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText: vi.fn().mockRejectedValue(new Error('blocked')) }, configurable: true })
+    renderPage()
+
+    await user.click(await screen.findByRole('button', { name: 'Gerar link de acesso' }))
+    await user.click(screen.getByRole('button', { name: 'Gerar novo link' }))
+    expect(await screen.findByLabelText(/Link compartilhável/)).toHaveValue('https://example.test/two')
+    await user.click(screen.getByRole('button', { name: 'Copiar link' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('Selecione e copie o link exibido')
   })
 })

@@ -3,7 +3,7 @@ import type { FormEvent } from 'react'
 import { FinancialSidebar } from '../layout/FinancialSidebar'
 import { useWallet } from './useWallet'
 import { WalletApiError, walletApi } from './walletApi'
-import type { WalletInvitation, WalletMember } from './walletApi'
+import type { WalletAccessLink, WalletAccessRequest, WalletInvitation, WalletMember } from './walletApi'
 import './WalletSharingPage.css'
 
 type WalletSharingPageProps = {
@@ -36,6 +36,8 @@ export function WalletSharingPage({ userEmail, isLoggingOut, onLogout }: WalletS
   const canManage = activeWallet?.role === 'owner' && !activeWallet.isPersonal
   const [invitations, setInvitations] = useState<WalletInvitation[]>([])
   const [members, setMembers] = useState<WalletMember[]>([])
+  const [accessRequests, setAccessRequests] = useState<WalletAccessRequest[]>([])
+  const [accessLink, setAccessLink] = useState<{ walletId: string; link: WalletAccessLink } | null>(null)
   const [email, setEmail] = useState('')
   const [isLoading, setIsLoading] = useState(true)
   const [loadedWalletId, setLoadedWalletId] = useState<string | null>(null)
@@ -51,10 +53,12 @@ export function WalletSharingPage({ userEmail, isLoggingOut, onLogout }: WalletS
     Promise.all([
       walletApi.listInvitations(walletId, controller.signal),
       walletApi.listMembers(walletId, controller.signal),
+      walletApi.listAccessRequests(walletId, controller.signal),
     ])
-      .then(([invitationResponse, memberResponse]) => {
+      .then(([invitationResponse, memberResponse, accessRequestResponse]) => {
         setInvitations(invitationResponse.items)
         setMembers(memberResponse.items)
+        setAccessRequests(accessRequestResponse.items)
         setLoadedWalletId(walletId)
         setError('')
       })
@@ -135,8 +139,73 @@ export function WalletSharingPage({ userEmail, isLoggingOut, onLogout }: WalletS
     }
   }
 
+  async function handleCreateAccessLink() {
+    setError('')
+    setMessage('')
+    setIsSubmitting(true)
+    try {
+      if (!activeWalletId) throw new Error('Nenhuma carteira está selecionada.')
+      const response = await walletApi.createAccessLink(activeWalletId)
+      setAccessLink({ walletId: activeWalletId, link: response.link })
+      setMessage('Link de solicitação criado. Compartilhe-o com quem deseja pedir acesso.')
+    } catch (cause) {
+      setError(getErrorMessage(cause, 'invite'))
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
+
+  async function handleCopyAccessLink() {
+    if (!accessLink || accessLink.walletId !== activeWalletId) return
+    try {
+      await navigator.clipboard.writeText(accessLink.link.url)
+      setMessage('Link copiado. Compartilhe-o com quem deseja pedir acesso.')
+    } catch {
+      setError('Não foi possível copiar automaticamente. Selecione e copie o link exibido.')
+    }
+  }
+
+  async function handleDecideAccessRequest(request: WalletAccessRequest, decision: 'approve' | 'reject') {
+    if (decision === 'reject' && !window.confirm(`Recusar a solicitação de ${request.email}?`)) return
+    setError('')
+    setMessage('')
+    setIsSubmitting(true)
+    try {
+      if (!activeWalletId) throw new Error('Nenhuma carteira está selecionada.')
+      await walletApi.decideAccessRequest(activeWalletId, request.id, decision)
+      setMessage(decision === 'approve'
+        ? `Solicitação de ${request.email} aprovada. Um convite foi enviado por e-mail.`
+        : `Solicitação de ${request.email} recusada.`)
+      setReloadKey((current) => current + 1)
+    } catch (cause) {
+      setError(getErrorMessage(cause, 'cancel'))
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
+
+  async function handleCancelAccessRequest(request: WalletAccessRequest) {
+    if (!window.confirm(`Cancelar a solicitação de ${request.email}?`)) return
+    setError('')
+    setMessage('')
+    setIsSubmitting(true)
+    try {
+      if (!activeWalletId) throw new Error('Nenhuma carteira está selecionada.')
+      await walletApi.cancelAccessRequest(activeWalletId, request.id)
+      setMessage(`Solicitação de ${request.email} cancelada.`)
+      setReloadKey((current) => current + 1)
+    } catch (cause) {
+      setError(getErrorMessage(cause, 'cancel'))
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
+
   const pendingInvitations = invitations.filter((invitation) => invitation.status === 'pending')
   const otherInvitations = invitations.filter((invitation) => invitation.status !== 'pending')
+  const pendingAccessRequests = accessRequests.filter((request) => request.status === 'pending')
+  const otherAccessRequests = accessRequests.filter((request) => request.status !== 'pending')
+  const activeAccessLink = accessLink?.walletId === activeWalletId ? accessLink.link : null
   return (
     <>
       <FinancialSidebar activePage="wallet-sharing" userEmail={userEmail} isLoggingOut={isLoggingOut} onLogout={onLogout} />
@@ -162,6 +231,22 @@ export function WalletSharingPage({ userEmail, isLoggingOut, onLogout }: WalletS
             </section>
           ) : (
             <>
+              <section className="wallet-sharing-card" aria-labelledby="wallet-access-link-heading">
+                <div className="wallet-sharing-card__heading">
+                  <div><h2 id="wallet-access-link-heading">Compartilhar link de solicitação</h2><p>Qualquer pessoa com o link pode pedir acesso. Nenhum dado financeiro é exibido antes da sua aprovação.</p></div>
+                </div>
+                <button className="wallet-sharing-primary" type="button" onClick={() => void handleCreateAccessLink()} disabled={isSubmitting}>
+                  {isSubmitting ? 'Gerando link…' : activeAccessLink ? 'Gerar novo link' : 'Gerar link de acesso'}
+                </button>
+                {activeAccessLink && <div className="wallet-sharing-access-link">
+                  <label htmlFor="wallet-access-link-url">Link compartilhável · expira em {formatDate(activeAccessLink.expiresAt)}</label>
+                  <div className="wallet-sharing-invite-form__row">
+                    <input id="wallet-access-link-url" type="url" value={activeAccessLink.url} readOnly onFocus={(event) => event.currentTarget.select()} />
+                    <button className="wallet-sharing-secondary" type="button" onClick={() => void handleCopyAccessLink()}>Copiar link</button>
+                  </div>
+                </div>}
+              </section>
+
               <section className="wallet-sharing-card" aria-labelledby="wallet-invite-heading">
                 <div className="wallet-sharing-card__heading">
                   <div><h2 id="wallet-invite-heading">Convidar por e-mail</h2><p>A pessoa precisará confirmar o e-mail e aceitar o convite antes de acessar a carteira.</p></div>
@@ -194,6 +279,37 @@ export function WalletSharingPage({ userEmail, isLoggingOut, onLogout }: WalletS
                         ))}
                       </ul>
                     )}
+                  </section>
+
+                  <section className="wallet-sharing-card" aria-labelledby="wallet-access-requests-heading">
+                    <div className="wallet-sharing-card__heading">
+                      <div><h2 id="wallet-access-requests-heading">Solicitações de acesso</h2><p>Ao aprovar, a pessoa receberá um convite por e-mail e precisará confirmar a conta antes de acessar os dados.</p></div>
+                      <span className="wallet-sharing-count">{pendingAccessRequests.length}</span>
+                    </div>
+                    {pendingAccessRequests.length === 0 ? <p className="wallet-sharing-empty">Não há solicitações pendentes.</p> : (
+                      <ul className="wallet-sharing-list">
+                        {pendingAccessRequests.map((request) => (
+                          <li className="wallet-sharing-list__item" key={request.id}>
+                            <div><strong>{request.email}</strong><span>Solicitado em {formatDate(request.createdAt)}</span></div>
+                            <div className="wallet-sharing-request-actions">
+                              <button type="button" className="wallet-sharing-text-action" onClick={() => void handleDecideAccessRequest(request, 'approve')} disabled={isSubmitting}>Aprovar</button>
+                              <button type="button" className="wallet-sharing-text-action wallet-sharing-text-action--danger" onClick={() => void handleDecideAccessRequest(request, 'reject')} disabled={isSubmitting}>Recusar</button>
+                              <button type="button" className="wallet-sharing-text-action wallet-sharing-text-action--danger" onClick={() => void handleCancelAccessRequest(request)} disabled={isSubmitting}>Cancelar pedido</button>
+                            </div>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                    {otherAccessRequests.length > 0 && <details className="wallet-sharing-history">
+                      <summary>Histórico de solicitações</summary>
+                      <ul className="wallet-sharing-list">
+                        {otherAccessRequests.map((request) => (
+                          <li className="wallet-sharing-list__item" key={request.id}>
+                            <div><strong>{request.email}</strong><span>{formatAccessRequestStatus(request.status)} · solicitada em {formatDate(request.createdAt)}</span></div>
+                          </li>
+                        ))}
+                      </ul>
+                    </details>}
                   </section>
 
                   <section className="wallet-sharing-card" aria-labelledby="wallet-pending-heading">
@@ -240,5 +356,14 @@ function formatInvitationStatus(status: WalletInvitation['status']) {
   if (status === 'accepted') return 'Aceito'
   if (status === 'cancelled') return 'Cancelado'
   if (status === 'expired') return 'Expirado'
+  return 'Pendente'
+}
+
+function formatAccessRequestStatus(status: WalletAccessRequest['status']) {
+  if (status === 'approved') return 'Aprovada'
+  if (status === 'rejected') return 'Recusada'
+  if (status === 'cancelled') return 'Cancelada'
+  if (status === 'expired') return 'Expirada'
+  if (status === 'accepted') return 'Aceita'
   return 'Pendente'
 }
