@@ -298,6 +298,7 @@ export function CategoriesPage({ userEmail, isLoggingOut, onLogout }: Categories
           </a>
           <nav className="categories-account" aria-label="Conta">
             <a className="categories-account__link" href="/incomes">Entradas</a>
+            <a className="categories-account__link" href="/expenses">Despesas</a>
             <a className="categories-account__link" href="/categories" aria-current="page">Categorias</a>
             <span className="categories-account__email">{userEmail}</span>
             <button className="categories-signout" type="button" onClick={onLogout} disabled={isLoggingOut}>
