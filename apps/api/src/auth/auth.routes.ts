@@ -2,6 +2,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { AuthError } from "./auth.errors.js";
 import type { AuthService } from "./auth.service.js";
 import type { AuthUser } from "./auth.types.js";
+import { InMemoryRateLimiter } from "./rate-limiter.js";
 
 export const SESSION_COOKIE_NAME = "cashin_session";
 
@@ -66,6 +67,9 @@ function handleAuthError(error: unknown, reply: FastifyReply) {
 }
 
 export function registerAuthRoutes(app: FastifyInstance, options: AuthRouteOptions): void {
+  const registrationRateLimiter = new InMemoryRateLimiter({ maxRequests: 5, windowMs: 15 * 60 * 1000 });
+  const loginRateLimiter = new InMemoryRateLimiter({ maxRequests: 10, windowMs: 15 * 60 * 1000 });
+
   app.decorateRequest("currentUser", null);
   app.decorate("authenticate", async (request, reply) => {
     const token = getSessionToken(request);
@@ -80,6 +84,15 @@ export function registerAuthRoutes(app: FastifyInstance, options: AuthRouteOptio
   app.post<{ Body: RegisterBody }>(
     "/auth/register",
     {
+      preHandler: async (request, reply) => {
+        const decision = registrationRateLimiter.consume(request.ip);
+        if (!decision.allowed) {
+          reply.header("Retry-After", decision.retryAfterSeconds);
+          return reply.code(429).send({
+            message: "Muitas tentativas de cadastro. Aguarde alguns minutos e tente novamente.",
+          });
+        }
+      },
       schema: {
         body: {
           type: "object",
@@ -129,6 +142,15 @@ export function registerAuthRoutes(app: FastifyInstance, options: AuthRouteOptio
   app.post<{ Body: LoginBody }>(
     "/auth/login",
     {
+      preHandler: async (request, reply) => {
+        const decision = loginRateLimiter.consume(request.ip);
+        if (!decision.allowed) {
+          reply.header("Retry-After", decision.retryAfterSeconds);
+          return reply.code(429).send({
+            message: "Muitas tentativas de acesso. Aguarde alguns minutos e tente novamente.",
+          });
+        }
+      },
       schema: {
         body: {
           type: "object",

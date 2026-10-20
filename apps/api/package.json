@@ -8,7 +8,7 @@
     "build": "tsc -p tsconfig.json",
     "start": "node dist/server.js",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "test": "tsx --test src/app.test.ts src/auth/auth.routes.test.ts src/auth/email-sender.test.ts src/auth/postgres-auth.integration.test.ts"
+    "test": "tsx --test src/app.test.ts src/auth/auth.routes.test.ts src/auth/email-sender.test.ts src/auth/rate-limiter.test.ts src/auth/postgres-auth.integration.test.ts"
   },
   "dependencies": {
     "fastify": "^5.6.2",

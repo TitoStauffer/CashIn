@@ -230,3 +230,59 @@ test("registration responds before email delivery and failed delivery removes pe
   assert.equal(repository.users.size, 0);
   await app.close();
 });
+
+test("registration limits requests per IP before additional password hashing or email delivery", async () => {
+  const repository = new MemoryAuthRepository();
+  const sentMessages: string[] = [];
+  const app = createApp(createTestDatabase(), {
+    authRepository: repository,
+    emailSender: {
+      sendVerificationEmail: async (email) => {
+        sentMessages.push(email);
+      },
+    },
+  });
+  const payload = { email: "person@example.com", password: "Abcdef1!secure" };
+
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    const response = await app.inject({ method: "POST", url: "/auth/register", payload });
+    assert.equal(response.statusCode, 202);
+  }
+
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  const blockedResponse = await app.inject({ method: "POST", url: "/auth/register", payload });
+  assert.equal(blockedResponse.statusCode, 429);
+  assert.ok(Number(blockedResponse.headers["retry-after"]) > 0);
+  assert.deepEqual(blockedResponse.json(), {
+    message: "Muitas tentativas de cadastro. Aguarde alguns minutos e tente novamente.",
+  });
+  assert.equal(repository.users.size, 1);
+  assert.equal(sentMessages.length, 1);
+  await app.close();
+});
+
+test("login limits attempts by IP temporarily without locking an account", async () => {
+  const app = createApp(createTestDatabase(), { authRepository: new MemoryAuthRepository() });
+  const payload = { email: "person@example.com", password: "WrongPassword1!" };
+
+  for (let attempt = 0; attempt < 10; attempt += 1) {
+    const response = await app.inject({ method: "POST", url: "/auth/login", payload });
+    assert.equal(response.statusCode, 401);
+  }
+
+  const blockedResponse = await app.inject({ method: "POST", url: "/auth/login", payload });
+  assert.equal(blockedResponse.statusCode, 429);
+  assert.ok(Number(blockedResponse.headers["retry-after"]) > 0);
+  assert.deepEqual(blockedResponse.json(), {
+    message: "Muitas tentativas de acesso. Aguarde alguns minutos e tente novamente.",
+  });
+
+  const otherIpResponse = await app.inject({
+    method: "POST",
+    url: "/auth/login",
+    payload,
+    remoteAddress: "203.0.113.10",
+  });
+  assert.equal(otherIpResponse.statusCode, 401);
+  await app.close();
+});

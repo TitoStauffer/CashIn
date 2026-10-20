@@ -36,6 +36,8 @@ O cadastro responde sem aguardar o envio do e-mail, que ocorre em segundo plano 
 
 As senhas de novas contas devem ter pelo menos 8 caracteres e incluir uma letra maiúscula, uma minúscula, um número e um caractere especial.
 
+Cadastro e login têm limites temporários de tentativas por endereço IP para reduzir abuso. O controle é mantido em memória e atende ao MVP com uma única instância da API; para múltiplas instâncias, será necessário compartilhar o estado do limitador.
+
 Para parar os containers, use docker compose down. Para remover também os dados locais do banco, use docker compose down -v.
 
 O MVP 1 será validado com API e Web. A API é independente do cliente e poderá ser consumida pelo aplicativo Mobile quando essa etapa entrar no escopo.
