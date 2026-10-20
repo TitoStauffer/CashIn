@@ -9,12 +9,17 @@ import { CategoriesService } from "./categories/categories.service.js";
 import { PostgresCategoriesRepository } from "./categories/postgres-categories.repository.js";
 import { registerCategoryRoutes } from "./categories/categories.routes.js";
 import type { CategoryRepository } from "./categories/categories.types.js";
+import { IncomesService } from "./incomes/incomes.service.js";
+import { PostgresIncomesRepository } from "./incomes/postgres-incomes.repository.js";
+import { registerIncomeRoutes } from "./incomes/incomes.routes.js";
+import type { IncomeRepository } from "./incomes/incomes.types.js";
 
 export interface AppOptions {
   logger?: boolean;
   emailSender?: EmailSender;
   authRepository?: AuthRepository;
   categoryRepository?: CategoryRepository;
+  incomeRepository?: IncomeRepository;
   authConfiguration?: Partial<AuthConfiguration>;
   secureCookies?: boolean;
 }
@@ -78,6 +83,12 @@ export function createApp(
   registerCategoryRoutes(app, {
     categoriesService: new CategoriesService(
       options.categoryRepository ?? new PostgresCategoriesRepository(database),
+    ),
+  });
+
+  registerIncomeRoutes(app, {
+    incomesService: new IncomesService(
+      options.incomeRepository ?? new PostgresIncomesRepository(database),
     ),
   });
 

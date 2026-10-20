@@ -3,9 +3,10 @@ import type { FormEvent } from 'react'
 import { AuthApiError, authApi } from './authApi'
 import type { User } from './authApi'
 import { CategoriesPage } from './categories/CategoriesPage'
+import { IncomesPage } from './incomes/IncomesPage'
 import './App.css'
 
-type Page = 'login' | 'register' | 'verify-email' | 'categories'
+type Page = 'login' | 'register' | 'verify-email' | 'categories' | 'incomes'
 const pendingVerifications = new Map<string, Promise<unknown>>()
 const passwordPolicyMessage =
   'A senha deve ter pelo menos 8 caracteres, incluindo uma letra maiúscula, uma letra minúscula, um número e um caractere especial.'
@@ -59,6 +60,7 @@ function getPage(): Page {
   if (path.endsWith('/register')) return 'register'
   if (path.endsWith('/verify-email')) return 'verify-email'
   if (path.endsWith('/categories')) return 'categories'
+  if (path.endsWith('/incomes')) return 'incomes'
   return 'login'
 }
 
@@ -195,6 +197,16 @@ function App() {
   if (!checkingSession && user && page === 'categories') {
     return (
       <CategoriesPage
+        userEmail={user.email}
+        isLoggingOut={isSubmitting}
+        onLogout={handleLogout}
+      />
+    )
+  }
+
+  if (!checkingSession && user && page === 'incomes') {
+    return (
+      <IncomesPage
         userEmail={user.email}
         isLoggingOut={isSubmitting}
         onLogout={handleLogout}
