@@ -53,7 +53,7 @@ export async function verifyAccess({ appId, installationId, privateKey, pullRequ
   if (pr.state !== 'open') {
     throw new Error(`Pull request #${pullRequestNumber} is not open.`);
   }
-  if (pr.user?.login === `${app.slug}[bot]`) {
+  if ([app.slug, `${app.slug}[bot]`].includes(pr.user?.login)) {
     throw new Error('The GitHub App cannot approve a pull request authored by itself.');
   }
   if (typeof pr.head?.sha !== 'string' || pr.head.sha.length === 0) {

@@ -105,3 +105,20 @@ test('does not allow the app to approve its own pull request', async () => {
   }), /cannot approve a pull request authored by itself/);
   assert.equal(submittedReview, false);
 });
+
+test('recognizes the GitHub App login when GitHub omits the bot suffix', async () => {
+  let submittedReview = false;
+  const responses = [
+    { slug: 'cashin-code-reviewer' }, { token: 'installation-token' },
+    { state: 'open', user: { login: 'cashin-code-reviewer' }, head: { sha: 'head-sha' } },
+  ];
+  const fetchImpl = async (url) => {
+    if (url.endsWith('/reviews')) submittedReview = true;
+    return new Response(JSON.stringify(responses.shift()), { status: 200 });
+  };
+  await assert.rejects(submitReview({
+    appId: '12345', installationId: '67890', privateKey: pem, pullRequestNumber: 11,
+    decision: 'APPROVED', body: '### Code Review — APPROVED', fetchImpl,
+  }), /cannot approve a pull request authored by itself/);
+  assert.equal(submittedReview, false);
+});
