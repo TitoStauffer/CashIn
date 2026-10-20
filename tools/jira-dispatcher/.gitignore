@@ -1,0 +1,4 @@
+node_modules/
+dist/
+dispatcher.config.json
+.env

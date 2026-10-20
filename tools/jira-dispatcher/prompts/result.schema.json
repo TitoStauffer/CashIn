@@ -1,0 +1,12 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["issueKey", "outcome", "prUrl", "jiraStatus", "summary"],
+  "properties": {
+    "issueKey": { "type": "string" },
+    "outcome": { "type": "string", "enum": ["done", "awaiting_human", "blocked", "failed"] },
+    "prUrl": { "type": ["string", "null"] },
+    "jiraStatus": { "type": "string" },
+    "summary": { "type": "string" }
+  }
+}

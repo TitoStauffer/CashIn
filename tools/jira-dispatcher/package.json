@@ -1,0 +1,24 @@
+{
+  "name": "@saldocerto/jira-dispatcher",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Selects eligible Jira issues and starts Codex CLI runs that follow AGENTS.md.",
+  "type": "module",
+  "bin": {
+    "jira-dispatcher": "dist/cli.js"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.test.json",
+    "test": "tsx --test test/*.test.ts",
+    "dispatcher": "node dist/cli.js"
+  },
+  "engines": {
+    "node": ">=22.12"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "tsx": "^4.20.6",
+    "typescript": "^5.9.3"
+  }
+}
