@@ -20,6 +20,7 @@ describe('authentication forms', () => {
     vi.spyOn(authApi, 'me').mockRejectedValue(new AuthApiError('', 401))
     vi.spyOn(authApi, 'login').mockRejectedValue(new AuthApiError('', 401))
     vi.spyOn(authApi, 'register').mockResolvedValue({ message: 'Email enviado, favor confirmar seu cadastro' })
+    vi.spyOn(authApi, 'verifyEmail').mockResolvedValue({ message: 'E-mail confirmado.' })
   })
 
   afterEach(() => {
@@ -118,5 +119,29 @@ describe('authentication forms', () => {
     await user.click(screen.getByRole('button', { name: 'Entrar' }))
 
     expect(await screen.findByRole('alert')).toHaveTextContent('E-mail ou senha inválidos')
+  })
+
+  it('shows the email confirmation loading and success states for the link token', async () => {
+    const confirmationRequest = deferred<{ message: string }>()
+    vi.mocked(authApi.verifyEmail).mockReturnValueOnce(confirmationRequest.promise)
+    window.history.replaceState({}, '', '/verify-email?token=confirmation-token')
+    render(<App />)
+
+    expect(await screen.findByRole('heading', { name: 'Estamos confirmando seu e-mail.' })).toBeVisible()
+    await waitFor(() => expect(authApi.verifyEmail).toHaveBeenCalledWith('confirmation-token'))
+    confirmationRequest.resolve({ message: 'E-mail confirmado.' })
+
+    expect(await screen.findByRole('heading', { name: 'Seu e-mail foi confirmado.' })).toBeVisible()
+    expect(screen.getByRole('link', { name: 'Ir para o login' })).toBeVisible()
+  })
+
+  it('shows a recoverable error when email confirmation fails', async () => {
+    vi.mocked(authApi.verifyEmail).mockRejectedValueOnce(new AuthApiError('', 400))
+    window.history.replaceState({}, '', '/verify-email?token=expired-token')
+    render(<App />)
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Este link é inválido, expirou ou já foi utilizado')
+    expect(screen.getByRole('heading', { name: 'Não foi possível confirmar.' })).toBeVisible()
+    expect(authApi.verifyEmail).toHaveBeenCalledWith('expired-token')
   })
 })

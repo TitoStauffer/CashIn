@@ -4,7 +4,7 @@
 
 | Fluxo | Código e estados inspecionados |
 | --- | --- |
-| Autenticação | Login, cadastro, confirmação de e-mail, sessão ativa e logout em `App.tsx` e estilos em `App.css`; testes de componente validam campos obrigatórios/email, política de senha e estados de envio/sucesso/erro com `authApi` simulada. Nenhum SMTP real é chamado. |
+| Autenticação | Login, cadastro, confirmação de e-mail, sessão ativa e logout em `App.tsx` e estilos em `App.css`; testes de componente validam campos obrigatórios/email, política de senha e estados de envio/sucesso/erro do login, cadastro e confirmação do token com `authApi` simulada. Nenhum SMTP real é chamado. |
 | Categorias | Seleção de natureza, criação/edição/exclusão de categorias e subcategorias; estados de carregamento, erro, vazio e sucesso em `CategoriesPage.tsx` e `CategoriesPage.css`. |
 | Entradas | Seleção de período, formulário de criação/edição, exclusão, validação de valor e estados de carregamento, erro e vazio em `IncomesPage.tsx` e `IncomesPage.css`. |
 | Despesas | Seleção de período, formulário de criação/edição, exclusão, validação de valor e estados de carregamento, erro e vazio em `ExpensesPage.tsx` e `ExpensesPage.css`. |
@@ -31,7 +31,7 @@ Foram avaliados labels e hierarquia de títulos, validação e mensagens, estado
 
 - `npm run lint` — aprovado.
 - `npm run build` — aprovado.
-- `npm test` — 44 testes aprovados em 9 arquivos.
+- `npm test` — 46 testes aprovados em 9 arquivos.
 - `npm run test:coverage` — aprovado; cobertura reportada de 70,72% de linhas no conjunto medido pela configuração Vitest. A linha de normalização alterada está coberta pelos testes de componente.
 - `git diff --check` — aprovado.
 
