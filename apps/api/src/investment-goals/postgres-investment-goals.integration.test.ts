@@ -106,6 +106,59 @@ test("PostgreSQL investment goal and contribution CRUD preserves progress and ow
       (error: unknown) => typeof error === "object" && error !== null && "statusCode" in error && error.statusCode === 409,
     );
     assert.equal((await service.getGoal(userId, goal.id)).contributedAmount, "200.00");
+
+    const concurrentGoal = await service.createGoal(userId, {
+      title: "Meta concorrente", description: "Validar serialização do encerramento.", targetAmount: "500.00",
+    });
+    let signalLockAcquired!: () => void;
+    const lockAcquired = new Promise<void>((resolve) => { signalLockAcquired = resolve; });
+    let releaseClose!: () => void;
+    const closeGate = new Promise<void>((resolve) => { releaseClose = resolve; });
+    const closeDatabase = {
+      query: database.query.bind(database),
+      transaction: <Result>(work: Parameters<typeof database.transaction<Result>>[0]) => database.transaction(async (executor) => work({
+        query: async <Row extends import("pg").QueryResultRow>(queryText: string, values?: readonly unknown[]) => {
+          const result = await executor.query<Row>(queryText, values);
+          if (queryText.includes("FOR UPDATE")) {
+            signalLockAcquired();
+            await closeGate;
+          }
+          return result;
+        },
+      })),
+    };
+    const closingService = new InvestmentGoalsService(new PostgresInvestmentGoalsRepository(closeDatabase));
+    const closing = closingService.closeGoal(userId, concurrentGoal.id);
+    await lockAcquired;
+
+    const concurrentMutation = service.createContribution(userId, concurrentGoal.id, {
+      amount: "50.00", date: "2026-10-21", description: "Concorrente ao fechamento",
+    });
+    let mutationWaitingForLock = false;
+    for (let attempt = 0; attempt < 100; attempt += 1) {
+      const waiting = await scopedPool.query<{ waiting: boolean }>(
+        `SELECT EXISTS (
+           SELECT 1 FROM pg_stat_activity
+           WHERE datname = current_database()
+             AND pid <> pg_backend_pid()
+             AND wait_event_type = 'Lock'
+             AND query LIKE '%FOR UPDATE%'
+         ) AS waiting`,
+      );
+      if (waiting.rows[0]?.waiting) {
+        mutationWaitingForLock = true;
+        break;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    releaseClose();
+    assert.equal((await closing).status, "closed");
+    assert.equal(mutationWaitingForLock, true, "concurrent contribution should wait for the goal lock");
+    await assert.rejects(
+      concurrentMutation,
+      (error: unknown) => typeof error === "object" && error !== null && "statusCode" in error && error.statusCode === 409,
+    );
+    assert.deepEqual(await service.listContributions(userId, concurrentGoal.id), []);
   } finally {
     await scopedPool?.end();
     await adminPool.query(`DROP SCHEMA IF EXISTS ${schemaName} CASCADE`);
