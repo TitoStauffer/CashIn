@@ -22,7 +22,7 @@ export default defineConfig({
     coverage: {
       provider: 'v8',
       reporter: ['text', 'lcov'],
-      include: ['src/layout/FinancialSidebar.tsx'],
+      include: ['src/layout/FinancialSidebar.tsx', 'src/period/MonthYearSelector.tsx', 'src/period/month.ts'],
       exclude: ['src/**/*.test.ts', 'src/**/*.test.tsx', 'src/test/**'],
       thresholds: {
         lines: 80,

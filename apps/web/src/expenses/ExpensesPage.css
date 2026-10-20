@@ -28,12 +28,8 @@
 .expenses-secondary-button { border-color: #d5e1d7; background: #fff; color: #315c43; }
 .expenses-secondary-button:hover:not(:disabled) { background: #f0f6f1; }
 .expenses-primary-button:disabled, .expenses-secondary-button:disabled { cursor: wait; opacity: .65; }
-.expenses-primary-button:focus-visible, .expenses-secondary-button:focus-visible, .expenses-account__link:focus-visible, .expenses-signout:focus-visible, .expense-text-action:focus-visible, .expenses-period__arrow:focus-visible { outline: 3px solid rgb(69 132 94 / 35%); outline-offset: 3px; }
+.expenses-primary-button:focus-visible, .expenses-secondary-button:focus-visible, .expenses-account__link:focus-visible, .expenses-signout:focus-visible, .expense-text-action:focus-visible { outline: 3px solid rgb(69 132 94 / 35%); outline-offset: 3px; }
 
-.expenses-period { min-height: 53px; display: flex; align-items: center; justify-content: center; gap: 24px; margin-bottom: 20px; border: 1px solid #e5ebe4; border-radius: 11px; background: rgb(255 255 255 / 80%); }
-.expenses-period h2 { min-width: 175px; margin: 0; color: #294a36; font-size: 14px; font-weight: 680; text-align: center; text-transform: capitalize; }
-.expenses-period__arrow { width: 34px; height: 34px; display: grid; place-items: center; border: 0; border-radius: 7px; background: transparent; color: #52715c; font-family: inherit; font-size: 27px; line-height: 1; cursor: pointer; }
-.expenses-period__arrow:hover { background: #edf3ed; color: #245d40; }
 .expenses-alert { margin: 0 0 15px; padding: 12px 14px; border: 1px solid; border-radius: 8px; font-size: 12px; line-height: 1.6; }
 .expenses-alert--error { border-color: #f0d4d0; background: #fff8f6; color: #96483f; }
 .expenses-alert--success { border-color: #d2e6d5; background: #f3faf3; color: #326c45; }
@@ -117,8 +113,6 @@
   .expense-card { gap: 10px; }
   .expense-card__details h2 { max-width: 170px; }
   .expense-card__details p { max-width: 185px; font-size: 9px; }
-  .expenses-period { gap: 12px; }
-  .expenses-period h2 { min-width: 150px; font-size: 13px; }
 }
 
 @media (prefers-reduced-motion: reduce) {

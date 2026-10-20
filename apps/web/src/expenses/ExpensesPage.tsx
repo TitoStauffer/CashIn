@@ -5,6 +5,8 @@ import { categoriesApi } from '../categories/categoriesApi'
 import type { Expense, ExpenseInput } from './expensesApi'
 import { ExpenseApiError, expensesApi } from './expensesApi'
 import { FinancialSidebar } from '../layout/FinancialSidebar'
+import { MonthYearSelector } from '../period/MonthYearSelector'
+import { formatMonth, getCurrentMonth, getMonthRange } from '../period/month'
 import './ExpensesPage.css'
 
 type ExpenseEditor = {
@@ -15,33 +17,6 @@ type ExpenseEditor = {
   categoryId: string
   subcategoryId: string
 } | null
-
-function getCurrentMonth() {
-  const now = new Date()
-  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
-}
-
-function getMonthRange(month: string) {
-  const [year, monthNumber] = month.split('-').map(Number)
-  const lastDay = new Date(year, monthNumber, 0).getDate()
-  return {
-    from: `${month}-${'01'}`,
-    to: `${month}-${String(lastDay).padStart(2, '0')}`,
-  }
-}
-
-function shiftMonth(month: string, offset: number) {
-  const [year, monthNumber] = month.split('-').map(Number)
-  const shifted = new Date(year, monthNumber - 1 + offset, 1)
-  return `${shifted.getFullYear()}-${String(shifted.getMonth() + 1).padStart(2, '0')}`
-}
-
-function formatMonth(month: string) {
-  const [year, monthNumber] = month.split('-').map(Number)
-  return new Intl.DateTimeFormat('pt-BR', { month: 'long', year: 'numeric' }).format(
-    new Date(year, monthNumber - 1, 1),
-  )
-}
 
 function formatDate(date: string) {
   const [year, month, day] = date.split('-')
@@ -238,10 +213,11 @@ export function ExpensesPage({ userEmail, isLoggingOut, onLogout }: ExpensesPage
     setReloadKey((previous) => previous + 1)
   }
 
-  function changeMonth(offset: number) {
+  function selectMonth(selectedMonth: string) {
+    if (selectedMonth === month) return
     setIsLoading(true)
     setLoadError('')
-    setMonth((current) => shiftMonth(current, offset))
+    setMonth(selectedMonth)
     closeEditor()
   }
 
@@ -262,11 +238,7 @@ export function ExpensesPage({ userEmail, isLoggingOut, onLogout }: ExpensesPage
             </button>
           </div>
 
-          <div className="expenses-period" aria-label="Selecionar mês">
-            <button type="button" className="expenses-period__arrow" onClick={() => changeMonth(-1)} aria-label="Mês anterior">‹</button>
-            <h2 aria-live="polite">{formatMonth(month)}</h2>
-            <button type="button" className="expenses-period__arrow" onClick={() => changeMonth(1)} aria-label="Próximo mês">›</button>
-          </div>
+          <MonthYearSelector month={month} onMonthChange={selectMonth} />
 
           {formError && <p className="expenses-alert expenses-alert--error" role="alert">{formError}</p>}
           {successMessage && <p className="expenses-alert expenses-alert--success" role="status">{successMessage}</p>}
