@@ -4,8 +4,9 @@ O workflow `.github/workflows/ci.yml` valida a API e a Web em jobs independentes
 
 | Job | Diretório | Passos (comandos já existentes no projeto) |
 | --- | --- | --- |
-| `API` | `apps/api` | `npm ci` → `npm run typecheck` → espera do PostgreSQL → `npm test` (unitários + integração) → checagem de testes pulados → `npm run build` |
+| `API` | `apps/api` | `npm ci` → `npm run typecheck` → espera do PostgreSQL → `npm run test:coverage` (unitários + integração, uma vez) → checagem de testes pulados → reescrita dos caminhos LCOV → upload do artefato `api-coverage` (7 dias) → `npm run build` |
 | `Web` | `apps/web` | `npm ci` → `npm run lint` → `npm run build` (o script roda `tsc -b` e depois `vite build`) |
+| `SonarQube` | raiz do repositório | Depende de `API` e `Web`; analisa PRs do próprio repositório e pushes em `master`; aguarda o Quality Gate e falha se ele reprovar |
 
 ## Decisões
 
@@ -14,7 +15,7 @@ O workflow `.github/workflows/ci.yml` valida a API e a Web em jobs independentes
 - **Cache do npm** pelo `actions/setup-node`, com chave baseada no `package-lock.json` de cada app.
 - **`GITHUB_TOKEN` só com `contents: read`.** O checkout usa `persist-credentials: false`, então o token não fica salvo no repositório clonado.
 - **Sem execuções repetidas:** os testes rodam uma única vez, com o banco. Um novo push no mesmo PR cancela a execução anterior. O push em `master` roda novamente para validar o resultado do merge.
-- **Nenhum segredo é usado.** O workflow não lê `secrets`.
+- **Segredo limitado ao scanner.** `SONAR_TOKEN` só é exposto ao passo que envia a análise ao SonarQube Cloud; os demais jobs não recebem secrets.
 
 ## PostgreSQL e testes de integração
 
@@ -35,11 +36,11 @@ O workflow `.github/workflows/ci.yml` valida a API e a Web em jobs independentes
 Em *Settings → Rules → Rulesets* (ou *Branches → Branch protection rules*), para a branch `master`:
 
 1. Exigir Pull Request antes do merge.
-2. Exigir os status checks **`API`** e **`Web`**. Eles só aparecem para seleção depois da primeira execução do workflow no repositório.
+2. Exigir os status checks **`API`**, **`Web`** e, quando quiser aplicar o Quality Gate, **`SonarQube`**. Eles só aparecem para seleção depois da primeira execução do workflow no repositório.
 3. Marcar "Require branches to be up to date before merging" (recomendado).
 4. Bloquear force push e exclusão da branch (recomendado).
 
-O SonarQube **não** deve entrar como check obrigatório de PR: veja a seção abaixo.
+O repositório privado está em uma conta GitHub Free, cujo ruleset de branch não está aplicado atualmente. O check `SonarQube` pode ser marcado como obrigatório quando houver proteção de branch disponível.
 
 ## Validar localmente
 
@@ -49,7 +50,8 @@ Na raiz do repositório, com o PostgreSQL do `docker compose up -d db` (porta 54
 cd apps/api
 npm ci
 npm run typecheck
-TEST_DATABASE_URL=postgresql://saldocerto:saldo_dev_only@localhost:5433/saldocerto npm test
+mkdir -p coverage
+TEST_DATABASE_URL=postgresql://saldocerto:saldo_dev_only@localhost:5433/saldocerto npm run test:coverage
 npm run build
 
 cd ../web
@@ -74,42 +76,14 @@ zizmor .github/workflows/ci.yml
 - **Imagem do PostgreSQL por tag.** O `zizmor` aponta `postgres:17-alpine` sem digest (`unpinned-images`). A tag foi mantida igual ao `compose.yaml`. Para fixar, rode `docker pull postgres:17-alpine` e `docker inspect --format "{{index .RepoDigests 0}}" postgres:17-alpine`, e use `postgres:17-alpine@sha256:...` no workflow.
 - **Atualização das actions:** os SHAs fixos não se atualizam sozinhos. Considere o Dependabot (`package-ecosystem: github-actions`).
 
-## SonarQube (preparação, não ativado)
+## SonarQube Cloud
 
-`sonar-project.properties` já define fontes, testes, exclusões, os `tsconfig` e o caminho da cobertura. Nenhum scanner roda no CI, e nenhum servidor foi instalado ou exposto.
+O workflow usa a organização `titostauffer` e o projeto `TitoStauffer_CashIn` no plano gratuito. A configuração está em `sonar-project.properties`; o CI executa análise baseada em workflow para PRs do próprio repositório e pushes em `master`.
 
-### Compatibilidade do Community Build
-
-| Necessidade | Community Build |
-| --- | --- |
-| Análise de TypeScript (API e Web) | Suportada |
-| Cobertura via LCOV | Suportada (`sonar.javascript.lcov.reportPaths`) |
-| Análise de branches além da principal | Não suportada (Developer Edition ou superior) |
-| Análise e comentários em Pull Requests | Não suportada (Developer Edition ou superior) |
-
-Com o Community Build, o SonarQube só pode analisar `master` depois do merge, por exemplo num job disparado por push em `master`. Ele não serve como check de qualidade de PR.
-
-### Cobertura da API
-
-O Node gera LCOV nativamente. Validado localmente com 31 testes e 89,47% de linhas no Node 22:
-
-```bash
-cd apps/api
-mkdir -p coverage
-npx tsx --test --experimental-test-coverage --test-coverage-exclude='src/**/*.test.ts' \
-  --test-reporter=spec --test-reporter-destination=stdout \
-  --test-reporter=lcov --test-reporter-destination=coverage/lcov.info \
-  'src/**/*.test.ts'
-sed -i 's#^SF:src/#SF:apps/api/src/#' coverage/lcov.info
-```
-
-- O `sed` converte os caminhos para relativos à raiz do repositório, como o SonarQube exige em monorepos.
-- Esse comando usa um glob, e não a lista de arquivos do script `test`. Hoje os dois conjuntos são iguais (15 arquivos). Quando o SonarQube for ativado, substitua o passo `npm test` do CI por esse comando (ou por um script `test:coverage`) para não rodar os testes duas vezes.
-- A cobertura do `node:test` ainda é marcada como experimental, e algumas linhas de `import` aparecem como não cobertas.
-
-### Para ativar no futuro (requer sua autorização)
-
-1. Provisionar o servidor SonarQube Community Build, fora do escopo atual.
-2. Criar o projeto (`sonar.projectKey`) e um token de análise.
-3. Cadastrar os secrets `SONAR_TOKEN` e `SONAR_HOST_URL` no GitHub.
-4. Adicionar um job de análise só para push em `master`, com a action oficial do SonarQube fixada por SHA, dependente do job `API` e usando o LCOV acima.
+- **Automatic Analysis deve permanecer desligada.** Se estiver ligada, a execução do scanner pelo CI falha.
+- O token só é fornecido ao passo do scanner pelo secret `SONAR_TOKEN`; nunca o coloque no repositório ou em logs.
+- PRs de forks pulam a análise porque não recebem secrets.
+- A cobertura da API vem do LCOV gerado na mesma execução de `npm run test:coverage`; o workflow reescreve `SF:src/...` para caminhos relativos à raiz (`SF:apps/api/src/...`) antes de enviar o artefato `api-coverage`.
+- A Web ainda não tem testes automatizados, portanto não há relatório de cobertura da Web.
+- A análise CI-based aguarda o Quality Gate. O job `SonarQube` aparece no PR como verificação e falha se o Quality Gate reprovar. Quando o projeto está vinculado ao repositório GitHub, a decoração do SonarQube Cloud também pode exibir detalhes e o resultado da análise no PR.
+- O plano gratuito permite análise de PRs direcionada à branch principal e possui limite de linhas para projetos privados. O projeto precisa estar dentro desse limite e ter `master` configurada como branch principal.
