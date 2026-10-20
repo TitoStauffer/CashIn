@@ -54,6 +54,17 @@ Os nomes são normalizados sem espaços nas extremidades e não diferenciam mai�
 
 Para parar os containers, use docker compose down. Para remover também os dados locais do banco, use docker compose down -v.
 
+## Lançamentos de entrada
+
+Todas as operações de entrada exigem uma sessão autenticada e são isoladas pelo usuário da sessão. Os valores monetários são enviados e retornados como strings decimais, com até duas casas, para preservar a precisão.
+
+- `GET /incomes?from=AAAA-MM-DD&to=AAAA-MM-DD` lista entradas; os filtros de data são opcionais e inclusivos, com ordenação por data e criação mais recentes primeiro.
+- `POST /incomes` cria uma entrada com `{ "amount": "1250.50", "date": "2026-10-19", "description": "Salário", "categoryId": "<uuid>", "subcategoryId": "<uuid-ou-null>" }`.
+- `PUT /incomes/:incomeId` substitui os campos editáveis e aceita a mesma estrutura do cadastro; descrição e subcategoria podem ser omitidas ou nulas.
+- `DELETE /incomes/:incomeId` exclui uma entrada e retorna `204`.
+
+As categorias precisam pertencer ao usuário autenticado e ter natureza `income`. A subcategoria, quando informada, precisa pertencer à categoria selecionada.
+
 O MVP 1 será validado com API e Web. A API é independente do cliente e poderá ser consumida pelo aplicativo Mobile quando essa etapa entrar no escopo.
 
 ## Deploy

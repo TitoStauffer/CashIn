@@ -39,6 +39,21 @@
 
 
 ## Workflow
+### Execução Autônoma do Jira
+- O dispatcher é responsável apenas por identificar trabalhos elegíveis, reservar tickets, iniciar execuções e acompanhar o estado das execuções.
+- O dispatcher não deve implementar funcionalidades nem substituir as responsabilidades de qualquer agente.
+- O workflow de entrega definido neste arquivo é a fonte oficial de regras e deve ser seguido por todos os agentes.
+- Cada execução deve estar associada à chave de uma issue do Jira e a um identificador único de execução. Registre essa associação no mecanismo de coordenação disponível e inclua o identificador no contexto de acompanhamento da execução.
+- Antes de iniciar o trabalho, inspecione a issue, seu status, seu escopo, seus critérios de aceitação e o agente técnico principal designado.
+- Execute somente issues explicitamente identificadas como prontas para execução autônoma. No fluxo do MVP 1, uma História é elegível quando está em `To Do`, na sprint ativa e associada ao épico `DEV-6`, possui objetivo, escopo e critérios de aceitação claros, dependências resolvidas e papel do Agent técnico principal registrado. Estar em `To Do`, por si só, não basta.
+- Nunca processe a mesma issue simultaneamente em múltiplas execuções. Antes de reservar uma issue, verifique se já existe execução ativa para sua chave; a reserva deve ser feita por meio da transição disponível no Jira para `In Progress` e registrada com o identificador único da execução.
+- Utilize a conta de usuário do Jira configurada para a integração.
+- Respeite as transições disponíveis no workflow do Jira. Nunca presuma que um status pode ser alterado diretamente.
+- Preserve a ordem obrigatória de implementação, abertura do Pull Request, revisão de código, QA, merge e transição final no Jira.
+- Nunca marque uma issue como Concluída antes que o merge tenha sido realizado com sucesso e todas as aprovações obrigatórias tenham sido obtidas.
+- Se uma execução falhar, uma aprovação estiver bloqueada ou uma transição não estiver disponível, registre a falha e interrompa o fluxo afetado de maneira segura.
+- Antes de retomar uma execução interrompida, verifique o status atual no Jira, a branch Git, o Pull Request, as aprovações e o estado da execução anterior.
+
 ### Inicialização e coordenação de subagentes
 - Ao iniciar uma História, o agente que conduz a execução deve ler a descrição, os critérios de aceitação e as instruções relevantes do projeto.
 - Deve haver um único Agent técnico principal, responsável por coordenar a implementação e integrar as contribuições dos demais Agents necessários.
@@ -59,7 +74,7 @@
   - Aprovação do Code Review: `Code Review aprovado em [data e horário]. [Resumo da revisão ou link para a revisão].`
   - Aprovação do QA: `QA aprovado em [data e horário]. [Critérios validados e resultado].`
   - `In Review` → `Done` após o merge: `Merge concluído em [data e horário]. PR: [URL]. Code Review e QA aprovados.`
-- Quando uma História do MVP 1 chegar a `Done`, o Agent de Product Manager deve verificar se há outra História do épico `DEV-6` em `To Do` na sprint ativa. Se houver, deve ler a descrição, os critérios de aceitação, as dependências e o papel técnico principal; iniciar somente a próxima História priorizada pelo Jira, respeitando a ordem do quadro em caso de empate. Antes de iniciá-la, criar sua branch a partir da branch padrão e então movê-la de `To Do` para `In Progress`, registrando o comentário de início conforme a regra acima. Se o contexto, as dependências ou a ordem de prioridade não permitirem identificar com segurança qual ticket iniciar, perguntar ao usuário antes da transição. Não puxe automaticamente tickets de outras sprints ou épicos.
+- Quando uma História do MVP 1 chegar a `Done`, o Agent de Product Manager deve verificar se há outra História elegível do épico `DEV-6` em `To Do` na sprint ativa, conforme os critérios do dispatcher. Se houver, deve iniciar somente a próxima História elegível priorizada pelo Jira, respeitando a ordem do quadro em caso de empate. Antes de iniciá-la, criar sua branch a partir da branch padrão e então movê-la de `To Do` para `In Progress`, registrando o comentário de início conforme a regra acima. Se o contexto, as dependências ou a ordem de prioridade não permitirem identificar com segurança qual ticket iniciar, perguntar ao usuário antes da transição. Não puxe automaticamente tickets de outras sprints ou épicos.
 - O workflow de uma entrega deve envolver somente os responsáveis pelas áreas incluídas no escopo:
   - Agent de Product Manager cria a História seguindo o template configurado e cria a branch conforme as regras de Git.
   - Agent de Product Manager indica na História o papel do Agent técnico principal conforme a principal área de implementação. Esse Agent puxa o ticket, movendo-o de `To Do` (`Tarefas pendentes`) para `In Progress` (`Em andamento`) pelas transições disponíveis no Jira, usando a conta Jira do usuário. Em Histórias que envolvam várias áreas, há um único Agent técnico principal; os demais Agents necessários colaboram na mesma História.

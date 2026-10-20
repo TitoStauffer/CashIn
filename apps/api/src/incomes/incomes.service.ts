@@ -1,0 +1,83 @@
+import { IncomeError, InvalidIncomeReferenceError } from "./incomes.errors.js";
+import type { Income, IncomeInput, IncomeRepository } from "./incomes.types.js";
+
+const AMOUNT_PATTERN = /^(?:0|[1-9]\d{0,11})(?:\.\d{1,2})?$/;
+const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function validateDate(value: string, field: string): void {
+  if (!DATE_PATTERN.test(value)) {
+    throw new IncomeError(`${field} deve estar no formato AAAA-MM-DD.`, 400);
+  }
+  const date = new Date(`${value}T00:00:00.000Z`);
+  if (!Number.isFinite(date.getTime()) || date.toISOString().slice(0, 10) !== value) {
+    throw new IncomeError(`${field} deve ser uma data válida.`, 400);
+  }
+}
+
+function normalizeInput(input: IncomeInput): Required<IncomeInput> {
+  if (!AMOUNT_PATTERN.test(input.amount) || Number(input.amount) <= 0) {
+    throw new IncomeError("O valor deve ser positivo e ter no máximo duas casas decimais.", 400);
+  }
+  validateDate(input.date, "A data");
+  if (!UUID_PATTERN.test(input.categoryId)) {
+    throw new IncomeError("A categoria informada é inválida.", 400);
+  }
+  const subcategoryId = input.subcategoryId ?? null;
+  if (subcategoryId !== null && !UUID_PATTERN.test(subcategoryId)) {
+    throw new IncomeError("A subcategoria informada é inválida.", 400);
+  }
+  const description = input.description?.trim() || null;
+  return { ...input, amount: input.amount, description, subcategoryId };
+}
+
+function mapReferenceError(error: unknown): never {
+  if (error instanceof IncomeError) throw error;
+  if (typeof error === "object" && error !== null && "code" in error && error.code === "23503") {
+    throw new InvalidIncomeReferenceError();
+  }
+  throw error;
+}
+
+export class IncomesService {
+  constructor(private readonly repository: IncomeRepository) {}
+
+  listIncomes(userId: string, from?: string, to?: string): Promise<Income[]> {
+    if (from) validateDate(from, "O filtro from");
+    if (to) validateDate(to, "O filtro to");
+    if (from && to && from > to) {
+      throw new IncomeError("O filtro from deve ser anterior ou igual ao filtro to.", 400);
+    }
+    return this.repository.listIncomes(userId, from, to);
+  }
+
+  async createIncome(userId: string, input: IncomeInput): Promise<Income> {
+    try {
+      const income = await this.repository.createIncome(userId, normalizeInput(input));
+      if (!income) throw new InvalidIncomeReferenceError();
+      return income;
+    } catch (error) {
+      return mapReferenceError(error);
+    }
+  }
+
+  async updateIncome(userId: string, incomeId: string, input: IncomeInput): Promise<Income> {
+    if (!UUID_PATTERN.test(incomeId)) throw new IncomeError("Lançamento não encontrado.", 404);
+    try {
+      const income = await this.repository.updateIncome(userId, incomeId, normalizeInput(input));
+      if (!income) {
+        if (await this.repository.hasIncome(userId, incomeId)) throw new InvalidIncomeReferenceError();
+        throw new IncomeError("Lançamento não encontrado.", 404);
+      }
+      return income;
+    } catch (error) {
+      return mapReferenceError(error);
+    }
+  }
+
+  async deleteIncome(userId: string, incomeId: string): Promise<void> {
+    if (!UUID_PATTERN.test(incomeId)) throw new IncomeError("Lançamento não encontrado.", 404);
+    const deleted = await this.repository.deleteIncome(userId, incomeId);
+    if (!deleted) throw new IncomeError("Lançamento não encontrado.", 404);
+  }
+}
