@@ -4,6 +4,7 @@ coverage/
 .env
 .env.*
 !.env.example
+.dispatcher/
 .expo/
 apps/mobile/
 .idea/

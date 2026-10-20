@@ -1,0 +1,35 @@
+{
+  "repoPath": "../..",
+  "defaultBranch": "master",
+  "remote": "origin",
+  "stateDir": ".dispatcher",
+  "pollIntervalSeconds": 300,
+  "maxConcurrentRuns": 1,
+  "logLevel": "info",
+  "worktree": {
+    "enabled": true,
+    "baseDir": "../SaldoCerto2.0-worktrees"
+  },
+  "jira": {
+    "baseUrl": "https://titostauffer.atlassian.net",
+    "eligibilityJql": "PREENCHA: veja a seção 'Configurar a elegibilidade' do README",
+    "maxResults": 20,
+    "requiredFields": [
+      { "field": "description", "label": "Descrição" },
+      { "field": "PREENCHA_ID_DO_CAMPO_DO_AGENT", "label": "Agent técnico principal" }
+    ],
+    "blockingLinks": [{ "type": "PREENCHA_NOME_DO_TIPO_DE_LINK", "direction": "inward" }],
+    "reservableStatuses": ["PREENCHA_STATUS_TO_DO"],
+    "reservationTargetStatus": "PREENCHA_STATUS_IN_PROGRESS",
+    "resumableStatuses": ["PREENCHA_STATUS_IN_PROGRESS", "PREENCHA_STATUS_IN_REVIEW"],
+    "doneStatuses": ["PREENCHA_STATUS_DONE"],
+    "commentTimeZone": "America/Sao_Paulo",
+    "runPropertyKey": "saldocerto.dispatcher.run"
+  },
+  "codex": {
+    "command": "codex",
+    "args": ["exec", "--json", "--sandbox", "workspace-write"],
+    "timeoutMinutes": 240,
+    "killGraceSeconds": 15
+  }
+}
