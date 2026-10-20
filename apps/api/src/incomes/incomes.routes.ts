@@ -2,6 +2,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { IncomeError } from "./incomes.errors.js";
 import type { IncomesService } from "./incomes.service.js";
 import type { IncomeInput } from "./incomes.types.js";
+import { MONEY_AMOUNT_PATTERN } from "../shared/money.js";
 
 interface RouteOptions {
   incomesService: IncomesService;
@@ -27,7 +28,7 @@ const incomeBodySchema = {
   additionalProperties: false,
   required: ["amount", "date", "categoryId"],
   properties: {
-    amount: { type: "string", minLength: 1, maxLength: 15, pattern: "^(?:0|[1-9]\\d{0,11})(?:\\.\\d{1,2})?$" },
+    amount: { type: "string", minLength: 1, maxLength: 15, pattern: MONEY_AMOUNT_PATTERN },
     date: dateSchema,
     description: { anyOf: [{ type: "string" }, { type: "null" }] },
     categoryId: uuidSchema,

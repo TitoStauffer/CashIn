@@ -2,6 +2,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { InvestmentGoalError } from "./investment-goals.errors.js";
 import type { InvestmentGoalsService } from "./investment-goals.service.js";
 import type { InvestmentContributionInput, InvestmentGoalInput } from "./investment-goals.types.js";
+import { MONEY_AMOUNT_PATTERN } from "../shared/money.js";
 
 interface RouteOptions {
   investmentGoalsService: InvestmentGoalsService;
@@ -19,7 +20,7 @@ const amountSchema = {
   type: "string",
   minLength: 1,
   maxLength: 15,
-  pattern: "^(?:0|[1-9]\\d{0,11})(?:\\.\\d{1,2})?$",
+  pattern: MONEY_AMOUNT_PATTERN,
 };
 const nullableUuidSchema = { anyOf: [uuidSchema, { type: "null" }] };
 const nullableDateSchema = { anyOf: [dateSchema, { type: "null" }] };

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import type { CategorySummary, FinancialSummary } from './dashboardApi'
 import { DashboardApiError, dashboardApi } from './dashboardApi'
 import type { InvestmentGoal } from '../goals/goalsApi'
+import { formatBrazilianCurrency } from '../money/currency'
 import { FinancialSidebar } from '../layout/FinancialSidebar'
 import { MonthYearSelector } from '../period/MonthYearSelector'
 import { formatMonth, getCurrentMonth, getMonthRange } from '../period/month'
@@ -10,9 +11,7 @@ import './DashboardPage.css'
 type DashboardPageProps = { userEmail: string; isLoggingOut: boolean; onLogout: () => void }
 
 function formatAmount(value: string) {
-  const amount = Number(value)
-  return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' })
-    .format(Number.isFinite(amount) ? amount : 0)
+  return formatBrazilianCurrency(value)
 }
 
 function CategoryBreakdown({ title, items, tone }: { title: string; items: CategorySummary[]; tone: 'income' | 'expense' }) {
@@ -151,7 +150,7 @@ export function DashboardPage({ userEmail, isLoggingOut, onLogout }: DashboardPa
                 <article className="dashboard-summary-card dashboard-summary-card--contribution">
                   <span>Aportes</span><strong>{formatAmount(summary.contributionTotal)}</strong><small>destinados às metas</small>
                 </article>
-                <article className={`dashboard-summary-card dashboard-summary-card--balance${Number(summary.availableBalance) < 0 ? ' dashboard-summary-card--negative' : ''}`}>
+                <article className={`dashboard-summary-card dashboard-summary-card--balance${summary.availableBalance.startsWith('-') ? ' dashboard-summary-card--negative' : ''}`}>
                   <span>Saldo disponível</span><strong>{formatAmount(summary.availableBalance)}</strong><small>entradas menos despesas e aportes</small>
                 </article>
               </div>

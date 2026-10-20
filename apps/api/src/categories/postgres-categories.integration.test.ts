@@ -47,14 +47,35 @@ test("PostgreSQL category CRUD, uniqueness, ownership, and referenced deletion b
     assert.equal(sameNameOtherNature.nature, "income");
     assert.notEqual(sameNameOtherUser.id, category.id);
 
+    const displayName = "  Árvore  ";
+    const persistedDisplayName = await database.query<{ name: string; name_normalized: string }>(
+      `INSERT INTO categories (user_id, name, nature)
+       VALUES ($1, $2, 'income')
+       RETURNING name, name_normalized`,
+      [userId, displayName],
+    );
+    assert.equal(persistedDisplayName.rows[0]?.name, displayName);
+    assert.equal(persistedDisplayName.rows[0]?.name_normalized, "arvore");
+    await database.query("DELETE FROM categories WHERE name = $1 AND user_id = $2", [displayName, userId]);
+
     await assert.rejects(
       service.createCategory(userId, " casa ", "expense"),
       (error: unknown) => typeof error === "object" && error !== null && "statusCode" in error && error.statusCode === 409,
     );
+    const salaryCategory = await service.createCategory(userId, "Salário", "expense");
+    await assert.rejects(
+      service.createCategory(userId, "salario", "expense"),
+      (error: unknown) => typeof error === "object" && error !== null && "statusCode" in error && error.statusCode === 409,
+    );
+    await service.deleteCategory(userId, salaryCategory.id);
 
     const subcategory = await service.createSubcategory(userId, category.id, "Moradia");
     await assert.rejects(
       service.createSubcategory(userId, category.id, " moradia "),
+      (error: unknown) => typeof error === "object" && error !== null && "statusCode" in error && error.statusCode === 409,
+    );
+    await assert.rejects(
+      service.createSubcategory(userId, category.id, "moradía"),
       (error: unknown) => typeof error === "object" && error !== null && "statusCode" in error && error.statusCode === 409,
     );
     const listed = await service.listCategories(userId, "expense");

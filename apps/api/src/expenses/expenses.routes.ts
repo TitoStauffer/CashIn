@@ -2,6 +2,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { ExpenseError } from "./expenses.errors.js";
 import type { ExpensesService } from "./expenses.service.js";
 import type { ExpenseInput } from "./expenses.types.js";
+import { MONEY_AMOUNT_PATTERN } from "../shared/money.js";
 
 interface RouteOptions {
   expensesService: ExpensesService;
@@ -27,7 +28,7 @@ const expenseBodySchema = {
   additionalProperties: false,
   required: ["amount", "date", "categoryId"],
   properties: {
-    amount: { type: "string", minLength: 1, maxLength: 15, pattern: "^(?:0|[1-9]\\d{0,11})(?:\\.\\d{1,2})?$" },
+    amount: { type: "string", minLength: 1, maxLength: 15, pattern: MONEY_AMOUNT_PATTERN },
     date: dateSchema,
     description: { anyOf: [{ type: "string" }, { type: "null" }] },
     categoryId: uuidSchema,

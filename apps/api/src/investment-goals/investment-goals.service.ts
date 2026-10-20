@@ -1,4 +1,4 @@
-import { ClosedInvestmentGoalError, InvestmentGoalError, InvalidInvestmentGoalReferenceError } from "./investment-goals.errors.js";
+import { ClosedInvestmentGoalError, DuplicateInvestmentGoalError, InvestmentGoalError, InvalidInvestmentGoalReferenceError } from "./investment-goals.errors.js";
 import type {
   InvestmentContribution,
   InvestmentContributionInput,
@@ -6,8 +6,8 @@ import type {
   InvestmentGoalInput,
   InvestmentGoalsRepository,
 } from "./investment-goals.types.js";
+import { isPositiveMoneyAmount } from "../shared/money.js";
 
-const AMOUNT_PATTERN = /^(?:0|[1-9]\d{0,11})(?:\.\d{1,2})?$/;
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const MAX_TITLE_LENGTH = 120;
@@ -22,7 +22,7 @@ function validateDate(value: string, label: string): void {
 }
 
 function normalizeAmount(value: string, label: string): string {
-  if (!AMOUNT_PATTERN.test(value) || Number(value) <= 0) {
+  if (!isPositiveMoneyAmount(value)) {
     throw new InvestmentGoalError(`${label} deve ser positivo e ter no máximo duas casas decimais.`, 400);
   }
   return value;
@@ -66,8 +66,9 @@ function normalizeContribution(input: InvestmentContributionInput): Required<Inv
 
 function mapReferenceError(error: unknown): never {
   if (error instanceof InvestmentGoalError) throw error;
-  if (typeof error === "object" && error !== null && "code" in error && error.code === "23503") {
-    throw new InvalidInvestmentGoalReferenceError();
+  if (typeof error === "object" && error !== null && "code" in error) {
+    if (error.code === "23503") throw new InvalidInvestmentGoalReferenceError();
+    if (error.code === "23505") throw new DuplicateInvestmentGoalError();
   }
   throw error;
 }
