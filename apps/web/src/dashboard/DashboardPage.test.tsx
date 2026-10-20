@@ -38,4 +38,20 @@ describe('DashboardPage', () => {
     expect(await screen.findByText('-R$ 1.234,56')).toBeVisible()
     await waitFor(() => expect(screen.getByText('Saldo disponível').closest('article')).toHaveClass('dashboard-summary-card--negative'))
   })
+
+  it('keeps a positive available balance without negative styling', async () => {
+    vi.mocked(dashboardApi.summary).mockResolvedValueOnce({
+      incomeTotal: '3000.00',
+      expenseTotal: '1000.00',
+      contributionTotal: '500.00',
+      availableBalance: '1500.00',
+      incomeByCategory: [],
+      expenseByCategory: [],
+    })
+    render(<DashboardPage userEmail="tito@example.com" isLoggingOut={false} onLogout={vi.fn()} />)
+
+    const balanceCard = (await screen.findByText('Saldo disponível')).closest('article')
+    expect(balanceCard).toHaveTextContent('R$ 1.500,00')
+    expect(balanceCard).not.toHaveClass('dashboard-summary-card--negative')
+  })
 })
