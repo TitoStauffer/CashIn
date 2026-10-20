@@ -38,6 +38,20 @@ As senhas de novas contas devem ter pelo menos 8 caracteres e incluir uma letra 
 
 Cadastro e login têm limites temporários de tentativas por endereço IP para reduzir abuso. O controle é mantido em memória e atende ao MVP com uma única instância da API; para múltiplas instâncias, será necessário compartilhar o estado do limitador.
 
+## Categorias financeiras
+
+Categorias e subcategorias são gerenciadas por usuário autenticado. As naturezas disponíveis são `income` (entrada), `expense` (saída) e `investment_goal` (meta de investimento). Uma subcategoria herda a natureza da categoria.
+
+- `GET /categories?nature=income|expense|investment_goal` lista categorias e suas subcategorias; o filtro `nature` é opcional.
+- `POST /categories` cria uma categoria com `{ "name": "...", "nature": "income" }`.
+- `PATCH /categories/:categoryId` renomeia uma categoria com `{ "name": "..." }`.
+- `DELETE /categories/:categoryId` exclui uma categoria e suas subcategorias, desde que não estejam referenciadas por movimentações ou metas.
+- `POST /categories/:categoryId/subcategories` cria uma subcategoria com `{ "name": "..." }`.
+- `PATCH /categories/:categoryId/subcategories/:subcategoryId` renomeia uma subcategoria com `{ "name": "..." }`.
+- `DELETE /categories/:categoryId/subcategories/:subcategoryId` exclui uma subcategoria, desde que não esteja referenciada.
+
+Os nomes são normalizados sem espaços nas extremidades e não diferenciam maiúsculas de minúsculas: categorias devem ser únicas por usuário e natureza; subcategorias, dentro da categoria. A natureza de uma categoria não pode ser alterada. A API responde `409` para nomes duplicados ou tentativas de excluir itens em uso.
+
 Para parar os containers, use docker compose down. Para remover também os dados locais do banco, use docker compose down -v.
 
 O MVP 1 será validado com API e Web. A API é independente do cliente e poderá ser consumida pelo aplicativo Mobile quando essa etapa entrar no escopo.
