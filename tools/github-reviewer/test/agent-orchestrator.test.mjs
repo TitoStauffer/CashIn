@@ -141,3 +141,11 @@ test('times out an agent stage, aborts its signal and does not start dependent s
   assert.equal(calls.includes('execute:qa'), false);
   assert.equal(calls.at(-1), 'release:INCONCLUSIVE');
 });
+
+test('returns inconclusive when the execution reservation cannot be released', async () => {
+  const { options } = dependencies({ releaseExecution: async () => { throw new Error('storage unavailable'); } });
+  const result = await orchestratePullRequestQuality(input, options);
+
+  assert.equal(result.status, 'INCONCLUSIVE');
+  assert.match(result.reasons[0], /liberar a reserva/);
+});

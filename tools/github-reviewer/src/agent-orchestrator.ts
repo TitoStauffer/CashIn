@@ -76,13 +76,20 @@ export async function orchestratePullRequestQuality(
   }
 
   let finalStatus: OrchestrationStatus = 'INCONCLUSIVE';
+  let outcome: OrchestrationResult;
   try {
-    const outcome = await runClaimedExecution(runContext, dependencies);
+    outcome = await runClaimedExecution(runContext, dependencies);
     finalStatus = outcome.status;
-    return outcome;
-  } finally {
-    await safely(() => dependencies.releaseExecution(runContext, finalStatus));
+  } catch {
+    outcome = result('INCONCLUSIVE', runContext, [], 'Falha interna ao coordenar as etapas de qualidade.');
   }
+
+  try {
+    await dependencies.releaseExecution(runContext, finalStatus);
+  } catch {
+    return result('INCONCLUSIVE', runContext, outcome.completedStages, 'Não foi possível liberar a reserva da execução com segurança.');
+  }
+  return outcome;
 }
 
 async function runClaimedExecution(
@@ -195,7 +202,6 @@ async function executeAgentWithTimeout(
           controller.abort();
           resolve(undefined);
         }, timeoutMs);
-        timer.unref?.();
       }),
     ]);
   } catch {
