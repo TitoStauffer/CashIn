@@ -89,6 +89,19 @@ Cada carteira recebe as formas iniciais Crédito, Débito, Pix, Cartão de benef
 - `PATCH /payment-methods/:paymentMethodId` altera `name`, `nature` e/ou `isActive`.
 
 Os valores aceitos para `nature` incluem `immediate`, `credit_card`, `food_meal_benefit` e `home_office_benefit`. `food_benefit` e `meal_benefit` continuam aceitos para compatibilidade e registros históricos, mas novas gravações são normalizadas para `food_meal_benefit`. Nomes são únicos por carteira sem diferenciar caixa ou acentuação. Despesas no cartão VA/VR reduzem o saldo unificado VA/VR; despesas com AHO reduzem o saldo AHO.
+Despesas com natureza `credit_card` exigem um cartão cadastrado na mesma carteira.
+
+### Cartões de crédito e faturas
+
+Cada cartão pertence à carteira ativa e possui apelido, dia de fechamento e dia de vencimento próprios. Os dias aceitam valores de 1 a 31; em meses mais curtos, o fechamento ou vencimento é limitado ao último dia do mês. Compras até e inclusive o dia de fechamento entram na fatura que fecha naquele dia; compras posteriores entram no próximo ciclo. Quando o vencimento configurado não é posterior ao fechamento, ele ocorre no mês seguinte.
+
+- `GET /credit-cards` lista cartões ativos e inativos.
+- `POST /credit-cards` recebe `{ "nickname": "Gold", "closingDay": 10, "dueDay": 20 }`.
+- `PATCH /credit-cards/:creditCardId` altera `nickname`, `closingDay`, `dueDay` e/ou `isActive`.
+- `GET /credit-cards/:creditCardId/statements?from=AAAA-MM-DD&to=AAAA-MM-DD` lista faturas pelo período da data de fechamento, com total, compras categorizadas e situação.
+- `POST /credit-cards/:creditCardId/statements/:statementId/pay` recebe `{ "date": "2026-10-20" }` e registra a quitação integral. Uma fatura só pode ser paga uma vez.
+
+O pagamento integral reduz o saldo em dinheiro na data informada. As compras permanecem registradas como despesas nas datas originais e em suas categorias; o pagamento não cria uma nova despesa. Após pagar uma fatura, suas compras não podem ser adicionadas, editadas ou excluídas.
 
 Para parar os containers, use docker compose down. Para remover também os dados locais do banco, use docker compose down -v.
 
@@ -108,15 +121,15 @@ As categorias precisam pertencer à carteira selecionada e ter natureza `income`
 Todas as operações de saída exigem uma sessão autenticada e são isoladas pela carteira selecionada. Os valores monetários são enviados e retornados como strings decimais, com até duas casas, para preservar a precisão.
 
 - `GET /expenses?from=AAAA-MM-DD&to=AAAA-MM-DD` lista saídas; os filtros de data são opcionais e inclusivos, com ordenação por data e criação mais recentes primeiro.
-- `POST /expenses` cria uma saída com `{ "amount": "1250.50", "date": "2026-10-19", "description": "Mercado", "categoryId": "<uuid>", "subcategoryId": "<uuid-ou-null>", "paymentMethodId": "<uuid-ou-null>" }`.
+- `POST /expenses` cria uma saída com `{ "amount": "1250.50", "date": "2026-10-19", "description": "Mercado", "categoryId": "<uuid>", "subcategoryId": "<uuid-ou-null>", "paymentMethodId": "<uuid-ou-null>", "creditCardId": "<uuid-ou-null>" }`. Quando a forma de pagamento tem natureza `credit_card`, `creditCardId` é obrigatório.
 - `PUT /expenses/:expenseId` substitui os campos editáveis e aceita a mesma estrutura do cadastro; descrição, subcategoria e forma de pagamento podem ser omitidas ou nulas.
 - `DELETE /expenses/:expenseId` exclui uma saída e retorna `204`.
 
-O valor deve ser positivo. As categorias precisam pertencer à carteira selecionada e ter natureza `expense`; a subcategoria, quando informada, precisa pertencer à categoria selecionada. Uma forma de pagamento informada precisa estar ativa e pertencer à mesma carteira. IDs de saídas de outras carteiras não podem ser consultados, alterados ou excluídos.
+O valor deve ser positivo. As categorias precisam pertencer à carteira selecionada e ter natureza `expense`; a subcategoria, quando informada, precisa pertencer à categoria selecionada. Uma forma de pagamento e um cartão informados precisam pertencer à mesma carteira; novos lançamentos só podem usar meios e cartões ativos. IDs de saídas de outras carteiras não podem ser consultados, alterados ou excluídos.
 
 ## Resumo financeiro
 
-`GET /financial-summary?from=AAAA-MM-DD&to=AAAA-MM-DD` retorna os totais da carteira selecionada, com filtros de data opcionais e inclusivos. `incomeTotal` e `expenseTotal` continuam representando todos os lançamentos do período. `availableBalance` mantém compatibilidade e equivale a `cashBalance`, que considera entradas em dinheiro, despesas pagas em dinheiro e aportes. `benefitBalances` informa separadamente os saldos de VA, VR e AHO; cada despesa paga com um benefício reduz somente o saldo daquele tipo. Entradas antigas sem destino são tratadas como dinheiro. Regras de fatura de cartão permanecem fora deste fluxo.
+`GET /financial-summary?from=AAAA-MM-DD&to=AAAA-MM-DD` retorna os totais da carteira selecionada, com filtros de data opcionais e inclusivos. `incomeTotal` e `expenseTotal` continuam representando todos os lançamentos do período, contabilizados nas datas das compras. `availableBalance` mantém compatibilidade e equivale a `cashBalance`, que considera entradas em dinheiro, despesas pagas em dinheiro, aportes e pagamentos de faturas na data da quitação. O pagamento da fatura não duplica `expenseTotal`. `benefitBalances` informa separadamente os saldos de VA, VR e AHO; cada despesa paga com um benefício reduz somente o saldo daquele tipo. Entradas antigas sem destino são tratadas como dinheiro.
 
 ## Metas de investimento e aportes
 

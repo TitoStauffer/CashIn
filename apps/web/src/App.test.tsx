@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { AuthApiError, authApi } from './authApi'
 import { walletApi } from './wallets/walletApi'
+import { creditCardsApi } from './creditCards/creditCardsApi'
 import App from './App'
 
 function deferred<T>() {
@@ -186,6 +187,7 @@ describe('authenticated financial routes', () => {
     vi.spyOn(walletApi, 'list').mockResolvedValue({
       items: [{ id: 'wallet-personal', name: 'Pessoal', isPersonal: true, role: 'owner' }],
     })
+    vi.spyOn(creditCardsApi, 'list').mockResolvedValue({ items: [] })
   })
 
   afterEach(() => {
@@ -194,7 +196,7 @@ describe('authenticated financial routes', () => {
     window.localStorage.clear()
   })
 
-  it.each(['/categories', '/dashboard', '/incomes', '/expenses', '/goals', '/payment-methods'])(
+  it.each(['/categories', '/dashboard', '/incomes', '/expenses', '/goals', '/payment-methods', '/credit-cards'])(
     'loads the active wallet before rendering %s', async (path) => {
       window.history.replaceState({}, '', path)
       render(<App />)
@@ -256,6 +258,16 @@ describe('wallet invitation routes', () => {
 
 describe('wallet sharing notification route', () => {
   beforeEach(() => {
+    vi.stubGlobal('matchMedia', vi.fn((media: string) => ({
+      matches: false,
+      media,
+      onchange: null,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    })))
     window.localStorage.clear()
     window.history.replaceState({}, '', '/wallet-sharing?walletId=wallet-shared')
     vi.spyOn(authApi, 'me').mockResolvedValue({ user: { id: 'user-owner', email: 'owner@example.com' } })
@@ -278,6 +290,6 @@ describe('wallet sharing notification route', () => {
     render(<App />)
 
     expect(await screen.findByRole('combobox', { name: 'Carteira ativa: Família' })).toHaveValue('wallet-shared')
-    expect(walletApi.listAccessRequests).toHaveBeenCalledWith('wallet-shared', expect.any(AbortSignal))
+    await waitFor(() => expect(walletApi.listAccessRequests).toHaveBeenCalledWith('wallet-shared', expect.any(AbortSignal)))
   })
 })

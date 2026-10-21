@@ -7,6 +7,7 @@ interface SummaryRow {
   contribution_total: string;
   available_balance: string;
   cash_balance: string;
+  card_payment_total: string;
   benefit_balances: FinancialSummaryBalance[];
   income_by_category: FinancialSummaryCategory[];
   expense_by_category: FinancialSummaryCategory[];
@@ -55,7 +56,15 @@ export class PostgresFinancialSummaryRepository implements FinancialSummaryRepos
                AND (expense.payment_method_nature IS NULL OR expense.payment_method_nature = 'immediate')
                AND ($2::date IS NULL OR expense.date >= $2::date)
                AND ($3::date IS NULL OR expense.date <= $3::date)
-           ), 0.00) AS cash_expense_total
+           ), 0.00) AS cash_expense_total,
+           COALESCE((
+             SELECT SUM(statement.paid_amount)
+             FROM credit_card_statements AS statement
+             WHERE statement.wallet_id = $1
+               AND statement.paid_date IS NOT NULL
+               AND ($2::date IS NULL OR statement.paid_date >= $2::date)
+               AND ($3::date IS NULL OR statement.paid_date <= $3::date)
+           ), 0.00) AS card_payment_total
        ),
        benefit_balances AS (
          SELECT json_agg(
@@ -136,8 +145,8 @@ export class PostgresFinancialSummaryRepository implements FinancialSummaryRepos
          income_total::text AS income_total,
          expense_total::text AS expense_total,
          contribution_total::text AS contribution_total,
-         (cash_income_total - cash_expense_total - contribution_total)::text AS cash_balance,
-         (cash_income_total - cash_expense_total - contribution_total)::text AS available_balance,
+         (cash_income_total - cash_expense_total - contribution_total - card_payment_total)::text AS cash_balance,
+         (cash_income_total - cash_expense_total - contribution_total - card_payment_total)::text AS available_balance,
          benefit_balances.items AS benefit_balances,
          income_categories.items AS income_by_category,
          expense_categories.items AS expense_by_category
