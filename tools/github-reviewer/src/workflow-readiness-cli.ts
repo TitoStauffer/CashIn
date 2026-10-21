@@ -55,13 +55,14 @@ async function run(): Promise<void> {
     try {
       const privateKey = await loadPrivateKey();
       result = await evaluateMergeReadiness({
-        appId: process.env.GITHUB_APP_ID ?? '',
+        appId: process.env.CASHIN_APP_ID ?? '',
         privateKey,
         owner,
         repository: repositoryName,
-        installationId: process.env.GITHUB_APP_INSTALLATION_ID?.trim() || undefined,
+        installationId: process.env.CASHIN_APP_INSTALLATION_ID?.trim() || undefined,
         pullRequestNumber: resolution.pullRequestNumber,
         requiredBaseBranch: 'master',
+        contextToken: process.env.GITHUB_TOKEN ?? '',
       });
     } catch {
       result = createInconclusive(resolution.pullRequestNumber, resolution.headSha, 'Credenciais do GitHub App ausentes ou indisponíveis.');
@@ -100,9 +101,9 @@ async function run(): Promise<void> {
 }
 
 async function loadPrivateKey(): Promise<string> {
-  const configuredKey = process.env.GITHUB_APP_PRIVATE_KEY?.trim();
+  const configuredKey = process.env.CASHIN_APP_PRIVATE_KEY?.trim();
   if (configuredKey) return configuredKey.replace(/\\n/g, '\n');
-  const path = process.env.GITHUB_APP_PRIVATE_KEY_PATH?.trim();
+  const path = process.env.CASHIN_APP_PRIVATE_KEY_PATH?.trim();
   if (!path) return '';
   return readFile(path, 'utf8');
 }

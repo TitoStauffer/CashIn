@@ -1,4 +1,6 @@
 import { createGitHubInstallationSession, getRepositoryPath, requestGitHubApi, type GitHubApiClientOptions } from './github-api-client.js';
+import { agentReportMarker, computeAgentContextHash } from './agent-evidence.js';
+import { loadAgentReviewInputs } from './agent-review-inputs.js';
 
 const REQUIRED_QUALITY_CHECKS = ['API', 'Web', 'SonarQube', 'SonarCloud Code Analysis'];
 const GRAPHQL_REVIEW_THREADS_QUERY = `query($owner: String!, $name: String!, $number: Int!, $after: String) {
@@ -26,6 +28,7 @@ export interface MergeReadinessResult {
 export interface MergeReadinessOptions extends GitHubApiClientOptions {
   pullRequestNumber: number;
   requiredBaseBranch?: string;
+  contextToken?: string;
   now?: () => Date;
 }
 
@@ -92,6 +95,15 @@ export async function evaluateMergeReadiness(options: MergeReadinessOptions): Pr
     reasons.push(`O Pull Request deve ter como destino a branch ${options.requiredBaseBranch}.`);
     return result('BLOCKED');
   }
+  let initialReviewInputs;
+  try {
+    initialReviewInputs = await loadAgentReviewInputs(fetchImpl, `${options.owner}/${options.repository}`, options.pullRequestNumber, initialPullRequest, options.contextToken || token);
+  } catch (error) {
+    limitations.push(describeFailure('Entradas atuais da revisão', error));
+    return result('INCONCLUSIVE');
+  }
+  const contextHash = computeAgentContextHash(`${options.owner}/${options.repository}`, options.pullRequestNumber, initialPullRequest, initialReviewInputs);
+  evidence.contextHash = contextHash;
   const mergeableState = stringValue(initialPullRequest.mergeable_state);
   if (initialPullRequest.mergeable === false || mergeableState === 'dirty') {
     reasons.push('O Pull Request possui conflitos com a branch base.');
@@ -174,7 +186,7 @@ export async function evaluateMergeReadiness(options: MergeReadinessOptions): Pr
 
   const authorLogin = stringValue(asRecord(initialPullRequest.user)?.login);
   const appLogins = new Set([session.appSlug, session.appSlug ? `${session.appSlug}[bot]` : undefined].filter((login): login is string => Boolean(login)));
-  const codeReview = findCodeReview(reviewList, appLogins, headSha);
+  const codeReview = findCodeReview(reviewList, appLogins, headSha, contextHash);
   evidence.codeReview = codeReview.evidence;
   if (codeReview.status !== 'APPROVED') reasons.push(codeReview.reason);
   const validApprovalCount = countCurrentApprovals(reviewList, headSha, authorLogin);
@@ -183,8 +195,8 @@ export async function evaluateMergeReadiness(options: MergeReadinessOptions): Pr
     reasons.push(`A branch exige ${requiredReviewCount} aprovação(ões) no HEAD atual; foram encontradas ${validApprovalCount}.`);
   }
 
-  const qa = findStructuredReport(reportComments, appLogins, 'qa', headSha);
-  const qualityGate = findStructuredReport(reportComments, appLogins, 'qualityGate', headSha);
+  const qa = findStructuredReport(reportComments, appLogins, 'qa', headSha, contextHash);
+  const qualityGate = findStructuredReport(reportComments, appLogins, 'qualityGate', headSha, contextHash);
   evidence.reports = { qa: qa.evidence, qualityGate: qualityGate.evidence };
   if (qa.status !== 'APPROVED') reasons.push(qa.reason);
   if (qualityGate.status !== 'APPROVED') reasons.push(qualityGate.reason);
@@ -200,6 +212,21 @@ export async function evaluateMergeReadiness(options: MergeReadinessOptions): Pr
   const finalHeadSha = stringValue(asRecord(finalPullRequest.head)?.sha);
   evidence.finalHeadSha = finalHeadSha;
   if (finalHeadSha !== headSha) reasons.push('O HEAD SHA mudou durante a avaliação; as evidências coletadas estão desatualizadas.');
+  if (finalPullRequest.state !== 'open') reasons.push('O Pull Request deixou de estar aberto durante a avaliação.');
+  const finalMergeableState = stringValue(finalPullRequest.mergeable_state);
+  if (finalPullRequest.mergeable === false || finalMergeableState === 'dirty') reasons.push('O Pull Request deixou de estar integrável durante a avaliação.');
+  else if (finalPullRequest.mergeable === null || finalMergeableState === 'unknown') limitations.push('O GitHub não confirmou a mergeabilidade ao final da avaliação.');
+  else if (finalPullRequest.mergeable !== true || finalMergeableState !== 'clean') reasons.push(`O Pull Request não está em estado integrável ao final da avaliação (${finalMergeableState ?? 'desconhecido'}).`);
+  let finalReviewInputs;
+  try {
+    finalReviewInputs = await loadAgentReviewInputs(fetchImpl, `${options.owner}/${options.repository}`, options.pullRequestNumber, finalPullRequest, options.contextToken || token);
+  } catch (error) {
+    limitations.push(describeFailure('Confirmação das entradas da revisão ao final da avaliação', error));
+    return result('INCONCLUSIVE');
+  }
+  const finalContextHash = computeAgentContextHash(`${options.owner}/${options.repository}`, options.pullRequestNumber, finalPullRequest, finalReviewInputs);
+  evidence.finalContextHash = finalContextHash;
+  if (finalContextHash !== contextHash) reasons.push('Os metadados do Pull Request mudaram durante a avaliação; as evidências coletadas estão desatualizadas.');
 
   if (limitations.length > 0) return result('INCONCLUSIVE');
   return result(reasons.length > 0 ? 'BLOCKED' : 'READY_TO_MERGE');
@@ -322,18 +349,20 @@ function summarizeCheckRuns(runs: CheckRun[], sha: string): Array<Record<string,
   return runs.map((run) => ({ name: run.name, headSha: run.head_sha, currentHead: run.head_sha === sha, status: run.status, conclusion: run.conclusion, app: run.app?.slug, appId: run.app?.id }));
 }
 
-function findCodeReview(reviews: Review[], appLogins: Set<string>, sha: string): { status: string; reason: string; evidence: Record<string, unknown> } {
+function findCodeReview(reviews: Review[], appLogins: Set<string>, sha: string, contextHash: string): { status: string; reason: string; evidence: Record<string, unknown> } {
   const appReviews = reviews.filter((review) => appLogins.has(review.user?.login ?? '') && /Code Review\s*[—-]/i.test(review.body ?? ''));
   const chronological = [...appReviews].sort((left, right) => (left.submitted_at ?? '').localeCompare(right.submitted_at ?? ''));
   const latest = chronological.at(-1);
   const laterRejection = reviews.some((review) => review.state === 'CHANGES_REQUESTED'
     && (review.submitted_at ?? '') > (latest?.submitted_at ?? '')
     && review.commit_id === sha);
-  const evidence = latest ? { reviewer: latest.user?.login, state: latest.state, commitSha: latest.commit_id, submittedAt: latest.submitted_at } : { state: 'MISSING' };
+  const hasCurrentContext = Boolean(latest?.body?.startsWith(`${agentReportMarker('codeReview', sha, contextHash)}\n`));
+  const evidence = latest ? { reviewer: latest.user?.login, state: latest.state, commitSha: latest.commit_id, submittedAt: latest.submitted_at, currentContext: hasCurrentContext } : { state: 'MISSING' };
   if (!latest) return { status: 'MISSING', reason: 'Revisão formal do Code Review Agent não encontrada.', evidence };
   if (laterRejection) return { status: 'REJECTED', reason: 'Uma revisão posterior solicitou alterações no HEAD atual.', evidence };
   if (latest.state !== 'APPROVED') return { status: latest.state ?? 'UNKNOWN', reason: `A revisão formal mais recente do Code Review não está aprovada (${latest.state ?? 'sem estado'}).`, evidence };
   if (latest.commit_id !== sha) return { status: 'STALE', reason: 'A aprovação formal do Code Review pertence a um SHA desatualizado.', evidence };
+  if (!hasCurrentContext) return { status: 'STALE', reason: 'A aprovação formal do Code Review pertence a metadados desatualizados do Pull Request.', evidence };
   return { status: 'APPROVED', reason: '', evidence };
 }
 
@@ -346,13 +375,14 @@ function countCurrentApprovals(reviews: Review[], sha: string, authorLogin?: str
   return [...latestByReviewer.entries()].filter(([login, review]) => login !== authorLogin && review.state === 'APPROVED' && review.commit_id === sha).length;
 }
 
-function findStructuredReport(comments: IssueComment[], appLogins: Set<string>, agent: 'qa' | 'qualityGate', sha: string): { status: string; reason: string; evidence: Record<string, unknown> } {
+function findStructuredReport(comments: IssueComment[], appLogins: Set<string>, agent: 'qa' | 'qualityGate', sha: string, contextHash: string): { status: string; reason: string; evidence: Record<string, unknown> } {
   const signature = agent === 'qa' ? '### Codex — QA Agent' : '### Codex — Quality Gate Coordinator';
   const matching = comments.filter((comment) => appLogins.has(comment.user?.login ?? '') && (comment.body ?? '').includes(signature))
     .sort((left, right) => (left.updated_at ?? left.created_at ?? '').localeCompare(right.updated_at ?? right.created_at ?? ''));
   const latest = matching.at(-1);
   if (!latest) return { status: 'MISSING', reason: `Relatório estruturado do ${agent === 'qa' ? 'QA' : 'Quality Gate Coordinator'} ausente.`, evidence: { status: 'MISSING' } };
   const body = latest.body ?? '';
+  const hasCurrentContext = body.startsWith(`${agentReportMarker(agent, sha, contextHash)}\n`);
   const status = body.match(/^\*\*Status:\*\*\s*(.+)$/m)?.[1]?.trim();
   const reportedSha = body.match(/^\*\*Commit:\*\*\s*`([a-f0-9]{40})`$/im)?.[1];
   const evidenceHeading = agent === 'qa'
@@ -361,8 +391,9 @@ function findStructuredReport(comments: IssueComment[], appLogins: Set<string>, 
   const headingMatch = evidenceHeading.exec(body);
   const evidenceText = headingMatch ? body.slice(headingMatch.index + headingMatch[0].length).split(/\n\s*\n/)[0] : '';
   const hasEvidence = /^\s*[-*]\s+\S/m.test(evidenceText);
-  const reportEvidence = { author: latest.user?.login, status: status ?? 'MISSING', commitSha: reportedSha ?? 'MISSING', hasStructuredEvidence: hasEvidence, updatedAt: latest.updated_at ?? latest.created_at };
+  const reportEvidence = { author: latest.user?.login, status: status ?? 'MISSING', commitSha: reportedSha ?? 'MISSING', currentContext: hasCurrentContext, hasStructuredEvidence: hasEvidence, updatedAt: latest.updated_at ?? latest.created_at };
   if (reportedSha !== sha) return { status: 'STALE', reason: `Relatório de ${agent === 'qa' ? 'QA' : 'Quality Gate'} ausente ou associado a outro SHA.`, evidence: reportEvidence };
+  if (!hasCurrentContext) return { status: 'STALE', reason: `Relatório de ${agent === 'qa' ? 'QA' : 'Quality Gate'} pertence a metadados desatualizados do Pull Request.`, evidence: reportEvidence };
   if (status !== 'APPROVED') return { status: status ?? 'MISSING', reason: `Relatório de ${agent === 'qa' ? 'QA' : 'Quality Gate'} não está aprovado.`, evidence: reportEvidence };
   if (!hasEvidence) return { status: 'UNSTRUCTURED', reason: `Relatório de ${agent === 'qa' ? 'QA' : 'Quality Gate'} não contém evidências estruturadas.`, evidence: reportEvidence };
   return { status: 'APPROVED', reason: '', evidence: reportEvidence };

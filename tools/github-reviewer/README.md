@@ -1,8 +1,14 @@
 # CashIn -- DevAgents GitHub Publisher
 
-This local tool publishes agent reports as comments on CashIn pull requests using the `CashIn -- DevAgents` GitHub App. It also retains the existing formal Code Review command. The shared report publisher supports the Quality Gate Coordinator, QA Agent, and PM Agent; their reports appear under the same GitHub App identity with distinct signatures.
+This local tool publishes agent reports as comments on CashIn pull requests using the `CashIn -- DevAgents` GitHub App. It also retains the existing formal Code Review command. The shared report publisher supports the Code Review Agent (for inconclusive reports only), Quality Gate Coordinator, QA Agent, and PM Agent; reports use distinct signatures.
 
 It does not merge pull requests or change GitHub App permissions. The existing formal review flow remains separate from report comments.
+
+## Hosted agent orchestration status
+
+`src/agent-orchestrator.ts` contains the provider-neutral sequencing core for Code Review, QA, and Quality Gate Coordinator. `src/codex-cli-agent.ts` adapts those roles to the Codex CLI, using the signed-in ChatGPT account, a read-only sandbox, and `--disable shell_tool` so the model cannot issue commands on the runner. The workflow runs after successful CI or PR title validation on an internal PR, or through manual dispatch from `master`. PR title validation also re-triggers agents after metadata edits so stale reports can be replaced. Codex jobs run on the self-hosted Windows runner without GitHub App credentials; separate GitHub-hosted jobs publish validated results. It does not merge or modify Jira.
+
+The Codex CLI uses the ChatGPT Plus allowance, not OpenAI API billing. The private repository has a persistent Windows self-hosted runner named `cashin-codex-plus-windows`; the runner must be online and the signed-in Windows account must retain its Codex authentication. Keep one runner/job stream per `CODEX_HOME` so refreshed authentication is not used concurrently. The runner must not execute workflows from fork PRs. App-authored PR comments/reviews are the durable evidence ledger: markers include the full SHA and an input fingerprint; retries reuse terminal results and patch existing comments. Direct prompt-injection patterns fail as `INCONCLUSIVE`, but the heuristic cannot prove model immunity. The workflow never merges; final merge readiness and PM approval remain separate. See [`docs/hosted-agent-orchestration.md`](../../docs/hosted-agent-orchestration.md) for remaining validation. DEV-44 is not complete until the workflow runs successfully and its current evidence passes Merge Readiness.
 
 ## Requirements
 
@@ -26,6 +32,10 @@ GITHUB_REPOSITORY_NAME=CashIn
 ```
 
 The `.env` file is ignored by Git. Keep the `.pem` outside the repository, do not paste it into chat, and do not include it in logs or commits. Set either `GITHUB_APP_PRIVATE_KEY` as a protected runtime secret or use `GITHUB_APP_PRIVATE_KEY_PATH` for a local PEM file. The report publisher uses `@octokit/auth-app` to authenticate as the app, discover its repository installation when necessary, and create short-lived installation tokens in memory. Tokens are never written to files or logs.
+
+## GitHub Actions secrets
+
+The Merge Readiness workflow reads the App credentials from repository Actions secrets named `CASHIN_APP_ID`, `CASHIN_APP_INSTALLATION_ID`, and `CASHIN_APP_PRIVATE_KEY`. GitHub reserves secret names beginning with `GITHUB_`, so those names intentionally differ from the local `.env` variables above.
 
 Install the package dependencies from this directory:
 
@@ -94,7 +104,7 @@ The command prints one JSON object and uses these exit codes:
 | `BLOCKED` | 1 | A required check, review, report, protection rule, or PR condition failed or is missing. |
 | `INCONCLUSIVE` | 2 | GitHub data could not be confirmed, including permission errors and API failures. |
 
-The gate verifies current-head CI and Sonar checks, required contexts from branch protection/rulesets, formal Code Review approval, structured QA and Quality Gate Coordinator reports authored by this GitHub App, unresolved review threads, and whether the PR head changed during evaluation. Its structured reports must include the exact agent signature, `**Status:** APPROVED`, a full 40-character `**Commit:**` SHA, and a non-empty bullet list under `**Verificações de QA:**` (QA) or `**Checks verificados:**` (Quality Gate Coordinator). Any missing or stale evidence fails closed.
+The gate verifies current-head CI and Sonar checks, required contexts from branch protection/rulesets, formal Code Review approval, structured QA and Quality Gate Coordinator reports authored by this GitHub App, unresolved review threads, and whether the PR HEAD, base commit, metadata, exact diff, check summary, or `AGENTS.md` instructions changed during evaluation. Agent evidence must include a marker bound to the full HEAD SHA and the current SHA-256 context fingerprint, in addition to the exact signature, `**Status:** APPROVED`, full 40-character `**Commit:**`, and a non-empty bullet list under `**Verificações de QA:**` (QA) or `**Checks verificados:**` (Quality Gate Coordinator). Any missing or stale evidence fails closed.
 
 GitHub App access required for evaluation:
 
@@ -124,7 +134,7 @@ Example JSON shape:
 
 `.github/workflows/merge-readiness.yml` invokes the same evaluator from the trusted `master` branch. It never checks out or runs code from a pull request, and it does not merge or change Jira. The workflow evaluates only open pull requests targeting `master`.
 
-It runs after a PR opens, reopens, is edited, is synchronized, or becomes ready for review. It also runs when the `CI` workflow completes, after the GitHub App posts or edits a recognized QA, Quality Gate, PM, or Code Review report, and when a user manually dispatches the workflow with a PR number. New, edited, or dismissed formal reviews run `.github/workflows/pr-review-signal.yml`, which has no secrets, no token permissions, and no checkout; its completion triggers the trusted evaluator through `workflow_run`. The evaluator independently reads the formal review record. The report publisher must use the GitHub App installation token. Events created with `GITHUB_TOKEN` do not start another workflow.
+It runs after a PR opens, reopens, is edited, is synchronized, or becomes ready for review. It also runs when the `CI` or `PR title` workflow completes, after the GitHub App posts or edits a recognized QA, Quality Gate, PM, or Code Review report, and when a user manually dispatches the workflow with a PR number. New, edited, or dismissed formal reviews run `.github/workflows/pr-review-signal.yml`, which has no secrets, no token permissions, and no checkout; its completion triggers the trusted evaluator through `workflow_run`. The evaluator independently reads the formal review record. The report publisher must use the GitHub App installation token. Events created with `GITHUB_TOKEN` do not start another workflow.
 
 For `workflow_run`, the workflow uses the single PR association included in the event payload, then re-reads the PR from GitHub and confirms it is still open and targets `master`. The evaluator always reads the current PR HEAD and verifies it again after collecting evidence; it does not assume the completed CI or review signal belongs to the latest SHA. Ambiguous associations produce `INCONCLUSIVE`. Events that do not map to an eligible PR are summarized as skipped. API failures produce `INCONCLUSIVE` when a PR SHA is known.
 
@@ -138,11 +148,11 @@ Set these repository Actions secrets:
 
 | Secret | Value |
 | --- | --- |
-| `GITHUB_APP_ID` | App ID for `CashIn -- DevAgents` |
-| `GITHUB_APP_INSTALLATION_ID` | Installation ID for the CashIn repository |
-| `GITHUB_APP_PRIVATE_KEY` | Full PEM private key, stored as a secret (newlines may be escaped as `\\n`) |
+| `CASHIN_APP_ID` | App ID for `CashIn -- DevAgents` |
+| `CASHIN_APP_INSTALLATION_ID` | Installation ID for the CashIn repository |
+| `CASHIN_APP_PRIVATE_KEY` | Full PEM private key, stored as a secret (newlines may be escaped as `\\n`) |
 
-The workflow uses the existing repository variable `CASHIN_APP_BOT_LOGIN` to filter evidence comments. The `GITHUB_TOKEN` permissions are limited to repository contents read, pull requests read, and commit statuses write. The GitHub App still needs the read permissions listed above; no permissions or secrets are changed by this implementation.
+The workflow uses the existing repository variable `CASHIN_APP_BOT_LOGIN` to filter evidence comments. The local CLI continues to use `GITHUB_APP_*` names in `.env`; only GitHub Actions secrets use the `CASHIN_APP_*` names above. Read-only review inputs (diff, check summaries, and `AGENTS.md` at the PR base SHA) use the workflow `GITHUB_TOKEN`, which needs `contents: read`, `pull-requests: read`, and `checks: read`; Merge Readiness also needs `statuses: write`. The App installation token is used for formal reviews and comments. No new GitHub App permissions or secrets are required by this change.
 
 If the App secrets are missing, the workflow reports `INCONCLUSIVE` instead of treating the gate as approved. If GitHub returns 403 for checks, statuses, branch protection, or rulesets, the workflow also reports `INCONCLUSIVE`. This repository has previously received 403 responses for branch protection and rulesets. Until the App can read these resources and the current private-repository plan exposes the required policy data, `READY_TO_MERGE` cannot be confirmed. No merge is attempted by this workflow.
 
