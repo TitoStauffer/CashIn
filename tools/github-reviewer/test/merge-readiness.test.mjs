@@ -22,6 +22,7 @@ function fixture(overrides = {}) {
     comments: [report('Codex — QA Agent', 'Verificações de QA'), report('Codex — Quality Gate Coordinator', 'Checks verificados')],
     protectionStatus: 200,
     requiredCheckAppId: null,
+    requiredContexts: ['PR title'],
     unresolved: false,
     shaChanges: false,
     ...overrides,
@@ -57,7 +58,7 @@ function fixture(overrides = {}) {
       if (data.protectionStatus !== 200) return response({}, data.protectionStatus);
       const requiredStatusChecks = data.requiredCheckAppId
         ? { checks: [{ context: 'PR title', app_id: data.requiredCheckAppId }] }
-        : { contexts: ['PR title'] };
+        : { contexts: data.requiredContexts };
       return response({ required_status_checks: requiredStatusChecks, required_pull_request_reviews: { required_approving_review_count: 1, dismiss_stale_reviews: true } });
     }
     if (parsed.pathname === '/repos/owner/repo/rulesets') return response([]);
@@ -88,6 +89,33 @@ test('returns READY_TO_MERGE only when protections, checks, formal review and st
   assert.equal(result.pullRequest.headSha, sha);
   assert.deepEqual(result.reasons, []);
   assert.ok(subject.requests.every((request) => request.method === 'GET' || request.path === '/graphql'));
+});
+
+test('does not create a circular dependency on the Merge Readiness context', async () => {
+  const subject = fixture({ requiredContexts: ['PR title', 'Merge Readiness'] });
+  const result = await subject.evaluate();
+
+  assert.equal(result.status, 'READY_TO_MERGE');
+  assert.deepEqual(result.evidence.requiredChecks.map((check) => check.context), ['PR title']);
+});
+
+test('blocks when the caller requires a different base branch', async () => {
+  const result = await evaluateMergeReadiness({
+    appId: '123', privateKey: 'test-key', owner: 'owner', repository: 'repo', installationId: '456',
+    pullRequestNumber: 7, requiredBaseBranch: 'master',
+    fetchImpl: async (url) => {
+      const parsed = new URL(url);
+      if (parsed.pathname === '/app') return response({ slug: 'cashin-devagents' });
+      if (parsed.pathname === '/repos/owner/repo/pulls/7') {
+        return response({ state: 'open', head: { sha }, base: { ref: 'develop' }, mergeable: true, mergeable_state: 'clean' });
+      }
+      throw new Error(`Unexpected request: ${parsed.pathname}`);
+    },
+    authFactory: () => async () => ({ token: 'simulated-app-token' }),
+  });
+
+  assert.equal(result.status, 'BLOCKED');
+  assert.match(result.reasons.join(' '), /destino a branch master/);
 });
 
 test('blocks when a QA report belongs to a stale SHA', async () => {

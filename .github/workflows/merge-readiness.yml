@@ -1,0 +1,72 @@
+name: Merge Readiness
+
+on:
+  pull_request_target: # zizmor: ignore[dangerous-triggers] — required for fork PR events; this job uses trusted master code only and never checks out or runs PR code.
+    branches: [master]
+    types: [opened, edited, reopened, synchronize, ready_for_review]
+  workflow_run:
+    workflows: [CI, PR Review Signal]
+    types: [completed]
+  issue_comment:
+    types: [created, edited]
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: Pull Request number to evaluate
+        required: true
+        type: string
+
+permissions: {}
+
+concurrency:
+  group: merge-readiness-${{ github.event.pull_request.number || github.event.issue.number || github.event.workflow_run.pull_requests[0].number || inputs.pr_number || github.event.workflow_run.head_sha || github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  evaluate:
+    name: Evaluate Merge Readiness
+    if: >-
+      github.event_name != 'issue_comment' ||
+      (github.event.issue.pull_request &&
+      github.event.comment.user.login == vars.CASHIN_APP_BOT_LOGIN &&
+      (contains(github.event.comment.body, '### Codex — Quality Gate Coordinator') ||
+      contains(github.event.comment.body, '### Codex — QA Agent') ||
+      contains(github.event.comment.body, '### Codex — PM Agent') ||
+      contains(github.event.comment.body, '### Code Review —') ||
+      contains(github.event.comment.body, '### Code Review -')))
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pull-requests: read
+      statuses: write
+
+    steps:
+      - name: Checkout trusted master code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: master
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "24.22.0"
+
+      - name: Install trusted gate dependencies
+        working-directory: tools/github-reviewer
+        run: npm ci
+
+      - name: Build gate
+        working-directory: tools/github-reviewer
+        run: npm run build
+
+      - name: Evaluate and publish Merge Readiness
+        working-directory: tools/github-reviewer
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GITHUB_APP_ID: ${{ secrets.GITHUB_APP_ID }}
+          GITHUB_APP_INSTALLATION_ID: ${{ secrets.GITHUB_APP_INSTALLATION_ID }}
+          GITHUB_APP_PRIVATE_KEY: ${{ secrets.GITHUB_APP_PRIVATE_KEY }}
+          CASHIN_APP_BOT_LOGIN: ${{ vars.CASHIN_APP_BOT_LOGIN }}
+        run: node dist/workflow-readiness-cli.js

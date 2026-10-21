@@ -25,6 +25,7 @@ export interface MergeReadinessResult {
 
 export interface MergeReadinessOptions extends GitHubApiClientOptions {
   pullRequestNumber: number;
+  requiredBaseBranch?: string;
   now?: () => Date;
 }
 
@@ -87,6 +88,10 @@ export async function evaluateMergeReadiness(options: MergeReadinessOptions): Pr
     limitations.push('Não foi possível identificar a branch base do Pull Request.');
     return result('INCONCLUSIVE');
   }
+  if (options.requiredBaseBranch && baseBranch !== options.requiredBaseBranch) {
+    reasons.push(`O Pull Request deve ter como destino a branch ${options.requiredBaseBranch}.`);
+    return result('BLOCKED');
+  }
   const mergeableState = stringValue(initialPullRequest.mergeable_state);
   if (initialPullRequest.mergeable === false || mergeableState === 'dirty') {
     reasons.push('O Pull Request possui conflitos com a branch base.');
@@ -146,7 +151,8 @@ export async function evaluateMergeReadiness(options: MergeReadinessOptions): Pr
   evidence.rulesets = rulesetList.map((ruleset) => ({ id: ruleset.id, name: ruleset.name, enforcement: ruleset.enforcement, target: ruleset.target }));
 
   const applicableRulesets = rulesetList.filter((ruleset) => rulesetAppliesToBranch(ruleset, baseBranch, defaultBranch));
-  const requiredContexts = collectRequiredContexts(branchRules, applicableRulesets, baseBranch, defaultBranch);
+  const requiredContexts = collectRequiredContexts(branchRules, applicableRulesets, baseBranch, defaultBranch)
+    .filter((requirement) => requirement.context !== 'Merge Readiness');
   const requiredReviewCount = getRequiredReviewCount(branchRules, applicableRulesets);
   evidence.requiredChecks = requiredContexts;
   evidence.requiredApprovals = requiredReviewCount;

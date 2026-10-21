@@ -9,7 +9,8 @@
     "test": "npm run build && node --test test/*.test.mjs",
     "review": "node src/cli.mjs",
     "publish-report": "npm run build && node dist/report-cli.js",
-    "readiness": "npm run build && node dist/readiness-cli.js"
+    "readiness": "npm run build && node dist/readiness-cli.js",
+    "workflow-readiness": "npm run build && node dist/workflow-readiness-cli.js"
   },
   "engines": {
     "node": ">=22.12"

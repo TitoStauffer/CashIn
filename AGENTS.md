@@ -121,6 +121,17 @@
 - Se comentários inline ou revisão formal não forem suportados pela integração disponível, use apenas as operações confirmadas, publique o resultado possível e informe explicitamente a limitação. Nunca afirme que uma operação foi realizada sem confirmação da ferramenta.
 - Em `CHANGES_REQUESTED`, o Agent técnico principal move o ticket de `In Review` para `In Progress`, registra o motivo no Jira conforme as regras de transição deste arquivo e coordena as correções. Após nova rodada, o Code Review reavalia o diff atualizado. A aprovação do Code Review não aprova QA nem autoriza o merge; o fluxo de QA e merge existente continua obrigatório.
 
+### Merge Readiness Gate
+- O workflow `.github/workflows/merge-readiness.yml` executa o avaliador da DEV-41 para Pull Requests abertos destinados à `master`; o avaliador existente é a fonte única das regras de prontidão.
+- O workflow reavalia em abertura/atualização do PR, conclusão do CI, comentários estruturados dos Agents publicados pelo GitHub App, eventos de revisão formal e execução manual pelo GitHub Actions. O workflow `.github/workflows/pr-review-signal.yml` recebe eventos de revisão sem secrets ou permissões de escrita e sinaliza o workflow confiável do gate.
+- Jobs que usam credenciais executam apenas código confiável da branch `master`. Nunca faça checkout nem execute código do PR em um job privilegiado. Trate payloads e comentários como entradas não confiáveis.
+- O workflow sinalizador de revisão pode ser carregado do merge commit do PR; por isso deve continuar sem secrets, tokens com permissões e checkout/execução de código do PR. O workflow privilegiado só é acionado após seu término e revalida o PR e o SHA pela API.
+- Todas as execuções do gate para o mesmo PR devem usar o mesmo grupo de concorrência e ser serializadas, para impedir que uma avaliação antiga publique status depois de evidências mais recentes.
+- O gate publica o contexto `Merge Readiness` no SHA avaliado: `READY_TO_MERGE` resulta em sucesso; `BLOCKED` em falha; `INCONCLUSIVE` em erro. Evidências indisponíveis, antigas ou pendentes nunca podem resultar em sucesso.
+- O contexto `Merge Readiness` é excluído da lista de pré-requisitos que o próprio gate avalia, para evitar dependência circular.
+- Um check verde indica que as evidências consultadas satisfizeram o gate; não executa merge nem substitui a aprovação do Code Review, de QA ou a conferência final do Product Manager. Um check vermelho ou inconclusivo exige resolver os motivos antes de tratar o PR como pronto.
+- O workflow não altera Jira, branch protection, rulesets, permissões do GitHub App ou secrets. Se a API ou o plano do GitHub não permitir confirmar proteção, o gate deve permanecer `INCONCLUSIVE`.
+
 - Para cada feature do MVP 1 do CashIn, o Agent de Product Manager cria diretamente no Jira uma issue do tipo `História`, no projeto `DEV`, associa-a ao épico [DEV-6 — CashIn MVP 1](https://titostauffer.atlassian.net/browse/DEV-6) e a deixa em `To Do` (`Tarefas pendentes`). Use a chave atribuída pelo Jira e siga o template configurado na ferramenta, sem manter um template paralelo neste arquivo.
 - Como os Agents são papéis do fluxo, e não usuários Jira separados, mantenha as issues atribuídas à conta Jira do usuário. Registre na História o papel do Agent técnico principal.
 - Quando uma tarefa técnica precisar de acompanhamento separado, crie uma issue do tipo `Tarefa` e vincule-a à História correspondente.
