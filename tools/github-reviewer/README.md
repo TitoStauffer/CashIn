@@ -122,7 +122,29 @@ Example JSON shape:
 
 ### GitHub Actions integration
 
-The CLI is ready to be called by a future workflow, but no workflow currently invokes it. A future job can run `npm ci` and `npm run readiness -- --pr "$PR_NUMBER"`, provide the App credentials through GitHub Actions secrets, and fail the job for exit codes 1 or 2. The App must have the read permissions above. Reports from QA and Quality Gate Coordinator must already exist for the exact PR HEAD; this gate does not launch those agents. Keep any future merge step separate, preserve GitHub branch protection, and require an explicit Product Manager decision after the gate reports `READY_TO_MERGE`.
+`.github/workflows/merge-readiness.yml` invokes the same evaluator from the trusted `master` branch. It never checks out or runs code from a pull request, and it does not merge or change Jira. The workflow evaluates only open pull requests targeting `master`.
+
+It runs after a PR opens, reopens, is edited, is synchronized, or becomes ready for review. It also runs when the `CI` workflow completes, after the GitHub App posts or edits a recognized QA, Quality Gate, PM, or Code Review report, and when a user manually dispatches the workflow with a PR number. The formal Code Review Agent's report comment is the re-evaluation signal for its formal review; the evaluator independently reads the formal review record. The report publisher must use the GitHub App installation token. Events created with `GITHUB_TOKEN` do not start another workflow.
+
+For `workflow_run`, the workflow resolves the PR from the CI commit SHA using the GitHub API, then confirms the PR is still open, targets `master`, and points to that SHA. Events that do not map to an eligible PR are summarized as skipped. API failures produce `INCONCLUSIVE` when a PR SHA is known.
+
+The evaluator publishes the `Merge Readiness` commit status directly on the evaluated HEAD SHA. `READY_TO_MERGE` maps to `success`, `BLOCKED` to `failure`, and `INCONCLUSIVE` to `error`. The job summary includes the SHA, evidence, reasons, and limitations. The evaluator excludes its own `Merge Readiness` context from required-check dependencies to avoid a circular check. The status is a readiness report; GitHub prevents merges only if the repository has configured an applicable branch protection rule or ruleset that requires it.
+
+#### GitHub Actions configuration
+
+Set these repository Actions secrets:
+
+| Secret | Value |
+| --- | --- |
+| `GITHUB_APP_ID` | App ID for `CashIn -- DevAgents` |
+| `GITHUB_APP_INSTALLATION_ID` | Installation ID for the CashIn repository |
+| `GITHUB_APP_PRIVATE_KEY` | Full PEM private key, stored as a secret (newlines may be escaped as `\\n`) |
+
+The workflow uses the existing repository variable `CASHIN_APP_BOT_LOGIN` to filter evidence comments. The `GITHUB_TOKEN` permissions are limited to repository contents read, pull requests read, and commit statuses write. The GitHub App still needs the read permissions listed above; no permissions or secrets are changed by this implementation.
+
+If the App secrets are missing, the workflow reports `INCONCLUSIVE` instead of treating the gate as approved. If GitHub returns 403 for checks, statuses, branch protection, or rulesets, the workflow also reports `INCONCLUSIVE`. This repository has previously received 403 responses for branch protection and rulesets. Until the App can read these resources and the current private-repository plan exposes the required policy data, `READY_TO_MERGE` cannot be confirmed. No merge is attempted by this workflow.
+
+To run it manually, open **Actions → Merge Readiness → Run workflow**, enter the PR number, and start the run. To validate the real event automation, open a later PR after this workflow is merged into `master`; a workflow added only on its own feature branch cannot serve as the trusted workflow source for `pull_request_target` or `workflow_run`.
 
 ## Verify
 
