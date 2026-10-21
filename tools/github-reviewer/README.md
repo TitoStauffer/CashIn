@@ -78,6 +78,52 @@ The body must contain `Code Review — APPROVED` or `Code Review — CHANGES_REQ
 
 The formal review command is unchanged and remains responsible only for Code Review decisions. It does not make the review decision. Never submit `APPROVED` when the Code Review agent found a blocking issue or could not complete its analysis. QA remains independent and required by the project workflow.
 
+## Evaluate merge readiness
+
+The read-only Merge Readiness Gate checks a specific PR and its current HEAD. It does not merge, post comments, or change Jira. Run it with an explicit PR number:
+
+```powershell
+npm run readiness -- --pr 26
+```
+
+The command prints one JSON object and uses these exit codes:
+
+| Status | Exit code | Meaning |
+| --- | ---: | --- |
+| `READY_TO_MERGE` | 0 | All required evidence was confirmed for the current HEAD. This is a recommendation; it does not merge. |
+| `BLOCKED` | 1 | A required check, review, report, protection rule, or PR condition failed or is missing. |
+| `INCONCLUSIVE` | 2 | GitHub data could not be confirmed, including permission errors and API failures. |
+
+The gate verifies current-head CI and Sonar checks, required contexts from branch protection/rulesets, formal Code Review approval, structured QA and Quality Gate Coordinator reports authored by this GitHub App, unresolved review threads, and whether the PR head changed during evaluation. Its structured reports must include the exact agent signature, `**Status:** APPROVED`, a full 40-character `**Commit:**` SHA, and a non-empty bullet list under `**Verificações de QA:**` (QA) or `**Checks verificados:**` (Quality Gate Coordinator). Any missing or stale evidence fails closed.
+
+GitHub App access required for evaluation:
+
+- Repository metadata: read.
+- Pull requests: read (including formal reviews).
+- Checks and commit statuses: read.
+- Issue comments: read.
+- Repository administration: read branch protection and rulesets.
+- GraphQL access to pull request review threads.
+
+The code-reviewer App token is short-lived and exists only in memory. If GitHub returns 403 or the repository plan/API does not expose branch protection or rulesets, the gate returns `INCONCLUSIVE`; it never assumes that protection is enabled. No permissions are changed by this tool.
+
+Example JSON shape:
+
+```json
+{
+  "status": "BLOCKED",
+  "pullRequest": { "number": 26, "headSha": "<current-head-sha>" },
+  "evaluatedAt": "<ISO-8601 timestamp>",
+  "evidence": {},
+  "reasons": [],
+  "limitations": []
+}
+```
+
+### GitHub Actions integration
+
+The CLI is ready to be called by a future workflow, but no workflow currently invokes it. A future job can run `npm ci` and `npm run readiness -- --pr "$PR_NUMBER"`, provide the App credentials through GitHub Actions secrets, and fail the job for exit codes 1 or 2. The App must have the read permissions above. Reports from QA and Quality Gate Coordinator must already exist for the exact PR HEAD; this gate does not launch those agents. Keep any future merge step separate, preserve GitHub branch protection, and require an explicit Product Manager decision after the gate reports `READY_TO_MERGE`.
+
 ## Verify
 
 ```powershell
