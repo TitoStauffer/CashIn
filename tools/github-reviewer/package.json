@@ -8,7 +8,8 @@
     "build": "tsc -p tsconfig.json",
     "test": "npm run build && node --test test/*.test.mjs",
     "review": "node src/cli.mjs",
-    "publish-report": "npm run build && node dist/report-cli.js"
+    "publish-report": "npm run build && node dist/report-cli.js",
+    "readiness": "npm run build && node dist/readiness-cli.js"
   },
   "engines": {
     "node": ">=22.12"
