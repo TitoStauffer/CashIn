@@ -220,7 +220,7 @@ Crie estas **Actions variables**:
 | `JIRA_BASE_URL` | URL HTTPS do site, por exemplo `https://titostauffer.atlassian.net` |
 | `GITHUB_APP_BOT_LOGIN` | Login do bot que publica os relatórios e a revisão formal, por exemplo `cashin-devagents[bot]` |
 
-O `GITHUB_TOKEN` é fornecido pelo GitHub Actions e tem permissões de leitura para PRs, comentários e checks. As credenciais ficam disponíveis somente no passo que executa o processador, depois da instalação das dependências. Cada check é conferido pela identidade do provedor esperado (`github-actions` ou `sonarqubecloud`); um check com o mesmo nome vindo de outro provedor bloqueia o encerramento. O workflow não usa a chave privada do GitHub App. A conta Jira precisa de permissão para visualizar a issue, executar a transição de workflow, comentar e consultar/gravar propriedades da issue.
+O `GITHUB_TOKEN` é fornecido pelo GitHub Actions e tem permissões de leitura para PRs, comentários e checks. Dependências são instaladas e o código é compilado antes de disponibilizar credenciais; somente o passo que executa o artefato compilado recebe os secrets. Cada check é conferido pela identidade do provedor esperado (`github-actions` ou `sonarqubecloud`); um check com o mesmo nome vindo de outro provedor bloqueia o encerramento. O workflow não usa a chave privada do GitHub App. A conta Jira precisa de permissão para visualizar a issue, executar a transição de workflow, comentar e consultar/gravar propriedades da issue.
 
 Os nomes dos checks são uma lista explícita em `src/post-merge/service.ts`. Atualize-a junto com o workflow quando nomes de jobs/checks forem alterados. A automação verifica as evidências no SHA do PR; ela não presume que branch protection ou rulesets estejam habilitados.
 

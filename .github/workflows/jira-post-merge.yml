@@ -41,8 +41,11 @@ jobs:
       - name: Install dispatcher dependencies
         run: npm ci
 
+      - name: Build dispatcher without credentials
+        run: npm run build
+
       - name: Close associated Jira issue
-        run: npm run post-merge
+        run: node dist/post-merge-cli.js
         env:
           GITHUB_TOKEN: ${{ github.token }}
           GITHUB_REPOSITORY: ${{ github.repository }}
