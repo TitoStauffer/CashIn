@@ -11,7 +11,8 @@
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.test.json",
     "test": "tsx --test test/*.test.ts",
-    "dispatcher": "node dist/cli.js"
+    "dispatcher": "node dist/cli.js",
+    "post-merge": "npm run build && node dist/post-merge-cli.js"
   },
   "engines": {
     "node": ">=22.12"

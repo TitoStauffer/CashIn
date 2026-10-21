@@ -20,8 +20,15 @@ export interface JiraIssue {
   fields: Record<string, unknown> & {
     status?: JiraStatus;
     summary?: string;
+    project?: { key?: string };
+    issuetype?: { name?: string };
     issuelinks?: JiraIssueLink[];
   };
+}
+
+export interface JiraComment {
+  id: string;
+  body: unknown;
 }
 
 export interface JiraTransition {
@@ -52,6 +59,7 @@ export interface JiraApi {
   getTransitions(key: string): Promise<JiraTransition[]>;
   transitionIssue(key: string, transitionId: string): Promise<void>;
   addComment(key: string, text: string): Promise<void>;
+  listComments(key: string): Promise<JiraComment[]>;
   setIssueProperty(key: string, propertyKey: string, value: unknown): Promise<void>;
   getIssueProperty(key: string, propertyKey: string): Promise<unknown | undefined>;
   listFields(): Promise<JiraField[]>;
@@ -135,6 +143,21 @@ export class JiraClient implements JiraApi {
 
   async addComment(key: string, text: string): Promise<void> {
     await this.request("POST", `/rest/api/3/issue/${encodeURIComponent(key)}/comment`, { body: textToAdf(text) });
+  }
+
+  async listComments(key: string): Promise<JiraComment[]> {
+    const comments: JiraComment[] = [];
+    for (let startAt = 0; startAt < 10_000; startAt += 100) {
+      const query = new URLSearchParams({ startAt: String(startAt), maxResults: "100" });
+      const result = await this.request<{ comments?: JiraComment[]; total?: number }>(
+        "GET",
+        `/rest/api/3/issue/${encodeURIComponent(key)}/comment?${query}`
+      );
+      const page = Array.isArray(result.comments) ? result.comments : [];
+      comments.push(...page);
+      if (page.length < 100 || (typeof result.total === "number" && comments.length >= result.total)) return comments;
+    }
+    throw new Error("Jira comment pagination exceeded the supported limit.");
   }
 
   async setIssueProperty(key: string, propertyKey: string, value: unknown): Promise<void> {
