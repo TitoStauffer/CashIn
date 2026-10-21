@@ -132,6 +132,15 @@
 - Um check verde indica que as evidências consultadas satisfizeram o gate; não executa merge nem substitui a aprovação do Code Review, de QA ou a conferência final do Product Manager. Um check vermelho ou inconclusivo exige resolver os motivos antes de tratar o PR como pronto.
 - O workflow não altera Jira, branch protection, rulesets, permissões do GitHub App ou secrets. Se a API ou o plano do GitHub não permitir confirmar proteção, o gate deve permanecer `INCONCLUSIVE`.
 
+### Orquestração hospedada de agentes de qualidade
+- A política provider-neutral de sequência está em `tools/github-reviewer/src/agent-orchestrator.ts`; os contratos de ativação e suas limitações estão em `docs/hosted-agent-orchestration.md`.
+- A existência dessa política e de testes com adapters simulados não significa que os agentes estejam executando em hospedagem. Só declare automação ativa após verificar uma execução real em GitHub Actions.
+- Sem provedor e credenciais aprovados, não faça chamadas faturáveis, não simule resultados reais e não registre `APPROVED`; mantenha a execução bloqueada ou `INCONCLUSIVE`.
+- A sequência obrigatória é CI e Sonar aprovados no SHA atual, Code Review, registro da revisão formal, QA e Quality Gate Coordinator. Cada etapa e evidência precisa ser associada ao mesmo repositório, PR, SHA e identificador de execução.
+- Releia o HEAD entre as etapas. Se o SHA mudar, descarte a evidência antiga e interrompa as etapas dependentes. QA não começa sem aprovação formal de Code Review; o Coordinator não começa sem QA aprovado.
+- Qualquer integração hospedada deve usar código confiável, nunca executar o código do PR com credenciais privilegiadas, aplicar concorrência e idempotência duráveis, limitar retries/timeouts e permitir recuperação/cancelamento sem duplicar aprovações ou comentários.
+- A orquestração de agentes não faz merge. A DEV-43 continua como fonte determinística de prontidão; a decisão final de merge segue as aprovações e verificações obrigatórias descritas neste arquivo.
+
 - Para cada feature do MVP 1 do CashIn, o Agent de Product Manager cria diretamente no Jira uma issue do tipo `História`, no projeto `DEV`, associa-a ao épico [DEV-6 — CashIn MVP 1](https://titostauffer.atlassian.net/browse/DEV-6) e a deixa em `To Do` (`Tarefas pendentes`). Use a chave atribuída pelo Jira e siga o template configurado na ferramenta, sem manter um template paralelo neste arquivo.
 - Como os Agents são papéis do fluxo, e não usuários Jira separados, mantenha as issues atribuídas à conta Jira do usuário. Registre na História o papel do Agent técnico principal.
 - Quando uma tarefa técnica precisar de acompanhamento separado, crie uma issue do tipo `Tarefa` e vincule-a à História correspondente.

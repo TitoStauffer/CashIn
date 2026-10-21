@@ -25,6 +25,33 @@ defaults:
     shell: bash
 
 jobs:
+  github-reviewer:
+    name: GitHub Reviewer
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: tools/github-reviewer
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: tools/github-reviewer/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build and test GitHub integration tools
+        run: npm test
+
   api:
     name: API
     runs-on: ubuntu-24.04

@@ -4,6 +4,12 @@ This local tool publishes agent reports as comments on CashIn pull requests usin
 
 It does not merge pull requests or change GitHub App permissions. The existing formal review flow remains separate from report comments.
 
+## Hosted agent orchestration status
+
+`src/agent-orchestrator.ts` contains the provider-neutral sequencing core for Code Review, QA, and Quality Gate Coordinator. It checks current CI/Sonar evidence, pins all stages to one SHA, requires a formal Code Review decision before QA, and fails closed on stale evidence or adapter errors. It accepts infrastructure adapters; it does not itself call a model or start an agent.
+
+No hosted agent provider is currently configured. Per the DEV-44 cost decision, do not make billable model calls or configure billing. The core's automated tests use fake adapters and do not establish that the hosted workflow is operational. See [`docs/hosted-agent-orchestration.md`](../../docs/hosted-agent-orchestration.md) for the adapter contract, security boundaries, and activation checklist. DEV-44 is not complete until a real hosted execution is validated.
+
 ## Requirements
 
 - Node.js 22.12 or newer.
