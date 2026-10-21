@@ -34,7 +34,7 @@ const navigationGroups: { id: string; label: string; items: NavigationItem[] }[]
     label: 'Cadastros gerais',
     items: [
       { href: '/categories', label: 'Categorias', icon: '▤', key: 'categories' },
-      { label: 'Cartões e faturas', icon: '▣', key: 'credit-cards' },
+      { href: '/credit-cards', label: 'Cartões e faturas', icon: '▣', key: 'credit-cards' },
       { href: '/payment-methods', label: 'Formas de pagamento', icon: '◉', key: 'payment-methods' },
     ],
   },
@@ -197,15 +197,7 @@ export function FinancialSidebar({ activePage, userEmail, isLoggingOut, onLogout
                 <span className="financial-sidebar__group-chevron" aria-hidden="true">{expanded ? '⌄' : '›'}</span>
               </button>
               <div className="financial-sidebar__group-items" id={`financial-navigation-${group.id}`} hidden={!expanded}>
-                {group.items.map((item) => item.href
-                  ? <SidebarLink key={item.key} item={item} activePage={activePage} isCollapsed={isCollapsed} onNavigate={() => setIsMobileMenuOpen(false)} />
-                  : (
-                    <span className="financial-sidebar__link financial-sidebar__link--disabled" key={item.key} aria-disabled="true" title={`${item.label} — em breve`}>
-                      <span className="financial-sidebar__icon" aria-hidden="true">{item.icon}</span>
-                      <span className="financial-sidebar__label">{item.label}</span>
-                      <span className="financial-sidebar__coming-soon">Em breve</span>
-                    </span>
-                  ))}
+                {group.items.map((item) => <SidebarLink key={item.key} item={item} activePage={activePage} isCollapsed={isCollapsed} onNavigate={() => setIsMobileMenuOpen(false)} />)}
               </div>
             </section>
           )

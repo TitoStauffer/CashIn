@@ -7,6 +7,7 @@ import { expensesApi } from './expensesApi'
 import { paymentMethodsApi } from '../paymentMethods/paymentMethodsApi'
 import { WalletProvider } from '../wallets/WalletContext'
 import { walletApi } from '../wallets/walletApi'
+import { creditCardsApi } from '../creditCards/creditCardsApi'
 
 const category = { id: 'expense-category', name: 'Moradia', nature: 'expense' as const, subcategories: [] }
 const expense = {
@@ -38,6 +39,7 @@ describe('ExpensesPage currency input', () => {
     vi.spyOn(walletApi, 'list').mockResolvedValue({ items: [personalWallet] })
     vi.spyOn(expensesApi, 'list').mockResolvedValue({ items: [expense] })
     vi.spyOn(paymentMethodsApi, 'list').mockResolvedValue({ items: [] })
+    vi.spyOn(creditCardsApi, 'list').mockResolvedValue({ items: [] })
     vi.spyOn(expensesApi, 'create').mockResolvedValue(expense)
     vi.spyOn(expensesApi, 'update').mockResolvedValue(expense)
   })
@@ -141,5 +143,19 @@ describe('ExpensesPage currency input', () => {
     await user.click(screen.getByRole('button', { name: 'Editar despesa Aluguel' }))
     expect(screen.getByRole('option', { name: 'Cartão antigo (inativa)' })).toBeVisible()
     expect(screen.getByLabelText(/Forma de pagamento/)).toHaveValue('old-card')
+  })
+
+  it('requires an active credit card when the selected payment method is credit', async () => {
+    const user = userEvent.setup()
+    vi.mocked(paymentMethodsApi.list).mockResolvedValue({ items: [{ id: 'credit', name: 'Crédito', nature: 'credit_card', isActive: true }] })
+    vi.mocked(creditCardsApi.list).mockResolvedValue({ items: [{ id: 'card-1', nickname: 'Principal', closingDay: 10, dueDay: 17, isActive: true }] })
+    await renderPage()
+    await user.click(await screen.findByRole('button', { name: /Nova despesa/ }))
+    await user.type(screen.getByLabelText('Valor *'), '250,00')
+    await user.selectOptions(screen.getByLabelText(/Forma de pagamento/), 'credit')
+    expect(screen.getByLabelText('Cartão de crédito *')).toBeRequired()
+    await user.selectOptions(screen.getByLabelText('Cartão de crédito *'), 'card-1')
+    await user.click(screen.getByRole('button', { name: 'Registrar despesa' }))
+    await waitFor(() => expect(expensesApi.create).toHaveBeenCalledWith(expect.objectContaining({ paymentMethodId: 'credit', creditCardId: 'card-1' })))
   })
 })

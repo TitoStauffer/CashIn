@@ -86,7 +86,7 @@ describe('FinancialSidebar', () => {
     expect(onLogout).toHaveBeenCalledOnce()
   })
 
-  it('groups movement and registry links and keeps cards unavailable without a route', async () => {
+  it('groups movement and registry links including credit cards and invoices', async () => {
     await renderSidebar()
 
     expect(screen.getByRole('button', { name: 'Registro de movimentações' })).toHaveAttribute('aria-expanded', 'true')
@@ -96,9 +96,7 @@ describe('FinancialSidebar', () => {
     expect(screen.getByRole('button', { name: 'Cadastros gerais' })).toHaveAttribute('aria-expanded', 'true')
     expect(screen.getByRole('link', { name: 'Categorias' })).toHaveAttribute('href', '/categories')
     expect(screen.getByRole('link', { name: 'Formas de pagamento' })).toHaveAttribute('href', '/payment-methods')
-    expect(screen.getByText('Cartões e faturas').closest('[aria-disabled="true"]')).toBeInTheDocument()
-    expect(screen.queryByRole('link', { name: 'Cartões e faturas' })).not.toBeInTheDocument()
-    expect(screen.getByText('Em breve')).toBeVisible()
+    expect(screen.getByRole('link', { name: 'Cartões e faturas' })).toHaveAttribute('href', '/credit-cards')
   })
 
   it('collapses a group accessibly and reports its active page', async () => {
@@ -223,7 +221,7 @@ describe('FinancialSidebar', () => {
     unmount()
     await renderSidebar()
     expect(document.querySelector('.financial-sidebar')).toHaveClass('financial-sidebar--collapsed')
-    expect(document.documentElement.style.getPropertyValue('--financial-sidebar-width')).toBe('76px')
+    await waitFor(() => expect(document.documentElement.style.getPropertyValue('--financial-sidebar-width')).toBe('76px'))
   })
 
   it('opens the mobile menu, closes it after choosing a section, and tracks viewport changes', async () => {

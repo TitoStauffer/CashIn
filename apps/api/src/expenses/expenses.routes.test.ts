@@ -64,6 +64,9 @@ class MemoryExpenseRepository implements ExpenseRepository {
       paymentMethodId: input.paymentMethodId,
       paymentMethodName: input.paymentMethodId ? "Pix" : null,
       paymentMethodNature: input.paymentMethodId ? "immediate" as const : null,
+      creditCardId: null,
+      creditCardStatementId: null,
+      creditCardName: null,
       createdAt: now,
       updatedAt: now,
     };
@@ -89,6 +92,9 @@ class MemoryExpenseRepository implements ExpenseRepository {
       paymentMethodId: input.paymentMethodId,
       paymentMethodName: input.paymentMethodId ? "Pix" : null,
       paymentMethodNature: input.paymentMethodId ? "immediate" as const : null,
+      creditCardId: null,
+      creditCardStatementId: null,
+      creditCardName: null,
       updatedAt: new Date().toISOString(),
     };
     this.items.set(expenseId, updated);
