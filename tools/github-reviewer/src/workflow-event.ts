@@ -63,36 +63,18 @@ export async function resolveWorkflowEvent(options: WorkflowEventOptions): Promi
   } else if (options.eventName === 'workflow_run') {
     const workflow = asRecord(payload.workflow);
     const run = asRecord(payload.workflow_run);
-    if (stringValue(workflow?.name) !== 'CI' || stringValue(run?.event) !== 'pull_request') {
-      return skip('A execução concluída não corresponde ao CI de um Pull Request.');
-    }
-    fallbackSha = stringValue(run?.head_sha);
-    if (!fallbackSha || !/^[a-f0-9]{40}$/i.test(fallbackSha)) {
-      return inconclusive('A execução do CI não contém um HEAD SHA válido.');
-    }
+    const workflowName = stringValue(workflow?.name) ?? stringValue(run?.name);
+    const runEvent = stringValue(run?.event);
+    const isCiRun = workflowName === 'CI' && runEvent === 'pull_request';
+    const isReviewSignalRun = workflowName === 'PR Review Signal' && runEvent === 'pull_request_review';
+    if (!isCiRun && !isReviewSignalRun) return skip('A execução concluída não corresponde ao CI ou ao sinal de revisão de um Pull Request.');
 
-    try {
-      const associatedPullRequests = await requestGitHubApi(
-        fetchImpl,
-        `/repos/${repository.owner}/${repository.name}/commits/${fallbackSha}/pulls?per_page=100`,
-        options.token,
-      );
-      if (!Array.isArray(associatedPullRequests)) return inconclusive('A API retornou uma lista inválida de Pull Requests associados ao CI.');
-      const candidates = associatedPullRequests
-        .map(asRecord)
-        .filter((pullRequest): pullRequest is Record<string, unknown> => Boolean(
-          pullRequest
-          && pullRequest.state === 'open'
-          && stringValue(asRecord(pullRequest.base)?.ref) === TARGET_BRANCH
-          && stringValue(asRecord(pullRequest.head)?.sha) === fallbackSha,
-        ));
-      if (candidates.length === 0) return skip('Não há Pull Request aberto para master associado ao SHA do CI.');
-      if (candidates.length > 1) return inconclusive('Mais de um Pull Request aberto foi associado ao SHA do CI.');
-      pullRequestNumber = positiveInteger(candidates[0].number);
-      if (!pullRequestNumber) return inconclusive('A API não retornou um número de Pull Request válido para o CI.');
-    } catch (error) {
-      return inconclusive(describeApiFailure(error), undefined, fallbackSha);
+    const associatedPullRequests = run?.pull_requests;
+    if (!Array.isArray(associatedPullRequests) || associatedPullRequests.length !== 1) {
+      return inconclusive('A execução concluída não está associada a exatamente um Pull Request.');
     }
+    pullRequestNumber = positiveInteger(asRecord(associatedPullRequests[0])?.number);
+    if (!pullRequestNumber) return inconclusive('A execução concluída não contém um número de Pull Request válido.');
   } else {
     return skip('O evento não é usado para avaliar Merge Readiness.');
   }

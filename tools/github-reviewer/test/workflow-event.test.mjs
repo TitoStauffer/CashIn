@@ -78,13 +78,12 @@ test('ignores comments that do not contain a recognized report signature', async
   assert.equal(result.action, 'skip');
 });
 
-test('resolves the open PR associated with a completed PR CI run by its SHA', async () => {
+test('resolves the open PR associated with a completed CI run from the event payload', async () => {
   const result = await resolveWorkflowEvent(baseOptions({
     eventName: 'workflow_run',
-    payload: { workflow: { name: 'CI' }, workflow_run: { event: 'pull_request', head_sha: sha, conclusion: 'failure' } },
+    payload: { workflow: { name: 'CI' }, workflow_run: { event: 'pull_request', head_sha: sha, pull_requests: [{ number: 7 }], conclusion: 'failure' } },
     fetchImpl: async (url) => {
       const path = new URL(url).pathname;
-      if (path === `/repos/TitoStauffer/CashIn/commits/${sha}/pulls`) return response([pullRequest()]);
       if (path === '/repos/TitoStauffer/CashIn/pulls/7') return response(pullRequest());
       throw new Error(`unexpected request ${path}`);
     },
@@ -97,10 +96,30 @@ test('resolves the open PR associated with a completed PR CI run by its SHA', as
 test('skips CI runs that were not produced by a pull_request event', async () => {
   const result = await resolveWorkflowEvent(baseOptions({
     eventName: 'workflow_run',
-    payload: { workflow: { name: 'CI' }, workflow_run: { event: 'push', head_sha: sha } },
+    payload: { workflow: { name: 'CI' }, workflow_run: { event: 'push', head_sha: sha, pull_requests: [] } },
     fetchImpl: async () => { throw new Error('must not request GitHub'); },
   }));
   assert.equal(result.action, 'skip');
+});
+
+test('resolves the PR after a trusted review signal workflow completes', async () => {
+  const result = await resolveWorkflowEvent(baseOptions({
+    eventName: 'workflow_run',
+    payload: { workflow: { name: 'PR Review Signal' }, workflow_run: { event: 'pull_request_review', head_sha: 'b'.repeat(40), pull_requests: [{ number: 7 }] } },
+  }));
+  assert.equal(result.action, 'evaluate');
+  assert.equal(result.pullRequestNumber, 7);
+  assert.equal(result.headSha, sha);
+});
+
+test('returns inconclusive when a workflow run has ambiguous PR associations', async () => {
+  const result = await resolveWorkflowEvent(baseOptions({
+    eventName: 'workflow_run',
+    payload: { workflow: { name: 'CI' }, workflow_run: { event: 'pull_request', head_sha: sha, pull_requests: [{ number: 7 }, { number: 8 }] } },
+    fetchImpl: async () => { throw new Error('must not request GitHub'); },
+  }));
+  assert.equal(result.action, 'inconclusive');
+  assert.match(result.reason, /exatamente um Pull Request/);
 });
 
 test('returns INCONCLUSIVE on GitHub API permission failures and preserves a known SHA', async () => {

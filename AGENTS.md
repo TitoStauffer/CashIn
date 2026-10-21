@@ -123,8 +123,10 @@
 
 ### Merge Readiness Gate
 - O workflow `.github/workflows/merge-readiness.yml` executa o avaliador da DEV-41 para Pull Requests abertos destinados à `master`; o avaliador existente é a fonte única das regras de prontidão.
-- O workflow reavalia em abertura/atualização do PR, conclusão do CI, comentários estruturados dos Agents publicados pelo GitHub App e execução manual pelo GitHub Actions. O comentário estruturado do Code Review é o sinal de reavaliação; o gate também confirma a revisão formal diretamente no GitHub.
+- O workflow reavalia em abertura/atualização do PR, conclusão do CI, comentários estruturados dos Agents publicados pelo GitHub App, eventos de revisão formal e execução manual pelo GitHub Actions. O workflow `.github/workflows/pr-review-signal.yml` recebe eventos de revisão sem secrets ou permissões de escrita e sinaliza o workflow confiável do gate.
 - Jobs que usam credenciais executam apenas código confiável da branch `master`. Nunca faça checkout nem execute código do PR em um job privilegiado. Trate payloads e comentários como entradas não confiáveis.
+- O workflow sinalizador de revisão pode ser carregado do merge commit do PR; por isso deve continuar sem secrets, tokens com permissões e checkout/execução de código do PR. O workflow privilegiado só é acionado após seu término e revalida o PR e o SHA pela API.
+- Todas as execuções do gate para o mesmo PR devem usar o mesmo grupo de concorrência e ser serializadas, para impedir que uma avaliação antiga publique status depois de evidências mais recentes.
 - O gate publica o contexto `Merge Readiness` no SHA avaliado: `READY_TO_MERGE` resulta em sucesso; `BLOCKED` em falha; `INCONCLUSIVE` em erro. Evidências indisponíveis, antigas ou pendentes nunca podem resultar em sucesso.
 - O contexto `Merge Readiness` é excluído da lista de pré-requisitos que o próprio gate avalia, para evitar dependência circular.
 - Um check verde indica que as evidências consultadas satisfizeram o gate; não executa merge nem substitui a aprovação do Code Review, de QA ou a conferência final do Product Manager. Um check vermelho ou inconclusivo exige resolver os motivos antes de tratar o PR como pronto.
