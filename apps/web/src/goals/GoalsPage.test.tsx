@@ -186,4 +186,40 @@ describe('GoalsPage currency inputs', () => {
     createRequest.resolve(contribution)
     expect(await screen.findByRole('status')).toHaveTextContent('Aporte registrado.')
   })
+
+  it('does not report a saved contribution as failed when refreshing the goal fails', async () => {
+    const user = userEvent.setup()
+    vi.mocked(goalsApi.list)
+      .mockResolvedValueOnce({ items: [goal] })
+      .mockRejectedValueOnce(new Error('offline'))
+    await renderPage()
+
+    await user.click(await screen.findByRole('button', { name: '＋ Registrar aporte' }))
+    await user.type(await screen.findByLabelText('Valor *'), '250,00')
+    await user.click(screen.getByRole('button', { name: 'Registrar aporte' }))
+
+    expect(await screen.findByRole('status')).toHaveTextContent('Aporte registrado.')
+    expect(await screen.findByRole('alert')).toHaveTextContent('O aporte foi salvo, mas não foi possível atualizar o progresso')
+    expect(screen.queryByLabelText('Valor *')).not.toBeInTheDocument()
+    expect(goalsApi.createContribution).toHaveBeenCalledTimes(1)
+  })
+
+  it('sends a contribution only once when the form is submitted repeatedly', async () => {
+    const user = userEvent.setup()
+    const createRequest = deferred<typeof contribution>()
+    vi.mocked(goalsApi.createContribution).mockReturnValueOnce(createRequest.promise)
+    await renderPage()
+
+    await user.click(await screen.findByRole('button', { name: '＋ Registrar aporte' }))
+    const amount = await screen.findByLabelText('Valor *')
+    await user.type(amount, '250,00')
+    const form = amount.closest('form')
+    expect(form).not.toBeNull()
+    fireEvent.submit(form as HTMLFormElement)
+    fireEvent.submit(form as HTMLFormElement)
+
+    expect(goalsApi.createContribution).toHaveBeenCalledTimes(1)
+    createRequest.resolve(contribution)
+    expect(await screen.findByRole('status')).toHaveTextContent('Aporte registrado.')
+  })
 })

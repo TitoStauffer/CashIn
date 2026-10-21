@@ -81,6 +81,7 @@ export function GoalsPage({ userEmail, isLoggingOut, onLogout }: GoalsPageProps)
   const [message, setMessage] = useState('')
   const [reloadKey, setReloadKey] = useState(0)
   const lastLoadedWalletId = useRef<string | null>(null)
+  const savingContributionRef = useRef(false)
 
   useEffect(() => {
     const controller = new AbortController()
@@ -252,7 +253,7 @@ export function GoalsPage({ userEmail, isLoggingOut, onLogout }: GoalsPageProps)
 
   async function saveContribution(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    if (!contributionEditor || !contributionGoalId) return
+    if (!contributionEditor || !contributionGoalId || savingContributionRef.current) return
     if (contributionAmountInvalid) {
       setError('Use apenas números, até duas casas decimais e respeite o limite de R$ 999.999.999.999,99.')
       return
@@ -263,6 +264,7 @@ export function GoalsPage({ userEmail, isLoggingOut, onLogout }: GoalsPageProps)
       return
     }
     const input = { amount, date: contributionEditor.date, description: contributionEditor.description.trim() || null }
+    savingContributionRef.current = true
     setSaving(true)
     setError('')
     setMessage('')
@@ -274,13 +276,20 @@ export function GoalsPage({ userEmail, isLoggingOut, onLogout }: GoalsPageProps)
         await goalsApi.createContribution(contributionGoalId, input)
         setMessage('Aporte registrado.')
       }
-      await refreshContributionData(contributionGoalId)
       setContributionEditor(null)
       setContributionGoalId(null)
       setContributionAmountInvalid(false)
+      try {
+        await refreshContributionData(contributionGoalId)
+      } catch {
+        setError('O aporte foi salvo, mas não foi possível atualizar o progresso agora. Recarregue a página para ver os valores atualizados.')
+      }
     } catch (cause) {
       setError(getErrorMessage(cause, 'salvar o aporte'))
-    } finally { setSaving(false) }
+    } finally {
+      savingContributionRef.current = false
+      setSaving(false)
+    }
   }
 
   async function deleteContribution(goalId: string, item: InvestmentContribution) {
@@ -290,8 +299,12 @@ export function GoalsPage({ userEmail, isLoggingOut, onLogout }: GoalsPageProps)
     setMessage('')
     try {
       await goalsApi.removeContribution(goalId, item.id)
-      await refreshContributionData(goalId)
       setMessage('Aporte excluído. O progresso foi atualizado.')
+      try {
+        await refreshContributionData(goalId)
+      } catch {
+        setError('O aporte foi excluído, mas não foi possível atualizar o progresso agora. Recarregue a página para ver os valores atualizados.')
+      }
     } catch (cause) {
       setError(getErrorMessage(cause, 'excluir o aporte'))
     } finally { setSaving(false) }
