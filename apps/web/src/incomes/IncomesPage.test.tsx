@@ -70,19 +70,19 @@ describe('IncomesPage currency input', () => {
 
   it('lets the user classify an income as a benefit and shows that destination in the list', async () => {
     const user = userEvent.setup()
-    const benefitIncome = { ...income, balanceType: 'meal_benefit' as const }
+    const benefitIncome = { ...income, balanceType: 'food_meal_benefit' as const }
     vi.mocked(incomesApi.create).mockResolvedValueOnce(benefitIncome)
     vi.mocked(incomesApi.list)
       .mockResolvedValueOnce({ items: [income] })
       .mockResolvedValueOnce({ items: [benefitIncome] })
     await renderPage()
     await user.click(await screen.findByRole('button', { name: /Nova entrada/ }))
-    await user.selectOptions(screen.getByLabelText('Destino do valor *'), 'meal_benefit')
+    await user.selectOptions(screen.getByLabelText('Destino do valor *'), 'food_meal_benefit')
     fireEvent.change(screen.getByLabelText('Valor *'), { target: { value: '500,00' } })
     await user.click(screen.getByRole('button', { name: 'Registrar entrada' }))
 
-    await waitFor(() => expect(incomesApi.create).toHaveBeenCalledWith(expect.objectContaining({ balanceType: 'meal_benefit' })))
-    expect(await screen.findByText(/Vale-refeição \(VR\)/)).toBeVisible()
+    await waitFor(() => expect(incomesApi.create).toHaveBeenCalledWith(expect.objectContaining({ balanceType: 'food_meal_benefit' })))
+    expect(await screen.findByText(/Cartão de benefícios \(VA\/VR\)/)).toBeVisible()
   })
 
   it('loads an existing amount into the edit field and updates it without losing cents', async () => {

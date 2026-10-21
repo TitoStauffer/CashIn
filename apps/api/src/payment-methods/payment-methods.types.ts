@@ -3,6 +3,7 @@ export const PAYMENT_METHOD_NATURES = [
   "credit_card",
   "food_benefit",
   "meal_benefit",
+  "food_meal_benefit",
   "home_office_benefit",
 ] as const;
 

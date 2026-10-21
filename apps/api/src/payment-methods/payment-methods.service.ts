@@ -4,6 +4,10 @@ import type { PaymentMethod, PaymentMethodNature, PaymentMethodRepository } from
 const MAX_NAME_LENGTH = 100;
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
+function normalizeNature(nature: PaymentMethodNature): PaymentMethodNature {
+  return nature === "food_benefit" || nature === "meal_benefit" ? "food_meal_benefit" : nature;
+}
+
 function normalizeName(name: string): string {
   const value = name.trim();
   if (!value) throw new PaymentMethodError("O nome é obrigatório.", 400);
@@ -29,7 +33,7 @@ export class PaymentMethodsService {
 
   async create(userId: string, walletId: string, name: string, nature: PaymentMethodNature): Promise<PaymentMethod> {
     try {
-      return await this.repository.create(userId, walletId, normalizeName(name), nature);
+      return await this.repository.create(userId, walletId, normalizeName(name), normalizeNature(nature));
     } catch (error) {
       return mapRepositoryError(error);
     }
@@ -43,7 +47,11 @@ export class PaymentMethodsService {
   ): Promise<PaymentMethod> {
     if (!UUID_PATTERN.test(paymentMethodId)) throw new PaymentMethodError("Forma de pagamento não encontrada.", 404);
     if (Object.keys(changes).length === 0) throw new PaymentMethodError("Informe ao menos uma alteração.", 400);
-    const normalizedChanges = { ...changes, ...(changes.name === undefined ? {} : { name: normalizeName(changes.name) }) };
+    const normalizedChanges = {
+      ...changes,
+      ...(changes.name === undefined ? {} : { name: normalizeName(changes.name) }),
+      ...(changes.nature === undefined ? {} : { nature: normalizeNature(changes.nature) }),
+    };
     try {
       const item = await this.repository.update(userId, walletId, paymentMethodId, normalizedChanges);
       if (!item) throw new PaymentMethodError("Forma de pagamento não encontrada.", 404);

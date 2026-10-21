@@ -39,3 +39,20 @@ test("payment methods validate names and map duplicate errors", async () => {
   await assert.rejects(service.update("user", WALLET_ID, "invalid", { name: "Outro" }), /Forma de pagamento não encontrada/);
   await assert.rejects(service.update("user", WALLET_ID, PAYMENT_METHOD_ID, {}), /Informe ao menos uma alteração/);
 });
+
+test("payment method writes normalize legacy VA and VR natures to the unified benefit balance", async () => {
+  const created: unknown[] = [];
+  const updated: unknown[] = [];
+  const repository = {
+    list: async () => [],
+    create: async (...args: unknown[]) => { created.push(args); return { id: PAYMENT_METHOD_ID, name: "VA", nature: "food_meal_benefit" as const, isActive: true }; },
+    update: async (...args: unknown[]) => { updated.push(args); return { id: PAYMENT_METHOD_ID, name: "VR", nature: "food_meal_benefit" as const, isActive: true }; },
+  };
+  const service = new PaymentMethodsService(repository);
+
+  await service.create("user", WALLET_ID, "VA", "food_benefit");
+  await service.update("user", WALLET_ID, PAYMENT_METHOD_ID, { nature: "meal_benefit" });
+
+  assert.deepEqual(created[0], ["user", WALLET_ID, "VA", "food_meal_benefit"]);
+  assert.deepEqual(updated[0], ["user", WALLET_ID, PAYMENT_METHOD_ID, { nature: "food_meal_benefit" }]);
+});

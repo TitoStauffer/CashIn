@@ -62,15 +62,11 @@ test("PostgreSQL financial summary filters inclusive dates and subtracts contrib
       [userId, walletId, otherUserId, otherWalletId, categoryId("Market", userId), categoryId("Other market", otherUserId)],
     );
     await database.query(
-      `INSERT INTO expenses (user_id, wallet_id, category_id, payment_method_id, payment_method_nature, amount, date)
-       SELECT $1, $2, $3, method.id, method.nature, amounts.amount, '2026-10-17'
-       FROM (VALUES ('vale-alimentacao', 'food_benefit', '20.00'::numeric),
-                    ('vale-refeicao', 'meal_benefit', '35.00'::numeric),
-                    ('credito', 'credit_card', '50.00'::numeric)) AS amounts(method_name, expected_nature, amount)
-       JOIN payment_methods AS method
-         ON method.wallet_id = $2
-        AND method.name_normalized = amounts.method_name
-        AND method.nature = amounts.expected_nature`,
+      `INSERT INTO expenses (user_id, wallet_id, category_id, payment_method_nature, amount, date)
+       SELECT $1, $2, $3, amounts.expected_nature, amounts.amount, '2026-10-17'
+       FROM (VALUES ('food_benefit'::text, '20.00'::numeric),
+                    ('meal_benefit', '35.00'::numeric),
+                    ('credit_card', '50.00'::numeric)) AS amounts(expected_nature, amount)`,
       [userId, walletId, categoryId("Market", userId)],
     );
     const goal = await database.query<{ id: string }>(
@@ -94,9 +90,8 @@ test("PostgreSQL financial summary filters inclusive dates and subtracts contrib
     assert.equal(summary.availableBalance, "321.95");
     assert.equal(summary.cashBalance, "321.95");
     assert.deepEqual(summary.benefitBalances, [
-      { balanceType: "food_benefit", amount: "130.00" },
+      { balanceType: "food_meal_benefit", amount: "295.00" },
       { balanceType: "home_office_benefit", amount: "0.00" },
-      { balanceType: "meal_benefit", amount: "165.00" },
     ]);
     assert.deepEqual(summary.incomeByCategory, [
       { categoryId: categoryId("Within end", userId), categoryName: "Within end", amount: "490.00" },
@@ -106,10 +101,10 @@ test("PostgreSQL financial summary filters inclusive dates and subtracts contrib
       { categoryId: categoryId("Market", userId), categoryName: "Market", amount: "185.00" },
     ]);
     await database.query(
-      "UPDATE payment_methods SET nature = 'immediate' WHERE wallet_id = $1 AND name_normalized = 'vale-alimentacao'",
+      "UPDATE expenses SET payment_method_nature = 'immediate' WHERE wallet_id = $1 AND amount = '20.00'::numeric",
       [walletId],
     );
-    assert.equal((await repository.getSummary(walletId, "2026-10-01", "2026-10-31")).benefitBalances[0]?.amount, "130.00");
+    assert.equal((await repository.getSummary(walletId, "2026-10-01", "2026-10-31")).benefitBalances[0]?.amount, "315.00");
     const empty = await repository.getSummary(otherWalletId, "2026-12-01", "2026-12-31");
     assert.equal(empty.incomeTotal, "0.00");
     assert.equal(empty.expenseTotal, "0.00");
@@ -117,9 +112,8 @@ test("PostgreSQL financial summary filters inclusive dates and subtracts contrib
     assert.equal(empty.availableBalance, "0.00");
     assert.equal(empty.cashBalance, "0.00");
     assert.deepEqual(empty.benefitBalances, [
-      { balanceType: "food_benefit", amount: "0.00" },
+      { balanceType: "food_meal_benefit", amount: "0.00" },
       { balanceType: "home_office_benefit", amount: "0.00" },
-      { balanceType: "meal_benefit", amount: "0.00" },
     ]);
     assert.deepEqual(empty.incomeByCategory, []);
     assert.deepEqual(empty.expenseByCategory, []);

@@ -25,8 +25,11 @@ const balanceTypeLabels: Record<IncomeBalanceType, string> = {
   cash: 'Dinheiro',
   food_benefit: 'Vale-alimentação (VA)',
   meal_benefit: 'Vale-refeição (VR)',
+  food_meal_benefit: 'Cartão de benefícios (VA/VR)',
   home_office_benefit: 'Auxílio home office (AHO)',
 }
+
+const selectableBalanceTypes: IncomeBalanceType[] = ['cash', 'food_meal_benefit', 'home_office_benefit']
 
 function formatDate(date: string) {
   const [year, month, day] = date.split('-')
@@ -334,9 +337,12 @@ export function IncomesPage({ userEmail, isLoggingOut, onLogout }: IncomesPagePr
                     onChange={(event) => setEditor({ ...editor, balanceType: event.target.value as IncomeBalanceType })}
                     required
                   >
-                    {Object.entries(balanceTypeLabels).map(([value, label]) => (
-                      <option key={value} value={value}>{label}</option>
+                    {selectableBalanceTypes.map((value) => (
+                      <option key={value} value={value}>{balanceTypeLabels[value]}</option>
                     ))}
+                    {(editor.balanceType === 'food_benefit' || editor.balanceType === 'meal_benefit') && (
+                      <option value={editor.balanceType}>{balanceTypeLabels[editor.balanceType]} (histórico)</option>
+                    )}
                   </select>
                   <small>Benefícios ficam separados do saldo em dinheiro.</small>
                 </div>

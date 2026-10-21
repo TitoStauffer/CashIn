@@ -109,8 +109,7 @@ describe('DashboardPage', () => {
       availableBalance: '2000.00',
       cashBalance: '2000.00',
       benefitBalances: [
-        { balanceType: 'food_benefit', amount: '300.00' },
-        { balanceType: 'meal_benefit', amount: '500.00' },
+        { balanceType: 'food_meal_benefit', amount: '800.00' },
         { balanceType: 'home_office_benefit', amount: '200.00' },
       ],
       incomeByCategory: [],
@@ -119,11 +118,9 @@ describe('DashboardPage', () => {
     await renderPage()
 
     expect(await screen.findByText('Saldo em dinheiro')).toBeVisible()
-    expect(screen.getByText('Vale-alimentação (VA)')).toBeVisible()
-    expect(screen.getByText('Vale-refeição (VR)')).toBeVisible()
+    expect(screen.getByText('Cartão de benefícios (VA/VR)')).toBeVisible()
     expect(screen.getByText('Auxílio home office (AHO)')).toBeVisible()
-    expect(screen.getByText('R$ 300,00')).toBeVisible()
-    expect(screen.getByText('R$ 500,00')).toBeVisible()
+    expect(screen.getByText('R$ 800,00')).toBeVisible()
     expect(screen.getByText('R$ 200,00')).toBeVisible()
   })
 })

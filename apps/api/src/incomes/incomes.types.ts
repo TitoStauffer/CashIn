@@ -1,4 +1,4 @@
-export const INCOME_BALANCE_TYPES = ["cash", "food_benefit", "meal_benefit", "home_office_benefit"] as const;
+export const INCOME_BALANCE_TYPES = ["cash", "food_benefit", "meal_benefit", "food_meal_benefit", "home_office_benefit"] as const;
 
 export type IncomeBalanceType = (typeof INCOME_BALANCE_TYPES)[number];
 

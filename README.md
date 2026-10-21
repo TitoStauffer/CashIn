@@ -82,13 +82,13 @@ Os nomes são normalizados sem espaços nas extremidades e não diferenciam mai�
 
 ### Formas de pagamento
 
-Cada carteira recebe as formas iniciais Crédito, Débito, Pix, Vale-Alimentação, Vale-Refeição e Auxílio Home Office. Elas podem ser consultadas, cadastradas, renomeadas, reclassificadas e desativadas na carteira ativa. Formas de pagamento não são removidas fisicamente para preservar o histórico das despesas.
+Cada carteira recebe as formas iniciais Crédito, Débito, Pix, Cartão de benefícios (VA/VR) e Auxílio Home Office (AHO). VA e VR compartilham um único saldo e uma única opção para novos lançamentos; formas antigas de VA e VR permanecem inativas para preservar o histórico. As formas podem ser consultadas, cadastradas, renomeadas, reclassificadas e desativadas na carteira ativa. Formas de pagamento não são removidas fisicamente para preservar o histórico das despesas.
 
 - `GET /payment-methods` lista formas ativas e inativas da carteira; a Web usa somente as ativas em novos lançamentos e mantém as inativas visíveis no histórico.
 - `POST /payment-methods` recebe `{ "name": "Cartão de débito", "nature": "immediate" }`.
 - `PATCH /payment-methods/:paymentMethodId` altera `name`, `nature` e/ou `isActive`.
 
-Os valores aceitos para `nature` são `immediate`, `credit_card`, `food_benefit`, `meal_benefit` e `home_office_benefit`. Nomes são únicos por carteira sem diferenciar caixa ou acentuação. A natureza registra o tipo de meio para tratamento futuro; regras de fatura e de saldo de benefícios pertencem a Histórias próprias.
+Os valores aceitos para `nature` incluem `immediate`, `credit_card`, `food_meal_benefit` e `home_office_benefit`. `food_benefit` e `meal_benefit` continuam aceitos para compatibilidade e registros históricos, mas novas gravações são normalizadas para `food_meal_benefit`. Nomes são únicos por carteira sem diferenciar caixa ou acentuação. Despesas no cartão VA/VR reduzem o saldo unificado VA/VR; despesas com AHO reduzem o saldo AHO.
 
 Para parar os containers, use docker compose down. Para remover também os dados locais do banco, use docker compose down -v.
 
@@ -97,7 +97,7 @@ Para parar os containers, use docker compose down. Para remover também os dados
 Todas as operações de entrada exigem uma sessão autenticada e são isoladas pela carteira selecionada. Os valores monetários são enviados e retornados como strings decimais, com até duas casas, para preservar a precisão.
 
 - `GET /incomes?from=AAAA-MM-DD&to=AAAA-MM-DD` lista entradas; os filtros de data são opcionais e inclusivos, com ordenação por data e criação mais recentes primeiro.
-- `POST /incomes` cria uma entrada com `{ "amount": "1250.50", "date": "2026-10-19", "description": "Salário", "categoryId": "<uuid>", "subcategoryId": "<uuid-ou-null>", "balanceType": "cash" }`. `balanceType` aceita `cash`, `food_benefit`, `meal_benefit` ou `home_office_benefit`; quando omitido por clientes antigos, a entrada é tratada como dinheiro.
+- `POST /incomes` cria uma entrada com `{ "amount": "1250.50", "date": "2026-10-19", "description": "Salário", "categoryId": "<uuid>", "subcategoryId": "<uuid-ou-null>", "balanceType": "cash" }`. `balanceType` aceita `cash`, `food_meal_benefit` ou `home_office_benefit`; os valores antigos `food_benefit` e `meal_benefit` continuam aceitos e são normalizados para o saldo unificado. Quando omitido por clientes antigos, a entrada é tratada como dinheiro.
 - `PUT /incomes/:incomeId` substitui os campos editáveis e aceita a mesma estrutura do cadastro; descrição e subcategoria podem ser omitidas ou nulas.
 - `DELETE /incomes/:incomeId` exclui uma entrada e retorna `204`.
 

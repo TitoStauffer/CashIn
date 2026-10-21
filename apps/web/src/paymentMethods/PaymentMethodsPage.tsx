@@ -172,6 +172,9 @@ export function PaymentMethodsPage({ userEmail, isLoggingOut, onLogout }: Paymen
                       required
                     >
                       {paymentMethodNatures.map((nature) => <option key={nature.value} value={nature.value}>{nature.label}</option>)}
+                      {(editor.nature === 'food_benefit' || editor.nature === 'meal_benefit') && (
+                        <option value={editor.nature}>{getPaymentMethodNatureLabel(editor.nature)} (legado)</option>
+                      )}
                     </select>
                   </div>
                 </div>
