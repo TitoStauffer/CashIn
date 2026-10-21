@@ -65,6 +65,15 @@ describe("JiraClient", () => {
     assert.equal(adfToText(body.body).trim(), "Iniciado em 19/10/2026 23:14 (America/Sao_Paulo).");
     assert.equal(await client.getIssueProperty("DEV-10", "p"), undefined);
   });
+
+  it("lists all issue comments through Jira's paginated comment endpoint", async () => {
+    const { calls, impl } = fakeFetch([json(200, { comments: [{ id: "7", body: { type: "doc", version: 1, content: [] } }], total: 1 })]);
+    const client = new JiraClient({ baseUrl: "https://x.atlassian.net", credentials, fetch: impl });
+    const comments = await client.listComments("DEV-10");
+    assert.equal(comments.length, 1);
+    assert.equal(comments[0]!.id, "7");
+    assert.match(calls[0]!.url, /\/rest\/api\/3\/issue\/DEV-10\/comment\?startAt=0&maxResults=100$/);
+  });
 });
 
 describe("fieldValues", () => {

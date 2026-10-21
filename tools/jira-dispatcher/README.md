@@ -196,14 +196,54 @@ O Codex roda em grupo de processos próprio, então o primeiro Ctrl+C no termina
 
 As worktrees **não são apagadas** automaticamente. Depois de conferir que o trabalho foi integrado, remova-as manualmente com `git worktree remove <caminho>`.
 
+## Encerramento de issue após merge
+
+O workflow [`jira-post-merge.yml`](../../.github/workflows/jira-post-merge.yml) processa o evento `pull_request_target.closed` somente quando o PR foi integrado à `master`. Ele usa código de `master`, não faz checkout da branch do PR e não depende de um Codex ou computador local.
+
+Antes de alterar o Jira, o job confirma que o PR ainda corresponde ao evento e ao HEAD validado, que os checks configurados para o repositório passaram (`API`, `Web`, `PR title`, `SonarQube` e `SonarCloud Code Analysis`), que o Code Review formal e os relatórios estruturados de QA e Quality Gate foram aprovados pelo `CashIn -- DevAgents` para esse SHA e que não há conversas de revisão abertas. Se uma evidência estiver ausente, falhar ou não puder ser consultada, o job falha fechado e mantém a issue sem encerramento.
+
+O job extrai a issue do título ou da branch do PR. Se as duas fontes tiverem chaves diferentes, se houver mais de uma chave, ou se a issue não pertencer ao projeto `DEV` ou for um Epic, nenhuma alteração é feita. Depois de validar, consulta as transições disponíveis no Jira, verifica o status final e comenta o encerramento com PR, branches, SHA e horário de `America/Sao_Paulo`.
+
+### Configuração manual no GitHub
+
+Crie as seguintes **Actions secrets** no repositório:
+
+| Nome | Valor |
+| --- | --- |
+| `JIRA_EMAIL` | E-mail da conta Jira usada pela integração |
+| `JIRA_API_TOKEN` | Token de API da Atlassian; nunca use a senha da conta |
+
+Crie estas **Actions variables**:
+
+| Nome | Valor |
+| --- | --- |
+| `JIRA_BASE_URL` | URL HTTPS do site, por exemplo `https://titostauffer.atlassian.net` |
+| `GITHUB_APP_BOT_LOGIN` | Login do bot que publica os relatórios e a revisão formal, por exemplo `cashin-devagents[bot]` |
+
+O `GITHUB_TOKEN` é fornecido pelo GitHub Actions e tem permissões de leitura para PRs, comentários e checks. Cada check é conferido pela identidade do provedor esperado (`github-actions` ou `sonarqubecloud`); um check com o mesmo nome vindo de outro provedor bloqueia o encerramento. O workflow não usa a chave privada do GitHub App. A conta Jira precisa de permissão para visualizar a issue, executar a transição de workflow, comentar e consultar/gravar propriedades da issue.
+
+Os nomes dos checks são uma lista explícita em `src/post-merge/service.ts`. Atualize-a junto com o workflow quando nomes de jobs/checks forem alterados. A automação verifica as evidências no SHA do PR; ela não presume que branch protection ou rulesets estejam habilitados.
+
+### Idempotência, falhas e teste controlado
+
+Cada evento usa um identificador estável por repositório, número de PR e SHA de merge. A automação grava o estado numa propriedade da issue e inclui um marcador no comentário. Em reexecuções, ela confere o status, a propriedade e comentários antes de repetir qualquer etapa. Escritas com resultado incerto são reconciliadas por leitura, sem retry cego de transições ou comentários.
+
+Se um job falhar, corrija a causa e use **Re-run jobs** na execução original. O evento anterior não é processado retroativamente quando o workflow é instalado. Para um teste de ponta a ponta, configure as variáveis/secrets e use uma issue de teste dedicada e um PR futuro que tenha o Code Review formal, os relatórios de QA/QG e todos os checks aprovados no mesmo HEAD. Os testes automatizados usam mocks e não alteram issues reais.
+
+Para conferir apenas a sintaxe da CLI sem chamar APIs:
+
+```bash
+npm run post-merge -- --help
+```
+
 ## Testes
 
 ```bash
-npm test          # 69 testes (node:test via tsx)
+npm test          # 90 testes (node:test via tsx)
 npm run typecheck
 ```
 
-Os 71 testes cobrem elegibilidade, concorrência (lock de processo, recuperação de lock incompleto, execução ativa por issue, mudança de status concorrente, transição indisponível ou ambígua), reserva (comentário no formato do `AGENTS.md`, retry só do comentário), recuperação (`interrupted`, Codex órfão vivo, `resume`, `clear`, persistência), falhas do Codex com um processo real simulado (código ≠ 0, timeout, resultado inválido, issue errada, comando inexistente, parada forçada), redação de segredos, worktree com Git real, cliente HTTP do Jira e o loop com encerramento gracioso.
+Os 90 testes cobrem elegibilidade, concorrência (lock de processo, recuperação de lock incompleto, execução ativa por issue, mudança de status concorrente, transição indisponível ou ambígua), reserva (comentário no formato do `AGENTS.md`, retry só do comentário), recuperação (`interrupted`, Codex órfão vivo, `resume`, `clear`, persistência), falhas do Codex com um processo real simulado (código ≠ 0, timeout, resultado inválido, issue errada, comando inexistente, parada forçada), redação de segredos, worktree com Git real, clientes HTTP do Jira e GitHub, idempotência e falhas parciais do pós-merge, além do loop com encerramento gracioso.
 
 ## O que ainda exige configuração ou verificação manual
 
