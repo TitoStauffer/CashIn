@@ -10,7 +10,9 @@
     "review": "node src/cli.mjs",
     "publish-report": "npm run build && node dist/report-cli.js",
     "readiness": "npm run build && node dist/readiness-cli.js",
-    "workflow-readiness": "npm run build && node dist/workflow-readiness-cli.js"
+    "workflow-readiness": "npm run build && node dist/workflow-readiness-cli.js",
+    "agent-stage": "node dist/agent-stage-cli.js",
+    "agent-publish": "node dist/agent-publish-cli.js"
   },
   "engines": {
     "node": ">=22.12"

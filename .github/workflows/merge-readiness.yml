@@ -39,6 +39,7 @@ jobs:
     permissions:
       contents: read
       pull-requests: read
+      checks: read
       statuses: write
 
     steps:
@@ -65,8 +66,8 @@ jobs:
         working-directory: tools/github-reviewer
         env:
           GITHUB_TOKEN: ${{ github.token }}
-          GITHUB_APP_ID: ${{ secrets.GITHUB_APP_ID }}
-          GITHUB_APP_INSTALLATION_ID: ${{ secrets.GITHUB_APP_INSTALLATION_ID }}
-          GITHUB_APP_PRIVATE_KEY: ${{ secrets.GITHUB_APP_PRIVATE_KEY }}
+          CASHIN_APP_ID: ${{ secrets.CASHIN_APP_ID }}
+          CASHIN_APP_INSTALLATION_ID: ${{ secrets.CASHIN_APP_INSTALLATION_ID }}
+          CASHIN_APP_PRIVATE_KEY: ${{ secrets.CASHIN_APP_PRIVATE_KEY }}
           CASHIN_APP_BOT_LOGIN: ${{ vars.CASHIN_APP_BOT_LOGIN }}
         run: node dist/workflow-readiness-cli.js

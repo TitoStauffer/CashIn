@@ -1,15 +1,24 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { evaluateMergeReadiness } from '../dist/merge-readiness.js';
+import { agentReportMarker, computeAgentContextHash } from '../dist/agent-evidence.js';
+import { summarizeAgentChecks } from '../dist/agent-review-inputs.js';
 
 const sha = 'a'.repeat(40);
 const oldSha = 'b'.repeat(40);
+const checks = ['API', 'Web', 'SonarQube', 'SonarCloud Code Analysis', 'PR title'].map((name) => ({ name, head_sha: sha, status: 'completed', conclusion: 'success' }));
+const reviewInputs = { diff: 'diff contents', checks: summarizeAgentChecks(checks), repositoryInstructions: 'trusted instructions' };
+const contextHash = computeAgentContextHash('owner/repo', 7, {
+  title: 'Example PR', html_url: 'https://github.com/owner/repo/pull/7', body: '',
+  head: { sha }, base: { ref: 'master', sha: 'c'.repeat(40) },
+}, reviewInputs);
 
-function report(signature, section, commitSha = sha) {
+function report(signature, section, commitSha = sha, reportContextHash = contextHash) {
+  const stage = signature.includes('QA Agent') ? 'qa' : 'qualityGate';
   return {
     user: { login: 'cashin-devagents' },
     created_at: '2026-10-21T12:00:00Z',
-    body: `### ${signature}\n\n**Status:** APPROVED\n**Commit:** \`${commitSha}\`\n\n**${section}:**\n- Evidência validada.`,
+    body: `${agentReportMarker(stage, commitSha, reportContextHash)}\n### ${signature}\n\n**Status:** APPROVED\n**Commit:** \`${commitSha}\`\n\n**${section}:**\n- Evidência validada.`,
   };
 }
 
@@ -17,9 +26,17 @@ function fixture(overrides = {}) {
   const requests = [];
   let pullRequestReadCount = 0;
   const data = {
-    checks: ['API', 'Web', 'SonarQube', 'SonarCloud Code Analysis', 'PR title'].map((name) => ({ name, head_sha: sha, status: 'completed', conclusion: 'success' })),
-    reviews: [{ user: { login: 'cashin-devagents' }, state: 'APPROVED', commit_id: sha, submitted_at: '2026-10-21T12:00:00Z', body: '### Code Review — APPROVED' }],
+    checks,
+    reviews: [{ user: { login: 'cashin-devagents' }, state: 'APPROVED', commit_id: sha, submitted_at: '2026-10-21T12:00:00Z', body: `${agentReportMarker('codeReview', sha, contextHash)}\n### Codex — Code Review Agent\n\n**Status:** APPROVED\n**Commit:** \`${sha}\`\n\n### Code Review — APPROVED` }],
     comments: [report('Codex — QA Agent', 'Verificações de QA'), report('Codex — Quality Gate Coordinator', 'Checks verificados')],
+    title: 'Example PR',
+    body: '',
+    baseSha: 'c'.repeat(40),
+    diff: 'diff contents',
+    instructions: 'trusted instructions',
+    contextChanges: false,
+    prCloses: false,
+    mergeabilityChanges: false,
     protectionStatus: 200,
     requiredCheckAppId: null,
     requiredContexts: ['PR title'],
@@ -33,18 +50,23 @@ function fixture(overrides = {}) {
     const path = `${parsed.pathname}${parsed.search}`;
     requests.push({ path, method: options.method ?? 'GET' });
     if (parsed.pathname === '/app') return response({ slug: 'cashin-devagents' });
+    if (parsed.pathname === '/repos/owner/repo/pulls/7' && options.headers?.Accept === 'application/vnd.github.v3.diff') return new Response(data.diff);
     if (parsed.pathname === '/repos/owner/repo/pulls/7') {
       pullRequestReadCount += 1;
       return response({
-        state: 'open', title: 'Example PR', html_url: 'https://github.com/owner/repo/pull/7',
+        state: data.prCloses && pullRequestReadCount > 1 ? 'closed' : 'open', title: data.title, html_url: 'https://github.com/owner/repo/pull/7',
+        body: data.contextChanges && pullRequestReadCount > 1 ? 'PR metadata changed during evaluation.' : data.body,
         head: { sha: data.shaChanges && pullRequestReadCount > 1 ? oldSha : sha },
-        base: { ref: 'master' }, user: { login: 'author' }, mergeable: true, mergeable_state: 'clean',
+        base: { ref: 'master', sha: data.baseSha }, user: { login: 'author' },
+        mergeable: data.mergeabilityChanges && pullRequestReadCount > 1 ? false : true,
+        mergeable_state: data.mergeabilityChanges && pullRequestReadCount > 1 ? 'dirty' : 'clean',
       });
     }
-    if (parsed.pathname.endsWith(`/commits/${sha}/check-runs`)) {
+    if (parsed.pathname.includes('/check-runs')) {
       if (data.apiFailure) return response({ message: 'private details are not surfaced' }, 500);
       return response({ check_runs: data.checks });
     }
+    if (parsed.pathname === '/repos/owner/repo/contents/AGENTS.md') return response({ encoding: 'base64', content: Buffer.from(data.instructions).toString('base64') });
     if (parsed.pathname.endsWith(`/commits/${sha}/status`)) return response({ statuses: [] });
     if (parsed.pathname === '/repos/owner/repo/pulls/7/reviews') return response(data.reviews);
     if (parsed.pathname === '/repos/owner/repo/issues/7/comments') return response(data.comments);
@@ -155,6 +177,25 @@ test('blocks when the Code Review Agent records a later rejection', async () => 
   assert.match(result.reasons.join(' '), /Code Review.*não está aprovada/);
 });
 
+test('blocks Code Review and reports made for old PR metadata, even when the HEAD SHA is unchanged', async () => {
+  const subject = fixture({ body: 'Acceptance criteria changed after the agents ran.' });
+  const result = await subject.evaluate();
+
+  assert.equal(result.status, 'BLOCKED');
+  assert.match(result.reasons.join(' '), /metadados desatualizados/);
+  assert.equal(result.evidence.codeReview.currentContext, false);
+});
+
+test('blocks evidence when the merge base or diff changes without a new PR HEAD', async () => {
+  const newBase = await fixture({ baseSha: 'd'.repeat(40) }).evaluate();
+  assert.equal(newBase.status, 'BLOCKED');
+  assert.match(newBase.reasons.join(' '), /metadados desatualizados/);
+
+  const newDiff = await fixture({ diff: 'changed diff from updated master' }).evaluate();
+  assert.equal(newDiff.status, 'BLOCKED');
+  assert.match(newDiff.reasons.join(' '), /metadados desatualizados/);
+});
+
 test('blocks when QA report is missing', async () => {
   const subject = fixture({ comments: [report('Codex — Quality Gate Coordinator', 'Checks verificados')] });
   const result = await subject.evaluate();
@@ -193,4 +234,22 @@ test('blocks when the PR HEAD changes while evidence is being collected', async 
 
   assert.equal(result.status, 'BLOCKED');
   assert.match(result.reasons.join(' '), /HEAD SHA mudou/);
+});
+
+test('blocks when PR metadata changes while evidence is being collected', async () => {
+  const subject = fixture({ contextChanges: true });
+  const result = await subject.evaluate();
+
+  assert.equal(result.status, 'BLOCKED');
+  assert.match(result.reasons.join(' '), /metadados do Pull Request mudaram durante a avaliação/);
+});
+
+test('blocks when the PR closes or becomes unmergeable during the evaluation', async () => {
+  const closed = await fixture({ prCloses: true }).evaluate();
+  assert.equal(closed.status, 'BLOCKED');
+  assert.match(closed.reasons.join(' '), /deixou de estar aberto/);
+
+  const conflicted = await fixture({ mergeabilityChanges: true }).evaluate();
+  assert.equal(conflicted.status, 'BLOCKED');
+  assert.match(conflicted.reasons.join(' '), /deixou de estar integrável/);
 });

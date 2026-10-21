@@ -7,6 +7,7 @@ export interface AgentStageResult {
   decision: AgentDecision;
   commitSha: string;
   reportMarkdown: string;
+  contextHash?: string;
 }
 
 export interface QualityPrerequisites {

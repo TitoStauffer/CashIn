@@ -93,6 +93,15 @@ test('resolves the open PR associated with a completed CI run from the event pay
   assert.equal(result.headSha, sha);
 });
 
+test('resolves an edited PR after the title validation workflow completes', async () => {
+  const result = await resolveWorkflowEvent(baseOptions({
+    eventName: 'workflow_run',
+    payload: { workflow: { name: 'PR title' }, workflow_run: { event: 'pull_request', head_sha: sha, pull_requests: [{ number: 7 }], conclusion: 'success' } },
+  }));
+  assert.equal(result.action, 'evaluate');
+  assert.equal(result.pullRequestNumber, 7);
+});
+
 test('skips CI runs that were not produced by a pull_request event', async () => {
   const result = await resolveWorkflowEvent(baseOptions({
     eventName: 'workflow_run',
