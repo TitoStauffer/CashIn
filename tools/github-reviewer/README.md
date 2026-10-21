@@ -158,6 +158,14 @@ If the App secrets are missing, the workflow reports `INCONCLUSIVE` instead of t
 
 To run it manually, open **Actions → Merge Readiness → Run workflow**, enter the PR number, and start the run. To validate the real event automation, open a later PR after this workflow is merged into `master`; a workflow added only on its own feature branch cannot serve as the trusted workflow source for `pull_request_target` or `workflow_run`.
 
+### Validate hosted agent orchestration
+
+Use an open pull request targeting `master`. The `Codex Agent Orchestration` workflow runs after both `CI` and `PR title` complete successfully for that PR. Its first job runs on the self-hosted Windows runner labeled `codex-plus`; subsequent jobs publish the formal Code Review and the QA and Quality Gate Coordinator reports through the GitHub App. The workflow also has a manual dispatch for recovery or focused validation: open **Actions → Codex Agent Orchestration → Run workflow**, select `master`, enter the open PR number, and start the run.
+
+For an end-to-end check, confirm that the workflow run resolves to the intended open PR, then compare the SHA in every agent report with the PR's current HEAD. After the reports are published, inspect the `Merge Readiness` check and its JSON summary for the same SHA. A skipped orchestration, missing report, stale SHA, runner failure, or `INCONCLUSIVE` readiness result is a validation failure or an explicit blocker; do not replace it with a manual approval. If the PR head changes, wait for the new CI-triggered run and evaluate the new SHA. Keep a validation PR unmerged until the project owner decides otherwise.
+
+This process validates the hosted workflow and integrations, not the safety of merging arbitrary pull request code on the self-hosted runner. The workflows must continue to execute trusted code from `master` and must not check out or run PR-controlled scripts with access to the runner's local Codex credentials.
+
 ## Verify
 
 ```powershell
