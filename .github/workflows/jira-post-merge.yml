@@ -24,13 +24,6 @@ jobs:
       run:
         shell: bash
         working-directory: tools/jira-dispatcher
-    env:
-      GITHUB_TOKEN: ${{ github.token }}
-      GITHUB_REPOSITORY: ${{ github.repository }}
-      GITHUB_APP_BOT_LOGIN: ${{ vars.GITHUB_APP_BOT_LOGIN }}
-      JIRA_BASE_URL: ${{ vars.JIRA_BASE_URL }}
-      JIRA_EMAIL: ${{ secrets.JIRA_EMAIL }}
-      JIRA_API_TOKEN: ${{ secrets.JIRA_API_TOKEN }}
     steps:
       - name: Checkout trusted master code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -50,3 +43,10 @@ jobs:
 
       - name: Close associated Jira issue
         run: npm run post-merge
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_APP_BOT_LOGIN: ${{ vars.GITHUB_APP_BOT_LOGIN }}
+          JIRA_BASE_URL: ${{ vars.JIRA_BASE_URL }}
+          JIRA_EMAIL: ${{ secrets.JIRA_EMAIL }}
+          JIRA_API_TOKEN: ${{ secrets.JIRA_API_TOKEN }}

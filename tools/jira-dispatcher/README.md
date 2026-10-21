@@ -220,7 +220,7 @@ Crie estas **Actions variables**:
 | `JIRA_BASE_URL` | URL HTTPS do site, por exemplo `https://titostauffer.atlassian.net` |
 | `GITHUB_APP_BOT_LOGIN` | Login do bot que publica os relatórios e a revisão formal, por exemplo `cashin-devagents[bot]` |
 
-O `GITHUB_TOKEN` é fornecido pelo GitHub Actions e tem permissões de leitura para PRs, comentários e checks. Cada check é conferido pela identidade do provedor esperado (`github-actions` ou `sonarqubecloud`); um check com o mesmo nome vindo de outro provedor bloqueia o encerramento. O workflow não usa a chave privada do GitHub App. A conta Jira precisa de permissão para visualizar a issue, executar a transição de workflow, comentar e consultar/gravar propriedades da issue.
+O `GITHUB_TOKEN` é fornecido pelo GitHub Actions e tem permissões de leitura para PRs, comentários e checks. As credenciais ficam disponíveis somente no passo que executa o processador, depois da instalação das dependências. Cada check é conferido pela identidade do provedor esperado (`github-actions` ou `sonarqubecloud`); um check com o mesmo nome vindo de outro provedor bloqueia o encerramento. O workflow não usa a chave privada do GitHub App. A conta Jira precisa de permissão para visualizar a issue, executar a transição de workflow, comentar e consultar/gravar propriedades da issue.
 
 Os nomes dos checks são uma lista explícita em `src/post-merge/service.ts`. Atualize-a junto com o workflow quando nomes de jobs/checks forem alterados. A automação verifica as evidências no SHA do PR; ela não presume que branch protection ou rulesets estejam habilitados.
 
@@ -239,11 +239,11 @@ npm run post-merge -- --help
 ## Testes
 
 ```bash
-npm test          # 90 testes (node:test via tsx)
+npm test          # 92 testes (node:test via tsx)
 npm run typecheck
 ```
 
-Os 90 testes cobrem elegibilidade, concorrência (lock de processo, recuperação de lock incompleto, execução ativa por issue, mudança de status concorrente, transição indisponível ou ambígua), reserva (comentário no formato do `AGENTS.md`, retry só do comentário), recuperação (`interrupted`, Codex órfão vivo, `resume`, `clear`, persistência), falhas do Codex com um processo real simulado (código ≠ 0, timeout, resultado inválido, issue errada, comando inexistente, parada forçada), redação de segredos, worktree com Git real, clientes HTTP do Jira e GitHub, idempotência e falhas parciais do pós-merge, além do loop com encerramento gracioso.
+Os 92 testes cobrem elegibilidade, concorrência (lock de processo, recuperação de lock incompleto, execução ativa por issue, mudança de status concorrente, transição indisponível ou ambígua), reserva (comentário no formato do `AGENTS.md`, retry só do comentário), recuperação (`interrupted`, Codex órfão vivo, `resume`, `clear`, persistência), falhas do Codex com um processo real simulado (código ≠ 0, timeout, resultado inválido, issue errada, comando inexistente, parada forçada), redação de segredos, worktree com Git real, clientes HTTP do Jira e GitHub, idempotência e falhas parciais do pós-merge, além do loop com encerramento gracioso.
 
 ## O que ainda exige configuração ou verificação manual
 

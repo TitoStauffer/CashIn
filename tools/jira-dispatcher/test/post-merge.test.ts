@@ -226,6 +226,29 @@ describe("processPostMergeEvent", () => {
     assert.match(result.reason, /integração inesperada/);
   });
 
+  it("blocks an undated pending rerun even when an older run passed", async () => {
+    const { github, dependencies } = setup();
+    github.checkRuns.push({
+      name: "API",
+      head_sha: HEAD_SHA,
+      app: { slug: "github-actions" },
+      status: "in_progress",
+      conclusion: null,
+    });
+    const result = await processPostMergeEvent(makeEvent(), dependencies);
+    assert.equal(result.status, "BLOCKED");
+    assert.match(result.reason, /pendente sem timestamp verificável/);
+  });
+
+  it("does not treat a different Jira status in the Done category as Done", async () => {
+    const { jira, dependencies } = setup();
+    jira.issue.fields.status = { id: "cancelled", name: "Cancelado", statusCategory: { key: "done" } };
+    const result = await processPostMergeEvent(makeEvent(), dependencies);
+    assert.equal(result.status, "COMPLETED");
+    assert.ok(jira.calls.includes("transition:DEV-42"));
+    assert.equal(jira.issue.fields.status?.name, "Concluído");
+  });
+
   it("blocks stale formal review, missing QA/QG reports, and unresolved review threads", async () => {
     const staleReview = setup();
     staleReview.github.reviews[0]!.commit_id = "c".repeat(40);

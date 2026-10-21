@@ -224,6 +224,10 @@ async function readAndValidateEvidence(
   for (const name of requiredChecks) {
     const runs = checkRuns.filter((run) => run.name === name && run.head_sha.toLowerCase() === sha.toLowerCase())
       .sort((left, right) => (right.completed_at ?? right.started_at ?? "").localeCompare(left.completed_at ?? left.started_at ?? ""));
+    if (runs.some((run) => run.status !== "completed" && !run.completed_at && !run.started_at)) {
+      failedChecks.push(`${name} pendente sem timestamp verificável`);
+      continue;
+    }
     const latest = runs[0];
     if (!latest) {
       missingChecks.push(name);
@@ -293,7 +297,7 @@ function selectDoneTransition<T extends { to: JiraStatus }>(transitions: T[]): T
 }
 
 function isDone(status: JiraStatus | undefined): boolean {
-  return status?.statusCategory?.key === "done" || ["done", "concluido"].includes(normalizeStatus(status?.name ?? ""));
+  return ["done", "concluido"].includes(normalizeStatus(status?.name ?? ""));
 }
 
 function normalizeStatus(value: string): string {
