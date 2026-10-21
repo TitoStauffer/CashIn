@@ -72,6 +72,15 @@
 - Ao concluir sua parte, cada Agent informa o que fez, quais arquivos alterou, quais verificações executou e se encontrou bloqueios.
 - O agente que conduz a execução integra o trabalho e verifica a História completa. As responsabilidades de Jira e Git seguem as regras definidas neste workflow.
 
+### Publicação de relatórios dos Agents no GitHub
+- Os Agents de Quality Gate, QA e Product Manager publicam seus relatórios nos comentários do Pull Request usando o publicador compartilhado em `tools/github-reviewer`; consulte o README do diretório para configuração e comando.
+- Use as assinaturas `Codex — Quality Gate Coordinator`, `Codex — QA Agent` e `Codex — PM Agent`, respectivamente. Informe sempre o número do PR, o SHA atual do commit, o status observado e o relatório em Markdown.
+- O publicador confere que o PR está aberto e que o SHA informado ainda é o head atual. Se o SHA divergir, atualize a evidência e tente novamente com o commit correto; não publique relatório de uma revisão antiga como atual.
+- Quality Gate publica apenas o resultado efetivamente observado dos checks configurados; QA publica somente critérios que validou; Product Manager publica somente o resumo factual da entrega.
+- Não declare um relatório como publicado se o comando falhar. Registre a falha e o motivo no ticket e siga o tratamento de bloqueios definido neste workflow.
+- Credenciais, chave privada PEM e tokens de instalação nunca devem aparecer em relatórios, comentários, logs ou commits. O Installation ID pode ser descoberto pelo publicador ou configurado localmente.
+- O Agent de Code Review continua usando exclusivamente o processo formal de revisão descrito abaixo. Comentário publicado pelo publicador compartilhado não substitui aprovação formal nem marca o checkbox de Code Review.
+
 ### Processo de Code Review no GitHub
 - O Agent de Code Review deve confirmar o repositório, o número e o título do PR, seu estado atual e o diff a revisar. Deve consultar o contexto adicional necessário e não presumir problemas sem evidências suficientes.
 - A revisão deve avaliar, no mínimo:
