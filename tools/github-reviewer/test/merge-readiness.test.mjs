@@ -72,6 +72,7 @@ function fixture(overrides = {}) {
     if (parsed.pathname === '/repos/owner/repo/contents/AGENTS.md') return response({ encoding: 'base64', content: Buffer.from(data.instructions).toString('base64') });
     if (parsed.pathname.endsWith(`/commits/${sha}/status`)) return response({ statuses: [] });
     if (parsed.pathname === '/repos/owner/repo/pulls/7/reviews') return response(data.reviews);
+    if (parsed.pathname.startsWith('/repos/owner/repo/compare/')) return response({ status: data.compareStatus ?? 'ahead', merge_base_commit: { sha: data.compareStatus === 'diverged' ? oldSha : data.baseSha } }, data.compareApiStatus ?? 200);
     if (parsed.pathname.endsWith('/collaborators/human-reviewer/permission')) return response({ permission: data.reviewerPermission ?? 'write' }, data.reviewerPermissionStatus ?? 200);
     if (parsed.pathname === '/repos/owner/repo/issues/7/comments') return response(data.comments);
     if (parsed.pathname === '/graphql') {
@@ -160,7 +161,7 @@ function selfRequiredRuleset(extraRules = []) {
     conditions: { ref_name: { include: ['~DEFAULT_BRANCH'], exclude: [] } },
     rules: [
       { type: 'pull_request', parameters: { required_approving_review_count: 0 } },
-      { type: 'required_status_checks', parameters: { required_status_checks: [{ context: 'PR title' }, { context: 'Merge Readiness' }] } },
+      { type: 'required_status_checks', parameters: { strict_required_status_checks_policy: true, required_status_checks: [{ context: 'PR title' }, { context: 'Merge Readiness' }] } },
       ...extraRules,
     ],
   }];
@@ -185,6 +186,17 @@ test('does not bypass an unevaluated merge queue rule in BLOCKED state', async (
 test('does not attribute an opaque classic protection block to its own status', async () => {
   const result = await fixture({ mergeableState: 'blocked', requiredContexts: ['PR title', 'Merge Readiness'] }).evaluate();
   assert.equal(result.status, 'BLOCKED');
+});
+
+test('does not confuse a strict stale-base block with its own required status', async () => {
+  const result = await fixture({ protectionStatus: 404, mergeableState: 'blocked', rulesets: selfRequiredRuleset(), compareStatus: 'diverged' }).evaluate();
+  assert.equal(result.status, 'BLOCKED');
+  assert.match(result.reasons.join(' '), /strict/);
+});
+
+test('fails closed when strict base synchronization cannot be confirmed', async () => {
+  const result = await fixture({ protectionStatus: 404, mergeableState: 'blocked', rulesets: selfRequiredRuleset(), compareApiStatus: 403 }).evaluate();
+  assert.equal(result.status, 'INCONCLUSIVE');
 });
 
 test('blocks when the caller requires a different base branch', async () => {

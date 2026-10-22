@@ -54,7 +54,7 @@ jobs:
 
       - name: Install trusted orchestration dependencies
         working-directory: tools/github-reviewer
-        run: npm ci
+        run: npm ci --fetch-timeout=15000 --fetch-retries=1
 
       - name: Build orchestration tools
         working-directory: tools/github-reviewer
@@ -108,7 +108,7 @@ jobs:
 
       - name: Install trusted publisher dependencies
         working-directory: tools/github-reviewer
-        run: npm ci
+        run: npm ci --fetch-timeout=15000 --fetch-retries=1
 
       - name: Build trusted publisher
         working-directory: tools/github-reviewer
@@ -170,7 +170,7 @@ jobs:
 
       - name: Install trusted orchestration dependencies
         working-directory: tools/github-reviewer
-        run: npm ci
+        run: npm ci --fetch-timeout=15000 --fetch-retries=1
 
       - name: Build orchestration tools
         working-directory: tools/github-reviewer
@@ -227,7 +227,7 @@ jobs:
 
       - name: Install trusted publisher dependencies
         working-directory: tools/github-reviewer
-        run: npm ci
+        run: npm ci --fetch-timeout=15000 --fetch-retries=1
 
       - name: Build trusted publisher
         working-directory: tools/github-reviewer
@@ -289,7 +289,7 @@ jobs:
 
       - name: Install trusted orchestration dependencies
         working-directory: tools/github-reviewer
-        run: npm ci
+        run: npm ci --fetch-timeout=15000 --fetch-retries=1
 
       - name: Build orchestration tools
         working-directory: tools/github-reviewer
@@ -353,7 +353,7 @@ jobs:
 
       - name: Install trusted publisher dependencies
         working-directory: tools/github-reviewer
-        run: npm ci
+        run: npm ci --fetch-timeout=15000 --fetch-retries=1
 
       - name: Build trusted publisher
         working-directory: tools/github-reviewer

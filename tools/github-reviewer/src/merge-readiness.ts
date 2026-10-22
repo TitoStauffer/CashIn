@@ -167,7 +167,22 @@ export async function evaluateMergeReadiness(options: MergeReadinessOptions): Pr
   const requiredContexts = configuredContexts.filter((requirement) => requirement.context !== 'Merge Readiness');
   const requiredReviewCount = getRequiredReviewCount(branchRules, applicableRulesets);
   const activeRules = applicableRulesets.filter((ruleset) => ruleset.enforcement === 'active').flatMap((ruleset) => ruleset.rules ?? []);
+  const requiresCurrentBase = branchRules?.required_status_checks?.strict === true
+    || activeRules.some((rule) => rule.type === 'required_status_checks' && rule.parameters?.strict_required_status_checks_policy === true);
+  let headIncludesBase = false;
+  if (requiresCurrentBase) {
+    try {
+      const baseSha = String(base?.sha ?? '');
+      const comparison = await requestGitHubApi(fetchImpl, `${repositoryPath}/compare/${encodeURIComponent(baseSha)}...${headSha}`, token);
+      headIncludesBase = ['ahead', 'identical'].includes(String(comparison.status)) && asRecord(comparison.merge_base_commit)?.sha === baseSha;
+      evidence.baseSynchronization = { required: true, headIncludesBase, mergeBaseSha: asRecord(comparison.merge_base_commit)?.sha };
+      if (!headIncludesBase) reasons.push('A política strict exige que o HEAD inclua a versão atual da branch base.');
+    } catch (error) {
+      limitations.push(describeFailure('Sincronização obrigatória com a branch base', error));
+    }
+  }
   const canResolveOwnStatusBlock = branchRules === null && requiredReviewCount === 0
+    && (!requiresCurrentBase || headIncludesBase)
     && configuredContexts.some((requirement) => requirement.context === 'Merge Readiness')
     && activeRules.every((rule) => ['deletion', 'non_fast_forward', 'pull_request', 'required_status_checks'].includes(rule.type ?? '')
       && (rule.type !== 'pull_request' || (!rule.parameters?.require_code_owner_review
@@ -258,8 +273,8 @@ interface CheckRun { name?: string; head_sha?: string; status?: string; conclusi
 interface CommitStatus { context?: string; state?: string; sha?: string; }
 interface Review { user?: { login?: string; type?: string }; state?: string; commit_id?: string; submitted_at?: string | null; body?: string; }
 interface IssueComment { user?: { login?: string }; body?: string; updated_at?: string; created_at?: string; }
-interface BranchProtection { required_status_checks?: { contexts?: string[]; checks?: Array<{ context?: string; app_id?: number | null }> }; required_pull_request_reviews?: { required_approving_review_count?: number; dismiss_stale_reviews?: boolean } | null; }
-interface Ruleset { id?: number; name?: string; enforcement?: string; target?: string; conditions?: { ref_name?: { include?: string[]; exclude?: string[] } }; rules?: Array<{ type?: string; parameters?: { required_status_checks?: Array<{ context?: string; integration_id?: number | null }>; required_approving_review_count?: number; require_code_owner_review?: boolean; require_last_push_approval?: boolean; required_reviewers?: unknown[] } }>; }
+interface BranchProtection { required_status_checks?: { strict?: boolean; contexts?: string[]; checks?: Array<{ context?: string; app_id?: number | null }> }; required_pull_request_reviews?: { required_approving_review_count?: number; dismiss_stale_reviews?: boolean } | null; }
+interface Ruleset { id?: number; name?: string; enforcement?: string; target?: string; conditions?: { ref_name?: { include?: string[]; exclude?: string[] } }; rules?: Array<{ type?: string; parameters?: { required_status_checks?: Array<{ context?: string; integration_id?: number | null }>; strict_required_status_checks_policy?: boolean; required_approving_review_count?: number; require_code_owner_review?: boolean; require_last_push_approval?: boolean; required_reviewers?: unknown[] } }>; }
 interface RequiredCheck { context: string; appId?: number; }
 
 async function listCheckRuns(fetchImpl: typeof fetch, repositoryPath: string, sha: string, token: string): Promise<CheckRun[]> {
