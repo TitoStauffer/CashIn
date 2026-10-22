@@ -46,7 +46,7 @@ test('evidence markers change when PR metadata or the review input changes witho
 
 test('review fingerprint changes when diff, CI/Sonar evidence, instructions, or base commit changes', () => {
   const pr = { title: 'PR', html_url: 'https://example.test/1', body: '', head: { sha }, base: { ref: 'master', sha: 'b'.repeat(40) } };
-  const inputs = { diff: 'diff A', checks: { api: 'PASSED', web: 'PASSED', sonarQube: 'PASSED', sonarCloud: 'PASSED' }, repositoryInstructions: 'rules A', sourceFiles: [] };
+  const inputs = { diff: 'diff A', checks: { api: 'PASSED', web: 'PASSED', githubReviewer: 'PASSED', sonarQube: 'PASSED', sonarCloud: 'PASSED' }, repositoryInstructions: 'rules A', sourceFiles: [] };
   const current = computeAgentContextHash('owner/repo', 1, pr, inputs);
 
   assert.notEqual(computeAgentContextHash('owner/repo', 1, pr, { ...inputs, diff: 'diff B' }), current);

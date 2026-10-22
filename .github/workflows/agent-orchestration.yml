@@ -34,6 +34,7 @@ jobs:
       contents: read
       pull-requests: read
       checks: read
+      actions: read
     outputs:
       decision: ${{ steps.stage.outputs.decision }}
       commit_sha: ${{ steps.stage.outputs.commit_sha }}
@@ -90,6 +91,7 @@ jobs:
       contents: read
       pull-requests: read
       checks: read
+      actions: read
     outputs:
       decision: ${{ needs.code-review.outputs.decision }}
       commit_sha: ${{ needs.code-review.outputs.commit_sha }}
@@ -150,6 +152,7 @@ jobs:
       contents: read
       pull-requests: read
       checks: read
+      actions: read
     outputs:
       decision: ${{ steps.stage.outputs.decision }}
       commit_sha: ${{ steps.stage.outputs.commit_sha }}
@@ -213,6 +216,7 @@ jobs:
       contents: read
       pull-requests: read
       checks: read
+      actions: read
     steps:
       - name: Checkout trusted default branch
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -269,6 +273,7 @@ jobs:
       contents: read
       pull-requests: read
       checks: read
+      actions: read
     outputs:
       decision: ${{ steps.stage.outputs.decision }}
       commit_sha: ${{ steps.stage.outputs.commit_sha }}
@@ -339,6 +344,7 @@ jobs:
       contents: read
       pull-requests: read
       checks: read
+      actions: read
     steps:
       - name: Checkout trusted default branch
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
