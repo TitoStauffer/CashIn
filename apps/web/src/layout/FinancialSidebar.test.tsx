@@ -75,15 +75,41 @@ describe('FinancialSidebar', () => {
     await renderSidebar({ activePage: 'expenses', onLogout })
 
     expect(screen.getByRole('navigation', { name: 'Navegação principal' })).toBeVisible()
-    expect(screen.getByRole('link', { name: 'Despesas' })).toHaveAttribute('aria-current', 'page')
-    expect(screen.getByRole('link', { name: 'Home' })).toHaveAttribute('href', '/dashboard')
+    expect(screen.getByRole('link', { name: 'Saídas' })).toHaveAttribute('aria-current', 'page')
+    expect(screen.getByRole('link', { name: 'Visão geral' })).toHaveAttribute('href', '/dashboard')
     expect(screen.getByRole('link', { name: 'Entradas' })).toHaveAttribute('href', '/incomes')
-    expect(screen.getByRole('link', { name: 'Metas' })).toHaveAttribute('href', '/goals')
+    expect(screen.getByRole('link', { name: 'Metas e aportes' })).toHaveAttribute('href', '/goals')
     expect(screen.getByRole('link', { name: 'Categorias' })).toHaveAttribute('href', '/categories')
     expect(screen.getByText('tito@example.com')).toBeVisible()
 
     await user.click(screen.getByRole('button', { name: 'Sair da conta' }))
     expect(onLogout).toHaveBeenCalledOnce()
+  })
+
+  it('groups movement and registry links including credit cards and invoices', async () => {
+    await renderSidebar()
+
+    expect(screen.getByRole('button', { name: 'Registro de movimentações' })).toHaveAttribute('aria-expanded', 'true')
+    expect(screen.getByRole('link', { name: 'Entradas' })).toHaveAttribute('href', '/incomes')
+    expect(screen.getByRole('link', { name: 'Saídas' })).toHaveAttribute('href', '/expenses')
+    expect(screen.getByRole('link', { name: 'Metas e aportes' })).toHaveAttribute('href', '/goals')
+    expect(screen.getByRole('button', { name: 'Cadastros gerais' })).toHaveAttribute('aria-expanded', 'true')
+    expect(screen.getByRole('link', { name: 'Categorias' })).toHaveAttribute('href', '/categories')
+    expect(screen.getByRole('link', { name: 'Formas de pagamento' })).toHaveAttribute('href', '/payment-methods')
+    expect(screen.getByRole('link', { name: 'Cartões e faturas' })).toHaveAttribute('href', '/credit-cards')
+  })
+
+  it('collapses a group accessibly and reports its active page', async () => {
+    const user = userEvent.setup()
+    await renderSidebar({ activePage: 'incomes' })
+    const toggle = screen.getByRole('button', { name: 'Registro de movimentações, página ativa: Entradas' })
+
+    toggle.focus()
+    await user.keyboard('{Enter}')
+
+    expect(toggle).toHaveAttribute('aria-expanded', 'false')
+    expect(screen.getByRole('link', { name: 'Entradas', hidden: true })).not.toBeVisible()
+    expect(toggle).toHaveAccessibleName('Registro de movimentações, página ativa: Entradas')
   })
 
   it('keeps the selected wallet for this account and creates a new wallet as active', async () => {
@@ -195,7 +221,7 @@ describe('FinancialSidebar', () => {
     unmount()
     await renderSidebar()
     expect(document.querySelector('.financial-sidebar')).toHaveClass('financial-sidebar--collapsed')
-    expect(document.documentElement.style.getPropertyValue('--financial-sidebar-width')).toBe('76px')
+    await waitFor(() => expect(document.documentElement.style.getPropertyValue('--financial-sidebar-width')).toBe('76px'))
   })
 
   it('opens the mobile menu, closes it after choosing a section, and tracks viewport changes', async () => {
@@ -210,7 +236,7 @@ describe('FinancialSidebar', () => {
     await user.click(screen.getByRole('button', { name: 'Abrir menu' }))
     expect(navigation).toHaveAttribute('aria-hidden', 'false')
     expect(screen.getByRole('link', { name: 'Entradas' })).toHaveAttribute('aria-current', 'page')
-    await user.click(screen.getByRole('link', { name: 'Metas' }))
+    await user.click(screen.getByRole('link', { name: 'Metas e aportes' }))
     expect(navigation).toHaveAttribute('aria-hidden', 'true')
     expect(container.querySelector('.financial-sidebar')).not.toHaveClass('financial-sidebar--mobile-open')
 

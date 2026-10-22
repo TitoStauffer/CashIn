@@ -42,6 +42,10 @@ import { PaymentMethodsService } from "./payment-methods/payment-methods.service
 import { PostgresPaymentMethodsRepository } from "./payment-methods/postgres-payment-methods.repository.js";
 import { registerPaymentMethodRoutes } from "./payment-methods/payment-methods.routes.js";
 import type { PaymentMethodRepository } from "./payment-methods/payment-methods.types.js";
+import { CreditCardsService } from "./credit-cards/credit-cards.service.js";
+import { PostgresCreditCardsRepository } from "./credit-cards/postgres-credit-cards.repository.js";
+import { registerCreditCardRoutes } from "./credit-cards/credit-cards.routes.js";
+import type { CreditCardRepository } from "./credit-cards/credit-cards.types.js";
 
 export interface AppOptions {
   logger?: boolean;
@@ -56,6 +60,7 @@ export interface AppOptions {
   walletInvitationRepository?: WalletInvitationRepository;
   walletAccessRequestRepository?: WalletAccessRequestRepository;
   paymentMethodRepository?: PaymentMethodRepository;
+  creditCardRepository?: CreditCardRepository;
   authConfiguration?: Partial<AuthConfiguration>;
   walletInvitationTokenTtlHours?: number;
   walletAccessLinkTtlHours?: number;
@@ -194,6 +199,12 @@ export function createApp(
   registerPaymentMethodRoutes(app, {
     paymentMethodsService: new PaymentMethodsService(
       options.paymentMethodRepository ?? new PostgresPaymentMethodsRepository(database),
+    ),
+  });
+
+  registerCreditCardRoutes(app, {
+    creditCardsService: new CreditCardsService(
+      options.creditCardRepository ?? new PostgresCreditCardsRepository(database),
     ),
   });
 

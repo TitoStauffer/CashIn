@@ -10,6 +10,9 @@ export interface Expense {
   paymentMethodId: string | null;
   paymentMethodName: string | null;
   paymentMethodNature: import("../payment-methods/payment-methods.types.js").PaymentMethodNature | null;
+  creditCardId: string | null;
+  creditCardStatementId: string | null;
+  creditCardName: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -21,6 +24,7 @@ export interface ExpenseInput {
   categoryId: string;
   subcategoryId?: string | null;
   paymentMethodId?: string | null;
+  creditCardId?: string | null;
 }
 
 export interface ExpenseRepository {

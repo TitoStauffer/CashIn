@@ -6,6 +6,8 @@ import type { Expense, ExpenseInput } from './expensesApi'
 import { ExpenseApiError, expensesApi } from './expensesApi'
 import { getPaymentMethodNatureLabel, paymentMethodsApi } from '../paymentMethods/paymentMethodsApi'
 import type { PaymentMethod } from '../paymentMethods/paymentMethodsApi'
+import { creditCardsApi } from '../creditCards/creditCardsApi'
+import type { CreditCard } from '../creditCards/creditCardsApi'
 import { FinancialSidebar } from '../layout/FinancialSidebar'
 import { useWallet } from '../wallets/useWallet'
 import { MonthYearSelector } from '../period/MonthYearSelector'
@@ -21,6 +23,7 @@ type ExpenseEditor = {
   categoryId: string
   subcategoryId: string
   paymentMethodId: string
+  creditCardId: string
 } | null
 
 function formatDate(date: string) {
@@ -60,6 +63,7 @@ export function ExpensesPage({ userEmail, isLoggingOut, onLogout }: ExpensesPage
   const [month, setMonth] = useState(getCurrentMonth)
   const [categories, setCategories] = useState<Category[]>([])
   const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>([])
+  const [creditCards, setCreditCards] = useState<CreditCard[]>([])
   const [expenses, setExpenses] = useState<Expense[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [loadedWalletId, setLoadedWalletId] = useState<string | null>(null)
@@ -79,9 +83,10 @@ export function ExpensesPage({ userEmail, isLoggingOut, onLogout }: ExpensesPage
     Promise.all([
       categoriesApi.list('expense', controller.signal),
       paymentMethodsApi.list(controller.signal),
+      creditCardsApi.list(controller.signal),
       expensesApi.list(range.from, range.to, controller.signal),
     ])
-      .then(([categoryResponse, paymentMethodResponse, expenseResponse]) => {
+      .then(([categoryResponse, paymentMethodResponse, creditCardResponse, expenseResponse]) => {
         if (lastLoadedWalletId.current !== activeWalletId) {
           setEditor(null)
           setAmountInput('')
@@ -92,6 +97,7 @@ export function ExpensesPage({ userEmail, isLoggingOut, onLogout }: ExpensesPage
         lastLoadedWalletId.current = activeWalletId
         setCategories(categoryResponse.items)
         setPaymentMethods(paymentMethodResponse.items)
+        setCreditCards(creditCardResponse.items)
         setExpenses(expenseResponse.items)
         setLoadedWalletId(activeWalletId)
         setLoadError('')
@@ -132,6 +138,7 @@ export function ExpensesPage({ userEmail, isLoggingOut, onLogout }: ExpensesPage
       categoryId: categories[0]?.id ?? '',
       subcategoryId: '',
       paymentMethodId: '',
+      creditCardId: '',
     })
   }
 
@@ -147,6 +154,7 @@ export function ExpensesPage({ userEmail, isLoggingOut, onLogout }: ExpensesPage
       categoryId: expense.categoryId,
       subcategoryId: expense.subcategoryId ?? '',
       paymentMethodId: expense.paymentMethodId ?? '',
+      creditCardId: expense.creditCardId ?? '',
     })
   }
 
@@ -183,6 +191,11 @@ export function ExpensesPage({ userEmail, isLoggingOut, onLogout }: ExpensesPage
       setFormError('Informe a data e a categoria da despesa.')
       return
     }
+    const selectedPaymentMethod = paymentMethods.find((method) => method.id === editor.paymentMethodId)
+    if (selectedPaymentMethod?.nature === 'credit_card' && !editor.creditCardId) {
+      setFormError('Selecione o cartão de crédito usado nesta despesa.')
+      return
+    }
 
     const input: ExpenseInput = {
       amount,
@@ -191,6 +204,7 @@ export function ExpensesPage({ userEmail, isLoggingOut, onLogout }: ExpensesPage
       categoryId: editor.categoryId,
       subcategoryId: editor.subcategoryId || null,
       paymentMethodId: editor.paymentMethodId || null,
+      ...(selectedPaymentMethod?.nature === 'credit_card' ? { creditCardId: editor.creditCardId } : {}),
     }
     resetMessages()
     setIsSaving(true)
@@ -329,7 +343,11 @@ export function ExpensesPage({ userEmail, isLoggingOut, onLogout }: ExpensesPage
                   <select
                     id="expense-payment-method"
                     value={editor.paymentMethodId}
-                    onChange={(event) => setEditor({ ...editor, paymentMethodId: event.target.value })}
+                    onChange={(event) => {
+                      const paymentMethodId = event.target.value
+                      const method = paymentMethods.find((item) => item.id === paymentMethodId)
+                      setEditor({ ...editor, paymentMethodId, creditCardId: method?.nature === 'credit_card' ? editor.creditCardId : '' })
+                    }}
                   >
                     <option value="">Não informada</option>
                     {editor.paymentMethodId && !paymentMethods.some((method) => method.id === editor.paymentMethodId) && (
@@ -343,6 +361,26 @@ export function ExpensesPage({ userEmail, isLoggingOut, onLogout }: ExpensesPage
                   </select>
                   {paymentMethods.length === 0 && <small>Cadastre formas de pagamento em <a href="/payment-methods">Formas de pagamento</a>.</small>}
                 </div>
+                {paymentMethods.find((method) => method.id === editor.paymentMethodId)?.nature === 'credit_card' && (
+                  <div className="expense-field">
+                    <label htmlFor="expense-credit-card">Cartão de crédito *</label>
+                    <select
+                      id="expense-credit-card"
+                      value={editor.creditCardId}
+                      onChange={(event) => setEditor({ ...editor, creditCardId: event.target.value })}
+                      required
+                    >
+                      <option value="">Selecione um cartão</option>
+                      {editor.creditCardId && !creditCards.some((card) => card.id === editor.creditCardId && card.isActive) && (
+                        <option value={editor.creditCardId} disabled>{creditCards.find((card) => card.id === editor.creditCardId)?.nickname ?? 'Cartão'} (inativo)</option>
+                      )}
+                      {creditCards.filter((card) => card.isActive).map((card) => (
+                        <option key={card.id} value={card.id}>{card.nickname}</option>
+                      ))}
+                    </select>
+                    {creditCards.filter((card) => card.isActive).length === 0 && <small>Cadastre e ative um cartão em <a href="/credit-cards">Cartões e faturas</a>.</small>}
+                  </div>
+                )}
                 <div className="expense-field expense-field--wide">
                   <label htmlFor="expense-description">Descrição <span>(opcional)</span></label>
                   <input
