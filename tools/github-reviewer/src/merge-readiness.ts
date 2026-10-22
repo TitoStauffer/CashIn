@@ -109,7 +109,7 @@ export async function evaluateMergeReadiness(options: MergeReadinessOptions): Pr
     reasons.push('O Pull Request possui conflitos com a branch base.');
   } else if (initialPullRequest.mergeable === null || mergeableState === 'unknown') {
     limitations.push('O GitHub ainda não informou se o Pull Request pode ser integrado.');
-  } else if (initialPullRequest.mergeable !== true || mergeableState !== 'clean') {
+  } else if (initialPullRequest.mergeable !== true || (mergeableState !== 'clean' && mergeableState !== 'unstable')) {
     reasons.push(`O Pull Request não está em estado integrável do GitHub (${mergeableState ?? 'desconhecido'}).`);
   }
 
@@ -216,7 +216,7 @@ export async function evaluateMergeReadiness(options: MergeReadinessOptions): Pr
   const finalMergeableState = stringValue(finalPullRequest.mergeable_state);
   if (finalPullRequest.mergeable === false || finalMergeableState === 'dirty') reasons.push('O Pull Request deixou de estar integrável durante a avaliação.');
   else if (finalPullRequest.mergeable === null || finalMergeableState === 'unknown') limitations.push('O GitHub não confirmou a mergeabilidade ao final da avaliação.');
-  else if (finalPullRequest.mergeable !== true || finalMergeableState !== 'clean') reasons.push(`O Pull Request não está em estado integrável ao final da avaliação (${finalMergeableState ?? 'desconhecido'}).`);
+  else if (finalPullRequest.mergeable !== true || (finalMergeableState !== 'clean' && finalMergeableState !== 'unstable')) reasons.push(`O Pull Request não está em estado integrável ao final da avaliação (${finalMergeableState ?? 'desconhecido'}).`);
   let finalReviewInputs;
   try {
     finalReviewInputs = await loadAgentReviewInputs(fetchImpl, `${options.owner}/${options.repository}`, options.pullRequestNumber, finalPullRequest, options.contextToken || token);

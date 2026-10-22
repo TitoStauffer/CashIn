@@ -37,6 +37,7 @@ function fixture(overrides = {}) {
     contextChanges: false,
     prCloses: false,
     mergeabilityChanges: false,
+    mergeableState: 'clean',
     protectionStatus: 200,
     requiredCheckAppId: null,
     requiredContexts: ['PR title'],
@@ -59,7 +60,7 @@ function fixture(overrides = {}) {
         head: { sha: data.shaChanges && pullRequestReadCount > 1 ? oldSha : sha },
         base: { ref: 'master', sha: data.baseSha }, user: { login: 'author' },
         mergeable: data.mergeabilityChanges && pullRequestReadCount > 1 ? false : true,
-        mergeable_state: data.mergeabilityChanges && pullRequestReadCount > 1 ? 'dirty' : 'clean',
+        mergeable_state: data.mergeabilityChanges && pullRequestReadCount > 1 ? 'dirty' : data.mergeableState,
       });
     }
     if (parsed.pathname.includes('/check-runs')) {
@@ -119,6 +120,21 @@ test('does not create a circular dependency on the Merge Readiness context', asy
 
   assert.equal(result.status, 'READY_TO_MERGE');
   assert.deepEqual(result.evidence.requiredChecks.map((check) => check.context), ['PR title']);
+});
+
+test('does not block solely because GitHub reports UNSTABLE when mergeability and required evidence are valid', async () => {
+  const result = await fixture({ mergeableState: 'unstable' }).evaluate();
+
+  assert.equal(result.status, 'READY_TO_MERGE');
+  assert.deepEqual(result.reasons, []);
+});
+
+test('still blocks an UNSTABLE pull request when a required check fails', async () => {
+  const failingChecks = checks.map((check) => check.name === 'SonarQube' ? { ...check, conclusion: 'failure' } : check);
+  const result = await fixture({ mergeableState: 'unstable', checks: failingChecks }).evaluate();
+
+  assert.equal(result.status, 'BLOCKED');
+  assert.match(result.reasons.join(' '), /SonarQube: FAILED/);
 });
 
 test('blocks when the caller requires a different base branch', async () => {
