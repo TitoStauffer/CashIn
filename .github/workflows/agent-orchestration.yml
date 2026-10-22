@@ -1,6 +1,7 @@
 name: Codex Agent Orchestration
 
 on:
+  # Either completion triggers evaluation; agent-stage-cli verifies all CI/Sonar prerequisites before a model call.
   workflow_run: # zizmor: ignore[dangerous-triggers] — jobs check PR source/base and run only trusted master code; CI artifacts are never consumed.
     workflows: [CI, PR title]
     types: [completed]

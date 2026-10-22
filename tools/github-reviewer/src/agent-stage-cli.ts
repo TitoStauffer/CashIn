@@ -49,6 +49,7 @@ async function main(): Promise<void> {
   const reviewInputs = await loadAgentReviewInputs(fetch, repository, prNumber, pullRequest, token);
   const { diff, checks, checkRuns, repositoryInstructions, sourceFiles } = reviewInputs;
   if (diff.length > 350_000) throw new Error('Pull Request diff exceeds the supported review size.');
+  // A title-triggered evaluation may precede CI completion; no model runs until every required check passes.
   assertRequiredChecksPassed(checks);
 
   const contextHash = computeAgentContextHash(repository, prNumber, pullRequest, reviewInputs);
