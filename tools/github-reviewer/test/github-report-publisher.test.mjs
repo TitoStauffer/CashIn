@@ -11,7 +11,7 @@ const currentPr = {
   title: 'Example PR', html_url: 'https://github.com/TitoStauffer/CashIn/pull/42', body: '',
   head: { sha }, base: { ref: 'master', sha: baseSha },
 };
-const currentInputs = { diff: 'diff contents', checks: summarizeAgentChecks(checkRuns), repositoryInstructions: 'trusted instructions' };
+const currentInputs = { diff: 'diff contents', checks: summarizeAgentChecks(checkRuns), repositoryInstructions: 'trusted instructions', sourceFiles: [] };
 const contextHash = computeAgentContextHash('TitoStauffer/CashIn', 42, currentPr, currentInputs);
 const baseReport = {
   agentName: 'qa', pullRequestNumber: 42, commitSha: sha, contextHash, status: 'APPROVED',
@@ -37,6 +37,7 @@ function fakeGitHub(requests, { pr = currentPr, comments = [], apiFailure = fals
     if (parsed.pathname === '/app') return response({ slug: 'cashin-devagents' });
     if (parsed.pathname.endsWith('/installation')) return response({ id: 173427336 });
     if (parsed.pathname.endsWith('/pulls/42') && options.headers?.Accept === 'application/vnd.github.v3.diff') return new Response('diff contents');
+    if (parsed.pathname.endsWith('/pulls/42/files')) return response([]);
     if (parsed.pathname.endsWith('/pulls/42')) {
       prReads += 1;
       return response({ state: 'open', user: { login: 'author' }, ...pr,

@@ -7,7 +7,7 @@ import { summarizeAgentChecks } from '../dist/agent-review-inputs.js';
 const sha = 'a'.repeat(40);
 const oldSha = 'b'.repeat(40);
 const checks = ['API', 'Web', 'SonarQube', 'SonarCloud Code Analysis', 'PR title'].map((name) => ({ name, head_sha: sha, status: 'completed', conclusion: 'success' }));
-const reviewInputs = { diff: 'diff contents', checks: summarizeAgentChecks(checks), repositoryInstructions: 'trusted instructions' };
+const reviewInputs = { diff: 'diff contents', checks: summarizeAgentChecks(checks), repositoryInstructions: 'trusted instructions', sourceFiles: [] };
 const contextHash = computeAgentContextHash('owner/repo', 7, {
   title: 'Example PR', html_url: 'https://github.com/owner/repo/pull/7', body: '',
   head: { sha }, base: { ref: 'master', sha: 'c'.repeat(40) },
@@ -52,6 +52,7 @@ function fixture(overrides = {}) {
     requests.push({ path, method: options.method ?? 'GET' });
     if (parsed.pathname === '/app') return response({ slug: 'cashin-devagents' });
     if (parsed.pathname === '/repos/owner/repo/pulls/7' && options.headers?.Accept === 'application/vnd.github.v3.diff') return new Response(data.diff);
+    if (parsed.pathname === '/repos/owner/repo/pulls/7/files') return response([]);
     if (parsed.pathname === '/repos/owner/repo/pulls/7') {
       pullRequestReadCount += 1;
       return response({

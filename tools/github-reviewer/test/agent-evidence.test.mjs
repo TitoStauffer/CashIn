@@ -46,11 +46,12 @@ test('evidence markers change when PR metadata or the review input changes witho
 
 test('review fingerprint changes when diff, CI/Sonar evidence, instructions, or base commit changes', () => {
   const pr = { title: 'PR', html_url: 'https://example.test/1', body: '', head: { sha }, base: { ref: 'master', sha: 'b'.repeat(40) } };
-  const inputs = { diff: 'diff A', checks: { api: 'PASSED', web: 'PASSED', sonarQube: 'PASSED', sonarCloud: 'PASSED' }, repositoryInstructions: 'rules A' };
+  const inputs = { diff: 'diff A', checks: { api: 'PASSED', web: 'PASSED', sonarQube: 'PASSED', sonarCloud: 'PASSED' }, repositoryInstructions: 'rules A', sourceFiles: [] };
   const current = computeAgentContextHash('owner/repo', 1, pr, inputs);
 
   assert.notEqual(computeAgentContextHash('owner/repo', 1, pr, { ...inputs, diff: 'diff B' }), current);
   assert.notEqual(computeAgentContextHash('owner/repo', 1, pr, { ...inputs, checks: { ...inputs.checks, sonarQube: 'FAILED' } }), current);
   assert.notEqual(computeAgentContextHash('owner/repo', 1, pr, { ...inputs, repositoryInstructions: 'rules B' }), current);
+  assert.notEqual(computeAgentContextHash('owner/repo', 1, pr, { ...inputs, sourceFiles: [{ path: 'src/a.ts', revision: 'head', content: 'source A' }] }), current);
   assert.notEqual(computeAgentContextHash('owner/repo', 1, { ...pr, base: { ref: 'master', sha: 'c'.repeat(40) } }, inputs), current);
 });

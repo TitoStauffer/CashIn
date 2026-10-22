@@ -39,7 +39,7 @@ jobs:
       pr_number: ${{ steps.stage.outputs.pr_number }}
     steps:
       - name: Checkout trusted default branch
-        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: master
           token: ${{ github.token }}
@@ -95,7 +95,7 @@ jobs:
       pr_number: ${{ needs.code-review.outputs.pr_number }}
     steps:
       - name: Checkout trusted default branch
-        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: master
           token: ${{ github.token }}
@@ -155,7 +155,7 @@ jobs:
       pr_number: ${{ steps.stage.outputs.pr_number }}
     steps:
       - name: Checkout trusted default branch
-        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: master
           token: ${{ github.token }}
@@ -214,7 +214,7 @@ jobs:
       checks: read
     steps:
       - name: Checkout trusted default branch
-        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: master
           token: ${{ github.token }}
@@ -274,7 +274,7 @@ jobs:
       pr_number: ${{ steps.stage.outputs.pr_number }}
     steps:
       - name: Checkout trusted default branch
-        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: master
           token: ${{ github.token }}
@@ -340,7 +340,7 @@ jobs:
       checks: read
     steps:
       - name: Checkout trusted default branch
-        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: master
           token: ${{ github.token }}

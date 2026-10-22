@@ -47,12 +47,12 @@ async function main(): Promise<void> {
   }
 
   const reviewInputs = await loadAgentReviewInputs(fetch, repository, prNumber, pullRequest, token);
-  const { diff, checks, repositoryInstructions } = reviewInputs;
+  const { diff, checks, repositoryInstructions, sourceFiles } = reviewInputs;
   if (diff.length > 350_000) throw new Error('Pull Request diff exceeds the supported review size.');
   assertRequiredChecksPassed(checks);
 
   const contextHash = computeAgentContextHash(repository, prNumber, pullRequest, reviewInputs);
-  if (detectPromptInjection(`${stringValue(pullRequest.title) ?? ''}\n${stringValue(pullRequest.body) ?? ''}\n${diff}`)) {
+  if (detectPromptInjection(`${stringValue(pullRequest.title) ?? ''}\n${stringValue(pullRequest.body) ?? ''}\n${diff}\n${sourceFiles.map((file) => file.content).join('\n')}`)) {
     const blocked = { ...createInjectionBlockedResult(stage, resolution.headSha), contextHash };
     await writeStageResult(blocked, prNumber);
     process.exitCode = 2;
@@ -95,6 +95,7 @@ async function main(): Promise<void> {
     },
     checks,
     repositoryInstructions,
+    sourceFiles,
   });
   const result = { ...modelResult, contextHash };
   await verifyHeadUnchanged(prNumber, resolution.headSha, repository, token);
