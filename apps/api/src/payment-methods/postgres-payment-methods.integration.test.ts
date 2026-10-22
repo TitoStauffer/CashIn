@@ -1,15 +1,138 @@
 import assert from "node:assert/strict";
 import { randomBytes } from "node:crypto";
-import { readFile } from "node:fs/promises";
+import { readdir, readFile } from "node:fs/promises";
 import test from "node:test";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Pool } from "pg";
 import { createDatabase } from "../database.js";
+import { PostgresExpensesRepository } from "../expenses/postgres-expenses.repository.js";
 import { PostgresFinancialSummaryRepository } from "../financial-summary/postgres-financial-summary.repository.js";
 import { PostgresPaymentMethodsRepository } from "./postgres-payment-methods.repository.js";
 
 const testDatabaseUrl = process.env.TEST_DATABASE_URL;
+
+for (const collision of [
+  { label: "active immediate", nature: "immediate", isActive: true, cashBalance: "92.50", benefitBalance: "295.00", updatedBenefitBalance: "290.00" },
+  { label: "inactive legacy benefit", nature: "meal_benefit", isActive: false, cashBalance: "100.00", benefitBalance: "287.50", updatedBenefitBalance: "282.50" },
+]) {
+  test(`unified benefit migration preserves colliding ${collision.label} methods and their history`, {
+    skip: !testDatabaseUrl,
+  }, async () => {
+    const schemaName = `benefit_collision_${randomBytes(8).toString("hex")}`;
+    const adminPool = new Pool({ connectionString: testDatabaseUrl });
+    let scopedPool: Pool | undefined;
+
+    try {
+      await adminPool.query(`CREATE SCHEMA ${schemaName}`);
+      scopedPool = new Pool({ connectionString: testDatabaseUrl, options: `-c search_path=${schemaName}` });
+      const database = createDatabase(scopedPool);
+      const migrationDirectory = fileURLToPath(new URL("../../migrations/", import.meta.url));
+      const unifiedVersion = "013_unified_benefit_balance.sql";
+      const earlierVersions = (await readdir(migrationDirectory))
+        .filter((version) => /^\d+_[a-z0-9_-]+\.sql$/i.test(version) && version < unifiedVersion)
+        .sort();
+      for (const version of earlierVersions) {
+        const sql = await readFile(join(migrationDirectory, version), "utf8");
+        await database.transaction(async (transaction) => { await transaction.query(sql); });
+      }
+
+      const user = await database.query<{ id: string }>(
+        "INSERT INTO users (email, password_hash, email_verified_at) VALUES ($1, 'test-hash', now()) RETURNING id",
+        [`benefit-${schemaName}@example.com`],
+      );
+      const userId = user.rows[0]!.id;
+      const wallet = await database.query<{ id: string }>(
+        "SELECT id FROM wallets WHERE owner_user_id = $1 AND is_personal", [userId],
+      );
+      const walletId = wallet.rows[0]!.id;
+      const otherWallet = await database.query<{ id: string }>(
+        "INSERT INTO wallets (owner_user_id, name, is_personal) VALUES ($1, 'Other wallet', false) RETURNING id", [userId],
+      );
+      const categories = await database.query<{ id: string; nature: string }>(
+        `INSERT INTO categories (user_id, wallet_id, name, nature)
+         VALUES ($1, $2, 'Benefits', 'income'), ($1, $2, 'Food', 'expense') RETURNING id, nature`,
+        [userId, walletId],
+      );
+      const incomeCategoryId = categories.rows.find((category) => category.nature === "income")!.id;
+      const expenseCategoryId = categories.rows.find((category) => category.nature === "expense")!.id;
+      const customMethods = await database.query<{ id: string; name: string }>(
+        `INSERT INTO payment_methods (wallet_id, name, nature, is_active)
+         SELECT $1, name, $2, $3 FROM unnest($4::text[]) AS names(name) RETURNING id, name`,
+        [walletId, collision.nature, collision.isActive, [
+          "CARTAO DE BENEFICIOS (VA/VR)",
+          "Cartão de benefícios (VA/VR) (1)",
+          "Cartão de benefícios (VA/VR) (2)",
+        ]],
+      );
+      const customMethodIds = customMethods.rows.map((method) => method.id);
+      const customMethodId = customMethods.rows.find((method) => method.name === "CARTAO DE BENEFICIOS (VA/VR)")!.id;
+      await database.query(
+        `INSERT INTO incomes (user_id, wallet_id, category_id, amount, date, balance_type)
+         VALUES ($1, $2, $3, '150.00', '2026-10-12', 'food_benefit'),
+                ($1, $2, $3, '200.00', '2026-10-13', 'meal_benefit'),
+                ($1, $2, $3, '100.00', '2026-10-13', 'cash'),
+                ($1, $2, $3, '30.00', '2026-10-13', 'home_office_benefit')`,
+        [userId, walletId, incomeCategoryId],
+      );
+      await database.query(
+        `INSERT INTO expenses (user_id, wallet_id, category_id, payment_method_id, payment_method_nature, amount, date)
+         SELECT $1, $2, $3, method.id, method.nature, amounts.amount, '2026-10-14'
+         FROM (VALUES ('Vale-Alimentação', '20.00'::numeric), ('Vale-Refeição', '35.00'::numeric)) AS amounts(name, amount)
+         JOIN payment_methods AS method ON method.wallet_id = $2 AND method.name = amounts.name`,
+        [userId, walletId, expenseCategoryId],
+      );
+      await database.query(
+        `INSERT INTO expenses (user_id, wallet_id, category_id, payment_method_id, payment_method_nature, amount, date)
+         VALUES ($1, $2, $3, $4, $5, 7.50, '2026-10-14')`,
+        [userId, walletId, expenseCategoryId, customMethodId, collision.nature],
+      );
+      const methodsBefore = await database.query("SELECT * FROM payment_methods WHERE id = ANY($1::uuid[]) ORDER BY id", [customMethodIds]);
+      const incomesBefore = await database.query("SELECT * FROM incomes WHERE wallet_id = $1 ORDER BY id", [walletId]);
+      const expensesBefore = await database.query("SELECT * FROM expenses WHERE wallet_id = $1 ORDER BY id", [walletId]);
+
+      const migration = await readFile(join(migrationDirectory, unifiedVersion), "utf8");
+      await database.transaction(async (transaction) => { await transaction.query(migration); });
+
+      assert.deepEqual((await database.query("SELECT * FROM payment_methods WHERE id = ANY($1::uuid[]) ORDER BY id", [customMethodIds])).rows, methodsBefore.rows);
+      assert.deepEqual((await database.query("SELECT * FROM incomes WHERE wallet_id = $1 ORDER BY id", [walletId])).rows, incomesBefore.rows);
+      assert.deepEqual((await database.query("SELECT * FROM expenses WHERE wallet_id = $1 ORDER BY id", [walletId])).rows, expensesBefore.rows);
+      const activeBenefits = await database.query<{ id: string; name: string }>(
+        "SELECT id, name FROM payment_methods WHERE wallet_id = $1 AND nature = 'food_meal_benefit' AND is_active", [walletId],
+      );
+      assert.equal(activeBenefits.rows.length, 1, "a name collision must not suppress the active unified benefit method");
+      assert.equal(activeBenefits.rows[0]!.name, "Cartão de benefícios (VA/VR) (3)");
+      assert.deepEqual((await database.query(
+        "SELECT name FROM payment_methods WHERE wallet_id = $1 AND nature = 'food_meal_benefit' AND is_active", [otherWallet.rows[0]!.id],
+      )).rows, [{ name: "Cartão de benefícios (VA/VR)" }]);
+      const methodsAfter = await database.query("SELECT * FROM payment_methods WHERE wallet_id = $1 ORDER BY id", [walletId]);
+      await database.transaction(async (transaction) => { await transaction.query(migration); });
+      assert.deepEqual((await database.query("SELECT * FROM payment_methods WHERE wallet_id = $1 ORDER BY id", [walletId])).rows, methodsAfter.rows);
+      const summaryRepository = new PostgresFinancialSummaryRepository(database);
+      const beforeNewExpense = await summaryRepository.getSummary(walletId);
+      assert.equal(beforeNewExpense.cashBalance, collision.cashBalance);
+      assert.deepEqual(beforeNewExpense.benefitBalances, [
+        { balanceType: "food_meal_benefit", amount: collision.benefitBalance },
+        { balanceType: "home_office_benefit", amount: "30.00" },
+      ]);
+      const expense = await new PostgresExpensesRepository(database).createExpense(userId, walletId, {
+        amount: "5.00", date: "2026-10-15", description: null, categoryId: expenseCategoryId,
+        subcategoryId: null, paymentMethodId: activeBenefits.rows[0]!.id, creditCardId: null,
+      });
+      assert.equal(expense?.paymentMethodNature, "food_meal_benefit");
+      const afterNewExpense = await summaryRepository.getSummary(walletId);
+      assert.equal(afterNewExpense.cashBalance, collision.cashBalance);
+      assert.deepEqual(afterNewExpense.benefitBalances, [
+        { balanceType: "food_meal_benefit", amount: collision.updatedBenefitBalance },
+        { balanceType: "home_office_benefit", amount: "30.00" },
+      ]);
+    } finally {
+      await scopedPool?.end();
+      await adminPool.query(`DROP SCHEMA IF EXISTS ${schemaName} CASCADE`);
+      await adminPool.end();
+    }
+  });
+}
 
 test("PostgreSQL payment methods seed wallet defaults and enforce wallet-scoped persistence rules", {
   skip: !testDatabaseUrl,
@@ -64,7 +187,7 @@ test("PostgreSQL payment methods seed wallet defaults and enforce wallet-scoped 
       await transaction.query(migration);
       await transaction.query("INSERT INTO schema_migrations (version) VALUES ('010_payment_methods.sql')");
     });
-    for (const version of ["011_income_balance_type.sql", "012_expense_payment_method_nature_snapshot.sql"]) {
+    for (const version of ["011_income_balance_type.sql", "012_expense_payment_method_nature_snapshot.sql", "013_credit_cards_and_statements.sql"]) {
       const sql = await readFile(join(migrationDirectory, version), "utf8");
       await database.transaction(async (transaction) => {
         await transaction.query(sql);
