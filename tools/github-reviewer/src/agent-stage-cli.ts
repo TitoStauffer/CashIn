@@ -52,7 +52,7 @@ async function main(): Promise<void> {
   assertRequiredChecksPassed(checks);
 
   const contextHash = computeAgentContextHash(repository, prNumber, pullRequest, reviewInputs);
-  if (detectPromptInjection(`${stringValue(pullRequest.title) ?? ''}\n${stringValue(pullRequest.body) ?? ''}\n${diff}`)) {
+  if (detectPromptInjection(`${stringValue(pullRequest.title) ?? ''}\n${stringValue(pullRequest.body) ?? ''}`)) {
     const blocked = { ...createInjectionBlockedResult(stage, resolution.headSha), contextHash };
     await writeStageResult(blocked, prNumber);
     process.exitCode = 2;
