@@ -299,7 +299,7 @@ export function GoalsPage({ userEmail, isLoggingOut, onLogout }: GoalsPageProps)
     setMessage('')
     try {
       await goalsApi.removeContribution(goalId, item.id)
-      setMessage('Aporte excluído. O progresso foi atualizado.')
+      setMessage('Aporte excluído.')
       try {
         await refreshContributionData(goalId)
       } catch {

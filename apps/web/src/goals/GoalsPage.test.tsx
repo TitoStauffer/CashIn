@@ -204,6 +204,26 @@ describe('GoalsPage currency inputs', () => {
     expect(goalsApi.createContribution).toHaveBeenCalledTimes(1)
   })
 
+  it('confirms deletion without claiming the progress was refreshed when reloading fails', async () => {
+    const user = userEvent.setup()
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    vi.spyOn(goalsApi, 'removeContribution').mockResolvedValue(undefined)
+    vi.mocked(goalsApi.list)
+      .mockResolvedValueOnce({ items: [goal] })
+      .mockRejectedValueOnce(new Error('offline'))
+    await renderPage()
+
+    await user.click(await screen.findByRole('button', { name: 'Ver aportes' }))
+    await screen.findByText(/Aporte mensal/)
+    await user.click(screen.getByRole('button', { name: 'Excluir' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('O aporte foi excluído, mas não foi possível atualizar o progresso agora. Recarregue a página para ver os valores atualizados.')
+    expect(screen.getByRole('status')).toHaveTextContent(/^Aporte excluído\.$/)
+    expect(screen.queryByText(/O progresso foi atualizado/)).not.toBeInTheDocument()
+    expect(goalsApi.removeContribution).toHaveBeenCalledExactlyOnceWith('goal-1', 'contribution-1')
+    expect(screen.getByRole('button', { name: 'Excluir' })).toBeEnabled()
+  })
+
   it('sends a contribution only once when the form is submitted repeatedly', async () => {
     const user = userEvent.setup()
     const createRequest = deferred<typeof contribution>()
