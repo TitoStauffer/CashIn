@@ -143,6 +143,10 @@ export class FakeJira implements JiraApi {
     this.comments.push({ key, text });
   }
 
+  async listComments(key: string) {
+    return this.comments.filter((comment) => comment.key === key).map((comment, index) => ({ id: String(index + 1), body: comment.text }));
+  }
+
   async setIssueProperty(key: string, propertyKey: string, value: unknown): Promise<void> {
     this.properties.set(`${key}:${propertyKey}`, value);
   }
