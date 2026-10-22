@@ -11,8 +11,18 @@ const REQUIRED_AGENT_CHECKS = {
 export interface AgentReviewInputs {
   diff: string;
   checks: Record<keyof typeof REQUIRED_AGENT_CHECKS, string>;
+  checkRuns: AgentCheckEvidence[];
   repositoryInstructions: string;
   sourceFiles: Array<{ path: string; revision: 'head' | 'base'; content: string }>;
+}
+
+export interface AgentCheckEvidence {
+  name: string;
+  headSha: string;
+  status: string;
+  conclusion: string | null;
+  detailsUrl: string | null;
+  completedAt: string | null;
 }
 
 const MAX_SOURCE_FILES = 20;
@@ -42,7 +52,7 @@ export async function loadAgentReviewInputs(
   if (encoding !== 'base64' || !encodedInstructions) throw new Error('Could not read AGENTS.md from the Pull Request base commit.');
   const repositoryInstructions = Buffer.from(encodedInstructions.replace(/\s/g, ''), 'base64').toString('utf8');
   const sourceFiles = await loadChangedSourceFiles(fetchImpl, repository, filesPayload, headSha, baseSha, token);
-  return { diff, checks: summarizeAgentChecks(runs), repositoryInstructions, sourceFiles };
+  return { diff, checks: summarizeAgentChecks(runs, headSha), checkRuns: summarizeCheckRunEvidence(runs, headSha), repositoryInstructions, sourceFiles };
 }
 
 async function loadChangedSourceFiles(
@@ -81,9 +91,10 @@ async function loadChangedSourceFiles(
   return sourceFiles;
 }
 
-export function summarizeAgentChecks(runs: Array<Record<string, unknown>>): AgentReviewInputs['checks'] {
+export function summarizeAgentChecks(runs: Array<Record<string, unknown>>, expectedHeadSha?: string): AgentReviewInputs['checks'] {
+  const currentRuns = expectedHeadSha ? runs.filter((run) => run.head_sha === expectedHeadSha) : runs;
   const status = (matcher: (name: string) => boolean): string => {
-    const matches = runs.filter((run) => matcher(String(run.name ?? '')));
+    const matches = latestRunsByName(currentRuns.filter((run) => matcher(String(run.name ?? ''))));
     if (matches.length === 0) return 'MISSING';
     if (matches.some((run) => run.status !== 'completed')) return 'PENDING';
     if (matches.some((run) => run.conclusion !== 'success')) return 'FAILED';
@@ -101,9 +112,38 @@ export function fingerprintAgentReviewInputs(inputs: AgentReviewInputs): Record<
   return {
     diffSha256: hash(inputs.diff),
     checks: inputs.checks,
+    checkRuns: inputs.checkRuns ?? [],
     repositoryInstructionsSha256: hash(inputs.repositoryInstructions),
     sourceFiles: inputs.sourceFiles.map(({ path, revision, content }) => ({ path, revision, sha256: hash(content) })),
   };
+}
+
+export function summarizeCheckRunEvidence(runs: Array<Record<string, unknown>>, expectedHeadSha: string): AgentCheckEvidence[] {
+  const relevantRuns = latestRunsByName(runs.filter((run) => run.head_sha === expectedHeadSha
+    && Object.values(REQUIRED_AGENT_CHECKS).some((matcher) => matcher(String(run.name ?? '')))));
+  return relevantRuns
+    .map((run) => ({
+      name: String(run.name ?? 'Unnamed check'),
+      headSha: expectedHeadSha,
+      status: String(run.status ?? 'unknown'),
+      conclusion: typeof run.conclusion === 'string' ? run.conclusion : null,
+      detailsUrl: typeof run.details_url === 'string' ? run.details_url : null,
+      completedAt: typeof run.completed_at === 'string' ? run.completed_at : null,
+    }))
+    .sort((left, right) => left.name.localeCompare(right.name) || String(left.completedAt).localeCompare(String(right.completedAt)));
+}
+
+function latestRunsByName(runs: Array<Record<string, unknown>>): Array<Record<string, unknown>> {
+  const latest = new Map<string, Record<string, unknown>>();
+  for (const run of runs) {
+    const app = asRecord(run.app);
+    const key = `${String(run.name ?? 'Unnamed check')}:${String(app?.id ?? '')}`;
+    const prior = latest.get(key);
+    const timestamp = String(run.started_at ?? run.completed_at ?? run.created_at ?? '');
+    const priorTimestamp = String(prior?.started_at ?? prior?.completed_at ?? prior?.created_at ?? '');
+    if (!prior || timestamp.localeCompare(priorTimestamp) >= 0) latest.set(key, run);
+  }
+  return [...latest.values()];
 }
 
 function readCheckRuns(fetchImpl: typeof fetch, repository: string, sha: string, token: string): Promise<Array<Record<string, unknown>>> {

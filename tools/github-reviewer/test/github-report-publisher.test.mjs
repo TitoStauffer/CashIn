@@ -2,16 +2,16 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { GitHubReportPublisher, formatPullRequestReport, REPORT_AGENT_SIGNATURES } from '../dist/github-report-publisher.js';
 import { computeAgentContextHash } from '../dist/agent-evidence.js';
-import { summarizeAgentChecks } from '../dist/agent-review-inputs.js';
+import { summarizeAgentChecks, summarizeCheckRunEvidence } from '../dist/agent-review-inputs.js';
 
 const sha = 'a'.repeat(40);
 const baseSha = 'c'.repeat(40);
-const checkRuns = ['API', 'Web', 'SonarQube', 'SonarCloud Code Analysis'].map((name) => ({ name, status: 'completed', conclusion: 'success' }));
+const checkRuns = ['API', 'Web', 'SonarQube', 'SonarCloud Code Analysis'].map((name) => ({ name, head_sha: sha, status: 'completed', conclusion: 'success' }));
 const currentPr = {
   title: 'Example PR', html_url: 'https://github.com/TitoStauffer/CashIn/pull/42', body: '',
   head: { sha }, base: { ref: 'master', sha: baseSha },
 };
-const currentInputs = { diff: 'diff contents', checks: summarizeAgentChecks(checkRuns), repositoryInstructions: 'trusted instructions', sourceFiles: [] };
+const currentInputs = { diff: 'diff contents', checks: summarizeAgentChecks(checkRuns, sha), checkRuns: summarizeCheckRunEvidence(checkRuns, sha), repositoryInstructions: 'trusted instructions', sourceFiles: [] };
 const contextHash = computeAgentContextHash('TitoStauffer/CashIn', 42, currentPr, currentInputs);
 const baseReport = {
   agentName: 'qa', pullRequestNumber: 42, commitSha: sha, contextHash, status: 'APPROVED',

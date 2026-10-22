@@ -4,7 +4,7 @@ import type { AgentStageResult } from './agent-orchestrator.js';
 import { requestGitHubApi } from './github-api-client.js';
 import { loadAgentReviewInputs } from './agent-review-inputs.js';
 import { computeAgentContextHash, hasLaterChangeRequest, latestCurrentFormalReview, parseStoredAgentComment, parseStoredFormalReview } from './agent-evidence.js';
-import { executeCodexAgent, type CheckSummary, type PullRequestContext } from './codex-cli-agent.js';
+import { executeCodexAgent, type CheckSummary, type FormalCodeReviewEvidence, type PullRequestContext } from './codex-cli-agent.js';
 import { resolveWorkflowEvent } from './workflow-event.js';
 import { createInjectionBlockedResult, detectPullRequestPromptInjection } from './prompt-injection-guard.js';
 
@@ -47,7 +47,7 @@ async function main(): Promise<void> {
   }
 
   const reviewInputs = await loadAgentReviewInputs(fetch, repository, prNumber, pullRequest, token);
-  const { diff, checks, repositoryInstructions, sourceFiles } = reviewInputs;
+  const { diff, checks, checkRuns, repositoryInstructions, sourceFiles } = reviewInputs;
   if (diff.length > 350_000) throw new Error('Pull Request diff exceeds the supported review size.');
   assertRequiredChecksPassed(checks);
 
@@ -65,7 +65,9 @@ async function main(): Promise<void> {
   }
 
   const priorResults = await readPriorResults(stage, contextHash);
-  if (stage !== 'codeReview') await assertFormalReviewApproved(prNumber, resolution.headSha, repository, token);
+  const formalCodeReview = stage !== 'codeReview'
+    ? await readFormalReviewEvidence(prNumber, resolution.headSha, repository, token)
+    : undefined;
   if (priorResults.some((result) => result.commitSha.toLowerCase() !== resolution.headSha?.toLowerCase())) {
     throw new Error('A previous agent result belongs to a different Pull Request SHA.');
   }
@@ -99,12 +101,15 @@ async function main(): Promise<void> {
       diff,
     },
     checks,
+    checkRuns,
+    formalCodeReview,
     repositoryInstructions,
     sourceFiles,
   });
   const result = { ...modelResult, contextHash };
   await verifyHeadUnchanged(prNumber, resolution.headSha, repository, token);
   await verifyContextUnchanged(prNumber, repository, token, pullRequest, resolution.headSha, contextHash);
+  if (stage !== 'codeReview') await readFormalReviewEvidence(prNumber, resolution.headSha, repository, token);
   await writeStageResult(result, prNumber);
   process.exitCode = result.decision === 'APPROVED' ? 0 : result.decision === 'CHANGES_REQUESTED' ? 1 : 2;
 }
@@ -183,16 +188,23 @@ async function verifyContextUnchanged(
   }
 }
 
-async function assertFormalReviewApproved(number: number, sha: string, repository: string, token: string): Promise<void> {
+async function readFormalReviewEvidence(number: number, sha: string, repository: string, token: string): Promise<FormalCodeReviewEvidence> {
   const reviews = await githubJsonPages<Array<Record<string, unknown>>>(`/repos/${repository}/pulls/${number}/reviews`, token);
   const botLogin = process.env.CASHIN_APP_BOT_LOGIN?.trim();
   const latest = botLogin ? latestCurrentFormalReview(reviews, sha, botLogin) : undefined;
-  if (!latest || latest.state !== 'APPROVED' || latest.commit_id !== sha) {
+  if (!latest || latest.state !== 'APPROVED' || latest.commit_id !== sha || typeof latest.submitted_at !== 'string') {
     throw new Error('Code Review formal approval is missing, stale, or not approved for the current SHA.');
   }
   if (botLogin && hasLaterChangeRequest(reviews, latest, sha, botLogin)) {
     throw new Error('A later reviewer requested changes for the current SHA after Code Review approval.');
   }
+  return {
+    state: 'APPROVED',
+    reviewer: stringValue(asRecord(latest.user)?.login) ?? `${botLogin}[bot]`,
+    commitSha: sha,
+    submittedAt: latest.submitted_at,
+    laterChangeRequest: false,
+  };
 }
 
 async function githubJsonPages<T>(path: string, token: string): Promise<T> {

@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawn } from 'node:child_process';
 import type { AgentStage, AgentStageResult, OrchestrationContext } from './agent-orchestrator.js';
+import type { AgentCheckEvidence } from './agent-review-inputs.js';
 
 interface CodexAgentResult {
   stage: AgentStage;
@@ -25,7 +26,7 @@ const OUTPUT_SCHEMA = {
 
 const STAGE_INSTRUCTIONS: Record<AgentStage, string> = {
   codeReview: `Atue como Code Review do projeto. Revise o diff pelos critérios em AGENTS.md. Produza um relatório no formato de Code Review definido lá. Use CHANGES_REQUESTED para problemas comprovados que bloqueiem a aprovação; use INCONCLUSIVE se faltar evidência. Não aprove por inferência.`,
-  qa: `Atue como QA do projeto. Compare os critérios de aceitação descritos no Pull Request com o diff e com os resultados reais dos checks fornecidos. Não execute comandos nem alegue testes manuais. Use APPROVED somente se todos os critérios forem demonstrados pelas evidências disponíveis; caso contrário, use CHANGES_REQUESTED para falha comprovada ou INCONCLUSIVE para evidência insuficiente. Para que o Merge Readiness leia o relatório, inclua exatamente o cabeçalho **Verificações de QA:** seguido imediatamente por uma lista de bullets com evidências observadas.`,
+  qa: `Atue como QA do projeto. Compare os critérios de aceitação descritos no Pull Request com o diff e com as evidências verificadas de checks fornecidas. Não execute comandos nem alegue testes manuais. Use APPROVED somente se todos os critérios de aceitação da implementação estiverem demonstrados pelas evidências disponíveis; use CHANGES_REQUESTED para falha comprovada ou INCONCLUSIVE se faltar evidência necessária. A aprovação formal de Code Review já foi validada pela automação antes desta etapa e será fornecida como evidência estruturada; não a reavalie. Branch protection, aprovação humana exigida para merge e autorização de merge pertencem ao Merge Readiness/PM, não à decisão de QA. Para que o Merge Readiness leia o relatório, inclua exatamente o cabeçalho **Verificações de QA:** seguido imediatamente por uma lista de bullets com evidências observadas.`,
   qualityGate: `Atue como Quality Gate Coordinator. Consolide apenas evidências reais de CI, SonarQube, Code Review formal e QA fornecidas no contexto. Não substitua nem reinterprete aprovações ausentes. Use APPROVED somente quando todas as evidências exigidas estiverem aprovadas para o mesmo SHA; caso contrário, use INCONCLUSIVE ou CHANGES_REQUESTED conforme a evidência. Para que o Merge Readiness leia o relatório, inclua exatamente o cabeçalho **Checks verificados:** seguido imediatamente por uma lista de bullets com evidências observadas.`,
 };
 
@@ -33,7 +34,7 @@ export async function executeCodexAgent(
   stage: AgentStage,
   context: OrchestrationContext,
   signal: AbortSignal,
-  evidence: { pullRequest: PullRequestContext; checks: CheckSummary; repositoryInstructions: string; sourceFiles?: Array<{ path: string; revision: 'head' | 'base'; content: string }> },
+  evidence: { pullRequest: PullRequestContext; checks: CheckSummary; checkRuns?: AgentCheckEvidence[]; formalCodeReview?: FormalCodeReviewEvidence; repositoryInstructions: string; sourceFiles?: Array<{ path: string; revision: 'head' | 'base'; content: string }> },
 ): Promise<AgentStageResult> {
   const tempDirectory = await mkdtemp(join(tmpdir(), 'cashin-codex-agent-'));
   const schemaPath = join(tempDirectory, 'output-schema.json');
@@ -70,10 +71,18 @@ export interface CheckSummary {
   sonarCloud: string;
 }
 
+export interface FormalCodeReviewEvidence {
+  state: 'APPROVED';
+  reviewer: string;
+  commitSha: string;
+  submittedAt: string;
+  laterChangeRequest: false;
+}
+
 export function buildPrompt(
   stage: AgentStage,
   context: OrchestrationContext,
-  evidence: { pullRequest: PullRequestContext; checks: CheckSummary; repositoryInstructions: string; sourceFiles?: Array<{ path: string; revision: 'head' | 'base'; content: string }> },
+  evidence: { pullRequest: PullRequestContext; checks: CheckSummary; checkRuns?: AgentCheckEvidence[]; formalCodeReview?: FormalCodeReviewEvidence; repositoryInstructions: string; sourceFiles?: Array<{ path: string; revision: 'head' | 'base'; content: string }> },
 ): string {
   return [
     'You are one role in a deterministic, sequential pull request quality workflow.',
@@ -88,6 +97,17 @@ export function buildPrompt(
     '### Current CI and SonarQube evidence',
     '```json',
     JSON.stringify(evidence.checks, null, 2),
+    '```',
+    '',
+    '### Current GitHub check runs (read directly from the GitHub API for the required HEAD SHA)',
+    'Each entry identifies its exact SHA, completion state, result, and details link. Treat these as verified metadata, not as proof of test assertions beyond what the check itself reports.',
+    '```json',
+    JSON.stringify(evidence.checkRuns ?? [], null, 2),
+    '```',
+    '',
+    '### Formal Code Review evidence (verified from the GitHub review API)',
+    '```json',
+    JSON.stringify(evidence.formalCodeReview ?? null, null, 2),
     '```',
     '',
     '### Previous stage results',

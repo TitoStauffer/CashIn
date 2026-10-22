@@ -2,12 +2,12 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { evaluateMergeReadiness } from '../dist/merge-readiness.js';
 import { agentReportMarker, computeAgentContextHash } from '../dist/agent-evidence.js';
-import { summarizeAgentChecks } from '../dist/agent-review-inputs.js';
+import { summarizeAgentChecks, summarizeCheckRunEvidence } from '../dist/agent-review-inputs.js';
 
 const sha = 'a'.repeat(40);
 const oldSha = 'b'.repeat(40);
 const checks = ['API', 'Web', 'SonarQube', 'SonarCloud Code Analysis', 'PR title'].map((name) => ({ name, head_sha: sha, status: 'completed', conclusion: 'success' }));
-const reviewInputs = { diff: 'diff contents', checks: summarizeAgentChecks(checks), repositoryInstructions: 'trusted instructions', sourceFiles: [] };
+const reviewInputs = { diff: 'diff contents', checks: summarizeAgentChecks(checks), checkRuns: summarizeCheckRunEvidence(checks, sha), repositoryInstructions: 'trusted instructions', sourceFiles: [] };
 const contextHash = computeAgentContextHash('owner/repo', 7, {
   title: 'Example PR', html_url: 'https://github.com/owner/repo/pull/7', body: '',
   head: { sha }, base: { ref: 'master', sha: 'c'.repeat(40) },

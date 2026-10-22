@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { loadAgentReviewInputs } from '../dist/agent-review-inputs.js';
+import { loadAgentReviewInputs, summarizeAgentChecks, summarizeCheckRunEvidence } from '../dist/agent-review-inputs.js';
 import { requestGitHubApiPages } from '../dist/github-api-client.js';
 
 const headSha = 'a'.repeat(40);
@@ -27,10 +27,10 @@ function createFetch({
       text = true;
     } else if (path.endsWith(`/commits/${headSha}/check-runs`)) {
       payload = { check_runs: [
-        { name: 'API', status: 'completed', conclusion: 'success' },
-        { name: 'Web', status: 'completed', conclusion: 'success' },
-        { name: 'SonarQube', status: 'completed', conclusion: 'success' },
-        { name: 'SonarCloud Code Analysis', status: 'completed', conclusion: 'success' },
+        { name: 'API', head_sha: headSha, status: 'completed', conclusion: 'success', details_url: 'https://example.test/api', completed_at: '2026-10-21T10:00:00Z' },
+        { name: 'Web', head_sha: headSha, status: 'completed', conclusion: 'success' },
+        { name: 'SonarQube', head_sha: headSha, status: 'completed', conclusion: 'success' },
+        { name: 'SonarCloud Code Analysis', head_sha: headSha, status: 'completed', conclusion: 'success' },
       ] };
     } else if (path.endsWith('/contents/AGENTS.md')) {
       payload = { encoding: 'base64', content: encoded('Project rules') };
@@ -58,9 +58,24 @@ test('loads complete changed source snapshots at the PR HEAD alongside diff and 
 
   assert.equal(inputs.diff.startsWith('diff --git'), true);
   assert.equal(inputs.checks.api, 'PASSED');
+  assert.deepEqual(inputs.checkRuns.find((run) => run.name === 'API'), {
+    name: 'API', headSha, status: 'completed', conclusion: 'success', detailsUrl: 'https://example.test/api', completedAt: '2026-10-21T10:00:00Z',
+  });
   assert.equal(inputs.repositoryInstructions, 'Project rules');
   assert.deepEqual(inputs.sourceFiles, [{ path: 'src/example.ts', revision: 'head', content: 'export const value = 42;\n' }]);
   assert.equal(requests.some((request) => request.pathname.endsWith('/contents/src/example.ts') && request.searchParams.get('ref') === headSha), true);
+});
+
+test('uses latest rerun results for summaries and exposes only current-SHA required checks', () => {
+  const runs = [
+    { name: 'API', head_sha: headSha, status: 'completed', conclusion: 'failure', started_at: '2026-10-21T09:00:00Z' },
+    { name: 'API', head_sha: headSha, status: 'completed', conclusion: 'success', started_at: '2026-10-21T10:00:00Z' },
+    { name: 'Web', head_sha: 'c'.repeat(40), status: 'completed', conclusion: 'success' },
+  ];
+
+  assert.equal(summarizeAgentChecks(runs, headSha).api, 'PASSED');
+  assert.equal(summarizeAgentChecks(runs, headSha).web, 'MISSING');
+  assert.deepEqual(summarizeCheckRunEvidence(runs, headSha).map(({ name, conclusion }) => ({ name, conclusion })), [{ name: 'API', conclusion: 'success' }]);
 });
 
 test('loads removed source files from the base commit', async () => {
