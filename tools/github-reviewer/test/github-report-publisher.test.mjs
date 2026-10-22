@@ -50,7 +50,7 @@ function fakeGitHub(requests, { pr = currentPr, comments = [], apiFailure = fals
     if (parsed.pathname.endsWith('/contents/AGENTS.md')) return response({ encoding: 'base64', content: Buffer.from('trusted instructions').toString('base64') });
     if (parsed.pathname.endsWith('/issues/42/comments') && (options.method ?? 'GET') === 'GET') return response(comments);
     if (parsed.pathname.endsWith('/issues/42/comments') && options.method === 'POST') return response({ id: 9876, html_url: 'https://github.com/TitoStauffer/CashIn/pull/42#issuecomment-9876' });
-    if (parsed.pathname.endsWith('/issues/42/comments/81') && options.method === 'PATCH') return response({ id: 81, html_url: 'https://example.test/comment/81' });
+    if (parsed.pathname.endsWith('/issues/comments/81') && options.method === 'PATCH') return response({ id: 81, html_url: 'https://example.test/comment/81' });
     throw new Error(`Unexpected request: ${options.method ?? 'GET'} ${parsed.pathname}`);
   };
 }
@@ -125,7 +125,9 @@ test('updates an existing App-authored report marker for the same stage and SHA'
 
   const result = await publisher.publishReport(baseReport);
 
-  assert.ok(requests.some(({ url, options }) => url.endsWith('/issues/42/comments/81') && options.method === 'PATCH'));
+  assert.ok(requests.some(({ url, options }) => url.endsWith('/issues/comments/81') && options.method === 'PATCH'
+    && JSON.parse(options.body).body === formatPullRequestReport(baseReport)));
+  assert.equal(requests.filter(({ options }) => options.method === 'POST').length, 0);
   assert.equal(result.reusedComment, true);
 });
 
