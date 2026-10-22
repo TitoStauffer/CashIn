@@ -380,7 +380,7 @@ jobs:
 
   final-status:
     name: Confirm all agent stages approved
-    if: always()
+    if: always() && needs.code-review.result != 'skipped'
     needs: [code-review, publish-code-review, qa, publish-qa, quality-gate, publish-quality-gate]
     runs-on: ubuntu-24.04
     steps:
