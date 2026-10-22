@@ -109,7 +109,7 @@ export async function evaluateMergeReadiness(options: MergeReadinessOptions): Pr
     reasons.push('O Pull Request possui conflitos com a branch base.');
   } else if (initialPullRequest.mergeable === null || mergeableState === 'unknown') {
     limitations.push('O GitHub ainda não informou se o Pull Request pode ser integrado.');
-  } else if (initialPullRequest.mergeable !== true || (mergeableState !== 'clean' && mergeableState !== 'unstable')) {
+  } else if (initialPullRequest.mergeable !== true || !['clean', 'unstable', 'blocked'].includes(mergeableState ?? '')) {
     reasons.push(`O Pull Request não está em estado integrável do GitHub (${mergeableState ?? 'desconhecido'}).`);
   }
 
@@ -163,9 +163,17 @@ export async function evaluateMergeReadiness(options: MergeReadinessOptions): Pr
   evidence.rulesets = rulesetList.map((ruleset) => ({ id: ruleset.id, name: ruleset.name, enforcement: ruleset.enforcement, target: ruleset.target }));
 
   const applicableRulesets = rulesetList.filter((ruleset) => rulesetAppliesToBranch(ruleset, baseBranch, defaultBranch));
-  const requiredContexts = collectRequiredContexts(branchRules, applicableRulesets, baseBranch, defaultBranch)
-    .filter((requirement) => requirement.context !== 'Merge Readiness');
+  const configuredContexts = collectRequiredContexts(branchRules, applicableRulesets, baseBranch, defaultBranch);
+  const requiredContexts = configuredContexts.filter((requirement) => requirement.context !== 'Merge Readiness');
   const requiredReviewCount = getRequiredReviewCount(branchRules, applicableRulesets);
+  const activeRules = applicableRulesets.filter((ruleset) => ruleset.enforcement === 'active').flatMap((ruleset) => ruleset.rules ?? []);
+  const canResolveOwnStatusBlock = branchRules === null && requiredReviewCount === 0
+    && configuredContexts.some((requirement) => requirement.context === 'Merge Readiness')
+    && activeRules.every((rule) => ['deletion', 'non_fast_forward', 'pull_request', 'required_status_checks'].includes(rule.type ?? '')
+      && (rule.type !== 'pull_request' || (!rule.parameters?.require_code_owner_review
+        && !rule.parameters?.require_last_push_approval && !(rule.parameters?.required_reviewers?.length))));
+  if (mergeableState === 'blocked' && !canResolveOwnStatusBlock) reasons.push('O estado blocked não pode ser atribuído com segurança ao próprio gate.');
+  evidence.resolvesOwnStatusBlock = canResolveOwnStatusBlock;
   evidence.requiredChecks = requiredContexts;
   evidence.requiredApprovals = requiredReviewCount;
 
@@ -230,7 +238,7 @@ export async function evaluateMergeReadiness(options: MergeReadinessOptions): Pr
   const finalMergeableState = stringValue(finalPullRequest.mergeable_state);
   if (finalPullRequest.mergeable === false || finalMergeableState === 'dirty') reasons.push('O Pull Request deixou de estar integrável durante a avaliação.');
   else if (finalPullRequest.mergeable === null || finalMergeableState === 'unknown') limitations.push('O GitHub não confirmou a mergeabilidade ao final da avaliação.');
-  else if (finalPullRequest.mergeable !== true || (finalMergeableState !== 'clean' && finalMergeableState !== 'unstable')) reasons.push(`O Pull Request não está em estado integrável ao final da avaliação (${finalMergeableState ?? 'desconhecido'}).`);
+  else if (finalPullRequest.mergeable !== true || (!['clean', 'unstable'].includes(finalMergeableState ?? '') && !(finalMergeableState === 'blocked' && canResolveOwnStatusBlock))) reasons.push(`O Pull Request não está em estado integrável ao final da avaliação (${finalMergeableState ?? 'desconhecido'}).`);
   let finalReviewInputs;
   try {
     finalReviewInputs = await loadAgentReviewInputs(fetchImpl, `${options.owner}/${options.repository}`, options.pullRequestNumber, finalPullRequest, options.contextToken || token);
@@ -251,7 +259,7 @@ interface CommitStatus { context?: string; state?: string; sha?: string; }
 interface Review { user?: { login?: string; type?: string }; state?: string; commit_id?: string; submitted_at?: string | null; body?: string; }
 interface IssueComment { user?: { login?: string }; body?: string; updated_at?: string; created_at?: string; }
 interface BranchProtection { required_status_checks?: { contexts?: string[]; checks?: Array<{ context?: string; app_id?: number | null }> }; required_pull_request_reviews?: { required_approving_review_count?: number; dismiss_stale_reviews?: boolean } | null; }
-interface Ruleset { id?: number; name?: string; enforcement?: string; target?: string; conditions?: { ref_name?: { include?: string[]; exclude?: string[] } }; rules?: Array<{ type?: string; parameters?: { required_status_checks?: Array<{ context?: string; integration_id?: number | null }>; required_approving_review_count?: number } }>; }
+interface Ruleset { id?: number; name?: string; enforcement?: string; target?: string; conditions?: { ref_name?: { include?: string[]; exclude?: string[] } }; rules?: Array<{ type?: string; parameters?: { required_status_checks?: Array<{ context?: string; integration_id?: number | null }>; required_approving_review_count?: number; require_code_owner_review?: boolean; require_last_push_approval?: boolean; required_reviewers?: unknown[] } }>; }
 interface RequiredCheck { context: string; appId?: number; }
 
 async function listCheckRuns(fetchImpl: typeof fetch, repositoryPath: string, sha: string, token: string): Promise<CheckRun[]> {

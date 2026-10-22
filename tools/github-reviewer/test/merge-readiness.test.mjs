@@ -155,6 +155,38 @@ test('still blocks an UNSTABLE pull request when a required check fails', async 
   assert.match(result.reasons.join(' '), /SonarQube: FAILED/);
 });
 
+function selfRequiredRuleset(extraRules = []) {
+  return [{ id: 12, name: 'master', target: 'branch', enforcement: 'active',
+    conditions: { ref_name: { include: ['~DEFAULT_BRANCH'], exclude: [] } },
+    rules: [
+      { type: 'pull_request', parameters: { required_approving_review_count: 0 } },
+      { type: 'required_status_checks', parameters: { required_status_checks: [{ context: 'PR title' }, { context: 'Merge Readiness' }] } },
+      ...extraRules,
+    ],
+  }];
+}
+
+test('resolves BLOCKED caused by its own required status only for fully evaluated rulesets', async () => {
+  const result = await fixture({ protectionStatus: 404, mergeableState: 'blocked', rulesets: selfRequiredRuleset() }).evaluate();
+  assert.equal(result.status, 'READY_TO_MERGE', JSON.stringify(result.reasons));
+});
+
+test('self-required BLOCKED state still blocks without QA evidence', async () => {
+  const result = await fixture({ protectionStatus: 404, mergeableState: 'blocked', rulesets: selfRequiredRuleset(), comments: [] }).evaluate();
+  assert.equal(result.status, 'BLOCKED');
+  assert.match(result.reasons.join(' '), /QA/);
+});
+
+test('does not bypass an unevaluated merge queue rule in BLOCKED state', async () => {
+  const result = await fixture({ protectionStatus: 404, mergeableState: 'blocked', rulesets: selfRequiredRuleset([{ type: 'merge_queue' }]) }).evaluate();
+  assert.equal(result.status, 'BLOCKED');
+});
+
+test('does not attribute an opaque classic protection block to its own status', async () => {
+  const result = await fixture({ mergeableState: 'blocked', requiredContexts: ['PR title', 'Merge Readiness'] }).evaluate();
+  assert.equal(result.status, 'BLOCKED');
+});
+
 test('blocks when the caller requires a different base branch', async () => {
   const result = await evaluateMergeReadiness({
     appId: '123', privateKey: 'test-key', owner: 'owner', repository: 'repo', installationId: '456',
