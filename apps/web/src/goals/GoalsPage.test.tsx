@@ -186,4 +186,60 @@ describe('GoalsPage currency inputs', () => {
     createRequest.resolve(contribution)
     expect(await screen.findByRole('status')).toHaveTextContent('Aporte registrado.')
   })
+
+  it('does not report a saved contribution as failed when refreshing the goal fails', async () => {
+    const user = userEvent.setup()
+    vi.mocked(goalsApi.list)
+      .mockResolvedValueOnce({ items: [goal] })
+      .mockRejectedValueOnce(new Error('offline'))
+    await renderPage()
+
+    await user.click(await screen.findByRole('button', { name: '＋ Registrar aporte' }))
+    await user.type(await screen.findByLabelText('Valor *'), '250,00')
+    await user.click(screen.getByRole('button', { name: 'Registrar aporte' }))
+
+    expect(await screen.findByRole('status')).toHaveTextContent('Aporte registrado.')
+    expect(await screen.findByRole('alert')).toHaveTextContent('O aporte foi salvo, mas não foi possível atualizar o progresso')
+    expect(screen.queryByLabelText('Valor *')).not.toBeInTheDocument()
+    expect(goalsApi.createContribution).toHaveBeenCalledTimes(1)
+  })
+
+  it('confirms deletion without claiming the progress was refreshed when reloading fails', async () => {
+    const user = userEvent.setup()
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    vi.spyOn(goalsApi, 'removeContribution').mockResolvedValue(undefined)
+    vi.mocked(goalsApi.list)
+      .mockResolvedValueOnce({ items: [goal] })
+      .mockRejectedValueOnce(new Error('offline'))
+    await renderPage()
+
+    await user.click(await screen.findByRole('button', { name: 'Ver aportes' }))
+    await screen.findByText(/Aporte mensal/)
+    await user.click(screen.getByRole('button', { name: 'Excluir' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('O aporte foi excluído, mas não foi possível atualizar o progresso agora. Recarregue a página para ver os valores atualizados.')
+    expect(screen.getByRole('status')).toHaveTextContent(/^Aporte excluído\.$/)
+    expect(screen.queryByText(/O progresso foi atualizado/)).not.toBeInTheDocument()
+    expect(goalsApi.removeContribution).toHaveBeenCalledExactlyOnceWith('goal-1', 'contribution-1')
+    expect(screen.getByRole('button', { name: 'Excluir' })).toBeEnabled()
+  })
+
+  it('sends a contribution only once when the form is submitted repeatedly', async () => {
+    const user = userEvent.setup()
+    const createRequest = deferred<typeof contribution>()
+    vi.mocked(goalsApi.createContribution).mockReturnValueOnce(createRequest.promise)
+    await renderPage()
+
+    await user.click(await screen.findByRole('button', { name: '＋ Registrar aporte' }))
+    const amount = await screen.findByLabelText('Valor *')
+    await user.type(amount, '250,00')
+    const form = amount.closest('form')
+    expect(form).not.toBeNull()
+    fireEvent.submit(form as HTMLFormElement)
+    fireEvent.submit(form as HTMLFormElement)
+
+    expect(goalsApi.createContribution).toHaveBeenCalledTimes(1)
+    createRequest.resolve(contribution)
+    expect(await screen.findByRole('status')).toHaveTextContent('Aporte registrado.')
+  })
 })
