@@ -6,7 +6,7 @@ import { loadAgentReviewInputs } from './agent-review-inputs.js';
 import { computeAgentContextHash, hasLaterChangeRequest, latestCurrentFormalReview, parseStoredAgentComment, parseStoredFormalReview } from './agent-evidence.js';
 import { executeCodexAgent, type CheckSummary, type PullRequestContext } from './codex-cli-agent.js';
 import { resolveWorkflowEvent } from './workflow-event.js';
-import { createInjectionBlockedResult, detectPromptInjection } from './prompt-injection-guard.js';
+import { createInjectionBlockedResult, detectPullRequestPromptInjection } from './prompt-injection-guard.js';
 
 try {
   await main();
@@ -52,7 +52,12 @@ async function main(): Promise<void> {
   assertRequiredChecksPassed(checks);
 
   const contextHash = computeAgentContextHash(repository, prNumber, pullRequest, reviewInputs);
-  if (detectPromptInjection(`${stringValue(pullRequest.title) ?? ''}\n${stringValue(pullRequest.body) ?? ''}`)) {
+  if (detectPullRequestPromptInjection({
+    title: stringValue(pullRequest.title) ?? '',
+    body: stringValue(pullRequest.body) ?? '',
+    diff,
+    sourceFiles,
+  })) {
     const blocked = { ...createInjectionBlockedResult(stage, resolution.headSha), contextHash };
     await writeStageResult(blocked, prNumber);
     process.exitCode = 2;
