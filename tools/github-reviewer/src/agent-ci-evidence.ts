@@ -91,6 +91,7 @@ export async function loadCiSnapshots(fetchImpl: typeof fetch, repository: strin
 
 function redactWorkflowEnvironment(content: string): string {
   // Support only scalar env mappings; reject other YAML forms without interpreting them.
+  assertSupportedWorkflowStructure(content);
   if (/^[ \t]*(?:-[ \t]+)?["'][^\r\n]*["'][ \t]*:/m.test(content)
     || /^[ \t]*env[ \t]+:/m.test(content) || /^[ \t]*-[ \t]+env[ \t]*:/m.test(content)) {
     throw new Error('CI environment format cannot be safely projected.');
@@ -116,6 +117,35 @@ function redactWorkflowEnvironment(content: string): string {
     }
     return line;
   }).join('\n');
+}
+
+function assertSupportedWorkflowStructure(content: string): void {
+  // This is an allowlist for the repository's block-style workflow, not a YAML parser.
+  // Flow mappings can hide env at any depth. Reject them outside scalar blocks,
+  // allowing only simple scalar lists and the current single-line GitHub expressions.
+  let scalarIndent: number | undefined;
+  for (const line of content.split(/\r?\n/)) {
+    if (/^ *(#.*)?$/.test(line)) continue;
+    const indent = line.match(/^ */)![0].length;
+    if (scalarIndent !== undefined && indent > scalarIndent) continue;
+    scalarIndent = undefined;
+    const mapping = line.match(/^( *(?:- +)?)([A-Za-z_][A-Za-z0-9_-]*):(?:[ \t]+(.*))?$/);
+    if (!mapping) {
+      if (/^ *- +[A-Za-z0-9_.*\/:-]+$/.test(line)) continue;
+      throw new Error('CI environment format cannot be safely projected.');
+    }
+    const value = (mapping[3] ?? '').replace(/\$\{\{[^{}\r\n]*\}\}/g, 'GITHUB_EXPRESSION');
+    const scalarList = /^\[(?:[A-Za-z0-9_.*\/-]+(?:, *[A-Za-z0-9_.*\/-]+)*)?\](?:[ \t]+#.*)?$/;
+    const quotedScalar = /^(?:"(?:[^"\\]|\\.)*"|'(?:[^']|'')*')(?:[ \t]+#.*)?$/;
+    if (/[{}]/.test(value) || (/[\[\]]/.test(value) && !scalarList.test(value))
+      || (/^["']/.test(value) && !quotedScalar.test(value))) {
+      throw new Error('CI environment format cannot be safely projected.');
+    }
+    if (/^[|>]/.test(value)) {
+      if (!/^[|>][+-]?(?:[ \t]+#.*)?$/.test(value)) throw new Error('CI environment format cannot be safely projected.');
+      scalarIndent = mapping[1].length;
+    }
+  }
 }
 
 function projectPackageScripts(content: string): string {

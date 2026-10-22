@@ -150,6 +150,41 @@ for (const workflowValue of ['env: { TOKEN: placeholder }', 'env:\n  TOKEN: |\n 
   });
 }
 
+for (const [format, workflowValue] of [
+  ['nested flow mapping', 'jobs: {api: {runs-on: ubuntu-latest, env: {TOKEN: sensitive-placeholder}, steps: [{run: npm test}]}}'],
+  ['flow mapping inside block jobs', 'jobs:\n  api: {env: {TOKEN: sensitive-placeholder}}'],
+  ['multiline flow mapping', 'jobs:\n  api: {\n    env: {TOKEN: sensitive-placeholder}\n  }'],
+  ['quoted env flow key', 'jobs: {api: {"env": {TOKEN: sensitive-placeholder}}}'],
+  ['single-quoted env key', "jobs:\n  api:\n    'env':\n      TOKEN: sensitive-placeholder"],
+  ['escaped quoted env key', 'jobs:\n  api:\n    "\\u0065nv":\n      TOKEN: sensitive-placeholder'],
+  ['root flow mapping', '{jobs: {api: {env: {TOKEN: sensitive-placeholder}}}}'],
+  ['JSON document', JSON.stringify({ jobs: { api: { env: { TOKEN: 'sensitive-placeholder' } } } })],
+  ['root flow sequence', '[jobs: [api: [env: [TOKEN: sensitive-placeholder]]]]'],
+  ['implicit pairs in nested flow sequences', 'jobs: [api: [env: [TOKEN: sensitive-placeholder]]]'],
+  ['explicit mapping key', 'jobs:\n  api:\n    ? env\n    :\n      TOKEN: sensitive-placeholder'],
+  ['multiline quoted scalar', "jobs:\n  api:\n    name: 'example\n    run: |\n      '\n    env: {TOKEN: sensitive-placeholder}"],
+  ['flow after compact scalar block', 'jobs:\n  api:\n    steps:\n      - run: |\n          echo ok\n        env: {TOKEN: sensitive-placeholder}'],
+]) {
+  test(`rejects unsupported YAML structure before projection: ${format}`, async () => {
+    await assert.rejects(loadCiSnapshots(fakeFetch({ workflowValue }), 'owner/repo', sha, 'not-a-real-token'),
+      (error) => error.message === 'CI environment format cannot be safely projected.');
+  });
+}
+
+test('projects the current CI fixture while preserving expressions, scripts and no-skip guard', async () => {
+  const currentCi = await readFile(new URL('../../../.github/workflows/ci.yml', import.meta.url), 'utf8');
+  const [snapshot] = await loadCiSnapshots(fakeFetch({ workflowValue: currentCi }), 'owner/repo', sha, 'not-a-real-token');
+  assert.match(snapshot.content, /TEST_DATABASE_URL: \[value omitted; variable configured\]/);
+  assert.match(snapshot.content, /POSTGRES_PASSWORD: \[value omitted; variable configured\]/);
+  assert.doesNotMatch(snapshot.content, /postgresql:\/\//);
+  assert.match(snapshot.content, /\$\{\{ github\.event\.pull_request\.number \|\| github\.ref \}\}/);
+  assert.match(snapshot.content, /const \{ Client \} = require\('pg'\)/);
+  assert.match(snapshot.content, /\$\{RUNNER_TEMP\}\/api-test\.log/);
+  assert.match(snapshot.content, /Ensure no test was skipped/);
+  assert.match(snapshot.content, /if \[ "\$\{skipped\}" != "0" \]/);
+  assert.equal(snapshot.originalSha256, createHash('sha256').update(currentCi).digest('hex'));
+});
+
 test('fingerprint tracks steps and original configuration while ignoring links, timestamps and equivalent rerun IDs', async () => {
   const inputs = await loadAgentReviewInputs(fakeFetch(), 'owner/repo', 7, { head: { sha }, base: { sha: baseSha } }, 'not-a-real-token');
   const fingerprint = () => JSON.stringify(fingerprintAgentReviewInputs(inputs));
