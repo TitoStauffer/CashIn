@@ -1,6 +1,7 @@
 import { createGitHubInstallationSession, getRepositoryPath, requestGitHubApi, type GitHubApiClientOptions } from './github-api-client.js';
 import { agentReportMarker, computeAgentContextHash } from './agent-evidence.js';
 import { loadAgentReviewInputs } from './agent-review-inputs.js';
+import { ACTIONS_APP_ID } from './agent-ci-evidence.js';
 
 const REQUIRED_QUALITY_CHECKS = ['API', 'Web', 'SonarQube', 'SonarCloud Code Analysis'];
 const GRAPHQL_REVIEW_THREADS_QUERY = `query($owner: String!, $name: String!, $number: Int!, $after: String) {
@@ -198,6 +199,7 @@ export async function evaluateMergeReadiness(options: MergeReadinessOptions): Pr
 
   const requiredCheckCandidates: RequiredCheck[] = [
     ...REQUIRED_QUALITY_CHECKS.map((context) => ({ context })),
+    { context: 'GitHub Reviewer', appId: ACTIONS_APP_ID },
     ...requiredContexts,
   ];
   const requiredChecks = [...new Map(requiredCheckCandidates.map((requirement) => [`${requirement.context}:${requirement.appId ?? ''}`, requirement])).values()];

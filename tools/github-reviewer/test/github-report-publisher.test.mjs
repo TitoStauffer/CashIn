@@ -6,7 +6,7 @@ import { summarizeAgentChecks, summarizeCheckRunEvidence } from '../dist/agent-r
 
 const sha = 'a'.repeat(40);
 const baseSha = 'c'.repeat(40);
-const checkRuns = ['API', 'Web', 'SonarQube', 'SonarCloud Code Analysis'].map((name) => ({ name, head_sha: sha, status: 'completed', conclusion: 'success' }));
+const checkRuns = ['API', 'Web', 'GitHub Reviewer', 'SonarQube', 'SonarCloud Code Analysis'].map((name) => ({ name, head_sha: sha, status: 'completed', conclusion: 'success', ...(name === 'GitHub Reviewer' ? { app: { id: 15368 } } : {}) }));
 const currentPr = {
   title: 'Example PR', html_url: 'https://github.com/TitoStauffer/CashIn/pull/42', body: '',
   head: { sha }, base: { ref: 'master', sha: baseSha },

@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { requestGitHubApi } from './github-api-client.js';
 
-const ACTIONS_APP_ID = 15368;
+export const ACTIONS_APP_ID = 15368;
 const WORKFLOW_PATH = '.github/workflows/ci.yml';
 const MAX_RESPONSE_BYTES = 100_000;
 const MAX_SNAPSHOT_BYTES = 32_000;
@@ -76,7 +76,7 @@ export async function loadActionsEvidence(
 
 export async function loadCiSnapshots(fetchImpl: typeof fetch, repository: string, headSha: string, token: string): Promise<AgentCiSnapshot[]> {
   const snapshots: AgentCiSnapshot[] = [];
-  for (const path of [WORKFLOW_PATH, 'apps/api/package.json', 'apps/web/package.json']) {
+  for (const path of [WORKFLOW_PATH, 'apps/api/package.json', 'apps/web/package.json', 'tools/github-reviewer/package.json']) {
     const payload = await requestGitHubApi<Record<string, unknown>>(
       fetchImpl, `/repos/${repository}/contents/${path}?ref=${headSha}`, token, { maxResponseBytes: MAX_RESPONSE_BYTES },
     );

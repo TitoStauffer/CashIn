@@ -25,17 +25,19 @@ const run = {
 };
 const workflow = 'jobs:\n  api:\n    services:\n      postgres:\n        image: postgres:17-alpine\n        env:\n          POSTGRES_PASSWORD: ci-placeholder\n    env:\n      TEST_DATABASE_URL: postgresql://ci-placeholder@localhost/test\n    steps:\n      - name: Test with coverage (unit + integration)\n        run: npm run test:coverage\n      - name: Ensure no test was skipped\n        run: test "$skipped" = "0"\n';
 const scripts = { 'test:coverage': 'tsx --test "src/**/*.test.ts"' };
+const reviewerScripts = { build: 'tsc -p tsconfig.json', test: 'npm run build && node --test test/*.test.mjs' };
 
-function fakeFetch({ checkValue = check, jobValue = job, runValue = run, workflowValue = workflow, requests = [], failure } = {}) {
+function fakeFetch({ checkValue = check, jobValue = job, checkValues, jobValues, runValue = run, workflowValue = workflow, requests = [], failure } = {}) {
   return async (url, options) => {
     const parsed = new URL(url);
     requests.push({ url: parsed, options });
     assert.equal(parsed.origin, 'https://api.github.com');
     if (parsed.pathname.includes('/actions/')) {
       if (failure) return new Response('sensitive response body', { status: failure });
-      return Response.json(parsed.pathname.endsWith('/jobs/20') ? jobValue : runValue);
+      const jobId = Number(parsed.pathname.match(/\/jobs\/(\d+)$/)?.[1]);
+      return Response.json(jobId ? (jobValues?.find(({ id }) => id === jobId) ?? jobValue) : runValue);
     }
-    if (parsed.pathname.endsWith('/check-runs')) return Response.json({ check_runs: [checkValue] });
+    if (parsed.pathname.endsWith('/check-runs')) return Response.json({ check_runs: checkValues ?? [checkValue] });
     if (parsed.pathname.endsWith('/pulls/7/files')) return Response.json([]);
     if (parsed.pathname.endsWith('/pulls/7')) return new Response('diff');
     const path = parsed.pathname.split('/contents/')[1];
@@ -43,7 +45,7 @@ function fakeFetch({ checkValue = check, jobValue = job, runValue = run, workflo
     if (path === 'AGENTS.md') content = 'Project policy';
     else {
       assert.equal(parsed.searchParams.get('ref'), sha);
-      content = path === '.github/workflows/ci.yml' ? workflowValue : JSON.stringify({ scripts, dependencies: { 'omitted-package': '1' } });
+      content = path === '.github/workflows/ci.yml' ? workflowValue : JSON.stringify({ scripts: path === 'tools/github-reviewer/package.json' ? reviewerScripts : scripts, dependencies: { 'omitted-package': '1' } });
     }
     return Response.json({ encoding: 'base64', content: Buffer.from(content).toString('base64') });
   };
@@ -61,7 +63,7 @@ test('loads verified Actions steps and current-HEAD configuration through review
   assert.deepEqual(actions.steps, job.steps);
   assert.equal(actions.headSha, sha);
   assert.equal(actions.workflowPath, '.github/workflows/ci.yml');
-  assert.equal(inputs.ciConfiguration.length, 3);
+  assert.equal(inputs.ciConfiguration.length, 4);
   assert.equal(requests.some(({ url }) => url.pathname.endsWith('/logs')), false);
   assert.equal(requests.filter(({ url }) => url.pathname.includes('/actions/')).every(({ options }) => options.redirect === 'error' && options.signal), true);
 });
@@ -75,12 +77,37 @@ test('omits env values and package dependencies but preserves configured variabl
   assert.doesNotMatch(JSON.stringify(snapshots), /ci-placeholder|omitted-package/);
   assert.equal(snapshots[0].originalSha256, createHash('sha256').update(workflow).digest('hex'));
   assert.deepEqual(JSON.parse(snapshots[1].content), { scripts });
+  assert.equal(snapshots[3].path, 'tools/github-reviewer/package.json');
+  assert.deepEqual(JSON.parse(snapshots[3].content), { scripts: reviewerScripts });
 });
 
 test('also attaches verified job evidence to Web checks', async () => {
   const inputs = await loadAgentReviewInputs(fakeFetch({ checkValue: { ...check, name: 'Web' }, jobValue: { ...job, name: 'Web' } }), 'owner/repo', 7, { head: { sha }, base: { sha: baseSha } }, 'not-a-real-token');
   assert.equal(inputs.checkRuns[0].name, 'Web');
   assert.equal(inputs.checkRuns[0].actions.availability, 'available');
+});
+
+test('verifies all three CI jobs and supplies GitHub Reviewer test steps and four snapshots', async () => {
+  const checkValues = ['API', 'Web', 'GitHub Reviewer'].map((name, index) => ({ ...check, name, id: 20 + index, details_url: `https://github.com/owner/repo/actions/runs/10/job/${20 + index}` }));
+  const jobValues = checkValues.map((entry) => ({ ...job, id: entry.id, name: entry.name, html_url: entry.details_url, check_run_url: `https://api.github.com/repos/owner/repo/check-runs/${entry.id}`,
+    ...(entry.name === 'GitHub Reviewer' ? { steps: [{ number: 1, name: 'Build and test GitHub integration tools', status: 'completed', conclusion: 'success' }] } : {}),
+  }));
+  const inputs = await loadAgentReviewInputs(fakeFetch({ checkValues, jobValues }), 'owner/repo', 7, { head: { sha }, base: { sha: baseSha } }, 'not-a-real-token');
+  assert.equal(inputs.checks.githubReviewer, 'PASSED');
+  assert.equal(inputs.checkRuns.filter(({ actions }) => actions?.availability === 'available').length, 3);
+  assert.deepEqual(inputs.checkRuns.find(({ name }) => name === 'GitHub Reviewer').actions.steps, jobValues[2].steps);
+  assert.equal(inputs.ciConfiguration.length, 4);
+  const originalFingerprint = JSON.stringify(fingerprintAgentReviewInputs(inputs));
+  inputs.checkRuns.find(({ name }) => name === 'GitHub Reviewer').actions.steps[0].conclusion = 'failure';
+  assert.notEqual(JSON.stringify(fingerprintAgentReviewInputs(inputs)), originalFingerprint);
+  inputs.checkRuns.find(({ name }) => name === 'GitHub Reviewer').actions.steps[0].conclusion = 'success';
+  inputs.ciConfiguration.find(({ path }) => path === 'tools/github-reviewer/package.json').originalSha256 = 'c'.repeat(64);
+  assert.notEqual(JSON.stringify(fingerprintAgentReviewInputs(inputs)), originalFingerprint);
+});
+
+test('limits the context to three CI jobs', async () => {
+  const checkValues = ['API', 'Web', 'GitHub Reviewer', 'CI / API'].map((name) => ({ ...check, name }));
+  await assert.rejects(loadAgentReviewInputs(fakeFetch({ checkValues }), 'owner/repo', 7, { head: { sha }, base: { sha: baseSha } }, 'not-a-real-token'), /Too many CI checks/);
 });
 
 test('omits lowercase and underscore-prefixed environment values as well', async () => {

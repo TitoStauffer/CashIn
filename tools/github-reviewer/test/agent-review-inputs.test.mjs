@@ -29,6 +29,7 @@ function createFetch({
       payload = { check_runs: [
         { name: 'API', head_sha: headSha, status: 'completed', conclusion: 'success', details_url: 'https://example.test/api', completed_at: '2026-10-21T10:00:00Z' },
         { name: 'Web', head_sha: headSha, status: 'completed', conclusion: 'success' },
+        { name: 'GitHub Reviewer', app: { id: 15368 }, head_sha: headSha, status: 'completed', conclusion: 'success' },
         { name: 'SonarQube', head_sha: headSha, status: 'completed', conclusion: 'success' },
         { name: 'SonarCloud Code Analysis', head_sha: headSha, status: 'completed', conclusion: 'success' },
       ] };
@@ -58,6 +59,7 @@ test('loads complete changed source snapshots at the PR HEAD alongside diff and 
 
   assert.equal(inputs.diff.startsWith('diff --git'), true);
   assert.equal(inputs.checks.api, 'PASSED');
+  assert.equal(inputs.checks.githubReviewer, 'PASSED');
   assert.deepEqual(inputs.checkRuns.find((run) => run.name === 'API'), {
     name: 'API', appId: null, headSha, status: 'completed', conclusion: 'success', detailsUrl: 'https://example.test/api', completedAt: '2026-10-21T10:00:00Z',
     actions: { availability: 'unavailable', reason: 'Verified GitHub Actions job evidence is unavailable.' },
@@ -77,6 +79,16 @@ test('uses latest rerun results for summaries and exposes only current-SHA requi
   assert.equal(summarizeAgentChecks(runs, headSha).api, 'PASSED');
   assert.equal(summarizeAgentChecks(runs, headSha).web, 'MISSING');
   assert.deepEqual(summarizeCheckRunEvidence(runs, headSha).map(({ name, conclusion }) => ({ name, conclusion })), [{ name: 'API', conclusion: 'success' }]);
+});
+
+test('requires a current successful GitHub Actions Reviewer check in the prerequisite summary', () => {
+  const reviewer = { name: 'GitHub Reviewer', app: { id: 15368 }, head_sha: headSha, status: 'completed', conclusion: 'success' };
+  for (const [runs, expected] of [
+    [[], 'MISSING'], [[reviewer], 'PASSED'], [[{ ...reviewer, head_sha: baseSha }], 'MISSING'],
+    [[{ ...reviewer, app: { id: 999 } }], 'MISSING'], [[{ ...reviewer, app: undefined }], 'MISSING'],
+    [[{ ...reviewer, conclusion: 'failure' }], 'FAILED'], [[{ ...reviewer, conclusion: 'skipped' }], 'FAILED'],
+    [[{ ...reviewer, status: 'in_progress', conclusion: null }], 'PENDING'],
+  ]) assert.equal(summarizeAgentChecks(runs, headSha).githubReviewer, expected);
 });
 
 test('loads removed source files from the base commit', async () => {

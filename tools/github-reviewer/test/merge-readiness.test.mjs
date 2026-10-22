@@ -6,7 +6,7 @@ import { summarizeAgentChecks, summarizeCheckRunEvidence } from '../dist/agent-r
 
 const sha = 'a'.repeat(40);
 const oldSha = 'b'.repeat(40);
-const checks = ['API', 'Web', 'SonarQube', 'SonarCloud Code Analysis', 'PR title'].map((name) => ({ name, head_sha: sha, status: 'completed', conclusion: 'success' }));
+const checks = ['API', 'Web', 'GitHub Reviewer', 'SonarQube', 'SonarCloud Code Analysis', 'PR title'].map((name) => ({ name, head_sha: sha, status: 'completed', conclusion: 'success', ...(name === 'GitHub Reviewer' ? { app: { id: 15368 } } : {}) }));
 const reviewInputs = { diff: 'diff contents', checks: summarizeAgentChecks(checks), checkRuns: summarizeCheckRunEvidence(checks, sha), repositoryInstructions: 'trusted instructions', sourceFiles: [] };
 const contextHash = computeAgentContextHash('owner/repo', 7, {
   title: 'Example PR', html_url: 'https://github.com/owner/repo/pull/7', body: '',
@@ -107,6 +107,20 @@ function fixture(overrides = {}) {
 
 function response(payload, status = 200) {
   return new Response(JSON.stringify(payload), { status });
+}
+
+for (const [scenario, reviewerChecks] of [
+  ['missing', []],
+  ['failed', [{ name: 'GitHub Reviewer', head_sha: sha, app: { id: 15368 }, status: 'completed', conclusion: 'failure' }]],
+  ['pending', [{ name: 'GitHub Reviewer', head_sha: sha, app: { id: 15368 }, status: 'in_progress', conclusion: null }]],
+  ['wrong App', [{ name: 'GitHub Reviewer', head_sha: sha, app: { id: 999 }, status: 'completed', conclusion: 'success' }]],
+  ['stale SHA', [{ name: 'GitHub Reviewer', head_sha: oldSha, app: { id: 15368 }, status: 'completed', conclusion: 'success' }]],
+]) {
+  test(`blocks readiness when GitHub Reviewer is ${scenario}`, async () => {
+    const result = await fixture({ checks: [...checks.filter(({ name }) => name !== 'GitHub Reviewer'), ...reviewerChecks] }).evaluate();
+    assert.equal(result.status, 'BLOCKED');
+    assert.ok(result.reasons.some((reason) => reason.startsWith('Check obrigatório GitHub Reviewer:')));
+  });
 }
 
 test('returns READY_TO_MERGE only when protections, checks, formal review and structured reports are current', async () => {

@@ -1,11 +1,12 @@
 import { createHash } from 'node:crypto';
 import { posix } from 'node:path';
 import { requestGitHubApi, requestGitHubApiPages, requestGitHubText } from './github-api-client.js';
-import { loadActionsEvidence, loadCiSnapshots, unavailableActionsEvidence, type AgentActionsEvidence, type AgentCiSnapshot } from './agent-ci-evidence.js';
+import { ACTIONS_APP_ID, loadActionsEvidence, loadCiSnapshots, unavailableActionsEvidence, type AgentActionsEvidence, type AgentCiSnapshot } from './agent-ci-evidence.js';
 
 const REQUIRED_AGENT_CHECKS = {
   api: (name: string) => /(^|\/\s*)api(\s|$)/i.test(name),
   web: (name: string) => /(^|\/\s*)web(\s|$)/i.test(name),
+  githubReviewer: (name: string) => /(^|\/\s*)github reviewer$/i.test(name),
   sonarQube: (name: string) => /sonarqube/i.test(name),
   sonarCloud: (name: string) => /sonarcloud code analysis/i.test(name),
 } as const;
@@ -60,7 +61,7 @@ export async function loadAgentReviewInputs(
   const sourceFiles = await loadChangedSourceFiles(fetchImpl, repository, filesPayload, headSha, baseSha, token);
   const checkRuns = summarizeCheckRunEvidence(runs, headSha);
   const ciChecks = latestRunsByName(runs.filter((run) => run.head_sha === headSha && isTestCheck(String(run.name ?? ''))));
-  if (ciChecks.length > 4) throw new Error('Too many CI checks for the supported agent evidence context.');
+  if (ciChecks.length > 3) throw new Error('Too many CI checks for the supported agent evidence context.');
   for (const check of ciChecks) {
     const summary = checkRuns.find((candidate) => candidate.name === check.name && candidate.appId === (asRecord(check.app)?.id ?? null));
     if (summary) summary.actions = await loadActionsEvidence(fetchImpl, repository, pullRequestNumber, headSha, check, token);
@@ -120,8 +121,9 @@ async function loadChangedSourceFiles(
 
 export function summarizeAgentChecks(runs: Array<Record<string, unknown>>, expectedHeadSha?: string): AgentReviewInputs['checks'] {
   const currentRuns = expectedHeadSha ? runs.filter((run) => run.head_sha === expectedHeadSha) : runs;
-  const status = (matcher: (name: string) => boolean): string => {
-    const matches = latestRunsByName(currentRuns.filter((run) => matcher(String(run.name ?? ''))));
+  const status = (matcher: (name: string) => boolean, appId?: number): string => {
+    const matches = latestRunsByName(currentRuns.filter((run) => matcher(String(run.name ?? ''))
+      && (appId === undefined || asRecord(run.app)?.id === appId)));
     if (matches.length === 0) return 'MISSING';
     if (matches.some((run) => run.status !== 'completed')) return 'PENDING';
     if (matches.some((run) => run.conclusion !== 'success')) return 'FAILED';
@@ -130,6 +132,7 @@ export function summarizeAgentChecks(runs: Array<Record<string, unknown>>, expec
   return {
     api: status(REQUIRED_AGENT_CHECKS.api),
     web: status(REQUIRED_AGENT_CHECKS.web),
+    githubReviewer: status(REQUIRED_AGENT_CHECKS.githubReviewer, ACTIONS_APP_ID),
     sonarQube: status(REQUIRED_AGENT_CHECKS.sonarQube),
     sonarCloud: status(REQUIRED_AGENT_CHECKS.sonarCloud),
   };
@@ -169,7 +172,7 @@ export function summarizeCheckRunEvidence(runs: Array<Record<string, unknown>>, 
 }
 
 function isTestCheck(name: string): boolean {
-  return REQUIRED_AGENT_CHECKS.api(name) || REQUIRED_AGENT_CHECKS.web(name);
+  return REQUIRED_AGENT_CHECKS.api(name) || REQUIRED_AGENT_CHECKS.web(name) || REQUIRED_AGENT_CHECKS.githubReviewer(name);
 }
 
 function latestRunsByName(runs: Array<Record<string, unknown>>): Array<Record<string, unknown>> {
