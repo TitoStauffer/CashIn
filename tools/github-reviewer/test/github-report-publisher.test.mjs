@@ -2,16 +2,16 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { GitHubReportPublisher, formatPullRequestReport, REPORT_AGENT_SIGNATURES } from '../dist/github-report-publisher.js';
 import { computeAgentContextHash } from '../dist/agent-evidence.js';
-import { summarizeAgentChecks } from '../dist/agent-review-inputs.js';
+import { summarizeAgentChecks, summarizeCheckRunEvidence } from '../dist/agent-review-inputs.js';
 
 const sha = 'a'.repeat(40);
 const baseSha = 'c'.repeat(40);
-const checkRuns = ['API', 'Web', 'SonarQube', 'SonarCloud Code Analysis'].map((name) => ({ name, status: 'completed', conclusion: 'success' }));
+const checkRuns = ['API', 'Web', 'SonarQube', 'SonarCloud Code Analysis'].map((name) => ({ name, head_sha: sha, status: 'completed', conclusion: 'success' }));
 const currentPr = {
   title: 'Example PR', html_url: 'https://github.com/TitoStauffer/CashIn/pull/42', body: '',
   head: { sha }, base: { ref: 'master', sha: baseSha },
 };
-const currentInputs = { diff: 'diff contents', checks: summarizeAgentChecks(checkRuns), repositoryInstructions: 'trusted instructions' };
+const currentInputs = { diff: 'diff contents', checks: summarizeAgentChecks(checkRuns, sha), checkRuns: summarizeCheckRunEvidence(checkRuns, sha), repositoryInstructions: 'trusted instructions', sourceFiles: [] };
 const contextHash = computeAgentContextHash('TitoStauffer/CashIn', 42, currentPr, currentInputs);
 const baseReport = {
   agentName: 'qa', pullRequestNumber: 42, commitSha: sha, contextHash, status: 'APPROVED',
@@ -37,6 +37,7 @@ function fakeGitHub(requests, { pr = currentPr, comments = [], apiFailure = fals
     if (parsed.pathname === '/app') return response({ slug: 'cashin-devagents' });
     if (parsed.pathname.endsWith('/installation')) return response({ id: 173427336 });
     if (parsed.pathname.endsWith('/pulls/42') && options.headers?.Accept === 'application/vnd.github.v3.diff') return new Response('diff contents');
+    if (parsed.pathname.endsWith('/pulls/42/files')) return response([]);
     if (parsed.pathname.endsWith('/pulls/42')) {
       prReads += 1;
       return response({ state: 'open', user: { login: 'author' }, ...pr,
@@ -49,7 +50,7 @@ function fakeGitHub(requests, { pr = currentPr, comments = [], apiFailure = fals
     if (parsed.pathname.endsWith('/contents/AGENTS.md')) return response({ encoding: 'base64', content: Buffer.from('trusted instructions').toString('base64') });
     if (parsed.pathname.endsWith('/issues/42/comments') && (options.method ?? 'GET') === 'GET') return response(comments);
     if (parsed.pathname.endsWith('/issues/42/comments') && options.method === 'POST') return response({ id: 9876, html_url: 'https://github.com/TitoStauffer/CashIn/pull/42#issuecomment-9876' });
-    if (parsed.pathname.endsWith('/issues/42/comments/81') && options.method === 'PATCH') return response({ id: 81, html_url: 'https://example.test/comment/81' });
+    if (parsed.pathname.endsWith('/issues/comments/81') && options.method === 'PATCH') return response({ id: 81, html_url: 'https://example.test/comment/81' });
     throw new Error(`Unexpected request: ${options.method ?? 'GET'} ${parsed.pathname}`);
   };
 }
@@ -124,7 +125,9 @@ test('updates an existing App-authored report marker for the same stage and SHA'
 
   const result = await publisher.publishReport(baseReport);
 
-  assert.ok(requests.some(({ url, options }) => url.endsWith('/issues/42/comments/81') && options.method === 'PATCH'));
+  assert.ok(requests.some(({ url, options }) => url.endsWith('/issues/comments/81') && options.method === 'PATCH'
+    && JSON.parse(options.body).body === formatPullRequestReport(baseReport)));
+  assert.equal(requests.filter(({ options }) => options.method === 'POST').length, 0);
   assert.equal(result.reusedComment, true);
 });
 

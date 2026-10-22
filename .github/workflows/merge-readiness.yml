@@ -56,7 +56,7 @@ jobs:
 
       - name: Install trusted gate dependencies
         working-directory: tools/github-reviewer
-        run: npm ci
+        run: npm ci --fetch-timeout=15000 --fetch-retries=1
 
       - name: Build gate
         working-directory: tools/github-reviewer

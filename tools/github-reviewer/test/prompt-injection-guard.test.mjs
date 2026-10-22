@@ -37,3 +37,15 @@ test('Codex runs without its shell tool so PR-controlled prompts cannot run comm
   assert.ok(args.includes('--sandbox') && args.includes('read-only'));
   assert.ok(args.includes('--ignore-user-config'));
 });
+
+test('QA scope separates implementation acceptance from merge approval and protection checks', () => {
+  const prompt = buildPrompt('qa', {
+    repository: 'TitoStauffer/CashIn', pullRequestNumber: 26, commitSha: 'a'.repeat(40), executionId: 'test', priorResults: [],
+  }, {
+    pullRequest: { number: 26, title: 'PR', url: 'https://example.test', body: '', headSha: 'a'.repeat(40), baseBranch: 'master', diff: '+test' },
+    checks: { api: 'PASSED', web: 'PASSED', sonarQube: 'PASSED', sonarCloud: 'PASSED' }, repositoryInstructions: 'Trusted instructions',
+    formalCodeReview: { state: 'APPROVED', reviewer: 'cashin-devagents[bot]', commitSha: 'a'.repeat(40), submittedAt: '2026-10-21T10:00:00Z', laterChangeRequest: false },
+  });
+  assert.match(prompt, /A aprovação formal de Code Review já foi validada/);
+  assert.match(prompt, /Branch protection, aprovação humana exigida para merge e autorização de merge pertencem ao Merge Readiness\/PM/);
+});

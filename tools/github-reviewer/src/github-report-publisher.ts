@@ -89,7 +89,7 @@ export class GitHubReportPublisher {
       throw new Error(`Pull request #${report.pullRequestNumber} changed before the agent report could be published.`);
     }
     const comment = existing
-      ? await requestGitHubApi(this.fetchImpl, `${commentsPath}/${existing.id}`, installationToken, {
+      ? await requestGitHubApi(this.fetchImpl, `${repositoryPath}/issues/comments/${existing.id}`, installationToken, {
         method: 'PATCH', body: JSON.stringify({ body: formatPullRequestReport(report) }),
       })
       : await requestGitHubApi(this.fetchImpl, commentsPath, installationToken, {

@@ -2,12 +2,12 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { evaluateMergeReadiness } from '../dist/merge-readiness.js';
 import { agentReportMarker, computeAgentContextHash } from '../dist/agent-evidence.js';
-import { summarizeAgentChecks } from '../dist/agent-review-inputs.js';
+import { summarizeAgentChecks, summarizeCheckRunEvidence } from '../dist/agent-review-inputs.js';
 
 const sha = 'a'.repeat(40);
 const oldSha = 'b'.repeat(40);
 const checks = ['API', 'Web', 'SonarQube', 'SonarCloud Code Analysis', 'PR title'].map((name) => ({ name, head_sha: sha, status: 'completed', conclusion: 'success' }));
-const reviewInputs = { diff: 'diff contents', checks: summarizeAgentChecks(checks), repositoryInstructions: 'trusted instructions' };
+const reviewInputs = { diff: 'diff contents', checks: summarizeAgentChecks(checks), checkRuns: summarizeCheckRunEvidence(checks, sha), repositoryInstructions: 'trusted instructions', sourceFiles: [] };
 const contextHash = computeAgentContextHash('owner/repo', 7, {
   title: 'Example PR', html_url: 'https://github.com/owner/repo/pull/7', body: '',
   head: { sha }, base: { ref: 'master', sha: 'c'.repeat(40) },
@@ -27,7 +27,7 @@ function fixture(overrides = {}) {
   let pullRequestReadCount = 0;
   const data = {
     checks,
-    reviews: [{ user: { login: 'cashin-devagents' }, state: 'APPROVED', commit_id: sha, submitted_at: '2026-10-21T12:00:00Z', body: `${agentReportMarker('codeReview', sha, contextHash)}\n### Codex — Code Review Agent\n\n**Status:** APPROVED\n**Commit:** \`${sha}\`\n\n### Code Review — APPROVED` }],
+    reviews: [{ user: { login: 'cashin-devagents' }, state: 'APPROVED', commit_id: sha, submitted_at: '2026-10-21T12:00:00Z', body: `${agentReportMarker('codeReview', sha, contextHash)}\n### Codex — Code Review Agent\n\n**Status:** APPROVED\n**Commit:** \`${sha}\`\n\n### Code Review — APPROVED` }, { user: { login: 'human-reviewer', type: 'User' }, state: 'APPROVED', commit_id: sha, submitted_at: '2026-10-21T12:01:00Z' }],
     comments: [report('Codex — QA Agent', 'Verificações de QA'), report('Codex — Quality Gate Coordinator', 'Checks verificados')],
     title: 'Example PR',
     body: '',
@@ -37,9 +37,11 @@ function fixture(overrides = {}) {
     contextChanges: false,
     prCloses: false,
     mergeabilityChanges: false,
+    mergeableState: 'clean',
     protectionStatus: 200,
     requiredCheckAppId: null,
     requiredContexts: ['PR title'],
+    rulesets: [],
     unresolved: false,
     shaChanges: false,
     ...overrides,
@@ -51,6 +53,7 @@ function fixture(overrides = {}) {
     requests.push({ path, method: options.method ?? 'GET' });
     if (parsed.pathname === '/app') return response({ slug: 'cashin-devagents' });
     if (parsed.pathname === '/repos/owner/repo/pulls/7' && options.headers?.Accept === 'application/vnd.github.v3.diff') return new Response(data.diff);
+    if (parsed.pathname === '/repos/owner/repo/pulls/7/files') return response([]);
     if (parsed.pathname === '/repos/owner/repo/pulls/7') {
       pullRequestReadCount += 1;
       return response({
@@ -59,7 +62,7 @@ function fixture(overrides = {}) {
         head: { sha: data.shaChanges && pullRequestReadCount > 1 ? oldSha : sha },
         base: { ref: 'master', sha: data.baseSha }, user: { login: 'author' },
         mergeable: data.mergeabilityChanges && pullRequestReadCount > 1 ? false : true,
-        mergeable_state: data.mergeabilityChanges && pullRequestReadCount > 1 ? 'dirty' : 'clean',
+        mergeable_state: data.mergeabilityChanges && pullRequestReadCount > 1 ? 'dirty' : data.mergeableState,
       });
     }
     if (parsed.pathname.includes('/check-runs')) {
@@ -69,6 +72,8 @@ function fixture(overrides = {}) {
     if (parsed.pathname === '/repos/owner/repo/contents/AGENTS.md') return response({ encoding: 'base64', content: Buffer.from(data.instructions).toString('base64') });
     if (parsed.pathname.endsWith(`/commits/${sha}/status`)) return response({ statuses: [] });
     if (parsed.pathname === '/repos/owner/repo/pulls/7/reviews') return response(data.reviews);
+    if (parsed.pathname.startsWith('/repos/owner/repo/compare/')) return response({ status: data.compareStatus ?? 'ahead', merge_base_commit: { sha: data.compareStatus === 'diverged' ? oldSha : data.baseSha } }, data.compareApiStatus ?? 200);
+    if (parsed.pathname.endsWith('/collaborators/human-reviewer/permission')) return response({ permission: data.reviewerPermission ?? 'write' }, data.reviewerPermissionStatus ?? 200);
     if (parsed.pathname === '/repos/owner/repo/issues/7/comments') return response(data.comments);
     if (parsed.pathname === '/graphql') {
       return response({ data: { repository: { pullRequest: { reviewThreads: {
@@ -83,7 +88,8 @@ function fixture(overrides = {}) {
         : { contexts: data.requiredContexts };
       return response({ required_status_checks: requiredStatusChecks, required_pull_request_reviews: { required_approving_review_count: 1, dismiss_stale_reviews: true } });
     }
-    if (parsed.pathname === '/repos/owner/repo/rulesets') return response([]);
+    if (parsed.pathname === '/repos/owner/repo/rulesets') return response(data.rulesets.map(({ id, name, target, enforcement }) => ({ id, name, target, enforcement })));
+    if (parsed.pathname.startsWith('/repos/owner/repo/rulesets/')) return response(data.rulesets.find(({ id }) => String(id) === parsed.pathname.split('/').at(-1)));
     if (parsed.pathname === '/repos/owner/repo') return response({ default_branch: 'master' });
     throw new Error(`Unexpected request: ${options.method ?? 'GET'} ${path}`);
   };
@@ -121,6 +127,78 @@ test('does not create a circular dependency on the Merge Readiness context', asy
   assert.deepEqual(result.evidence.requiredChecks.map((check) => check.context), ['PR title']);
 });
 
+test('fetches full ruleset details because the listing does not include rules or conditions', async () => {
+  const subject = fixture({ protectionStatus: 404, rulesets: [{
+    id: 12, name: 'master', target: 'branch', enforcement: 'active',
+    conditions: { ref_name: { include: ['~DEFAULT_BRANCH'], exclude: [] } },
+    rules: [
+      { type: 'pull_request', parameters: { required_approving_review_count: 1 } },
+      { type: 'required_status_checks', parameters: { required_status_checks: [{ context: 'PR title' }] } },
+    ],
+  }] });
+  const result = await subject.evaluate();
+  assert.equal(result.status, 'READY_TO_MERGE', JSON.stringify(result.reasons));
+  assert.equal(subject.requests.some(({ path }) => path === '/repos/owner/repo/rulesets/12'), true);
+});
+
+test('does not block solely because GitHub reports UNSTABLE when mergeability and required evidence are valid', async () => {
+  const result = await fixture({ mergeableState: 'unstable' }).evaluate();
+
+  assert.equal(result.status, 'READY_TO_MERGE');
+  assert.deepEqual(result.reasons, []);
+});
+
+test('still blocks an UNSTABLE pull request when a required check fails', async () => {
+  const failingChecks = checks.map((check) => check.name === 'SonarQube' ? { ...check, conclusion: 'failure' } : check);
+  const result = await fixture({ mergeableState: 'unstable', checks: failingChecks }).evaluate();
+
+  assert.equal(result.status, 'BLOCKED');
+  assert.match(result.reasons.join(' '), /SonarQube: FAILED/);
+});
+
+function selfRequiredRuleset(extraRules = []) {
+  return [{ id: 12, name: 'master', target: 'branch', enforcement: 'active',
+    conditions: { ref_name: { include: ['~DEFAULT_BRANCH'], exclude: [] } },
+    rules: [
+      { type: 'pull_request', parameters: { required_approving_review_count: 0 } },
+      { type: 'required_status_checks', parameters: { strict_required_status_checks_policy: true, required_status_checks: [{ context: 'PR title' }, { context: 'Merge Readiness' }] } },
+      ...extraRules,
+    ],
+  }];
+}
+
+test('resolves BLOCKED caused by its own required status only for fully evaluated rulesets', async () => {
+  const result = await fixture({ protectionStatus: 404, mergeableState: 'blocked', rulesets: selfRequiredRuleset() }).evaluate();
+  assert.equal(result.status, 'READY_TO_MERGE', JSON.stringify(result.reasons));
+});
+
+test('self-required BLOCKED state still blocks without QA evidence', async () => {
+  const result = await fixture({ protectionStatus: 404, mergeableState: 'blocked', rulesets: selfRequiredRuleset(), comments: [] }).evaluate();
+  assert.equal(result.status, 'BLOCKED');
+  assert.match(result.reasons.join(' '), /QA/);
+});
+
+test('does not bypass an unevaluated merge queue rule in BLOCKED state', async () => {
+  const result = await fixture({ protectionStatus: 404, mergeableState: 'blocked', rulesets: selfRequiredRuleset([{ type: 'merge_queue' }]) }).evaluate();
+  assert.equal(result.status, 'BLOCKED');
+});
+
+test('does not attribute an opaque classic protection block to its own status', async () => {
+  const result = await fixture({ mergeableState: 'blocked', requiredContexts: ['PR title', 'Merge Readiness'] }).evaluate();
+  assert.equal(result.status, 'BLOCKED');
+});
+
+test('does not confuse a strict stale-base block with its own required status', async () => {
+  const result = await fixture({ protectionStatus: 404, mergeableState: 'blocked', rulesets: selfRequiredRuleset(), compareStatus: 'diverged' }).evaluate();
+  assert.equal(result.status, 'BLOCKED');
+  assert.match(result.reasons.join(' '), /strict/);
+});
+
+test('fails closed when strict base synchronization cannot be confirmed', async () => {
+  const result = await fixture({ protectionStatus: 404, mergeableState: 'blocked', rulesets: selfRequiredRuleset(), compareApiStatus: 403 }).evaluate();
+  assert.equal(result.status, 'INCONCLUSIVE');
+});
+
 test('blocks when the caller requires a different base branch', async () => {
   const result = await evaluateMergeReadiness({
     appId: '123', privateKey: 'test-key', owner: 'owner', repository: 'repo', installationId: '456',
@@ -146,6 +224,20 @@ test('blocks when a QA report belongs to a stale SHA', async () => {
 
   assert.equal(result.status, 'BLOCKED');
   assert.match(result.reasons.join(' '), /QA.*SHA/);
+});
+
+test('does not count the App formal review as an eligible human approval', async () => {
+  const subject = fixture();
+  subject.data.reviews = subject.data.reviews.filter((review) => review.user.login === 'cashin-devagents');
+  const result = await subject.evaluate();
+  assert.equal(result.status, 'BLOCKED');
+  assert.equal(result.evidence.currentHeadApprovalCount, 0);
+});
+
+test('fails closed if a human reviewer permission cannot be confirmed', async () => {
+  const result = await fixture({ reviewerPermissionStatus: 403 }).evaluate();
+  assert.equal(result.status, 'INCONCLUSIVE');
+  assert.match(result.limitations.join(' '), /Elegibilidade.*403/);
 });
 
 test('blocks when a required CI or Sonar check fails', async () => {

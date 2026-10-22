@@ -16,7 +16,7 @@ export function computeAgentContextHash(repository: string, pullRequestNumber: n
     pullRequestNumber,
     title: typeof pullRequest.title === 'string' ? pullRequest.title : '',
     url: typeof pullRequest.html_url === 'string' ? pullRequest.html_url : '',
-    body: typeof pullRequest.body === 'string' ? pullRequest.body : '',
+    body: typeof pullRequest.body === 'string' ? pullRequest.body.replace(/^(\s*[-*]\s+)\[[ xX]\](?=\s)/gm, '$1[ ]') : '',
     headSha: typeof head?.sha === 'string' ? head.sha.toLowerCase() : '',
     baseBranch: typeof base?.ref === 'string' ? base.ref : '',
     baseSha: typeof base?.sha === 'string' ? base.sha.toLowerCase() : '',

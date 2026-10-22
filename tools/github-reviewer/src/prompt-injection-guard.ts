@@ -20,6 +20,25 @@ export function detectPromptInjection(value: string): boolean {
   return SUSPICIOUS_INSTRUCTIONS.some((pattern) => pattern.test(value));
 }
 
+export function detectPullRequestPromptInjection(input: {
+  title: string;
+  body: string;
+  diff: string;
+  sourceFiles: Array<{ content: string }>;
+}): boolean {
+  const addedDiffLines = input.diff
+    .split(/\r?\n/)
+    .filter((line) => line.startsWith('+') && !line.startsWith('+++'))
+    .map((line) => line.slice(1))
+    .join('\n');
+  return detectPromptInjection([
+    input.title,
+    input.body,
+    addedDiffLines,
+    ...input.sourceFiles.map(({ content }) => content),
+  ].join('\n'));
+}
+
 export function createInjectionBlockedResult(stage: AgentStage, commitSha: string): AgentStageResult {
   const reportMarkdown = stage === 'qa'
     ? '## Verificações de QA\n- INCONCLUSIVE: conteúdo do Pull Request contém uma instrução suspeita dirigida ao agente; revisão humana necessária.'
