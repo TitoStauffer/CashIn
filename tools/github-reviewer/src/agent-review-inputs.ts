@@ -95,7 +95,7 @@ async function loadChangedSourceFiles(
         const dependency = posix.normalize(posix.join(posix.dirname(path), match[1].replace(/\.js$/, '.ts')));
         const key = `${revision}:${dependency}`;
         if (dependency.startsWith('../') || seen.has(key)) continue;
-        if (pendingFiles.length >= MAX_SOURCE_FILES * 2) throw new Error('Pull Request dependencies exceed the supported source file limit.');
+        if (pendingFiles.length >= files.length + MAX_SOURCE_FILES) throw new Error('Pull Request dependencies exceed the supported source file limit.');
         seen.add(key);
         pendingFiles.push({ filename: dependency, status: revision === 'base' ? 'removed' : 'modified' });
       }

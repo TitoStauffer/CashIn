@@ -27,7 +27,7 @@ function fixture(overrides = {}) {
   let pullRequestReadCount = 0;
   const data = {
     checks,
-    reviews: [{ user: { login: 'cashin-devagents' }, state: 'APPROVED', commit_id: sha, submitted_at: '2026-10-21T12:00:00Z', body: `${agentReportMarker('codeReview', sha, contextHash)}\n### Codex — Code Review Agent\n\n**Status:** APPROVED\n**Commit:** \`${sha}\`\n\n### Code Review — APPROVED` }],
+    reviews: [{ user: { login: 'cashin-devagents' }, state: 'APPROVED', commit_id: sha, submitted_at: '2026-10-21T12:00:00Z', body: `${agentReportMarker('codeReview', sha, contextHash)}\n### Codex — Code Review Agent\n\n**Status:** APPROVED\n**Commit:** \`${sha}\`\n\n### Code Review — APPROVED` }, { user: { login: 'human-reviewer', type: 'User' }, state: 'APPROVED', commit_id: sha, submitted_at: '2026-10-21T12:01:00Z' }],
     comments: [report('Codex — QA Agent', 'Verificações de QA'), report('Codex — Quality Gate Coordinator', 'Checks verificados')],
     title: 'Example PR',
     body: '',
@@ -72,6 +72,7 @@ function fixture(overrides = {}) {
     if (parsed.pathname === '/repos/owner/repo/contents/AGENTS.md') return response({ encoding: 'base64', content: Buffer.from(data.instructions).toString('base64') });
     if (parsed.pathname.endsWith(`/commits/${sha}/status`)) return response({ statuses: [] });
     if (parsed.pathname === '/repos/owner/repo/pulls/7/reviews') return response(data.reviews);
+    if (parsed.pathname.endsWith('/collaborators/human-reviewer/permission')) return response({ permission: data.reviewerPermission ?? 'write' }, data.reviewerPermissionStatus ?? 200);
     if (parsed.pathname === '/repos/owner/repo/issues/7/comments') return response(data.comments);
     if (parsed.pathname === '/graphql') {
       return response({ data: { repository: { pullRequest: { reviewThreads: {
@@ -179,6 +180,20 @@ test('blocks when a QA report belongs to a stale SHA', async () => {
 
   assert.equal(result.status, 'BLOCKED');
   assert.match(result.reasons.join(' '), /QA.*SHA/);
+});
+
+test('does not count the App formal review as an eligible human approval', async () => {
+  const subject = fixture();
+  subject.data.reviews = subject.data.reviews.filter((review) => review.user.login === 'cashin-devagents');
+  const result = await subject.evaluate();
+  assert.equal(result.status, 'BLOCKED');
+  assert.equal(result.evidence.currentHeadApprovalCount, 0);
+});
+
+test('fails closed if a human reviewer permission cannot be confirmed', async () => {
+  const result = await fixture({ reviewerPermissionStatus: 403 }).evaluate();
+  assert.equal(result.status, 'INCONCLUSIVE');
+  assert.match(result.limitations.join(' '), /Elegibilidade.*403/);
 });
 
 test('blocks when a required CI or Sonar check fails', async () => {

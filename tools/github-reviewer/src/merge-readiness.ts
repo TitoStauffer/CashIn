@@ -189,7 +189,21 @@ export async function evaluateMergeReadiness(options: MergeReadinessOptions): Pr
   const codeReview = findCodeReview(reviewList, appLogins, headSha, contextHash);
   evidence.codeReview = codeReview.evidence;
   if (codeReview.status !== 'APPROVED') reasons.push(codeReview.reason);
-  const validApprovalCount = countCurrentApprovals(reviewList, headSha, authorLogin);
+  const eligibleReviewers = new Set<string>();
+  if (requiredReviewCount > 0) {
+    const candidates = new Set(reviewList.filter((review) => review.state === 'APPROVED' && review.commit_id === headSha
+      && review.user?.login && review.user.login !== authorLogin && !appLogins.has(review.user.login)
+      && review.user.type !== 'Bot' && !review.user.login.endsWith('[bot]')).map((review) => review.user!.login!));
+    for (const login of candidates) {
+      try {
+        const permission = await requestGitHubApi(fetchImpl, `${repositoryPath}/collaborators/${encodeURIComponent(login)}/permission`, token);
+        if (['admin', 'maintain', 'write'].includes(String(permission.permission))) eligibleReviewers.add(login);
+      } catch (error) {
+        limitations.push(describeFailure('Elegibilidade da aprovação humana', error));
+      }
+    }
+  }
+  const validApprovalCount = countCurrentApprovals(reviewList, headSha, authorLogin, eligibleReviewers);
   evidence.currentHeadApprovalCount = validApprovalCount;
   if (validApprovalCount < requiredReviewCount) {
     reasons.push(`A branch exige ${requiredReviewCount} aprovação(ões) no HEAD atual; foram encontradas ${validApprovalCount}.`);
@@ -234,7 +248,7 @@ export async function evaluateMergeReadiness(options: MergeReadinessOptions): Pr
 
 interface CheckRun { name?: string; head_sha?: string; status?: string; conclusion?: string; app?: { slug?: string; id?: number }; }
 interface CommitStatus { context?: string; state?: string; sha?: string; }
-interface Review { user?: { login?: string }; state?: string; commit_id?: string; submitted_at?: string | null; body?: string; }
+interface Review { user?: { login?: string; type?: string }; state?: string; commit_id?: string; submitted_at?: string | null; body?: string; }
 interface IssueComment { user?: { login?: string }; body?: string; updated_at?: string; created_at?: string; }
 interface BranchProtection { required_status_checks?: { contexts?: string[]; checks?: Array<{ context?: string; app_id?: number | null }> }; required_pull_request_reviews?: { required_approving_review_count?: number; dismiss_stale_reviews?: boolean } | null; }
 interface Ruleset { id?: number; name?: string; enforcement?: string; target?: string; conditions?: { ref_name?: { include?: string[]; exclude?: string[] } }; rules?: Array<{ type?: string; parameters?: { required_status_checks?: Array<{ context?: string; integration_id?: number | null }>; required_approving_review_count?: number } }>; }
@@ -369,13 +383,13 @@ function findCodeReview(reviews: Review[], appLogins: Set<string>, sha: string, 
   return { status: 'APPROVED', reason: '', evidence };
 }
 
-function countCurrentApprovals(reviews: Review[], sha: string, authorLogin?: string): number {
+function countCurrentApprovals(reviews: Review[], sha: string, authorLogin: string | undefined, eligibleReviewers: Set<string>): number {
   const latestByReviewer = new Map<string, Review>();
   for (const review of [...reviews].sort((left, right) => (left.submitted_at ?? '').localeCompare(right.submitted_at ?? ''))) {
     const login = review.user?.login;
     if (login) latestByReviewer.set(login, review);
   }
-  return [...latestByReviewer.entries()].filter(([login, review]) => login !== authorLogin && review.state === 'APPROVED' && review.commit_id === sha).length;
+  return [...latestByReviewer.entries()].filter(([login, review]) => login !== authorLogin && eligibleReviewers.has(login) && review.state === 'APPROVED' && review.commit_id === sha).length;
 }
 
 function findStructuredReport(comments: IssueComment[], appLogins: Set<string>, agent: 'qa' | 'qualityGate', sha: string, contextHash: string): { status: string; reason: string; evidence: Record<string, unknown> } {
