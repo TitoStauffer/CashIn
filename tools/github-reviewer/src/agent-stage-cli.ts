@@ -92,6 +92,7 @@ async function main(): Promise<void> {
   };
   const modelResult = await executeCodexAgent(stage, context, AbortSignal.timeout(20 * 60 * 1000), {
     pullRequest: {
+      state: 'open',
       number: prNumber,
       title: stringValue(pullRequest.title) ?? '(sem título)',
       url: stringValue(pullRequest.html_url) ?? `https://github.com/${repository}/pull/${prNumber}`,
@@ -176,7 +177,6 @@ async function verifyContextUnchanged(
   if (currentPr.state !== 'open'
     || stringValue(asRecord(currentPr.head)?.sha) !== sha
     || stringValue(currentPr.title) !== stringValue(initialPr.title)
-    || stringValue(currentPr.body) !== stringValue(initialPr.body)
     || stringValue(currentPr.html_url) !== stringValue(initialPr.html_url)
     || stringValue(asRecord(currentPr.base)?.ref) !== stringValue(asRecord(initialPr.base)?.ref)
     || stringValue(asRecord(currentPr.base)?.sha) !== stringValue(asRecord(initialPr.base)?.sha)) {

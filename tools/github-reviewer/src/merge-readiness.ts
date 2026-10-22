@@ -321,7 +321,10 @@ async function listRepositoryRulesets(fetchImpl: typeof fetch, repositoryPath: s
   for (let page = 1; page <= 10; page += 1) {
     const response = await requestGitHubApi<unknown[]>(fetchImpl, `${repositoryPath}/rulesets?includes_parents=true&per_page=100&page=${page}`, token);
     if (!Array.isArray(response)) throw new Error('GitHub returned an invalid ruleset response.');
-    rulesets.push(...response as Ruleset[]);
+    for (const summary of response as Ruleset[]) {
+      if (!Number.isSafeInteger(summary.id)) throw new Error('GitHub returned an invalid ruleset identity.');
+      rulesets.push(await requestGitHubApi<Ruleset>(fetchImpl, `${repositoryPath}/rulesets/${summary.id}`, token));
+    }
     if (response.length < 100) return rulesets;
   }
   throw new Error('Ruleset pagination exceeded the supported page limit.');

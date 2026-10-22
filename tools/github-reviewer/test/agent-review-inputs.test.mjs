@@ -90,6 +90,14 @@ test('loads removed source files from the base commit', async () => {
   assert.equal(requests.some((request) => request.pathname.endsWith('/contents/src/removed.ts') && request.searchParams.get('ref') === baseSha), true);
 });
 
+test('includes unchanged direct local dependencies without following imports recursively', async () => {
+  const inputs = await loadAgentReviewInputs(createFetch({
+    source: "import { value } from './helper.js'; export { value };",
+    sources: { 'src/helper.ts': "import { other } from './other.js'; export const value = other;" },
+  }), 'owner/repo', 7, { head: { sha: headSha }, base: { sha: baseSha } }, 'token');
+  assert.deepEqual(inputs.sourceFiles.map(({ path }) => path), ['src/example.ts', 'src/helper.ts']);
+});
+
 test('fails closed when changed source context exceeds the supported file limit', async () => {
   const files = Array.from({ length: 21 }, (_, index) => ({ filename: `src/file-${index}.ts`, status: 'modified' }));
   await assert.rejects(

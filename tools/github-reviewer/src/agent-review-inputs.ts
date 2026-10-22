@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { posix } from 'node:path';
 import { requestGitHubApi, requestGitHubApiPages, requestGitHubText } from './github-api-client.js';
 
 const REQUIRED_AGENT_CHECKS = {
@@ -67,7 +68,9 @@ async function loadChangedSourceFiles(
 
   const sourceFiles: AgentReviewInputs['sourceFiles'] = [];
   let totalBytes = 0;
-  for (const file of files) {
+  const pendingFiles = files.map((file) => ({ ...file, filename: stringValue(file.filename), status: stringValue(file.status) }));
+  const seen = new Set(pendingFiles.map((file) => `${file.status === 'removed' ? 'base' : 'head'}:${file.filename}`));
+  for (const file of pendingFiles) {
     const path = stringValue(file.filename);
     const status = stringValue(file.status);
     if (!path || !status) throw new Error('GitHub returned incomplete changed-file metadata.');
@@ -87,6 +90,16 @@ async function loadChangedSourceFiles(
     totalBytes += Buffer.byteLength(content, 'utf8');
     if (totalBytes > MAX_SOURCE_BYTES) throw new Error('Pull Request source files exceed the supported review context size.');
     sourceFiles.push({ path, revision, content });
+    if (sourceFiles.length <= files.length && /\.[cm]?tsx?$/.test(path)) {
+      for (const match of content.matchAll(/\bfrom\s+['"](\.[^'"]+\.js)['"]/g)) {
+        const dependency = posix.normalize(posix.join(posix.dirname(path), match[1].replace(/\.js$/, '.ts')));
+        const key = `${revision}:${dependency}`;
+        if (dependency.startsWith('../') || seen.has(key)) continue;
+        if (pendingFiles.length >= MAX_SOURCE_FILES * 2) throw new Error('Pull Request dependencies exceed the supported source file limit.');
+        seen.add(key);
+        pendingFiles.push({ filename: dependency, status: revision === 'base' ? 'removed' : 'modified' });
+      }
+    }
   }
   return sourceFiles;
 }
@@ -112,7 +125,7 @@ export function fingerprintAgentReviewInputs(inputs: AgentReviewInputs): Record<
   return {
     diffSha256: hash(inputs.diff),
     checks: inputs.checks,
-    checkRuns: inputs.checkRuns ?? [],
+    checkRuns: (inputs.checkRuns ?? []).map(({ name, headSha, status, conclusion }) => ({ name, headSha, status, conclusion })),
     repositoryInstructionsSha256: hash(inputs.repositoryInstructions),
     sourceFiles: inputs.sourceFiles.map(({ path, revision, content }) => ({ path, revision, sha256: hash(content) })),
   };

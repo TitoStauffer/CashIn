@@ -41,6 +41,7 @@ function fixture(overrides = {}) {
     protectionStatus: 200,
     requiredCheckAppId: null,
     requiredContexts: ['PR title'],
+    rulesets: [],
     unresolved: false,
     shaChanges: false,
     ...overrides,
@@ -85,7 +86,8 @@ function fixture(overrides = {}) {
         : { contexts: data.requiredContexts };
       return response({ required_status_checks: requiredStatusChecks, required_pull_request_reviews: { required_approving_review_count: 1, dismiss_stale_reviews: true } });
     }
-    if (parsed.pathname === '/repos/owner/repo/rulesets') return response([]);
+    if (parsed.pathname === '/repos/owner/repo/rulesets') return response(data.rulesets.map(({ id, name, target, enforcement }) => ({ id, name, target, enforcement })));
+    if (parsed.pathname.startsWith('/repos/owner/repo/rulesets/')) return response(data.rulesets.find(({ id }) => String(id) === parsed.pathname.split('/').at(-1)));
     if (parsed.pathname === '/repos/owner/repo') return response({ default_branch: 'master' });
     throw new Error(`Unexpected request: ${options.method ?? 'GET'} ${path}`);
   };
@@ -121,6 +123,20 @@ test('does not create a circular dependency on the Merge Readiness context', asy
 
   assert.equal(result.status, 'READY_TO_MERGE');
   assert.deepEqual(result.evidence.requiredChecks.map((check) => check.context), ['PR title']);
+});
+
+test('fetches full ruleset details because the listing does not include rules or conditions', async () => {
+  const subject = fixture({ protectionStatus: 404, rulesets: [{
+    id: 12, name: 'master', target: 'branch', enforcement: 'active',
+    conditions: { ref_name: { include: ['~DEFAULT_BRANCH'], exclude: [] } },
+    rules: [
+      { type: 'pull_request', parameters: { required_approving_review_count: 1 } },
+      { type: 'required_status_checks', parameters: { required_status_checks: [{ context: 'PR title' }] } },
+    ],
+  }] });
+  const result = await subject.evaluate();
+  assert.equal(result.status, 'READY_TO_MERGE', JSON.stringify(result.reasons));
+  assert.equal(subject.requests.some(({ path }) => path === '/repos/owner/repo/rulesets/12'), true);
 });
 
 test('does not block solely because GitHub reports UNSTABLE when mergeability and required evidence are valid', async () => {
