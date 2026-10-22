@@ -42,6 +42,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: master
+          token: ${{ github.token }}
           persist-credentials: false
 
       - name: Setup Node.js
@@ -53,7 +54,7 @@ jobs:
 
       - name: Install trusted orchestration dependencies
         working-directory: tools/github-reviewer
-        run: npm ci
+        run: npm ci --fetch-timeout=15000 --fetch-retries=1
 
       - name: Build orchestration tools
         working-directory: tools/github-reviewer
@@ -97,6 +98,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: master
+          token: ${{ github.token }}
           persist-credentials: false
 
       - name: Setup Node.js
@@ -106,7 +108,7 @@ jobs:
 
       - name: Install trusted publisher dependencies
         working-directory: tools/github-reviewer
-        run: npm ci
+        run: npm ci --fetch-timeout=15000 --fetch-retries=1
 
       - name: Build trusted publisher
         working-directory: tools/github-reviewer
@@ -156,6 +158,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: master
+          token: ${{ github.token }}
           persist-credentials: false
 
       - name: Setup Node.js
@@ -167,7 +170,7 @@ jobs:
 
       - name: Install trusted orchestration dependencies
         working-directory: tools/github-reviewer
-        run: npm ci
+        run: npm ci --fetch-timeout=15000 --fetch-retries=1
 
       - name: Build orchestration tools
         working-directory: tools/github-reviewer
@@ -214,6 +217,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: master
+          token: ${{ github.token }}
           persist-credentials: false
 
       - name: Setup Node.js
@@ -223,7 +227,7 @@ jobs:
 
       - name: Install trusted publisher dependencies
         working-directory: tools/github-reviewer
-        run: npm ci
+        run: npm ci --fetch-timeout=15000 --fetch-retries=1
 
       - name: Build trusted publisher
         working-directory: tools/github-reviewer
@@ -273,6 +277,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: master
+          token: ${{ github.token }}
           persist-credentials: false
 
       - name: Setup Node.js
@@ -284,7 +289,7 @@ jobs:
 
       - name: Install trusted orchestration dependencies
         working-directory: tools/github-reviewer
-        run: npm ci
+        run: npm ci --fetch-timeout=15000 --fetch-retries=1
 
       - name: Build orchestration tools
         working-directory: tools/github-reviewer
@@ -338,6 +343,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: master
+          token: ${{ github.token }}
           persist-credentials: false
 
       - name: Setup Node.js
@@ -347,7 +353,7 @@ jobs:
 
       - name: Install trusted publisher dependencies
         working-directory: tools/github-reviewer
-        run: npm ci
+        run: npm ci --fetch-timeout=15000 --fetch-retries=1
 
       - name: Build trusted publisher
         working-directory: tools/github-reviewer
@@ -374,7 +380,7 @@ jobs:
 
   final-status:
     name: Confirm all agent stages approved
-    if: always()
+    if: always() && needs.code-review.result != 'skipped'
     needs: [code-review, publish-code-review, qa, publish-qa, quality-gate, publish-quality-gate]
     runs-on: ubuntu-24.04
     steps:

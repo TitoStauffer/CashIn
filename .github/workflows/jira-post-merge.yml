@@ -39,7 +39,7 @@ jobs:
           cache-dependency-path: tools/jira-dispatcher/package-lock.json
 
       - name: Install dispatcher dependencies
-        run: npm ci
+        run: npm ci --fetch-timeout=15000 --fetch-retries=1
 
       - name: Build dispatcher without credentials
         run: npm run build

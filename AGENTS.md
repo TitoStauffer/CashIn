@@ -73,6 +73,7 @@
 - O agente que conduz a execução integra o trabalho e verifica a História completa. As responsabilidades de Jira e Git seguem as regras definidas neste workflow.
 
 ### Publicação de relatórios dos Agents no GitHub
+- Na configuração com um único mantenedor, o ruleset exige `Merge Readiness` e todos os checks de CI/Sonar. A aprovação formal do GitHub App para o HEAD atual, QA e Coordinator são obrigatórios no gate; a contagem separada de revisores humanos do GitHub pode ser zero. Isso não autoriza publicar aprovação sem revisão real. O PM só integra após `READY_TO_MERGE` e checks aprovados, sem bypass.
 - Os Agents de Quality Gate, QA e Product Manager publicam seus relatórios nos comentários do Pull Request usando o publicador compartilhado em `tools/github-reviewer`; consulte o README do diretório para configuração e comando.
 - Use as assinaturas `Codex — Quality Gate Coordinator`, `Codex — QA Agent` e `Codex — PM Agent`, respectivamente. Informe sempre o número do PR, o SHA atual do commit, o status observado e o relatório em Markdown.
 - O publicador confere que o PR está aberto e que o SHA informado ainda é o head atual. Se o SHA divergir, atualize a evidência e tente novamente com o commit correto; não publique relatório de uma revisão antiga como atual.
