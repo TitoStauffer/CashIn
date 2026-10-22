@@ -3,6 +3,10 @@ import type { IncomeBalanceType } from "../incomes/incomes.types.js";
 export interface FinancialSummary {
   incomeTotal: string;
   expenseTotal: string;
+  cashIncomeTotal: string;
+  cashExpenseTotal: string;
+  creditPurchaseTotal: string;
+  cardPaymentTotal: string;
   contributionTotal: string;
   availableBalance: string;
   cashBalance: string;

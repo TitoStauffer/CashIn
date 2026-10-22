@@ -12,6 +12,10 @@ const SESSION = "a".repeat(43);
 const expected: FinancialSummary = {
   incomeTotal: "100.00",
   expenseTotal: "25.00",
+  cashIncomeTotal: "100.00",
+  cashExpenseTotal: "20.00",
+  creditPurchaseTotal: "5.00",
+  cardPaymentTotal: "5.00",
   contributionTotal: "10.00",
   availableBalance: "65.00",
   cashBalance: "65.00",
@@ -48,7 +52,7 @@ function createDatabase(): Database {
   return { ...executor, transaction: async (work) => work(executor) };
 }
 
-test("GET /financial-summary is authenticated, returns separate totals and forwards inclusive date bounds", async () => {
+test("GET /financial-summary authenticates and returns monetary components as strings with inclusive date bounds", async () => {
   const summaryRepository = new MemorySummaryRepository();
   const app = createApp(createDatabase(), {
     authRepository: new SessionAuthRepository(),
@@ -64,6 +68,9 @@ test("GET /financial-summary is authenticated, returns separate totals and forwa
   });
   assert.equal(response.statusCode, 200);
   assert.deepEqual(response.json(), expected);
+  for (const field of ["cashIncomeTotal", "cashExpenseTotal", "creditPurchaseTotal", "cardPaymentTotal"] as const) {
+    assert.equal(typeof response.json<FinancialSummary>()[field], "string");
+  }
   assert.deepEqual(summaryRepository.calls, [{ userId: USER_ID, from: "2026-10-01", to: "2026-10-31" }]);
 
   const invalidRange = await app.inject({
@@ -78,5 +85,12 @@ test("GET /financial-summary is authenticated, returns separate totals and forwa
     headers: { cookie: `cashin_session=${SESSION}` },
   });
   assert.equal(invalidDate.statusCode, 400);
+  const inaccessibleWallet = await app.inject({
+    method: "GET",
+    url: "/financial-summary",
+    headers: { cookie: `cashin_session=${SESSION}`, "x-wallet-id": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb" },
+  });
+  assert.equal(inaccessibleWallet.statusCode, 404);
+  assert.equal(summaryRepository.calls.length, 1);
   await app.close();
 });

@@ -4,6 +4,9 @@ import type { FinancialSummary, FinancialSummaryBalance, FinancialSummaryCategor
 interface SummaryRow {
   income_total: string;
   expense_total: string;
+  cash_income_total: string;
+  cash_expense_total: string;
+  credit_purchase_total: string;
   contribution_total: string;
   available_balance: string;
   cash_balance: string;
@@ -57,6 +60,14 @@ export class PostgresFinancialSummaryRepository implements FinancialSummaryRepos
                AND ($2::date IS NULL OR expense.date >= $2::date)
                AND ($3::date IS NULL OR expense.date <= $3::date)
            ), 0.00) AS cash_expense_total,
+           COALESCE((
+             SELECT SUM(expense.amount)
+             FROM expenses AS expense
+             WHERE expense.wallet_id = $1
+               AND expense.payment_method_nature = 'credit_card'
+               AND ($2::date IS NULL OR expense.date >= $2::date)
+               AND ($3::date IS NULL OR expense.date <= $3::date)
+           ), 0.00) AS credit_purchase_total,
            COALESCE((
              SELECT SUM(statement.paid_amount)
              FROM credit_card_statements AS statement
@@ -144,6 +155,10 @@ export class PostgresFinancialSummaryRepository implements FinancialSummaryRepos
        SELECT
          income_total::text AS income_total,
          expense_total::text AS expense_total,
+         trunc(cash_income_total, 2)::text AS cash_income_total,
+         trunc(cash_expense_total, 2)::text AS cash_expense_total,
+         trunc(credit_purchase_total, 2)::text AS credit_purchase_total,
+         trunc(card_payment_total, 2)::text AS card_payment_total,
          contribution_total::text AS contribution_total,
          (cash_income_total - cash_expense_total - contribution_total - card_payment_total)::text AS cash_balance,
          (cash_income_total - cash_expense_total - contribution_total - card_payment_total)::text AS available_balance,
@@ -158,6 +173,10 @@ export class PostgresFinancialSummaryRepository implements FinancialSummaryRepos
     return {
       incomeTotal: row.income_total,
       expenseTotal: row.expense_total,
+      cashIncomeTotal: row.cash_income_total,
+      cashExpenseTotal: row.cash_expense_total,
+      creditPurchaseTotal: row.credit_purchase_total,
+      cardPaymentTotal: row.card_payment_total,
       contributionTotal: row.contribution_total,
       availableBalance: row.available_balance,
       cashBalance: row.cash_balance,
