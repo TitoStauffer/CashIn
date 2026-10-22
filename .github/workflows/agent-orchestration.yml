@@ -1,0 +1,397 @@
+name: Codex Agent Orchestration
+
+on:
+  # Either completion triggers evaluation; agent-stage-cli verifies all CI/Sonar prerequisites before a model call.
+  workflow_run: # zizmor: ignore[dangerous-triggers] — jobs check PR source/base and run only trusted master code; CI artifacts are never consumed.
+    workflows: [CI, PR title]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: Pull Request number to evaluate manually
+        required: true
+        type: string
+
+permissions: {}
+
+concurrency:
+  group: codex-agent-orchestration-${{ github.event.workflow_run.pull_requests[0].number || inputs.pr_number || github.event.workflow_run.head_branch || github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  code-review:
+    name: Codex Code Review
+    if: >-
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/master') ||
+      (github.event_name == 'workflow_run' && (github.event.workflow_run.name == 'CI' || github.event.workflow_run.name == 'PR title') &&
+      github.event.workflow_run.event == 'pull_request' && github.event.workflow_run.conclusion == 'success')
+    runs-on: [self-hosted, Windows, X64, codex-plus]
+    defaults:
+      run:
+        shell: pwsh
+    timeout-minutes: 35
+    permissions:
+      contents: read
+      pull-requests: read
+      checks: read
+    outputs:
+      decision: ${{ steps.stage.outputs.decision }}
+      commit_sha: ${{ steps.stage.outputs.commit_sha }}
+      pr_number: ${{ steps.stage.outputs.pr_number }}
+    steps:
+      - name: Checkout trusted default branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: master
+          token: ${{ github.token }}
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "24.22.0"
+          cache: npm
+          cache-dependency-path: tools/github-reviewer/package-lock.json
+
+      - name: Install trusted orchestration dependencies
+        working-directory: tools/github-reviewer
+        run: npm ci --fetch-timeout=15000 --fetch-retries=1
+
+      - name: Build orchestration tools
+        working-directory: tools/github-reviewer
+        run: npm run build
+
+      - name: Run Codex Code Review
+        id: stage
+        continue-on-error: true
+        working-directory: tools/github-reviewer
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          CASHIN_APP_BOT_LOGIN: ${{ vars.CASHIN_APP_BOT_LOGIN }}
+          AGENT_STAGE: codeReview
+        run: node dist/agent-stage-cli.js
+
+      - name: Upload Code Review result
+        if: always() && steps.stage.outputs.commit_sha != ''
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: codex-code-review-${{ github.run_id }}
+          path: agent-result.json
+          if-no-files-found: error
+          retention-days: 1
+
+  publish-code-review:
+    name: Publish formal Code Review
+    needs: code-review
+    if: needs.code-review.result == 'success' && needs.code-review.outputs.decision != ''
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pull-requests: read
+      checks: read
+    outputs:
+      decision: ${{ needs.code-review.outputs.decision }}
+      commit_sha: ${{ needs.code-review.outputs.commit_sha }}
+      pr_number: ${{ needs.code-review.outputs.pr_number }}
+    steps:
+      - name: Checkout trusted default branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: master
+          token: ${{ github.token }}
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "24.22.0"
+
+      - name: Install trusted publisher dependencies
+        working-directory: tools/github-reviewer
+        run: npm ci --fetch-timeout=15000 --fetch-retries=1
+
+      - name: Build trusted publisher
+        working-directory: tools/github-reviewer
+        run: npm run build
+
+      - name: Download Code Review result
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: codex-code-review-${{ github.run_id }}
+          path: tools/github-reviewer/agent-result
+
+      - name: Publish formal Code Review
+        working-directory: tools/github-reviewer
+        env:
+          AGENT_PUBLISH_MODE: formalReview
+          AGENT_RESULT_PATH: agent-result/agent-result.json
+          PR_NUMBER: ${{ needs.code-review.outputs.pr_number }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_TOKEN: ${{ github.token }}
+          CASHIN_APP_ID: ${{ secrets.CASHIN_APP_ID }}
+          CASHIN_APP_INSTALLATION_ID: ${{ secrets.CASHIN_APP_INSTALLATION_ID }}
+          CASHIN_APP_PRIVATE_KEY: ${{ secrets.CASHIN_APP_PRIVATE_KEY }}
+          CASHIN_APP_BOT_LOGIN: ${{ vars.CASHIN_APP_BOT_LOGIN }}
+        run: node dist/agent-publish-cli.js
+
+  qa:
+    name: Codex QA
+    needs: [code-review, publish-code-review]
+    if: >-
+      needs.publish-code-review.result == 'success' &&
+      needs.publish-code-review.outputs.decision == 'APPROVED'
+    runs-on: [self-hosted, Windows, X64, codex-plus]
+    defaults:
+      run:
+        shell: pwsh
+    timeout-minutes: 35
+    permissions:
+      contents: read
+      pull-requests: read
+      checks: read
+    outputs:
+      decision: ${{ steps.stage.outputs.decision }}
+      commit_sha: ${{ steps.stage.outputs.commit_sha }}
+      pr_number: ${{ steps.stage.outputs.pr_number }}
+    steps:
+      - name: Checkout trusted default branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: master
+          token: ${{ github.token }}
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "24.22.0"
+          cache: npm
+          cache-dependency-path: tools/github-reviewer/package-lock.json
+
+      - name: Install trusted orchestration dependencies
+        working-directory: tools/github-reviewer
+        run: npm ci --fetch-timeout=15000 --fetch-retries=1
+
+      - name: Build orchestration tools
+        working-directory: tools/github-reviewer
+        run: npm run build
+
+      - name: Download Code Review result
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: codex-code-review-${{ github.run_id }}
+          path: tools/github-reviewer/prior-code-review
+
+      - name: Run Codex QA
+        id: stage
+        continue-on-error: true
+        working-directory: tools/github-reviewer
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          CASHIN_APP_BOT_LOGIN: ${{ vars.CASHIN_APP_BOT_LOGIN }}
+          AGENT_STAGE: qa
+          CODE_REVIEW_RESULT_PATH: prior-code-review/agent-result.json
+        run: node dist/agent-stage-cli.js
+
+      - name: Upload QA result
+        if: always() && steps.stage.outputs.commit_sha != ''
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: codex-qa-${{ github.run_id }}
+          path: agent-result.json
+          if-no-files-found: error
+          retention-days: 1
+
+  publish-qa:
+    name: Publish QA report
+    needs: qa
+    if: needs.qa.result == 'success' && needs.qa.outputs.decision != ''
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pull-requests: read
+      checks: read
+    steps:
+      - name: Checkout trusted default branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: master
+          token: ${{ github.token }}
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "24.22.0"
+
+      - name: Install trusted publisher dependencies
+        working-directory: tools/github-reviewer
+        run: npm ci --fetch-timeout=15000 --fetch-retries=1
+
+      - name: Build trusted publisher
+        working-directory: tools/github-reviewer
+        run: npm run build
+
+      - name: Download QA result
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: codex-qa-${{ github.run_id }}
+          path: tools/github-reviewer/agent-result
+
+      - name: Publish QA report
+        working-directory: tools/github-reviewer
+        env:
+          AGENT_PUBLISH_MODE: report
+          AGENT_RESULT_PATH: agent-result/agent-result.json
+          PR_NUMBER: ${{ needs.qa.outputs.pr_number }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_TOKEN: ${{ github.token }}
+          CASHIN_APP_ID: ${{ secrets.CASHIN_APP_ID }}
+          CASHIN_APP_INSTALLATION_ID: ${{ secrets.CASHIN_APP_INSTALLATION_ID }}
+          CASHIN_APP_PRIVATE_KEY: ${{ secrets.CASHIN_APP_PRIVATE_KEY }}
+        run: node dist/agent-publish-cli.js
+
+  quality-gate:
+    name: Codex Quality Gate Coordinator
+    needs: [code-review, publish-code-review, qa, publish-qa]
+    if: >-
+      needs.publish-code-review.result == 'success' &&
+      needs.publish-code-review.outputs.decision == 'APPROVED' &&
+      needs.publish-qa.result == 'success' && needs.qa.outputs.decision == 'APPROVED'
+    runs-on: [self-hosted, Windows, X64, codex-plus]
+    defaults:
+      run:
+        shell: pwsh
+    timeout-minutes: 35
+    permissions:
+      contents: read
+      pull-requests: read
+      checks: read
+    outputs:
+      decision: ${{ steps.stage.outputs.decision }}
+      commit_sha: ${{ steps.stage.outputs.commit_sha }}
+      pr_number: ${{ steps.stage.outputs.pr_number }}
+    steps:
+      - name: Checkout trusted default branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: master
+          token: ${{ github.token }}
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "24.22.0"
+          cache: npm
+          cache-dependency-path: tools/github-reviewer/package-lock.json
+
+      - name: Install trusted orchestration dependencies
+        working-directory: tools/github-reviewer
+        run: npm ci --fetch-timeout=15000 --fetch-retries=1
+
+      - name: Build orchestration tools
+        working-directory: tools/github-reviewer
+        run: npm run build
+
+      - name: Download Code Review result
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: codex-code-review-${{ github.run_id }}
+          path: tools/github-reviewer/prior-code-review
+
+      - name: Download QA result
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: codex-qa-${{ github.run_id }}
+          path: tools/github-reviewer/prior-qa
+
+      - name: Run Codex Quality Gate Coordinator
+        id: stage
+        continue-on-error: true
+        working-directory: tools/github-reviewer
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          CASHIN_APP_BOT_LOGIN: ${{ vars.CASHIN_APP_BOT_LOGIN }}
+          AGENT_STAGE: qualityGate
+          CODE_REVIEW_RESULT_PATH: prior-code-review/agent-result.json
+          QA_RESULT_PATH: prior-qa/agent-result.json
+        run: node dist/agent-stage-cli.js
+
+      - name: Upload Quality Gate result
+        if: always() && steps.stage.outputs.commit_sha != ''
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: codex-quality-gate-${{ github.run_id }}
+          path: agent-result.json
+          if-no-files-found: error
+          retention-days: 1
+
+  publish-quality-gate:
+    name: Publish Quality Gate report
+    needs: quality-gate
+    if: needs.quality-gate.result == 'success' && needs.quality-gate.outputs.decision != ''
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pull-requests: read
+      checks: read
+    steps:
+      - name: Checkout trusted default branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: master
+          token: ${{ github.token }}
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "24.22.0"
+
+      - name: Install trusted publisher dependencies
+        working-directory: tools/github-reviewer
+        run: npm ci --fetch-timeout=15000 --fetch-retries=1
+
+      - name: Build trusted publisher
+        working-directory: tools/github-reviewer
+        run: npm run build
+
+      - name: Download Quality Gate result
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: codex-quality-gate-${{ github.run_id }}
+          path: tools/github-reviewer/agent-result
+
+      - name: Publish Quality Gate report
+        working-directory: tools/github-reviewer
+        env:
+          AGENT_PUBLISH_MODE: report
+          AGENT_RESULT_PATH: agent-result/agent-result.json
+          PR_NUMBER: ${{ needs.quality-gate.outputs.pr_number }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_TOKEN: ${{ github.token }}
+          CASHIN_APP_ID: ${{ secrets.CASHIN_APP_ID }}
+          CASHIN_APP_INSTALLATION_ID: ${{ secrets.CASHIN_APP_INSTALLATION_ID }}
+          CASHIN_APP_PRIVATE_KEY: ${{ secrets.CASHIN_APP_PRIVATE_KEY }}
+        run: node dist/agent-publish-cli.js
+
+  final-status:
+    name: Confirm all agent stages approved
+    if: always() && needs.code-review.result != 'skipped'
+    needs: [code-review, publish-code-review, qa, publish-qa, quality-gate, publish-quality-gate]
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Fail closed unless every stage was published and approved
+        if: >-
+          needs.code-review.outputs.decision != 'APPROVED' ||
+          needs.publish-code-review.result != 'success' ||
+          needs.publish-code-review.outputs.decision != 'APPROVED' ||
+          needs.qa.outputs.decision != 'APPROVED' ||
+          needs.publish-qa.result != 'success' ||
+          needs.quality-gate.outputs.decision != 'APPROVED' ||
+          needs.publish-quality-gate.result != 'success'
+        run: exit 1

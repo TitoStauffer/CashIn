@@ -4,7 +4,7 @@ import { useWallet } from '../wallets/useWallet'
 import './FinancialSidebar.css'
 
 type NavigationItem = {
-  href: string
+  href?: string
   label: string
   icon: string
   key: string
@@ -17,15 +17,27 @@ type FinancialSidebarProps = {
   onLogout: () => void
 }
 
-const navigationItems: NavigationItem[] = [
-  { href: '/dashboard', label: 'Home', icon: '⌂', key: 'dashboard' },
-  { href: '/incomes', label: 'Entradas', icon: '↗', key: 'incomes' },
-  { href: '/expenses', label: 'Despesas', icon: '↘', key: 'expenses' },
-  { href: '/goals', label: 'Metas', icon: '◎', key: 'goals' },
-  { href: '/categories', label: 'Categorias', icon: '▤', key: 'categories' },
-  { href: '/payment-methods', label: 'Formas de pagamento', icon: '◉', key: 'payment-methods' },
-  { href: '/credit-cards', label: 'Cartões e faturas', icon: '▣', key: 'credit-cards' },
-  { href: '/wallet-sharing', label: 'Compartilhamento', icon: '♧', key: 'wallet-sharing' },
+const overviewItem = { href: '/dashboard', label: 'Visão geral', icon: '⌂', key: 'dashboard' } satisfies NavigationItem & { href: string }
+
+const navigationGroups: { id: string; label: string; items: NavigationItem[] }[] = [
+  {
+    id: 'movements',
+    label: 'Registro de movimentações',
+    items: [
+      { href: '/incomes', label: 'Entradas', icon: '↗', key: 'incomes' },
+      { href: '/expenses', label: 'Saídas', icon: '↘', key: 'expenses' },
+      { href: '/goals', label: 'Metas e aportes', icon: '◎', key: 'goals' },
+    ],
+  },
+  {
+    id: 'registries',
+    label: 'Cadastros gerais',
+    items: [
+      { href: '/categories', label: 'Categorias', icon: '▤', key: 'categories' },
+      { href: '/credit-cards', label: 'Cartões e faturas', icon: '▣', key: 'credit-cards' },
+      { href: '/payment-methods', label: 'Formas de pagamento', icon: '◉', key: 'payment-methods' },
+    ],
+  },
 ]
 
 const collapsedStorageKey = 'saldocerto.navigation.collapsed'
@@ -42,6 +54,7 @@ export function FinancialSidebar({ activePage, userEmail, isLoggingOut, onLogout
   const { wallets, activeWalletId, activeWallet, selectWallet, createWallet, isCreating } = useWallet()
   const [isCollapsed, setIsCollapsed] = useState(readCollapsedPreference)
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
+  const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({ movements: true, registries: true })
   const [isMobileViewport, setIsMobileViewport] = useState(() => window.matchMedia('(max-width: 760px)').matches)
   const [isWalletFormOpen, setIsWalletFormOpen] = useState(false)
   const [walletName, setWalletName] = useState('')
@@ -165,20 +178,33 @@ export function FinancialSidebar({ activePage, userEmail, isLoggingOut, onLogout
         aria-label="Navegação principal"
         aria-hidden={isMobileViewport && !isMobileMenuOpen}
       >
-        {navigationItems.filter((item) => item.key !== 'wallet-sharing' || (activeWallet?.role === 'owner' && !activeWallet.isPersonal)).map((item) => (
-          <a
-            className={`financial-sidebar__link${activePage === item.key ? ' financial-sidebar__link--active' : ''}`}
-            href={item.href}
-            key={item.key}
-            aria-label={item.label}
-            aria-current={activePage === item.key ? 'page' : undefined}
-            title={isCollapsed ? item.label : undefined}
-            onClick={() => setIsMobileMenuOpen(false)}
-          >
-            <span className="financial-sidebar__icon" aria-hidden="true">{item.icon}</span>
-            <span className="financial-sidebar__label">{item.label}</span>
-          </a>
-        ))}
+        <SidebarLink item={overviewItem} activePage={activePage} isCollapsed={isCollapsed} onNavigate={() => setIsMobileMenuOpen(false)} />
+        {navigationGroups.map((group) => {
+          const activeItem = group.items.find((item) => item.key === activePage)
+          const expanded = expandedGroups[group.id] ?? true
+          return (
+            <section className={`financial-sidebar__group${activeItem ? ' financial-sidebar__group--active' : ''}`} key={group.id}>
+              <button
+                className="financial-sidebar__group-toggle"
+                type="button"
+                aria-expanded={expanded}
+                aria-controls={`financial-navigation-${group.id}`}
+                aria-label={activeItem ? `${group.label}, página ativa: ${activeItem.label}` : group.label}
+                onClick={() => setExpandedGroups((current) => ({ ...current, [group.id]: !expanded }))}
+              >
+                <span className="financial-sidebar__group-label">{group.label}</span>
+                {activeItem && <span className="financial-sidebar__group-current">{activeItem.label}</span>}
+                <span className="financial-sidebar__group-chevron" aria-hidden="true">{expanded ? '⌄' : '›'}</span>
+              </button>
+              <div className="financial-sidebar__group-items" id={`financial-navigation-${group.id}`} hidden={!expanded}>
+                {group.items.map((item) => <SidebarLink key={item.key} item={item} activePage={activePage} isCollapsed={isCollapsed} onNavigate={() => setIsMobileMenuOpen(false)} />)}
+              </div>
+            </section>
+          )
+        })}
+        {activeWallet?.role === 'owner' && !activeWallet.isPersonal && (
+          <SidebarLink item={{ href: '/wallet-sharing', label: 'Compartilhamento', icon: '♧', key: 'wallet-sharing' }} activePage={activePage} isCollapsed={isCollapsed} onNavigate={() => setIsMobileMenuOpen(false)} />
+        )}
       </nav>
 
       <div className="financial-sidebar__account">
@@ -189,5 +215,21 @@ export function FinancialSidebar({ activePage, userEmail, isLoggingOut, onLogout
         </button>
       </div>
     </aside>
+  )
+}
+
+function SidebarLink({ item, activePage, isCollapsed, onNavigate }: { item: NavigationItem; activePage: string; isCollapsed: boolean; onNavigate: () => void }) {
+  return (
+    <a
+      className={`financial-sidebar__link${activePage === item.key ? ' financial-sidebar__link--active' : ''}`}
+      href={item.href}
+      aria-label={item.label}
+      aria-current={activePage === item.key ? 'page' : undefined}
+      title={isCollapsed ? item.label : undefined}
+      onClick={onNavigate}
+    >
+      <span className="financial-sidebar__icon" aria-hidden="true">{item.icon}</span>
+      <span className="financial-sidebar__label">{item.label}</span>
+    </a>
   )
 }

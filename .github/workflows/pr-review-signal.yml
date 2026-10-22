@@ -1,0 +1,21 @@
+name: PR Review Signal
+
+on:
+  pull_request_review:
+    types: [submitted, edited, dismissed]
+
+permissions: {}
+
+concurrency:
+  group: pr-review-signal-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
+
+jobs:
+  signal:
+    name: Review event relay
+    runs-on: ubuntu-24.04
+    timeout-minutes: 1
+    permissions: {}
+    steps:
+      - name: Emit review event signal
+        run: echo "Formal review event received; trusted Merge Readiness workflow will re-evaluate the pull request."
