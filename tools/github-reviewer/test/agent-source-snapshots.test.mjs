@@ -20,7 +20,7 @@ test('supplies complete source snapshots as untrusted context for review', () =>
       baseBranch: 'master',
       diff: '+const marker = true;',
     },
-    checks: { api: 'PASSED', web: 'PASSED', sonarQube: 'PASSED', sonarCloud: 'PASSED' },
+    checks: { api: 'PASSED', web: 'PASSED', githubReviewer: 'PASSED', sonarQube: 'PASSED', sonarCloud: 'PASSED' },
     checkRuns: [{ name: 'API', headSha: 'a'.repeat(40), status: 'completed', conclusion: 'success', detailsUrl: 'https://github.test/checks/1', completedAt: '2026-10-21T10:00:00Z' }],
     formalCodeReview: { state: 'APPROVED', reviewer: 'cashin-devagents[bot]', commitSha: 'a'.repeat(40), submittedAt: '2026-10-21T10:05:00Z', laterChangeRequest: false },
     repositoryInstructions: 'Trusted project policy',
