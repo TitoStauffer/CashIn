@@ -98,11 +98,26 @@ test('includes unchanged direct local dependencies without following imports rec
   assert.deepEqual(inputs.sourceFiles.map(({ path }) => path), ['src/example.ts', 'src/helper.ts']);
 });
 
+test('loads all 32 changed files at the supported boundary without omitting sources', async () => {
+  const files = Array.from({ length: 32 }, (_, index) => ({ filename: `src/file-${index}.ts`, status: 'modified' }));
+  const sources = Object.fromEntries(files.map(({ filename }) => [filename, 'export const value = 1;']));
+  const inputs = await loadAgentReviewInputs(createFetch({ files, sources }), 'owner/repo', 7, { head: { sha: headSha }, base: { sha: baseSha } }, 'token');
+  assert.deepEqual(inputs.sourceFiles.map(({ path }) => path), files.map(({ filename }) => filename));
+});
+
 test('fails closed when changed source context exceeds the supported file limit', async () => {
-  const files = Array.from({ length: 21 }, (_, index) => ({ filename: `src/file-${index}.ts`, status: 'modified' }));
+  const files = Array.from({ length: 33 }, (_, index) => ({ filename: `src/file-${index}.ts`, status: 'modified' }));
   await assert.rejects(
     loadAgentReviewInputs(createFetch({ files }), 'owner/repo', 7, { head: { sha: headSha }, base: { sha: baseSha } }, 'token'),
     /too many files/,
+  );
+});
+
+test('keeps the direct dependency limit at 20 additional files', async () => {
+  const source = Array.from({ length: 21 }, (_, index) => `import { value as value${index} } from './helper-${index}.js';`).join('\n');
+  await assert.rejects(
+    loadAgentReviewInputs(createFetch({ source }), 'owner/repo', 7, { head: { sha: headSha }, base: { sha: baseSha } }, 'token'),
+    /dependencies exceed the supported source file limit/,
   );
 });
 
