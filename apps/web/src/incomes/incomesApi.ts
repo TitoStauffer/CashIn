@@ -1,6 +1,6 @@
 import { withActiveWallet } from '../wallets/walletApi'
 
-export type IncomeBalanceType = 'cash' | 'food_benefit' | 'meal_benefit' | 'home_office_benefit'
+export type IncomeBalanceType = 'cash' | 'food_benefit' | 'meal_benefit' | 'food_meal_benefit' | 'home_office_benefit'
 
 export type Income = {
   id: string

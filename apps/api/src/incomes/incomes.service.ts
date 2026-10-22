@@ -32,7 +32,10 @@ function normalizeInput(input: IncomeInput): Required<IncomeInput> {
   if (!INCOME_BALANCE_TYPES.includes(balanceType)) {
     throw new IncomeError("O destino da entrada informado é inválido.", 400);
   }
-  return { ...input, amount: input.amount, description, subcategoryId, balanceType };
+  const normalizedBalanceType = balanceType === "food_benefit" || balanceType === "meal_benefit"
+    ? "food_meal_benefit"
+    : balanceType;
+  return { ...input, amount: input.amount, description, subcategoryId, balanceType: normalizedBalanceType };
 }
 
 function mapReferenceError(error: unknown): never {

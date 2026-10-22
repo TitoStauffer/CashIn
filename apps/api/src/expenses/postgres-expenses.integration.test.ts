@@ -140,7 +140,7 @@ test("PostgreSQL expense CRUD enforces ownership, category nature, references, a
     assert.equal(first.paymentMethodNature, "immediate");
 
     const foodBenefitMethod = await database.query<{ id: string }>(
-      "SELECT id FROM payment_methods WHERE wallet_id = $1 AND name_normalized = 'vale-alimentacao'",
+      "SELECT id FROM payment_methods WHERE wallet_id = $1 AND name = 'Cartão de benefícios (VA/VR)'",
       [walletId],
     );
     const foodExpense = await service.createExpense(userId, walletId, {
@@ -149,10 +149,10 @@ test("PostgreSQL expense CRUD enforces ownership, category nature, references, a
       categoryId: expenseCategory,
       paymentMethodId: foodBenefitMethod.rows[0]!.id,
     });
-    assert.equal(foodExpense.paymentMethodNature, "food_benefit");
+    assert.equal(foodExpense.paymentMethodNature, "food_meal_benefit");
     await database.query("UPDATE payment_methods SET nature = 'immediate' WHERE id = $1", [foodBenefitMethod.rows[0]!.id]);
     const preservedFoodExpense = (await service.listExpenses(userId, walletId)).find((expense) => expense.id === foodExpense.id);
-    assert.equal(preservedFoodExpense?.paymentMethodNature, "food_benefit");
+    assert.equal(preservedFoodExpense?.paymentMethodNature, "food_meal_benefit");
     assert.deepEqual((await service.listExpenses(userId, walletId, "2026-10-18", "2026-10-18")).map((item) => item.id), [foodExpense.id, first.id]);
     assert.equal((await service.listExpenses(otherUserId, otherWalletId)).length, 0);
 

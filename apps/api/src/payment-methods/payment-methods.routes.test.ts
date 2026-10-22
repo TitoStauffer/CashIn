@@ -96,7 +96,7 @@ test("payment methods are authenticated, wallet-scoped, accent-insensitive, and 
     payload: { name: "Cartão refeição", nature: "meal_benefit" },
   });
   assert.equal(renamed.statusCode, 200);
-  assert.equal(renamed.json().nature, "meal_benefit");
+  assert.equal(renamed.json().nature, "food_meal_benefit");
 
   const deactivated = await app.inject({
     method: "PATCH", url: `/payment-methods/${paymentMethodId}`, headers: { cookie: authCookie },

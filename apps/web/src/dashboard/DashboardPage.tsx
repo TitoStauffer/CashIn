@@ -18,6 +18,7 @@ function formatAmount(value: string) {
 const benefitLabels: Record<BenefitBalanceSummary['balanceType'], string> = {
   food_benefit: 'Vale-alimentação (VA)',
   meal_benefit: 'Vale-refeição (VR)',
+  food_meal_benefit: 'Cartão de benefícios (VA/VR)',
   home_office_benefit: 'Auxílio home office (AHO)',
 }
 

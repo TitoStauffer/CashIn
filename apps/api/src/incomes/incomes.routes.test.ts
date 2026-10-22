@@ -173,7 +173,7 @@ test("income CRUD is authenticated, owner-scoped, and uses decimal strings", asy
   assert.equal(updated.statusCode, 200);
   assert.equal(updated.json().description, null);
   assert.equal(updated.json().subcategoryId, null);
-  assert.equal(updated.json().balanceType, "meal_benefit");
+  assert.equal(updated.json().balanceType, "food_meal_benefit");
   const deleted = await app.inject({ method: "DELETE", url: `/incomes/${incomeId}`, headers: { cookie: authCookie() } });
   assert.equal(deleted.statusCode, 204);
   await app.close();

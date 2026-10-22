@@ -46,6 +46,18 @@ describe('PaymentMethodsPage', () => {
     expect(await screen.findByRole('status')).toHaveTextContent('Forma de pagamento cadastrada.')
   })
 
+  it('offers one grouped VA/VR nature and keeps AHO separate', async () => {
+    const user = userEvent.setup()
+    await renderPage()
+    await user.click(await screen.findByRole('button', { name: /Nova forma/ }))
+    const nature = screen.getByLabelText('Natureza *')
+    expect(nature).toHaveDisplayValue('Imediata (dinheiro, débito ou Pix)')
+    expect(screen.getByRole('option', { name: 'Cartão de benefícios (VA/VR)' })).toBeInTheDocument()
+    expect(screen.getByRole('option', { name: 'Auxílio home office (AHO)' })).toBeInTheDocument()
+    expect(screen.queryByRole('option', { name: 'Vale-alimentação (VA)' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('option', { name: 'Vale-refeição (VR)' })).not.toBeInTheDocument()
+  })
+
   it('edits a method and can deactivate it without deleting its history', async () => {
     const user = userEvent.setup()
     await renderPage()

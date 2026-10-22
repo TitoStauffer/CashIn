@@ -16,8 +16,7 @@ const expected: FinancialSummary = {
   availableBalance: "65.00",
   cashBalance: "65.00",
   benefitBalances: [
-    { balanceType: "food_benefit", amount: "0.00" },
-    { balanceType: "meal_benefit", amount: "0.00" },
+    { balanceType: "food_meal_benefit", amount: "0.00" },
     { balanceType: "home_office_benefit", amount: "0.00" },
   ],
   incomeByCategory: [],

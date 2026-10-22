@@ -77,7 +77,7 @@ export class PostgresFinancialSummaryRepository implements FinancialSummaryRepos
                SELECT SUM(income.amount)
                FROM incomes AS income
                WHERE income.wallet_id = $1
-                 AND income.balance_type = kinds.balance_type
+                 AND income.balance_type = ANY(kinds.source_types)
                  AND ($2::date IS NULL OR income.date >= $2::date)
                  AND ($3::date IS NULL OR income.date <= $3::date)
              ), 0.00) AS income_total,
@@ -85,11 +85,14 @@ export class PostgresFinancialSummaryRepository implements FinancialSummaryRepos
                SELECT SUM(expense.amount)
                FROM expenses AS expense
                WHERE expense.wallet_id = $1
-                 AND expense.payment_method_nature = kinds.balance_type
+                 AND expense.payment_method_nature = ANY(kinds.source_types)
                  AND ($2::date IS NULL OR expense.date >= $2::date)
                  AND ($3::date IS NULL OR expense.date <= $3::date)
              ), 0.00) AS expense_total
-           FROM (VALUES ('food_benefit'), ('meal_benefit'), ('home_office_benefit')) AS kinds(balance_type)
+           FROM (VALUES
+             ('food_meal_benefit', ARRAY['food_benefit', 'meal_benefit', 'food_meal_benefit']::text[]),
+             ('home_office_benefit', ARRAY['home_office_benefit']::text[])
+           ) AS kinds(balance_type, source_types)
          ) AS benefit
        ),
        income_categories AS (
