@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { posix } from 'node:path';
 import { requestGitHubApi, requestGitHubApiPages, requestGitHubText } from './github-api-client.js';
+import { loadActionsEvidence, loadCiSnapshots, unavailableActionsEvidence, type AgentActionsEvidence, type AgentCiSnapshot } from './agent-ci-evidence.js';
 
 const REQUIRED_AGENT_CHECKS = {
   api: (name: string) => /(^|\/\s*)api(\s|$)/i.test(name),
@@ -15,15 +16,18 @@ export interface AgentReviewInputs {
   checkRuns: AgentCheckEvidence[];
   repositoryInstructions: string;
   sourceFiles: Array<{ path: string; revision: 'head' | 'base'; content: string }>;
+  ciConfiguration?: AgentCiSnapshot[];
 }
 
 export interface AgentCheckEvidence {
   name: string;
+  appId: number | null;
   headSha: string;
   status: string;
   conclusion: string | null;
   detailsUrl: string | null;
   completedAt: string | null;
+  actions?: AgentActionsEvidence;
 }
 
 const MAX_SOURCE_FILES = 32;
@@ -54,7 +58,16 @@ export async function loadAgentReviewInputs(
   if (encoding !== 'base64' || !encodedInstructions) throw new Error('Could not read AGENTS.md from the Pull Request base commit.');
   const repositoryInstructions = Buffer.from(encodedInstructions.replace(/\s/g, ''), 'base64').toString('utf8');
   const sourceFiles = await loadChangedSourceFiles(fetchImpl, repository, filesPayload, headSha, baseSha, token);
-  return { diff, checks: summarizeAgentChecks(runs, headSha), checkRuns: summarizeCheckRunEvidence(runs, headSha), repositoryInstructions, sourceFiles };
+  const checkRuns = summarizeCheckRunEvidence(runs, headSha);
+  const ciChecks = latestRunsByName(runs.filter((run) => run.head_sha === headSha && isTestCheck(String(run.name ?? ''))));
+  if (ciChecks.length > 4) throw new Error('Too many CI checks for the supported agent evidence context.');
+  for (const check of ciChecks) {
+    const summary = checkRuns.find((candidate) => candidate.name === check.name && candidate.appId === (asRecord(check.app)?.id ?? null));
+    if (summary) summary.actions = await loadActionsEvidence(fetchImpl, repository, pullRequestNumber, headSha, check, token);
+  }
+  const ciConfiguration = checkRuns.some((check) => check.actions?.availability === 'available')
+    ? await loadCiSnapshots(fetchImpl, repository, headSha, token) : [];
+  return { diff, checks: summarizeAgentChecks(runs, headSha), checkRuns, repositoryInstructions, sourceFiles, ciConfiguration };
 }
 
 async function loadChangedSourceFiles(
@@ -126,9 +139,15 @@ export function fingerprintAgentReviewInputs(inputs: AgentReviewInputs): Record<
   return {
     diffSha256: hash(inputs.diff),
     checks: inputs.checks,
-    checkRuns: (inputs.checkRuns ?? []).map(({ name, headSha, status, conclusion }) => ({ name, headSha, status, conclusion })),
+    checkRuns: (inputs.checkRuns ?? []).map(({ name, appId, headSha, status, conclusion, actions }) => ({
+      name, appId, headSha, status, conclusion,
+      actions: actions?.availability === 'available'
+        ? { availability: actions.availability, repository: actions.repository, headSha: actions.headSha, workflowPath: actions.workflowPath, runStatus: actions.runStatus, runConclusion: actions.runConclusion, steps: actions.steps }
+        : actions,
+    })),
     repositoryInstructionsSha256: hash(inputs.repositoryInstructions),
     sourceFiles: inputs.sourceFiles.map(({ path, revision, content }) => ({ path, revision, sha256: hash(content) })),
+    ciConfiguration: (inputs.ciConfiguration ?? []).map(({ path, headSha, originalSha256, content }) => ({ path, headSha, originalSha256, sha256: hash(content) })),
   };
 }
 
@@ -138,13 +157,19 @@ export function summarizeCheckRunEvidence(runs: Array<Record<string, unknown>>, 
   return relevantRuns
     .map((run) => ({
       name: String(run.name ?? 'Unnamed check'),
+      appId: typeof asRecord(run.app)?.id === 'number' ? asRecord(run.app)!.id as number : null,
       headSha: expectedHeadSha,
       status: String(run.status ?? 'unknown'),
       conclusion: typeof run.conclusion === 'string' ? run.conclusion : null,
       detailsUrl: typeof run.details_url === 'string' ? run.details_url : null,
       completedAt: typeof run.completed_at === 'string' ? run.completed_at : null,
+      ...(isTestCheck(String(run.name ?? '')) ? { actions: unavailableActionsEvidence() } : {}),
     }))
-    .sort((left, right) => left.name.localeCompare(right.name) || String(left.completedAt).localeCompare(String(right.completedAt)));
+    .sort((left, right) => left.name.localeCompare(right.name) || (left.appId ?? 0) - (right.appId ?? 0));
+}
+
+function isTestCheck(name: string): boolean {
+  return REQUIRED_AGENT_CHECKS.api(name) || REQUIRED_AGENT_CHECKS.web(name);
 }
 
 function latestRunsByName(runs: Array<Record<string, unknown>>): Array<Record<string, unknown>> {

@@ -59,7 +59,8 @@ test('loads complete changed source snapshots at the PR HEAD alongside diff and 
   assert.equal(inputs.diff.startsWith('diff --git'), true);
   assert.equal(inputs.checks.api, 'PASSED');
   assert.deepEqual(inputs.checkRuns.find((run) => run.name === 'API'), {
-    name: 'API', headSha, status: 'completed', conclusion: 'success', detailsUrl: 'https://example.test/api', completedAt: '2026-10-21T10:00:00Z',
+    name: 'API', appId: null, headSha, status: 'completed', conclusion: 'success', detailsUrl: 'https://example.test/api', completedAt: '2026-10-21T10:00:00Z',
+    actions: { availability: 'unavailable', reason: 'Verified GitHub Actions job evidence is unavailable.' },
   });
   assert.equal(inputs.repositoryInstructions, 'Project rules');
   assert.deepEqual(inputs.sourceFiles, [{ path: 'src/example.ts', revision: 'head', content: 'export const value = 42;\n' }]);

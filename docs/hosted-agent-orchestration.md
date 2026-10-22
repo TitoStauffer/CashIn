@@ -20,6 +20,8 @@ DEV-44 remains open until the workflow is merged, runner labels and secrets are 
 
 ## Required adapter contracts
 
+API/Web review inputs also include verified Actions run/job steps bound to the same repository, PR, CI workflow and exact HEAD SHA. The workflow token has `actions: read` for all six agent reader/publisher jobs and Merge Readiness. CI snapshots at that SHA preserve the original hashes and the test/no-skip scripts while omitting environment values; package snapshots expose scripts only. These additions are untrusted source context, never executed, and participate in prompt-injection detection and the durable fingerprint. Step/configuration changes invalidate prior evidence; timestamps, links and equivalent rerun IDs do not. The loader does not fetch raw logs or infer assertion counts. A successful test/no-skip step must be assessed against its configuration, and QA may remain `INCONCLUSIVE` when acceptance evidence is insufficient. Unsupported sources, mismatched SHA/identity and API failures fail closed. See the [reviewer README](../tools/github-reviewer/README.md#verified-ci-execution-context) for limits and supported configuration formats.
+
 A hosted runtime must implement the `AgentOrchestratorDependencies` interface and provide:
 
 - `readHeadSha` and `readPrerequisites` using GitHub evidence for the target PR.

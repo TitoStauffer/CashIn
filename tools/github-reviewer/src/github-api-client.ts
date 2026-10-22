@@ -62,7 +62,7 @@ export async function requestGitHubApi<T = Record<string, unknown>>(
   fetchImpl: typeof fetch,
   path: string,
   token: string,
-  options: { method?: string; body?: string } = {},
+  options: { method?: string; body?: string; maxResponseBytes?: number } = {},
 ): Promise<T> {
   const method = options.method ?? 'GET';
   const retrySafe = method === 'GET' || method === 'PATCH';
@@ -78,6 +78,7 @@ export async function requestGitHubApi<T = Record<string, unknown>>(
           ...(options.body === undefined ? {} : { 'Content-Type': 'application/json' }),
         },
         ...(options.body === undefined ? {} : { body: options.body }),
+        ...(options.maxResponseBytes === undefined ? {} : { signal: AbortSignal.timeout(15_000), redirect: 'error' as const }),
       });
     } catch (error) {
       if (!retrySafe || attempt === 3) throw error;
@@ -87,16 +88,42 @@ export async function requestGitHubApi<T = Record<string, unknown>>(
 
     if (!response.ok && retrySafe && isTransientStatus(response.status) && attempt < 3) {
       const retryAfter = Number(response.headers.get('Retry-After'));
-      await response.arrayBuffer().catch(() => undefined);
+      if (options.maxResponseBytes === undefined) await response.arrayBuffer().catch(() => undefined);
+      else await response.body?.cancel().catch(() => undefined);
       await retryDelay(attempt, Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter * 1000 : undefined);
       continue;
     }
-    const payload: unknown = await response.json().catch(() => ({}));
     if (!response.ok) throw new GitHubApiError(response.status);
+    const payload: unknown = options.maxResponseBytes === undefined
+      ? await response.json().catch(() => ({}))
+      : await readBoundedJson(response, options.maxResponseBytes);
     if (!isRecord(payload) && !Array.isArray(payload)) throw new Error('GitHub API returned an invalid response.');
     return payload as T;
   }
   throw new Error('GitHub API request exhausted its retry attempts.');
+}
+
+async function readBoundedJson(response: Response, maxBytes: number): Promise<unknown> {
+  const reader = response.body?.getReader();
+  if (!reader) throw new Error('GitHub API returned an empty evidence response.');
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      size += value.byteLength;
+      if (size > maxBytes) throw new Error('GitHub evidence response exceeds the supported size.');
+      chunks.push(value);
+    }
+    try {
+      return JSON.parse(Buffer.concat(chunks).toString('utf8')) as unknown;
+    } catch {
+      throw new Error('GitHub evidence response is not valid JSON.');
+    }
+  } finally {
+    await reader.cancel().catch(() => undefined);
+  }
 }
 
 export async function requestGitHubText(
