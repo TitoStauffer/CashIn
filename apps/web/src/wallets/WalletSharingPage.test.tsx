@@ -231,5 +231,21 @@ describe('wallet sharing management', () => {
     expect(await screen.findByLabelText(/Link compartilhável/)).toHaveValue('https://example.test/two')
     await user.click(screen.getByRole('button', { name: 'Copiar link' }))
     expect(await screen.findByRole('alert')).toHaveTextContent('Selecione e copie o link exibido')
+    expect(screen.queryByRole('status')).not.toBeInTheDocument()
+  })
+
+  it('identifies the pending invitation without claiming that an access link is being generated', async () => {
+    let complete!: (response: Awaited<ReturnType<typeof walletApi.createInvitation>>) => void
+    vi.mocked(walletApi.createInvitation).mockReturnValueOnce(new Promise((resolve) => { complete = resolve }))
+    const user = userEvent.setup()
+    renderPage()
+    await screen.findByText('member@example.com')
+    await user.type(screen.getByLabelText('E-mail'), 'new@example.com')
+    await user.click(screen.getByRole('button', { name: 'Enviar convite' }))
+    expect(screen.getByRole('note')).toHaveTextContent('Enviando o convite.')
+    expect(screen.getByRole('button', { name: 'Gerar link de acesso' })).toBeDisabled()
+    expect(screen.queryByRole('button', { name: 'Gerando link…' })).not.toBeInTheDocument()
+    complete({ invitation: { id: 'new', email: 'new@example.com', status: 'pending', expiresAt: '2026-10-30T12:00:00Z', createdAt: '2026-10-20T12:00:00Z' }, message: 'Convite enviado.' })
+    expect(await screen.findByRole('status')).toHaveTextContent('Convite enviado')
   })
 })

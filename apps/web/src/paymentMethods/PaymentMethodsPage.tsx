@@ -144,6 +144,7 @@ export function PaymentMethodsPage({ userEmail, isLoggingOut, onLogout }: Paymen
 
             {formError && <p className="payment-methods-alert payment-methods-alert--error" role="alert">{formError}</p>}
             {successMessage && <p className="payment-methods-alert payment-methods-alert--success" role="status">{successMessage}</p>}
+            {isSaving && <p className="payment-methods-operation-status" role="note" aria-live="polite">Salvando alterações da forma de pagamento. Aguarde a confirmação antes de iniciar outra ação.</p>}
 
             {editor && !isWalletLoading && (
               <form className="payment-method-editor" onSubmit={handleSave} aria-labelledby="payment-method-editor-title">
@@ -167,6 +168,7 @@ export function PaymentMethodsPage({ userEmail, isLoggingOut, onLogout }: Paymen
                     <label htmlFor="payment-method-nature">Natureza *</label>
                     <select
                       id="payment-method-nature"
+                      aria-describedby="payment-method-nature-hint"
                       value={editor.nature}
                       onChange={(event) => setEditor({ ...editor, nature: event.target.value as PaymentMethodNature })}
                       required
@@ -176,6 +178,7 @@ export function PaymentMethodsPage({ userEmail, isLoggingOut, onLogout }: Paymen
                         <option value={editor.nature}>{getPaymentMethodNatureLabel(editor.nature)} (legado)</option>
                       )}
                     </select>
+                    <small id="payment-method-nature-hint">{editor.nature === 'food_benefit' || editor.nature === 'meal_benefit' ? 'Esta forma mantém sua natureza histórica. Para novos cadastros de VA ou VR, use Cartão de benefícios (VA/VR).' : 'VA e VR usam um único saldo de benefícios, separado do dinheiro.'}</small>
                   </div>
                 </div>
                 <div className="payment-method-editor__actions">

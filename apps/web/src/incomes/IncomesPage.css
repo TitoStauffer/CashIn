@@ -33,6 +33,9 @@
 .incomes-alert { margin: 0 0 15px; padding: 12px 14px; border: 1px solid; border-radius: 8px; font-size: 12px; line-height: 1.6; }
 .incomes-alert--error { border-color: #f0d4d0; background: #fff8f6; color: #96483f; }
 .incomes-alert--success { border-color: #d2e6d5; background: #f3faf3; color: #326c45; }
+.incomes-prerequisite, .incomes-operation-status { margin: 12px 0; padding: 12px 14px; border: 1px solid #e2e9e2; border-radius: 9px; background: #f8faf7; color: #5e6e62; font-size: 12px; line-height: 1.55; }
+.incomes-prerequisite a { color: #245d40; font-weight: 700; }
+.incomes-operation-status { border-color: #d8e5d9; }
 
 .incomes-loading { min-height: 195px; display: flex; align-items: center; justify-content: center; color: #748176; font-size: 12px; }
 .incomes-spinner { width: 18px; height: 18px; margin-right: 10px; border: 2px solid #dce8df; border-top-color: #377a53; border-radius: 50%; animation: income-spin .75s linear infinite; }

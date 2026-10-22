@@ -78,6 +78,7 @@ describe('IncomesPage currency input', () => {
     await renderPage()
     await user.click(await screen.findByRole('button', { name: /Nova entrada/ }))
     await user.selectOptions(screen.getByLabelText('Destino do valor *'), 'food_meal_benefit')
+    expect(screen.getByLabelText('Destino do valor *')).toHaveAccessibleDescription(/VA e VR usam um único saldo/)
     fireEvent.change(screen.getByLabelText('Valor *'), { target: { value: '500,00' } })
     await user.click(screen.getByRole('button', { name: 'Registrar entrada' }))
 
@@ -97,6 +98,15 @@ describe('IncomesPage currency input', () => {
     await user.click(screen.getByRole('button', { name: 'Salvar alterações' }))
     await waitFor(() => expect(incomesApi.update).toHaveBeenCalledWith('income-1', expect.objectContaining({ amount: '1234.56' })))
     expect(incomesApi.update).toHaveBeenCalledWith('income-1', expect.objectContaining({ balanceType: 'cash' }))
+  })
+
+  it('explains the historical destination without changing a legacy benefit income', async () => {
+    vi.mocked(incomesApi.list).mockResolvedValueOnce({ items: [{ ...income, balanceType: 'meal_benefit' }] })
+    const user = userEvent.setup()
+    await renderPage()
+    await user.click(await screen.findByRole('button', { name: 'Editar entrada Salário mensal' }))
+    expect(screen.getByLabelText('Destino do valor *')).toHaveValue('meal_benefit')
+    expect(screen.getByLabelText('Destino do valor *')).toHaveAccessibleDescription(/Este registro mantém seu destino histórico/)
   })
 
   it('shows a recoverable error when incomes cannot be loaded', async () => {
@@ -130,6 +140,17 @@ describe('IncomesPage currency input', () => {
     expect(screen.getByRole('button', { name: 'Salvando…' })).toBeVisible()
     createRequest.resolve(income)
     expect(await screen.findByRole('status')).toHaveTextContent('Entrada registrada.')
+  })
+
+  it('explains the income-category prerequisite even when the month already has records', async () => {
+    vi.mocked(categoriesApi.list).mockResolvedValueOnce({ items: [] })
+    await renderPage()
+
+    const prerequisite = await screen.findByRole('note')
+    expect(prerequisite).toHaveTextContent('Para registrar uma entrada, primeiro')
+    expect(prerequisite.querySelector('a')).toHaveAttribute('href', '/categories')
+    expect(screen.getByRole('button', { name: /Nova entrada/ })).toBeDisabled()
+    expect(await screen.findByText('Salário mensal')).toBeVisible()
   })
 
   it('reloads records for the selected wallet without showing the previous wallet data', async () => {

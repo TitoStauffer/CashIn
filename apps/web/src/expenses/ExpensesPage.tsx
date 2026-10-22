@@ -274,6 +274,14 @@ export function ExpensesPage({ userEmail, isLoggingOut, onLogout }: ExpensesPage
             </button>
           </div>
 
+          {categories.length === 0 && !isWalletLoading && !loadError && (
+            <p className="expenses-prerequisite" role="note">
+              Para registrar uma despesa, primeiro <a href="/categories">cadastre uma categoria de despesa</a> nesta carteira.
+            </p>
+          )}
+
+          {isSaving && <p className="expenses-operation-status" role="note" aria-live="polite">Salvando a despesa. Aguarde a confirmação antes de iniciar outra ação.</p>}
+
           <MonthYearSelector month={month} onMonthChange={selectMonth} />
 
           {formError && <p className="expenses-alert expenses-alert--error" role="alert">{formError}</p>}
@@ -333,10 +341,12 @@ export function ExpensesPage({ userEmail, isLoggingOut, onLogout }: ExpensesPage
                     value={editor.subcategoryId}
                     onChange={(event) => setEditor({ ...editor, subcategoryId: event.target.value })}
                     disabled={!editor.categoryId || availableSubcategories.length === 0}
+                    aria-describedby="expense-subcategory-hint"
                   >
                     <option value="">Sem subcategoria</option>
                     {availableSubcategories.map((subcategory) => <option key={subcategory.id} value={subcategory.id}>{subcategory.name}</option>)}
                   </select>
+                  <small id="expense-subcategory-hint">{!editor.categoryId ? 'Selecione uma categoria para consultar as subcategorias.' : availableSubcategories.length === 0 ? 'Esta categoria não possui subcategorias; este campo é opcional.' : 'Escolha uma subcategoria ou mantenha sem subcategoria.'}</small>
                 </div>
                 <div className="expense-field">
                   <label htmlFor="expense-payment-method">Forma de pagamento <span>(opcional)</span></label>
@@ -417,7 +427,6 @@ export function ExpensesPage({ userEmail, isLoggingOut, onLogout }: ExpensesPage
               <h2>Nenhuma despesa neste mês</h2>
               <p>Quando você registrar uma despesa, ela aparecerá aqui para facilitar o acompanhamento do período.</p>
               <button type="button" className="expenses-secondary-button" onClick={startCreate} disabled={categories.length === 0}>Registrar primeira despesa</button>
-              {categories.length === 0 && <p className="expenses-state-note">Antes, crie uma categoria de despesa em <a href="/categories">Categorias</a>.</p>}
             </div>
           ) : (
             <>

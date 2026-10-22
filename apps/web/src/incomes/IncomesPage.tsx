@@ -265,6 +265,14 @@ export function IncomesPage({ userEmail, isLoggingOut, onLogout }: IncomesPagePr
             </button>
           </div>
 
+          {categories.length === 0 && !isWalletLoading && !loadError && (
+            <p className="incomes-prerequisite" role="note">
+              Para registrar uma entrada, primeiro <a href="/categories">cadastre uma categoria de entrada</a> nesta carteira.
+            </p>
+          )}
+
+          {isSaving && <p className="incomes-operation-status" role="note" aria-live="polite">Salvando a entrada. Aguarde a confirmação antes de iniciar outra ação.</p>}
+
           <MonthYearSelector month={month} onMonthChange={selectMonth} />
 
           {formError && <p className="incomes-alert incomes-alert--error" role="alert">{formError}</p>}
@@ -324,15 +332,18 @@ export function IncomesPage({ userEmail, isLoggingOut, onLogout }: IncomesPagePr
                     value={editor.subcategoryId}
                     onChange={(event) => setEditor({ ...editor, subcategoryId: event.target.value })}
                     disabled={!editor.categoryId || availableSubcategories.length === 0}
+                    aria-describedby="income-subcategory-hint"
                   >
                     <option value="">Sem subcategoria</option>
                     {availableSubcategories.map((subcategory) => <option key={subcategory.id} value={subcategory.id}>{subcategory.name}</option>)}
                   </select>
+                  <small id="income-subcategory-hint">{!editor.categoryId ? 'Selecione uma categoria para consultar as subcategorias.' : availableSubcategories.length === 0 ? 'Esta categoria não possui subcategorias; este campo é opcional.' : 'Escolha uma subcategoria ou mantenha sem subcategoria.'}</small>
                 </div>
                 <div className="income-field">
                   <label htmlFor="income-balance-type">Destino do valor *</label>
                   <select
                     id="income-balance-type"
+                    aria-describedby="income-balance-type-hint"
                     value={editor.balanceType}
                     onChange={(event) => setEditor({ ...editor, balanceType: event.target.value as IncomeBalanceType })}
                     required
@@ -344,7 +355,7 @@ export function IncomesPage({ userEmail, isLoggingOut, onLogout }: IncomesPagePr
                       <option value={editor.balanceType}>{balanceTypeLabels[editor.balanceType]} (histórico)</option>
                     )}
                   </select>
-                  <small>Benefícios ficam separados do saldo em dinheiro.</small>
+                  <small id="income-balance-type-hint">{editor.balanceType === 'food_benefit' || editor.balanceType === 'meal_benefit' ? 'Este registro mantém seu destino histórico. Para novas entradas de VA ou VR, use Cartão de benefícios (VA/VR).' : 'VA e VR usam um único saldo no cartão de benefícios. Benefícios ficam separados do saldo em dinheiro.'}</small>
                 </div>
                 <div className="income-field income-field--wide">
                   <label htmlFor="income-description">Descrição <span>(opcional)</span></label>
@@ -382,7 +393,6 @@ export function IncomesPage({ userEmail, isLoggingOut, onLogout }: IncomesPagePr
               <h2>Nenhuma entrada neste mês</h2>
               <p>Quando você registrar uma entrada, ela aparecerá aqui para facilitar o acompanhamento do período.</p>
               <button type="button" className="incomes-secondary-button" onClick={startCreate} disabled={categories.length === 0}>Registrar primeira entrada</button>
-              {categories.length === 0 && <p className="incomes-state-note">Antes, crie uma categoria de entrada em <a href="/categories">Categorias</a>.</p>}
             </div>
           ) : (
             <>

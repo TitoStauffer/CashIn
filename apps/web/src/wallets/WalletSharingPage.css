@@ -26,6 +26,7 @@
 .wallet-sharing-alert { margin: 0 0 15px; padding: 12px 14px; border: 1px solid; border-radius: 8px; font-size: 12px; line-height: 1.6; }
 .wallet-sharing-alert--error { border-color: #f0d4d0; background: #fff8f6; color: #96483f; }
 .wallet-sharing-alert--success { border-color: #d2e6d5; background: #f3faf3; color: #326c45; }
+.wallet-sharing-alert--pending { border-color: #d8e5d9; background: #f8faf7; color: #5e6e62; }
 .wallet-sharing-list { display: grid; gap: 0; margin: 0; padding: 0; list-style: none; }
 .wallet-sharing-list__item { min-height: 61px; display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 12px 2px; border-top: 1px solid #edf0ea; }
 .wallet-sharing-list__item:first-child { border-top: 0; }

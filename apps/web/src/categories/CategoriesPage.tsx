@@ -337,6 +337,8 @@ export function CategoriesPage({ userEmail, isLoggingOut, onLogout }: Categories
             ))}
           </div>
 
+          {isSaving && <p className="categories-operation-status" role="note" aria-live="polite">Salvando alterações. Aguarde a confirmação antes de iniciar outra ação.</p>}
+
           {formError && <p className="categories-alert categories-alert--error" role="alert">{formError}</p>}
           {successMessage && <p className="categories-alert categories-alert--success" role="status">{successMessage}</p>}
 

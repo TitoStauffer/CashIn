@@ -114,6 +114,17 @@ describe('ExpensesPage currency input', () => {
     expect(await screen.findByRole('status')).toHaveTextContent('Despesa registrada.')
   })
 
+  it('explains the expense-category prerequisite even when the month already has records', async () => {
+    vi.mocked(categoriesApi.list).mockResolvedValueOnce({ items: [] })
+    await renderPage()
+
+    const prerequisite = await screen.findByRole('note')
+    expect(prerequisite).toHaveTextContent('Para registrar uma despesa, primeiro')
+    expect(prerequisite.querySelector('a')).toHaveAttribute('href', '/categories')
+    expect(screen.getByRole('button', { name: /Nova despesa/ })).toBeDisabled()
+    expect(await screen.findByText('Aluguel')).toBeVisible()
+  })
+
   it('associates an optional payment method when creating an expense and shows its historical label', async () => {
     const user = userEvent.setup()
     const paymentMethod = { id: 'pix', name: 'Pix', nature: 'immediate' as const, isActive: true }

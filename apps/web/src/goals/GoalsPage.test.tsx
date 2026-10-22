@@ -133,8 +133,35 @@ describe('GoalsPage currency inputs', () => {
     await user.click(await screen.findByRole('button', { name: '＋ Registrar aporte' }))
 
     expect(await screen.findByRole('alert')).toHaveTextContent('Não foi possível carregar os aportes.')
+    expect(screen.queryByText('Carregando aportes desta meta…')).not.toBeInTheDocument()
     expect(screen.getByLabelText('Valor *')).toBeVisible()
     expect(goalsApi.createContribution).not.toHaveBeenCalled()
+    await user.click(screen.getByRole('button', { name: 'Tentar carregar aportes novamente' }))
+    expect(await screen.findByText(/Aporte mensal/)).toBeVisible()
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  })
+
+  it('identifies contribution loading without claiming that changes are being saved', async () => {
+    const request = deferred<{ items: typeof contribution[] }>()
+    vi.mocked(goalsApi.contributions).mockReturnValueOnce(request.promise)
+    const user = userEvent.setup()
+    await renderPage()
+    await user.click(await screen.findByRole('button', { name: 'Ver aportes' }))
+    expect(screen.getByRole('status')).toHaveTextContent('Carregando aportes desta meta')
+    expect(screen.queryByRole('note')).not.toBeInTheDocument()
+    request.resolve({ items: [] })
+    expect(await screen.findByText(/Use “Registrar aporte” para começar/)).toBeVisible()
+  })
+
+  it('explains that a closed goal with no contributions is only available for consultation', async () => {
+    vi.mocked(goalsApi.list).mockResolvedValueOnce({ items: [{ ...goal, status: 'closed' }] })
+    vi.mocked(goalsApi.contributions).mockResolvedValueOnce({ items: [] })
+    const user = userEvent.setup()
+    await renderPage()
+    await user.click(screen.getByRole('button', { name: 'Encerradas' }))
+    await user.click(await screen.findByRole('button', { name: 'Ver aportes' }))
+    expect(await screen.findByText(/Metas encerradas permitem apenas consulta/)).toBeVisible()
+    expect(screen.queryByRole('button', { name: /Registrar aporte/ })).not.toBeInTheDocument()
   })
 
   it('shows a recoverable error when goals cannot be loaded', async () => {

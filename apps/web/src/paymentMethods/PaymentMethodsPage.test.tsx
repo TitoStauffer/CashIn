@@ -52,6 +52,7 @@ describe('PaymentMethodsPage', () => {
     await user.click(await screen.findByRole('button', { name: /Nova forma/ }))
     const nature = screen.getByLabelText('Natureza *')
     expect(nature).toHaveDisplayValue('Imediata (dinheiro, débito ou Pix)')
+    expect(nature).toHaveAccessibleDescription(/VA e VR usam um único saldo de benefícios/)
     expect(screen.getByRole('option', { name: 'Cartão de benefícios (VA/VR)' })).toBeInTheDocument()
     expect(screen.getByRole('option', { name: 'Auxílio home office (AHO)' })).toBeInTheDocument()
     expect(screen.queryByRole('option', { name: 'Vale-alimentação (VA)' })).not.toBeInTheDocument()
@@ -110,5 +111,14 @@ describe('PaymentMethodsPage', () => {
     await renderPage()
     await user.click(await screen.findByRole('button', { name: 'Ativar Pix' }))
     await waitFor(() => expect(paymentMethodsApi.update).toHaveBeenCalledWith('pix', { isActive: true }))
+  })
+
+  it('explains the preserved nature when editing a historical VA method', async () => {
+    vi.mocked(paymentMethodsApi.list).mockResolvedValueOnce({ items: [{ ...paymentMethod, nature: 'food_benefit' }] })
+    const user = userEvent.setup()
+    await renderPage()
+    await user.click(await screen.findByRole('button', { name: 'Editar Pix' }))
+    expect(screen.getByLabelText('Natureza *')).toHaveValue('food_benefit')
+    expect(screen.getByLabelText('Natureza *')).toHaveAccessibleDescription(/Esta forma mantém sua natureza histórica/)
   })
 })
