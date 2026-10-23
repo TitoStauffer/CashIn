@@ -126,8 +126,21 @@ test('fails closed when changed source context exceeds the supported file limit'
   );
 });
 
-test('keeps the direct dependency limit at 20 additional files', async () => {
-  const source = Array.from({ length: 21 }, (_, index) => `import { value as value${index} } from './helper-${index}.js';`).join('\n');
+test('loads all 64 direct dependencies at the supported boundary', async () => {
+  const source = Array.from({ length: 64 }, (_, index) => `import { value as value${index} } from './helper-${index}.js';`).join('\n');
+  const sources = Object.fromEntries(Array.from({ length: 64 }, (_, index) => [`src/helper-${index}.ts`, 'export const value = 1;']));
+  const inputs = await loadAgentReviewInputs(
+    createFetch({ source, sources }),
+    'owner/repo',
+    7,
+    { head: { sha: headSha }, base: { sha: baseSha } },
+    'token',
+  );
+  assert.equal(inputs.sourceFiles.length, 65);
+});
+
+test('keeps the direct dependency limit at 64 additional files', async () => {
+  const source = Array.from({ length: 65 }, (_, index) => `import { value as value${index} } from './helper-${index}.js';`).join('\n');
   await assert.rejects(
     loadAgentReviewInputs(createFetch({ source }), 'owner/repo', 7, { head: { sha: headSha }, base: { sha: baseSha } }, 'token'),
     /dependencies exceed the supported source file limit/,
