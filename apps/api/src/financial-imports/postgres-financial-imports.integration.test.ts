@@ -251,16 +251,29 @@ test("PostgreSQL financial import confirms exact amounts, isolates wallets, and 
       fileSize: 64,
       fileHash: "e".repeat(64),
     });
-    await repository.savePreview(userId, walletId, removableSession.id, [{
-      sequence: 1,
-      date: "2026-10-23",
-      description: "Histórico preservado sem classificação",
-      signedAmount: "19.99",
-      type: "expense",
-      categoryId: removableCategoryId,
-      subcategoryId: removableSubcategoryId,
-      validationStatus: "valid",
-    }]);
+    await repository.savePreview(userId, walletId, removableSession.id, [
+      {
+        sequence: 1,
+        date: "2026-10-23",
+        description: "Histórico preservado sem classificação",
+        signedAmount: "19.99",
+        type: "expense",
+        categoryId: removableCategoryId,
+        subcategoryId: removableSubcategoryId,
+        validationStatus: "valid",
+      },
+      {
+        sequence: 2,
+        date: "2026-10-23",
+        description: "Inválido preservado sem classificação",
+        signedAmount: "3.50",
+        type: "expense",
+        categoryId: removableCategoryId,
+        subcategoryId: removableSubcategoryId,
+        validationStatus: "invalid",
+        errorMessage: "A sequência original da movimentação está duplicada no arquivo.",
+      },
+    ]);
 
     for (const [table, id] of [
       ["subcategories", removableSubcategoryId],
@@ -284,7 +297,8 @@ test("PostgreSQL financial import confirms exact amounts, isolates wallets, and 
     }
 
     assert.equal((await repository.undoImport(userId, walletId, removableSession.id))?.status, "undone");
-    const historicalItem = (await repository.getImport(userId, walletId, removableSession.id))?.items?.[0];
+    const historicalItems = (await repository.getImport(userId, walletId, removableSession.id))?.items;
+    const historicalItem = historicalItems?.[0];
     assert.deepEqual(historicalItem && {
       date: historicalItem.date,
       description: historicalItem.description,
@@ -301,6 +315,26 @@ test("PostgreSQL financial import confirms exact amounts, isolates wallets, and 
       type: "expense",
       validationStatus: "valid",
       errorMessage: null,
+      categoryId: null,
+      subcategoryId: null,
+    });
+    const invalidHistoricalItem = historicalItems?.[1];
+    assert.deepEqual(invalidHistoricalItem && {
+      date: invalidHistoricalItem.date,
+      description: invalidHistoricalItem.description,
+      amount: invalidHistoricalItem.amount,
+      type: invalidHistoricalItem.type,
+      validationStatus: invalidHistoricalItem.validationStatus,
+      errorMessage: invalidHistoricalItem.errorMessage,
+      categoryId: invalidHistoricalItem.categoryId,
+      subcategoryId: invalidHistoricalItem.subcategoryId,
+    }, {
+      date: "2026-10-23",
+      description: "Inválido preservado sem classificação",
+      amount: "3.50",
+      type: "expense",
+      validationStatus: "invalid",
+      errorMessage: "A sequência original da movimentação está duplicada no arquivo.",
       categoryId: null,
       subcategoryId: null,
     });
