@@ -5,7 +5,7 @@ import { categoriesApi } from '../categories/categoriesApi'
 import { WalletProvider } from '../wallets/WalletContext'
 import { walletApi } from '../wallets/walletApi'
 import { FinancialImportsPage } from './FinancialImportsPage'
-import type { FinancialImportSession } from './importsApi'
+import type { FinancialImportItem, FinancialImportSession } from './importsApi'
 import { importsApi } from './importsApi'
 
 function deferred<T>() {
@@ -298,5 +298,51 @@ describe('FinancialImportsPage', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('Não foi possível atualizar a movimentação')
     expect(screen.getByRole('button', { name: 'Confirmar 1 movimentação' })).toBeDisabled()
     expect(screen.getByText(/Existem ajustes não salvos/)).toBeVisible()
+  })
+
+  it('locks an item while saving and only enables confirmation with the persisted response', async () => {
+    const update = deferred<FinancialImportItem>()
+    vi.mocked(importsApi.list).mockResolvedValueOnce({ items: [{ ...previewSession, items: undefined }] })
+    vi.mocked(importsApi.get).mockResolvedValueOnce(previewSession)
+    vi.mocked(importsApi.updateItem).mockReturnValueOnce(update.promise)
+    const user = userEvent.setup()
+    await renderPage()
+    await user.click(await screen.findByRole('button', { name: 'Ver detalhes' }))
+
+    const item = (await screen.findByText('Movimentação 1')).closest('li') as HTMLElement
+    const description = within(item).getByLabelText('Descrição')
+    await user.selectOptions(within(item).getByLabelText('Categoria'), 'income-category')
+    await user.clear(description)
+    await user.type(description, 'Descrição persistida')
+    await user.click(within(item).getByRole('button', { name: 'Salvar ajuste' }))
+
+    await waitFor(() => expect(importsApi.updateItem).toHaveBeenCalledWith('import-1', 'item-1', expect.objectContaining({
+      description: 'Descrição persistida', categoryId: 'income-category',
+    })))
+    expect(within(item).getByLabelText('Data')).toBeDisabled()
+    expect(within(item).getByLabelText('Tipo')).toBeDisabled()
+    expect(description).toBeDisabled()
+    expect(within(item).getByLabelText('Categoria')).toBeDisabled()
+    expect(within(item).getByLabelText('Subcategoria')).toBeDisabled()
+    expect(within(item).getByRole('button', { name: 'Salvando…' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Confirmar 1 movimentação' })).toBeDisabled()
+
+    await user.type(description, ' não deve entrar')
+    expect(description).toHaveValue('Descrição persistida')
+
+    await act(async () => {
+      update.resolve({
+        ...previewSession.items![0],
+        description: 'Descrição persistida',
+        categoryId: 'income-category',
+        validationStatus: 'valid',
+      })
+      await update.promise
+    })
+
+    expect(description).toHaveValue('Descrição persistida')
+    expect(screen.getByRole('button', { name: 'Confirmar 2 movimentações' })).toBeEnabled()
+    await user.click(screen.getByRole('button', { name: 'Confirmar 2 movimentações' }))
+    await waitFor(() => expect(importsApi.confirm).toHaveBeenCalledWith('import-1'))
   })
 })

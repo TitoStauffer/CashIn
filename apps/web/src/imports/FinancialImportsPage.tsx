@@ -575,6 +575,8 @@ function ImportPreview({
             const categories = draft.type === 'income' ? incomeCategories : draft.type === 'expense' ? expenseCategories : []
             const selectedCategory = categories.find((category) => category.id === draft.categoryId)
             const isEditable = session.status === 'preview' && item.validationStatus !== 'duplicate' && item.validationStatus !== 'invalid'
+            const isSavingItem = pendingAction === `item:${item.id}`
+            const areItemControlsDisabled = !isEditable || isSavingItem
             return (
               <li className={`imports-item imports-item--${item.validationStatus}`} key={item.id}>
                 <div className="imports-item-heading">
@@ -588,34 +590,34 @@ function ImportPreview({
                 <div className="imports-item-grid">
                   <label>
                     Data
-                    <input type="date" value={draft.date} onChange={(event) => onDraftChange(item.id, { date: event.target.value })} disabled={!isEditable} />
+                    <input type="date" value={draft.date} onChange={(event) => onDraftChange(item.id, { date: event.target.value })} disabled={areItemControlsDisabled} />
                   </label>
                   <label>
                     Tipo
                     <select
                       value={draft.type}
                       onChange={(event) => onDraftChange(item.id, { type: event.target.value as FinancialImportItemType, categoryId: null, subcategoryId: null })}
-                      disabled={!isEditable}
+                      disabled={areItemControlsDisabled}
                     >
                       {Object.entries(typeLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
                     </select>
                   </label>
                   <label className="imports-item-description">
                     Descrição
-                    <input type="text" maxLength={500} value={draft.description} onChange={(event) => onDraftChange(item.id, { description: event.target.value })} disabled={!isEditable} />
+                    <input type="text" maxLength={500} value={draft.description} onChange={(event) => onDraftChange(item.id, { description: event.target.value })} disabled={areItemControlsDisabled} />
                   </label>
                   {draft.type !== 'transfer' && (
                     <>
                       <label>
                         Categoria
-                        <select value={draft.categoryId ?? ''} onChange={(event) => onDraftChange(item.id, { categoryId: event.target.value || null, subcategoryId: null })} disabled={!isEditable}>
+                        <select value={draft.categoryId ?? ''} onChange={(event) => onDraftChange(item.id, { categoryId: event.target.value || null, subcategoryId: null })} disabled={areItemControlsDisabled}>
                           <option value="">Não categorizada</option>
                           {categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}
                         </select>
                       </label>
                       <label>
                         Subcategoria
-                        <select value={draft.subcategoryId ?? ''} onChange={(event) => onDraftChange(item.id, { subcategoryId: event.target.value || null })} disabled={!isEditable || !selectedCategory}>
+                        <select value={draft.subcategoryId ?? ''} onChange={(event) => onDraftChange(item.id, { subcategoryId: event.target.value || null })} disabled={areItemControlsDisabled || !selectedCategory}>
                           <option value="">Sem subcategoria</option>
                           {selectedCategory?.subcategories.map((subcategory) => <option key={subcategory.id} value={subcategory.id}>{subcategory.name}</option>)}
                         </select>
@@ -625,7 +627,7 @@ function ImportPreview({
                 </div>
                 {isEditable && (
                   <button className="imports-secondary-button" type="button" onClick={() => onSaveItem(item)} disabled={pendingAction !== null}>
-                    {pendingAction === `item:${item.id}` ? 'Salvando…' : 'Salvar ajuste'}
+                    {isSavingItem ? 'Salvando…' : 'Salvar ajuste'}
                   </button>
                 )}
               </li>
