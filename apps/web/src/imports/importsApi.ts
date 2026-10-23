@@ -18,7 +18,7 @@ export type FinancialImportItem = {
   id: string
   sequence: number
   date: string
-  description: string
+  description: string | null
   amount: string
   type: FinancialImportItemType
   categoryId: string | null

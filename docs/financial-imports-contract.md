@@ -23,6 +23,8 @@ A API mantém sessões de importação por carteira para que o cliente possa env
 
 As sessões usam os estados `processing`, `preview`, `completed`, `failed` e `undone`. O resumo separa itens `valid`, `duplicate`, `invalid`, `uncategorized` e `imported`. `canUndo` e `undoBlockedReason` permitem que o cliente apresente a elegibilidade do desfazer sem presumir o estado.
 
+Linhas com data impossível, valor zero ou fora da precisão permitida e sequência de origem repetida permanecem na prévia como `invalid`, com motivo explícito. A posição persistida é sempre única e os campos inválidos são armazenados de forma nula internamente, evitando que uma linha defeituosa descarte as demais.
+
 ## Confirmação e desfazer
 
 A confirmação importa somente itens válidos e ocorre em transação PostgreSQL. Itens inválidos, duplicados ou sem categoria permanecem no histórico e não geram lançamentos. O desfazer também é transacional e compara o `updated_at` de cada entrada ou saída com o valor capturado na confirmação. Se qualquer lançamento tiver sido alterado ou removido, a operação é recusada com `409`.

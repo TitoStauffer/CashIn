@@ -39,6 +39,7 @@
 .imports-summary div { padding: 11px; border: 1px solid #e4eae3; border-radius: 9px; background: #fafcf9; }
 .imports-summary dt { color: #7a887e; font-size: 8px; }
 .imports-summary dd { margin: 5px 0 0; color: #2b5c3d; font-size: 17px; font-weight: 750; }
+.imports-confirmation-note { margin: 0 0 18px; padding: 11px 13px; border-left: 3px solid #9ca967; border-radius: 6px; background: #fafbe9; color: #59643d; font-size: 10px; line-height: 1.55; }
 .imports-item-list, .imports-history-list { display: grid; gap: 11px; margin: 0; padding: 0; list-style: none; }
 .imports-item { padding: 16px; border: 1px solid #e1e7e0; border-left: 3px solid #6fa37d; border-radius: 10px; background: #fdfefc; }
 .imports-item--duplicate { border-left-color: #c79e55; background: #fffdf7; }

@@ -73,9 +73,9 @@ class MemoryFinancialImportRepository implements FinancialImportRepository {
     session.items = items.map((item) => ({
       id: `20000000-0000-4000-8000-${(this.nextItem++).toString().padStart(12, "0")}`,
       sequence: item.sequence,
-      date: item.date,
+      date: item.date ?? "",
       description: item.description ?? null,
-      amount: item.signedAmount.replace(/^-/, ""),
+      amount: (item.signedAmount ?? "0.00").replace(/^-/, ""),
       type: item.type,
       categoryId: item.categoryId ?? null,
       subcategoryId: item.subcategoryId ?? null,
@@ -217,6 +217,41 @@ class TestParser implements FinancialImportParser {
       type: "income" as const,
       categoryId: CATEGORY_A,
     }));
+  }
+}
+
+class InvalidItemsParser implements FinancialImportParser {
+  async parse(): Promise<ParsedFinancialImportItem[]> {
+    return [
+      {
+        sequence: 1,
+        date: "2026-10-20",
+        signedAmount: "100.00",
+        type: "income",
+        categoryId: CATEGORY_A,
+      },
+      {
+        sequence: 2,
+        date: "2026-02-30",
+        signedAmount: "10.00",
+        type: "expense",
+        categoryId: CATEGORY_A,
+      },
+      {
+        sequence: 3,
+        date: "2026-10-21",
+        signedAmount: "0.00",
+        type: "expense",
+        categoryId: CATEGORY_A,
+      },
+      {
+        sequence: 1,
+        date: "2026-10-22",
+        signedAmount: "5.00",
+        type: "expense",
+        categoryId: CATEGORY_A,
+      },
+    ];
   }
 }
 
@@ -412,4 +447,48 @@ test("upload enforces the 10 MB and 10,000 movement limits", async () => {
   });
   assert.equal(oversizedResponse.statusCode, 413);
   await oversized.app.close();
+});
+
+test("impossible dates, zero values, and repeated source sequences remain in preview without blocking valid items", async () => {
+  const { app } = createTestApp(new InvalidItemsParser());
+  const created = await upload(app);
+  assert.equal(created.statusCode, 201);
+  assert.deepEqual(created.json().summary, {
+    total: 4,
+    valid: 1,
+    duplicate: 0,
+    invalid: 3,
+    uncategorized: 0,
+    imported: 0,
+  });
+
+  const detail = await app.inject({
+    method: "GET",
+    url: `/financial-imports/${created.json().id}`,
+    headers: { cookie: authCookie() },
+  });
+  assert.equal(detail.statusCode, 200);
+  assert.deepEqual(detail.json().items.map((item: FinancialImportItem) => item.sequence), [1, 2, 3, 4]);
+  assert.equal(detail.json().items[1].date, "");
+  assert.match(detail.json().items[1].errorMessage, /data da movimentação é inválida/i);
+  assert.equal(detail.json().items[2].amount, "0.00");
+  assert.match(detail.json().items[2].errorMessage, /diferente de zero/i);
+  assert.match(detail.json().items[3].errorMessage, /sequência original.+duplicada/i);
+
+  const confirmed = await app.inject({
+    method: "POST",
+    url: `/financial-imports/${created.json().id}/confirm`,
+    headers: { cookie: authCookie() },
+  });
+  assert.equal(confirmed.statusCode, 200);
+  assert.equal(confirmed.json().summary.imported, 1);
+  assert.equal(confirmed.json().summary.invalid, 3);
+
+  const afterConfirmation = await app.inject({
+    method: "GET",
+    url: `/financial-imports/${created.json().id}`,
+    headers: { cookie: authCookie() },
+  });
+  assert.equal(afterConfirmation.json().items.filter((item: FinancialImportItem) => item.validationStatus === "invalid").length, 3);
+  await app.close();
 });

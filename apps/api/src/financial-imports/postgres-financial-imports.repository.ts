@@ -39,9 +39,9 @@ interface ImportSessionRow {
 interface ImportItemRow {
   id: string;
   sequence: number;
-  transaction_date: string | Date;
+  transaction_date: string | Date | null;
   description: string | null;
-  amount: string;
+  amount: string | null;
   type: FinancialImportItemType;
   category_id: string | null;
   subcategory_id: string | null;
@@ -51,7 +51,8 @@ interface ImportItemRow {
   updated_at: string | Date;
 }
 
-function dateValue(value: string | Date): string {
+function dateValue(value: string | Date | null): string {
+  if (value === null) return "";
   return value instanceof Date ? value.toISOString().slice(0, 10) : value.slice(0, 10);
 }
 
@@ -93,7 +94,7 @@ function mapItem(row: ImportItemRow): FinancialImportItem {
     sequence: row.sequence,
     date: dateValue(row.transaction_date),
     description: row.description,
-    amount: row.amount,
+    amount: row.amount ?? "0.00",
     type: row.type,
     categoryId: row.category_id,
     subcategoryId: row.subcategory_id,
@@ -246,7 +247,7 @@ export class PostgresFinancialImportsRepository implements FinancialImportReposi
         );
       }
       await this.refreshCounters(transaction, walletId, importId, "preview");
-      return this.getSession(transaction, walletId, importId);
+      return this.getSessionWithItems(transaction, walletId, importId);
     });
   }
 
@@ -262,16 +263,7 @@ export class PostgresFinancialImportsRepository implements FinancialImportReposi
   }
 
   async getImport(_userId: string, walletId: string, importId: string): Promise<FinancialImportSession | null> {
-    const session = await this.getSession(this.database, walletId, importId);
-    if (!session) return null;
-    const items = await this.database.query<ImportItemRow>(
-      `SELECT ${itemColumns}
-       FROM import_items AS item
-       WHERE item.import_session_id = $1 AND item.wallet_id = $2
-       ORDER BY item.sequence, item.id`,
-      [importId, walletId],
-    );
-    return { ...session, items: items.rows.map(mapItem) };
+    return this.getSessionWithItems(this.database, walletId, importId);
   }
 
   async markFailed(_userId: string, walletId: string, importId: string): Promise<void> {
@@ -452,17 +444,11 @@ export class PostgresFinancialImportsRepository implements FinancialImportReposi
         type: "income" | "expense";
         resulting_income_id: string | null;
         resulting_expense_id: string | null;
-        resulting_updated_at: string | Date;
-        current_updated_at: string | Date | null;
+        resulting_updated_at: string | Date | null;
       }>(
         `SELECT item.id, item.type, item.resulting_income_id, item.resulting_expense_id,
-                item.resulting_updated_at,
-                COALESCE(income.updated_at, expense.updated_at) AS current_updated_at
+                item.resulting_updated_at
          FROM import_items AS item
-         LEFT JOIN incomes AS income
-           ON income.id = item.resulting_income_id AND income.wallet_id = item.wallet_id
-         LEFT JOIN expenses AS expense
-           ON expense.id = item.resulting_expense_id AND expense.wallet_id = item.wallet_id
          WHERE item.import_session_id = $1
            AND item.wallet_id = $2
            AND item.validation_status = 'imported'
@@ -471,9 +457,60 @@ export class PostgresFinancialImportsRepository implements FinancialImportReposi
         [importId, walletId],
       );
       if (targets.rows.length === 0) return null;
-      const changed = targets.rows.some((target) => target.current_updated_at === null
-        || timestampValue(target.current_updated_at) !== timestampValue(target.resulting_updated_at));
-      if (changed) return null;
+
+      const incomeIds = targets.rows.flatMap((target) => target.resulting_income_id ? [target.resulting_income_id] : []);
+      const expenseIds = targets.rows.flatMap((target) => target.resulting_expense_id ? [target.resulting_expense_id] : []);
+      if (incomeIds.length > 0) {
+        await transaction.query(
+          `SELECT id FROM incomes
+           WHERE wallet_id = $1 AND id = ANY($2::uuid[])
+           ORDER BY id
+           FOR UPDATE`,
+          [walletId, incomeIds],
+        );
+      }
+      if (expenseIds.length > 0) {
+        await transaction.query(
+          `SELECT id FROM expenses
+           WHERE wallet_id = $1 AND id = ANY($2::uuid[])
+           ORDER BY id
+           FOR UPDATE`,
+          [walletId, expenseIds],
+        );
+      }
+
+      const validation = await transaction.query<{ blocked: boolean }>(
+        `SELECT EXISTS (
+           SELECT 1
+           FROM import_items AS item
+           WHERE item.import_session_id = $1
+             AND item.wallet_id = $2
+             AND item.validation_status = 'imported'
+             AND (
+               (item.type = 'income' AND (
+                 item.resulting_income_id IS NULL
+                 OR NOT EXISTS (
+                   SELECT 1 FROM incomes AS income
+                   WHERE income.id = item.resulting_income_id
+                     AND income.wallet_id = item.wallet_id
+                     AND income.updated_at = item.resulting_updated_at
+                 )
+               ))
+               OR
+               (item.type = 'expense' AND (
+                 item.resulting_expense_id IS NULL
+                 OR NOT EXISTS (
+                   SELECT 1 FROM expenses AS expense
+                   WHERE expense.id = item.resulting_expense_id
+                     AND expense.wallet_id = item.wallet_id
+                     AND expense.updated_at = item.resulting_updated_at
+                 )
+               ))
+             )
+         ) AS blocked`,
+        [importId, walletId],
+      );
+      if (validation.rows[0]?.blocked !== false) return null;
 
       await transaction.query(
         `UPDATE import_items
@@ -485,8 +522,6 @@ export class PostgresFinancialImportsRepository implements FinancialImportReposi
          WHERE import_session_id = $1 AND wallet_id = $2 AND validation_status = 'imported'`,
         [importId, walletId],
       );
-      const incomeIds = targets.rows.flatMap((target) => target.resulting_income_id ? [target.resulting_income_id] : []);
-      const expenseIds = targets.rows.flatMap((target) => target.resulting_expense_id ? [target.resulting_expense_id] : []);
       if (incomeIds.length > 0) {
         await transaction.query("DELETE FROM incomes WHERE wallet_id = $1 AND id = ANY($2::uuid[])", [walletId, incomeIds]);
       }
@@ -520,6 +555,23 @@ export class PostgresFinancialImportsRepository implements FinancialImportReposi
     );
     const row = result.rows[0];
     return row ? mapSession(row) : null;
+  }
+
+  private async getSessionWithItems(
+    executor: QueryExecutor,
+    walletId: string,
+    importId: string,
+  ): Promise<FinancialImportSession | null> {
+    const session = await this.getSession(executor, walletId, importId);
+    if (!session) return null;
+    const items = await executor.query<ImportItemRow>(
+      `SELECT ${itemColumns}
+       FROM import_items AS item
+       WHERE item.import_session_id = $1 AND item.wallet_id = $2
+       ORDER BY item.sequence, item.id`,
+      [importId, walletId],
+    );
+    return { ...session, items: items.rows.map(mapItem) };
   }
 
   private async refreshCounters(

@@ -96,9 +96,9 @@ CREATE TABLE import_items (
   import_session_id uuid NOT NULL,
   wallet_id uuid NOT NULL,
   sequence integer NOT NULL,
-  transaction_date date NOT NULL,
+  transaction_date date,
   description text,
-  signed_amount numeric NOT NULL,
+  signed_amount numeric,
   type text NOT NULL CHECK (type IN ('income', 'expense', 'transfer')),
   category_id uuid,
   subcategory_id uuid,
@@ -122,9 +122,17 @@ CREATE TABLE import_items (
     CHECK (description IS NULL OR octet_length(description) <= 4000),
   CONSTRAINT import_items_signed_amount_precision_check
     CHECK (
-      signed_amount <> 0
-      AND abs(signed_amount) < 1000000000000
-      AND signed_amount = trunc(signed_amount, 2)
+      signed_amount IS NULL
+      OR (
+        signed_amount <> 0
+        AND abs(signed_amount) < 1000000000000
+        AND signed_amount = trunc(signed_amount, 2)
+      )
+    ),
+  CONSTRAINT import_items_required_values_check
+    CHECK (
+      validation_status = 'invalid'
+      OR (transaction_date IS NOT NULL AND signed_amount IS NOT NULL)
     ),
   CONSTRAINT import_items_category_shape_check
     CHECK (

@@ -34,25 +34,38 @@ function normalizeFileName(value: string): string {
 }
 
 function normalizeParsedItem(item: ParsedFinancialImportItem, fallbackSequence: number): ParsedFinancialImportItem {
-  const sequence = Number.isSafeInteger(item.sequence) && item.sequence > 0 ? item.sequence : fallbackSequence;
+  const hasValidSourceSequence = Number.isSafeInteger(item.sequence)
+    && item.sequence > 0
+    && item.sequence <= MAX_FINANCIAL_IMPORT_ITEMS;
+  const hasValidDate = typeof item.date === "string" && validateDate(item.date);
+  const hasValidAmount = typeof item.signedAmount === "string"
+    && SIGNED_MONEY_PATTERN.test(item.signedAmount)
+    && !ZERO_MONEY_PATTERN.test(item.signedAmount);
+  const hasValidType = FINANCIAL_IMPORT_ITEM_TYPES.includes(item.type);
   const description = item.description?.trim() || null;
-  const categoryId = item.categoryId ?? null;
-  const subcategoryId = item.subcategoryId ?? null;
-  const hasInvalidReference = (categoryId !== null && !UUID_PATTERN.test(categoryId))
-    || (subcategoryId !== null && !UUID_PATTERN.test(subcategoryId));
-  const hasInvalidValue = !validateDate(item.date)
-    || !SIGNED_MONEY_PATTERN.test(item.signedAmount)
-    || ZERO_MONEY_PATTERN.test(item.signedAmount)
-    || !FINANCIAL_IMPORT_ITEM_TYPES.includes(item.type)
-    || hasInvalidReference;
+  const rawCategoryId = item.categoryId ?? null;
+  const rawSubcategoryId = item.subcategoryId ?? null;
+  const hasValidCategory = rawCategoryId === null || UUID_PATTERN.test(rawCategoryId);
+  const hasValidSubcategory = rawSubcategoryId === null || UUID_PATTERN.test(rawSubcategoryId);
+  const type = hasValidType ? item.type : "transfer";
+  const categoryId = type === "transfer" || !hasValidCategory ? null : rawCategoryId;
+  const subcategoryId = type === "transfer" || !hasValidSubcategory ? null : rawSubcategoryId;
+  const invalidReasons: string[] = [];
+  if (!hasValidSourceSequence) invalidReasons.push("A sequência original da movimentação é inválida.");
+  if (!hasValidDate) invalidReasons.push("A data da movimentação é inválida.");
+  if (!hasValidAmount) invalidReasons.push("O valor da movimentação deve ser diferente de zero e ter até duas casas decimais.");
+  if (!hasValidType) invalidReasons.push("O tipo da movimentação é inválido.");
+  if (!hasValidCategory || !hasValidSubcategory) invalidReasons.push("A categoria ou subcategoria da movimentação é inválida.");
 
   let validationStatus = item.validationStatus ?? "valid";
   let errorMessage = item.errorMessage?.trim() || null;
-  if (hasInvalidValue) {
+  if (invalidReasons.length > 0) {
     validationStatus = "invalid";
+    errorMessage = [errorMessage, ...invalidReasons].filter(Boolean).join(" ");
+  } else if (validationStatus === "invalid") {
     errorMessage ??= "A movimentação possui dados inválidos.";
-  } else if (validationStatus !== "duplicate" && validationStatus !== "invalid") {
-    if (item.type === "transfer") {
+  } else if (validationStatus !== "duplicate") {
+    if (type === "transfer") {
       validationStatus = "uncategorized";
       errorMessage ??= "A transferência precisa ser conciliada antes da importação.";
     } else if (categoryId === null) {
@@ -65,11 +78,11 @@ function normalizeParsedItem(item: ParsedFinancialImportItem, fallbackSequence: 
   }
 
   return {
-    sequence,
-    date: item.date,
+    sequence: fallbackSequence,
+    date: hasValidDate ? item.date : null,
     description,
-    signedAmount: item.signedAmount,
-    type: item.type,
+    signedAmount: hasValidAmount ? item.signedAmount : null,
+    type,
     categoryId,
     subcategoryId,
     validationStatus,
@@ -145,17 +158,21 @@ export class FinancialImportsService {
       if (parsedItems.length === 0) {
         throw new FinancialImportError("Nenhuma movimentação foi encontrada no arquivo.", 422);
       }
-      const sequences = new Set<number>();
+      const sourceSequences = new Set<number>();
       const items = parsedItems.map((item, index) => {
         const normalized = normalizeParsedItem(item, index + 1);
-        if (sequences.has(normalized.sequence)) {
+        const repeatedSequence = sourceSequences.has(item.sequence);
+        if (Number.isSafeInteger(item.sequence)) sourceSequences.add(item.sequence);
+        if (repeatedSequence) {
           return {
             ...normalized,
             validationStatus: "invalid" as const,
-            errorMessage: "A sequência da movimentação está duplicada no arquivo.",
+            errorMessage: [
+              normalized.errorMessage,
+              "A sequência original da movimentação está duplicada no arquivo.",
+            ].filter(Boolean).join(" "),
           };
         }
-        sequences.add(normalized.sequence);
         return normalized;
       });
       const preview = await this.repository.savePreview(userId, walletId, session.id, items);

@@ -52,9 +52,9 @@ export interface FinancialImportSession {
 
 export interface ParsedFinancialImportItem {
   sequence: number;
-  date: string;
+  date: string | null;
   description?: string | null;
-  signedAmount: string;
+  signedAmount: string | null;
   type: FinancialImportItemType;
   categoryId?: string | null;
   subcategoryId?: string | null;

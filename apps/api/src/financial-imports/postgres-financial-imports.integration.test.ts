@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { randomBytes } from "node:crypto";
 import test from "node:test";
+import { setTimeout as delay } from "node:timers/promises";
 import { Pool } from "pg";
 import { createDatabase, runMigrations } from "../database.js";
 import { PostgresFinancialImportsRepository } from "./postgres-financial-imports.repository.js";
@@ -88,14 +89,38 @@ test("PostgreSQL financial import confirms exact amounts, isolates wallets, and 
         type: "expense",
         validationStatus: "uncategorized",
       },
+      {
+        sequence: 4,
+        date: null,
+        description: "Linha inválida preservada",
+        signedAmount: null,
+        type: "expense",
+        validationStatus: "invalid",
+        errorMessage: "Data e valor inválidos.",
+      },
     ]);
     assert.deepEqual(preview?.summary, {
-      total: 3,
+      total: 4,
       valid: 2,
       duplicate: 0,
-      invalid: 0,
+      invalid: 1,
       uncategorized: 1,
       imported: 0,
+    });
+    assert.equal(preview?.items?.length, 4);
+    assert.deepEqual(preview?.items?.[3], {
+      id: preview?.items?.[3]?.id,
+      sequence: 4,
+      date: "",
+      description: "Linha inválida preservada",
+      amount: "0.00",
+      type: "expense",
+      categoryId: null,
+      subcategoryId: null,
+      validationStatus: "invalid",
+      errorMessage: "Data e valor inválidos.",
+      createdAt: preview?.items?.[3]?.createdAt,
+      updatedAt: preview?.items?.[3]?.updatedAt,
     });
 
     const completed = await repository.confirmImport(otherUserId, walletId, created.id);
@@ -147,6 +172,56 @@ test("PostgreSQL financial import confirms exact amounts, isolates wallets, and 
     const removed = await repository.getImport(userId, walletId, changedSession.id);
     assert.equal(removed?.canUndo, false);
     assert.equal(removed?.undoBlockedReason, "Um ou mais lançamentos importados foram alterados ou removidos.");
+
+    const concurrentSession = await repository.createImport(userId, walletId, {
+      format: "csv",
+      fileName: "concurrent.csv",
+      fileSize: 64,
+      fileHash: "c".repeat(64),
+    });
+    await repository.savePreview(userId, walletId, concurrentSession.id, [{
+      sequence: 1,
+      date: "2026-10-23",
+      signedAmount: "25.00",
+      type: "income",
+      categoryId: incomeCategoryId,
+      validationStatus: "valid",
+    }]);
+    await repository.confirmImport(userId, walletId, concurrentSession.id);
+    const concurrentTarget = await database.query<{ income_id: string }>(
+      `SELECT resulting_income_id AS income_id
+       FROM import_items
+       WHERE import_session_id = $1 AND validation_status = 'imported'`,
+      [concurrentSession.id],
+    );
+    const blocker = await scopedPool.connect();
+    try {
+      await blocker.query("BEGIN");
+      await blocker.query(
+        `UPDATE incomes
+         SET updated_at = updated_at + interval '1 microsecond'
+         WHERE id = $1 AND wallet_id = $2`,
+        [concurrentTarget.rows[0]!.income_id, walletId],
+      );
+
+      const concurrentUndo = repository.undoImport(userId, walletId, concurrentSession.id);
+      const raceResult = await Promise.race([
+        concurrentUndo.then(() => "finished" as const),
+        delay(100).then(() => "waiting" as const),
+      ]);
+      assert.equal(raceResult, "waiting", "undo must wait for a concurrent movement update lock");
+
+      await blocker.query("COMMIT");
+      assert.equal(await concurrentUndo, null);
+      assert.equal(
+        (await database.query("SELECT count(*)::integer AS count FROM incomes WHERE id = $1", [concurrentTarget.rows[0]!.income_id])).rows[0]!.count,
+        1,
+        "a one-microsecond concurrent update must block undo without losing the movement",
+      );
+    } finally {
+      await blocker.query("ROLLBACK").catch(() => undefined);
+      blocker.release();
+    }
   } finally {
     await scopedPool?.end();
     await adminPool.query(`DROP SCHEMA IF EXISTS ${schemaName} CASCADE`);

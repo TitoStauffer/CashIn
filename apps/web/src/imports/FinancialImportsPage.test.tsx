@@ -14,7 +14,7 @@ const previewSession: FinancialImportSession = {
   fileName: 'extrato.ofx',
   fileSize: 2048,
   status: 'preview',
-  summary: { total: 2, valid: 1, duplicate: 0, invalid: 0, uncategorized: 1, imported: 0 },
+  summary: { total: 3, valid: 1, duplicate: 0, invalid: 1, uncategorized: 1, imported: 0 },
   items: [
     {
       id: 'item-1', sequence: 1, date: '2026-10-01', description: 'Salário', amount: '3000.00',
@@ -23,6 +23,10 @@ const previewSession: FinancialImportSession = {
     {
       id: 'item-2', sequence: 2, date: '2026-10-02', description: 'Mercado', amount: '150.00',
       type: 'expense', categoryId: 'expense-category', subcategoryId: null, validationStatus: 'valid', errorMessage: null,
+    },
+    {
+      id: 'item-3', sequence: 3, date: '2026-10-03', description: 'Registro incompleto', amount: '20.00',
+      type: 'expense', categoryId: null, subcategoryId: null, validationStatus: 'invalid', errorMessage: 'Dados insuficientes para importar.',
     },
   ],
   canUndo: false,
@@ -37,6 +41,26 @@ const completedSession: FinancialImportSession = {
   summary: { ...previewSession.summary, imported: 2 },
   canUndo: true,
   confirmedAt: '2026-10-23T12:05:00.000Z',
+}
+
+const uncategorizedOnlySession: FinancialImportSession = {
+  ...previewSession,
+  summary: { total: 2, valid: 0, duplicate: 0, invalid: 0, uncategorized: 2, imported: 0 },
+  items: previewSession.items!.slice(0, 2).map((item) => ({
+    ...item,
+    categoryId: null,
+    subcategoryId: null,
+    validationStatus: 'uncategorized',
+  })),
+}
+
+const nullDescriptionSession: FinancialImportSession = {
+  ...previewSession,
+  summary: { total: 1, valid: 0, duplicate: 0, invalid: 0, uncategorized: 1, imported: 0 },
+  items: [{
+    ...previewSession.items![0],
+    description: null,
+  }],
 }
 
 async function renderPage() {
@@ -128,6 +152,8 @@ describe('FinancialImportsPage', () => {
 
     const firstItem = (await screen.findByText('Movimentação 1')).closest('li') as HTMLElement
     expect(within(firstItem).getAllByText('Não categorizada')[0]).toBeVisible()
+    expect(screen.getByRole('button', { name: 'Confirmar 1 movimentação' })).toBeEnabled()
+    expect(screen.getByText(/Itens sem categoria \(1\) ficam fora.*Itens inválidos \(1\) ou duplicados \(0\) não serão importados/)).toBeVisible()
     await user.selectOptions(within(firstItem).getByLabelText('Categoria'), 'income-category')
     await user.selectOptions(within(firstItem).getByLabelText('Subcategoria'), 'income-subcategory')
     await user.clear(within(firstItem).getByLabelText('Descrição'))
@@ -140,6 +166,37 @@ describe('FinancialImportsPage', () => {
     await user.click(screen.getByRole('button', { name: 'Confirmar 2 movimentações' }))
     await waitFor(() => expect(importsApi.confirm).toHaveBeenCalledWith('import-1'))
     expect(await screen.findByText(/2 movimentações foram importadas/)).toBeVisible()
+  })
+
+  it('does not confirm a preview when all items are uncategorized', async () => {
+    vi.mocked(importsApi.list).mockResolvedValueOnce({ items: [{ ...uncategorizedOnlySession, items: undefined }] })
+    vi.mocked(importsApi.get).mockResolvedValueOnce(uncategorizedOnlySession)
+    const user = userEvent.setup()
+    await renderPage()
+    await user.click(await screen.findByRole('button', { name: 'Ver detalhes' }))
+
+    expect(await screen.findByText(/Nenhuma movimentação está pronta para confirmar/)).toBeVisible()
+    expect(screen.getByText(/Itens sem categoria \(2\) ficam fora.*Itens inválidos \(0\) ou duplicados \(0\) não serão importados/)).toBeVisible()
+    expect(screen.getByRole('button', { name: 'Confirmar 0 movimentações' })).toBeDisabled()
+    expect(importsApi.confirm).not.toHaveBeenCalled()
+  })
+
+  it('normalizes a null description and allows saving the classification without text', async () => {
+    vi.mocked(importsApi.list).mockResolvedValueOnce({ items: [{ ...nullDescriptionSession, items: undefined }] })
+    vi.mocked(importsApi.get).mockResolvedValueOnce(nullDescriptionSession)
+    const user = userEvent.setup()
+    await renderPage()
+    await user.click(await screen.findByRole('button', { name: 'Ver detalhes' }))
+
+    const item = (await screen.findByText('Movimentação 1')).closest('li') as HTMLElement
+    expect(within(item).getByLabelText('Descrição')).toHaveValue('')
+    await user.selectOptions(within(item).getByLabelText('Categoria'), 'income-category')
+    await user.click(within(item).getByRole('button', { name: 'Salvar ajuste' }))
+
+    await waitFor(() => expect(importsApi.updateItem).toHaveBeenCalledWith('import-1', 'item-1', expect.objectContaining({
+      description: '', categoryId: 'income-category',
+    })))
+    expect(screen.queryByText(/Informe a data e a descrição/)).not.toBeInTheDocument()
   })
 
   it('shows undo eligibility and refreshes the history when the active wallet changes', async () => {

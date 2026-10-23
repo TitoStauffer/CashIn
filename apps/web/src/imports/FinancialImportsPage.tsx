@@ -76,7 +76,7 @@ function getImportError(error: unknown, fallback: string) {
 function createDraft(item: FinancialImportItem): FinancialImportItemInput {
   return {
     date: item.date,
-    description: item.description,
+    description: item.description ?? '',
     type: item.type,
     categoryId: item.categoryId,
     subcategoryId: item.subcategoryId,
@@ -169,7 +169,7 @@ export function FinancialImportsPage({ userEmail, isLoggingOut, onLogout }: Fina
   }, [selectedImport])
 
   const confirmableCount = useMemo(
-    () => (selectedImport?.items ?? []).filter((item) => item.validationStatus === 'valid' || item.validationStatus === 'uncategorized').length,
+    () => (selectedImport?.items ?? []).filter((item) => item.validationStatus === 'valid').length,
     [selectedImport?.items],
   )
   const isLoading = loadedWalletId !== activeWalletId
@@ -248,8 +248,8 @@ export function FinancialImportsPage({ userEmail, isLoggingOut, onLogout }: Fina
 
   async function saveItem(item: FinancialImportItem) {
     const draft = drafts[item.id]
-    if (!draft?.date || !draft.description.trim()) {
-      setFormError('Informe a data e a descrição da movimentação antes de salvar.')
+    if (!draft?.date) {
+      setFormError('Informe a data da movimentação antes de salvar.')
       return
     }
     setPendingAction(`item:${item.id}`)
@@ -274,7 +274,7 @@ export function FinancialImportsPage({ userEmail, isLoggingOut, onLogout }: Fina
 
   async function confirmImport() {
     if (!selectedImport || confirmableCount === 0) return
-    if (!window.confirm(`Confirmar ${confirmableCount} movimentações válidas desta importação?`)) return
+    if (!window.confirm(`Confirmar ${confirmableCount} ${confirmableCount === 1 ? 'movimentação válida' : 'movimentações válidas'} desta importação?`)) return
     setPendingAction('confirm')
     setFormError('')
     setSuccessMessage('')
@@ -491,6 +491,15 @@ function ImportPreview({
         <div><dt>Importadas</dt><dd>{session.summary.imported}</dd></div>
       </dl>
 
+      {session.status === 'preview' && (
+        <p className="imports-confirmation-note">
+          {confirmableCount === 0
+            ? 'Nenhuma movimentação está pronta para confirmar. '
+            : `${confirmableCount} ${confirmableCount === 1 ? 'movimentação válida será importada' : 'movimentações válidas serão importadas'}. `}
+          Itens sem categoria ({session.summary.uncategorized}) ficam fora até receberem uma categoria. Itens inválidos ({session.summary.invalid}) ou duplicados ({session.summary.duplicate}) não serão importados.
+        </p>
+      )}
+
       {session.status === 'processing' ? (
         <p className="imports-loading" role="status"><span className="imports-spinner" aria-hidden="true" />Processando o arquivo. Esta tela será atualizada automaticamente…</p>
       ) : items.length === 0 ? (
@@ -567,7 +576,7 @@ function ImportPreview({
       <div className="imports-preview-actions">
         {session.status === 'preview' && (
           <button className="imports-primary-button" type="button" onClick={onConfirm} disabled={pendingAction !== null || confirmableCount === 0}>
-            {pendingAction === 'confirm' ? 'Confirmando importação…' : `Confirmar ${confirmableCount} movimentações`}
+            {pendingAction === 'confirm' ? 'Confirmando importação…' : `Confirmar ${confirmableCount} ${confirmableCount === 1 ? 'movimentação' : 'movimentações'}`}
           </button>
         )}
         {session.status === 'completed' && (
