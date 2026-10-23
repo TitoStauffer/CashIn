@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { ChangeEvent, FormEvent } from 'react'
 import type { Category } from '../categories/categoriesApi'
 import { categoriesApi } from '../categories/categoriesApi'
@@ -22,6 +22,11 @@ type FinancialImportsPageProps = {
   userEmail: string
   isLoggingOut: boolean
   onLogout: () => void
+}
+
+type WalletOperation = {
+  walletId: string | null
+  generation: number
 }
 
 const maxFileSize = 10 * 1024 * 1024
@@ -99,9 +104,21 @@ function replaceSessionItem(session: FinancialImportSession, updated: FinancialI
   }
 }
 
+function hasDraftChanged(item: FinancialImportItem, draft: FinancialImportItemInput | undefined) {
+  if (!draft) return false
+  const original = createDraft(item)
+  return original.date !== draft.date
+    || original.description !== draft.description
+    || original.type !== draft.type
+    || original.categoryId !== draft.categoryId
+    || original.subcategoryId !== draft.subcategoryId
+}
+
 export function FinancialImportsPage({ userEmail, isLoggingOut, onLogout }: FinancialImportsPageProps) {
   const { activeWalletId, activeWallet } = useWallet()
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const activeWalletIdRef = useRef(activeWalletId)
+  const walletGenerationRef = useRef(0)
   const [history, setHistory] = useState<FinancialImportSession[]>([])
   const [selectedImport, setSelectedImport] = useState<FinancialImportSession | null>(null)
   const [drafts, setDrafts] = useState<Record<string, FinancialImportItemInput>>({})
@@ -115,8 +132,22 @@ export function FinancialImportsPage({ userEmail, isLoggingOut, onLogout }: Fina
   const [successMessage, setSuccessMessage] = useState('')
   const [reloadKey, setReloadKey] = useState(0)
 
+  useLayoutEffect(() => {
+    activeWalletIdRef.current = activeWalletId
+    walletGenerationRef.current += 1
+  }, [activeWalletId])
+
+  function captureWalletOperation(): WalletOperation {
+    return { walletId: activeWalletIdRef.current, generation: walletGenerationRef.current }
+  }
+
+  function isCurrentWalletOperation(operation: WalletOperation) {
+    return activeWalletIdRef.current === operation.walletId && walletGenerationRef.current === operation.generation
+  }
+
   useEffect(() => {
     const controller = new AbortController()
+    const operation = captureWalletOperation()
 
     Promise.all([
       importsApi.list(controller.signal),
@@ -124,6 +155,7 @@ export function FinancialImportsPage({ userEmail, isLoggingOut, onLogout }: Fina
       categoriesApi.list('expense', controller.signal),
     ])
       .then(([imports, incomes, expenses]) => {
+        if (controller.signal.aborted || !isCurrentWalletOperation(operation)) return
         setHistory(imports.items)
         setIncomeCategories(incomes.items)
         setExpenseCategories(expenses.items)
@@ -131,26 +163,30 @@ export function FinancialImportsPage({ userEmail, isLoggingOut, onLogout }: Fina
         setFormError('')
         setSuccessMessage('')
         setSelectedImport(null)
+        setDrafts({})
         setSelectedFile(null)
+        setPendingAction(null)
         if (fileInputRef.current) fileInputRef.current.value = ''
       })
       .catch((error: unknown) => {
-        if (error instanceof Error && error.name === 'AbortError') return
+        if ((error instanceof Error && error.name === 'AbortError') || !isCurrentWalletOperation(operation)) return
         setLoadError(getImportError(error, 'Não foi possível carregar o histórico de importações.'))
       })
       .finally(() => {
-        if (!controller.signal.aborted) setLoadedWalletId(activeWalletId)
+        if (!controller.signal.aborted && isCurrentWalletOperation(operation)) setLoadedWalletId(operation.walletId)
       })
 
     return () => controller.abort()
   }, [activeWalletId, reloadKey])
 
   useEffect(() => {
-    if (selectedImport?.status !== 'processing') return
+    if (selectedImport?.status !== 'processing' || loadedWalletId !== activeWalletId) return
     const controller = new AbortController()
+    const operation = captureWalletOperation()
     const timer = window.setTimeout(() => {
       importsApi.get(selectedImport.id, controller.signal)
         .then((session) => {
+          if (controller.signal.aborted || !isCurrentWalletOperation(operation)) return
           setSelectedImport(session)
           setDrafts(Object.fromEntries((session.items ?? []).map((item) => [item.id, createDraft(item)])))
           if (session.status !== 'processing') {
@@ -158,7 +194,7 @@ export function FinancialImportsPage({ userEmail, isLoggingOut, onLogout }: Fina
           }
         })
         .catch((error: unknown) => {
-          if (error instanceof Error && error.name === 'AbortError') return
+          if ((error instanceof Error && error.name === 'AbortError') || !isCurrentWalletOperation(operation)) return
           setFormError(getImportError(error, 'Não foi possível acompanhar o processamento.'))
         })
     }, 1500)
@@ -166,11 +202,15 @@ export function FinancialImportsPage({ userEmail, isLoggingOut, onLogout }: Fina
       controller.abort()
       window.clearTimeout(timer)
     }
-  }, [selectedImport])
+  }, [activeWalletId, loadedWalletId, selectedImport])
 
   const confirmableCount = useMemo(
     () => (selectedImport?.items ?? []).filter((item) => item.validationStatus === 'valid').length,
     [selectedImport?.items],
+  )
+  const hasPendingDraftChanges = useMemo(
+    () => (selectedImport?.items ?? []).some((item) => hasDraftChanged(item, drafts[item.id])),
+    [drafts, selectedImport?.items],
   )
   const isLoading = loadedWalletId !== activeWalletId
 
@@ -206,11 +246,13 @@ export function FinancialImportsPage({ userEmail, isLoggingOut, onLogout }: Fina
     const format = getFileFormat(selectedFile.name)
     if (!format) return
 
+    const operation = captureWalletOperation()
     setPendingAction('upload')
     setFormError('')
     setSuccessMessage('')
     try {
       const session = await importsApi.upload(selectedFile, format)
+      if (!isCurrentWalletOperation(operation)) return
       setSelectedImport(session)
       setDrafts(Object.fromEntries((session.items ?? []).map((item) => [item.id, createDraft(item)])))
       setHistory((current) => [session, ...current.filter((item) => item.id !== session.id)])
@@ -218,24 +260,28 @@ export function FinancialImportsPage({ userEmail, isLoggingOut, onLogout }: Fina
       if (fileInputRef.current) fileInputRef.current.value = ''
       setSuccessMessage('Arquivo recebido. Acompanhe o processamento e revise a prévia antes de confirmar.')
     } catch (error) {
+      if (!isCurrentWalletOperation(operation)) return
       setFormError(getImportError(error, 'Não foi possível enviar o arquivo. Tente novamente.'))
     } finally {
-      setPendingAction(null)
+      if (isCurrentWalletOperation(operation)) setPendingAction(null)
     }
   }
 
   async function openImport(importId: string) {
+    const operation = captureWalletOperation()
     setPendingAction(`open:${importId}`)
     setFormError('')
     setSuccessMessage('')
     try {
       const session = await importsApi.get(importId)
+      if (!isCurrentWalletOperation(operation)) return
       setSelectedImport(session)
       setDrafts(Object.fromEntries((session.items ?? []).map((item) => [item.id, createDraft(item)])))
     } catch (error) {
+      if (!isCurrentWalletOperation(operation)) return
       setFormError(getImportError(error, 'Não foi possível abrir esta importação.'))
     } finally {
-      setPendingAction(null)
+      if (isCurrentWalletOperation(operation)) setPendingAction(null)
     }
   }
 
@@ -252,6 +298,7 @@ export function FinancialImportsPage({ userEmail, isLoggingOut, onLogout }: Fina
       setFormError('Informe a data da movimentação antes de salvar.')
       return
     }
+    const operation = captureWalletOperation()
     setPendingAction(`item:${item.id}`)
     setFormError('')
     setSuccessMessage('')
@@ -262,49 +309,57 @@ export function FinancialImportsPage({ userEmail, isLoggingOut, onLogout }: Fina
         categoryId: draft.type === 'transfer' ? null : draft.categoryId,
         subcategoryId: draft.type === 'transfer' ? null : draft.subcategoryId,
       })
+      if (!isCurrentWalletOperation(operation)) return
       setSelectedImport((current) => current ? replaceSessionItem(current, updated) : current)
       setDrafts((current) => ({ ...current, [updated.id]: createDraft(updated) }))
       setSuccessMessage(`Movimentação ${item.sequence} atualizada na prévia.`)
     } catch (error) {
+      if (!isCurrentWalletOperation(operation)) return
       setFormError(getImportError(error, 'Não foi possível atualizar a movimentação.'))
     } finally {
-      setPendingAction(null)
+      if (isCurrentWalletOperation(operation)) setPendingAction(null)
     }
   }
 
   async function confirmImport() {
-    if (!selectedImport || confirmableCount === 0) return
+    if (!selectedImport || confirmableCount === 0 || hasPendingDraftChanges) return
     if (!window.confirm(`Confirmar ${confirmableCount} ${confirmableCount === 1 ? 'movimentação válida' : 'movimentações válidas'} desta importação?`)) return
+    const operation = captureWalletOperation()
     setPendingAction('confirm')
     setFormError('')
     setSuccessMessage('')
     try {
       const session = await importsApi.confirm(selectedImport.id)
+      if (!isCurrentWalletOperation(operation)) return
       setSelectedImport(session)
       setDrafts(Object.fromEntries((session.items ?? []).map((item) => [item.id, createDraft(item)])))
       setHistory((current) => current.map((item) => item.id === session.id ? session : item))
       setSuccessMessage(`${session.summary.imported} movimentações foram importadas com segurança.`)
     } catch (error) {
+      if (!isCurrentWalletOperation(operation)) return
       setFormError(getImportError(error, 'Não foi possível confirmar a importação. Nenhuma movimentação foi gravada parcialmente.'))
     } finally {
-      setPendingAction(null)
+      if (isCurrentWalletOperation(operation)) setPendingAction(null)
     }
   }
 
   async function undoImport(session: FinancialImportSession) {
     if (!window.confirm(`Desfazer a importação do arquivo ${session.fileName}?`)) return
+    const operation = captureWalletOperation()
     setPendingAction(`undo:${session.id}`)
     setFormError('')
     setSuccessMessage('')
     try {
       const undone = await importsApi.undo(session.id)
+      if (!isCurrentWalletOperation(operation)) return
       setHistory((current) => current.map((item) => item.id === undone.id ? undone : item))
       if (selectedImport?.id === undone.id) setSelectedImport(undone)
       setSuccessMessage('Importação desfeita. As movimentações criadas por ela foram removidas.')
     } catch (error) {
+      if (!isCurrentWalletOperation(operation)) return
       setFormError(getImportError(error, 'Não foi possível desfazer a importação. Verifique se alguma movimentação já foi alterada.'))
     } finally {
-      setPendingAction(null)
+      if (isCurrentWalletOperation(operation)) setPendingAction(null)
     }
   }
 
@@ -346,11 +401,11 @@ export function FinancialImportsPage({ userEmail, isLoggingOut, onLogout }: Fina
                   aria-label="Arquivo OFX ou CSV"
                   accept=".ofx,.csv,application/x-ofx,text/csv"
                   onChange={handleFileChange}
-                  disabled={pendingAction === 'upload' || isLoading}
+                  disabled={pendingAction !== null || isLoading}
                 />
                 <small>{selectedFile ? `${selectedFile.name} · ${formatFileSize(selectedFile.size)}` : 'O arquivo será processado temporariamente e não ficará armazenado.'}</small>
               </label>
-              <button className="imports-primary-button" type="submit" disabled={!selectedFile || pendingAction === 'upload' || isLoading}>
+              <button className="imports-primary-button" type="submit" disabled={!selectedFile || pendingAction !== null || isLoading}>
                 {pendingAction === 'upload' ? 'Enviando arquivo…' : 'Enviar e preparar prévia'}
               </button>
             </form>
@@ -373,6 +428,7 @@ export function FinancialImportsPage({ userEmail, isLoggingOut, onLogout }: Fina
                     expenseCategories={expenseCategories}
                     pendingAction={pendingAction}
                     confirmableCount={confirmableCount}
+                    hasPendingDraftChanges={hasPendingDraftChanges}
                     onDraftChange={updateDraft}
                     onSaveItem={(item) => void saveItem(item)}
                     onConfirm={() => void confirmImport()}
@@ -454,6 +510,7 @@ function ImportPreview({
   expenseCategories,
   pendingAction,
   confirmableCount,
+  hasPendingDraftChanges,
   onDraftChange,
   onSaveItem,
   onConfirm,
@@ -465,6 +522,7 @@ function ImportPreview({
   expenseCategories: Category[]
   pendingAction: string | null
   confirmableCount: number
+  hasPendingDraftChanges: boolean
   onDraftChange: (itemId: string, changes: Partial<FinancialImportItemInput>) => void
   onSaveItem: (item: FinancialImportItem) => void
   onConfirm: () => void
@@ -498,6 +556,9 @@ function ImportPreview({
             : `${confirmableCount} ${confirmableCount === 1 ? 'movimentação válida será importada' : 'movimentações válidas serão importadas'}. `}
           Itens sem categoria ({session.summary.uncategorized}) ficam fora até receberem uma categoria. Itens inválidos ({session.summary.invalid}) ou duplicados ({session.summary.duplicate}) não serão importados.
         </p>
+      )}
+      {session.status === 'preview' && hasPendingDraftChanges && (
+        <p className="imports-unsaved-note" role="status">Existem ajustes não salvos. Salve cada movimentação alterada antes de confirmar a importação.</p>
       )}
 
       {session.status === 'processing' ? (
@@ -575,7 +636,7 @@ function ImportPreview({
 
       <div className="imports-preview-actions">
         {session.status === 'preview' && (
-          <button className="imports-primary-button" type="button" onClick={onConfirm} disabled={pendingAction !== null || confirmableCount === 0}>
+          <button className="imports-primary-button" type="button" onClick={onConfirm} disabled={pendingAction !== null || confirmableCount === 0 || hasPendingDraftChanges}>
             {pendingAction === 'confirm' ? 'Confirmando importação…' : `Confirmar ${confirmableCount} ${confirmableCount === 1 ? 'movimentação' : 'movimentações'}`}
           </button>
         )}

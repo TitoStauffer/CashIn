@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { categoriesApi } from '../categories/categoriesApi'
@@ -7,6 +7,14 @@ import { walletApi } from '../wallets/walletApi'
 import { FinancialImportsPage } from './FinancialImportsPage'
 import type { FinancialImportSession } from './importsApi'
 import { importsApi } from './importsApi'
+
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>((resolvePromise) => {
+    resolve = resolvePromise
+  })
+  return { promise, resolve }
+}
 
 const previewSession: FinancialImportSession = {
   id: 'import-1',
@@ -71,6 +79,7 @@ async function renderPage() {
   )
   await screen.findByRole('heading', { name: 'Importar arquivo financeiro' })
   await waitFor(() => expect(importsApi.list).toHaveBeenCalled())
+  await waitFor(() => expect(screen.getByLabelText('Arquivo OFX ou CSV')).toBeEnabled())
   return result
 }
 
@@ -158,12 +167,17 @@ describe('FinancialImportsPage', () => {
     await user.selectOptions(within(firstItem).getByLabelText('Subcategoria'), 'income-subcategory')
     await user.clear(within(firstItem).getByLabelText('Descrição'))
     await user.type(within(firstItem).getByLabelText('Descrição'), 'Salário mensal')
+    expect(screen.getByRole('button', { name: 'Confirmar 1 movimentação' })).toBeDisabled()
+    expect(screen.getByText(/Existem ajustes não salvos/)).toBeVisible()
     await user.click(within(firstItem).getByRole('button', { name: 'Salvar ajuste' }))
 
     await waitFor(() => expect(importsApi.updateItem).toHaveBeenCalledWith('import-1', 'item-1', expect.objectContaining({
       description: 'Salário mensal', categoryId: 'income-category', subcategoryId: 'income-subcategory',
     })))
-    await user.click(screen.getByRole('button', { name: 'Confirmar 2 movimentações' }))
+    const confirmButton = screen.getByRole('button', { name: 'Confirmar 2 movimentações' })
+    expect(confirmButton).toBeEnabled()
+    expect(screen.queryByText(/Existem ajustes não salvos/)).not.toBeInTheDocument()
+    await user.click(confirmButton)
     await waitFor(() => expect(importsApi.confirm).toHaveBeenCalledWith('import-1'))
     expect(await screen.findByText(/2 movimentações foram importadas/)).toBeVisible()
   })
@@ -210,5 +224,79 @@ describe('FinancialImportsPage', () => {
     await user.selectOptions(screen.getByRole('combobox', { name: /Carteira ativa/ }), 'wallet-shared')
     await waitFor(() => expect(importsApi.list).toHaveBeenCalledTimes(2))
     expect(screen.getByText((_, element) => Boolean(element?.classList.contains('imports-wallet') && element.textContent === 'Carteira: Família'))).toBeVisible()
+  })
+
+  it('discards a delayed upload response after the active wallet changes', async () => {
+    const upload = deferred<FinancialImportSession>()
+    vi.mocked(importsApi.upload).mockReturnValueOnce(upload.promise)
+    const user = userEvent.setup()
+    await renderPage()
+    const file = new File(['OFXDATA'], 'conta-antiga.ofx', { type: 'application/x-ofx' })
+    await user.upload(screen.getByLabelText('Arquivo OFX ou CSV'), file)
+    await user.click(screen.getByRole('button', { name: 'Enviar e preparar prévia' }))
+    await waitFor(() => expect(importsApi.upload).toHaveBeenCalledWith(file, 'ofx'))
+
+    await user.selectOptions(screen.getByRole('combobox', { name: /Carteira ativa/ }), 'wallet-shared')
+    await waitFor(() => expect(importsApi.list).toHaveBeenCalledTimes(2))
+    await act(async () => {
+      upload.resolve({ ...previewSession, fileName: 'conta-antiga.ofx' })
+      await upload.promise
+    })
+
+    expect(screen.queryByText(/Arquivo recebido/)).not.toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'conta-antiga.ofx' })).not.toBeInTheDocument()
+    expect(screen.getByText((_, element) => Boolean(element?.classList.contains('imports-wallet') && element.textContent === 'Carteira: Família'))).toBeVisible()
+  })
+
+  it('discards delayed import details after the active wallet changes', async () => {
+    const details = deferred<FinancialImportSession>()
+    vi.mocked(importsApi.list).mockResolvedValueOnce({ items: [{ ...previewSession, items: undefined }] })
+    vi.mocked(importsApi.get).mockReturnValueOnce(details.promise)
+    const user = userEvent.setup()
+    await renderPage()
+    await user.click(await screen.findByRole('button', { name: 'Ver detalhes' }))
+    await waitFor(() => expect(importsApi.get).toHaveBeenCalledWith('import-1'))
+
+    await user.selectOptions(screen.getByRole('combobox', { name: /Carteira ativa/ }), 'wallet-shared')
+    await waitFor(() => expect(importsApi.list).toHaveBeenCalledTimes(2))
+    await act(async () => {
+      details.resolve(previewSession)
+      await details.promise
+    })
+
+    expect(screen.queryByRole('heading', { name: 'extrato.ofx' })).not.toBeInTheDocument()
+    expect(screen.queryByText('Movimentação 1')).not.toBeInTheDocument()
+    expect(screen.getByText((_, element) => Boolean(element?.classList.contains('imports-wallet') && element.textContent === 'Carteira: Família'))).toBeVisible()
+  })
+
+  it('shows action errors while the user remains in the same wallet', async () => {
+    vi.mocked(importsApi.list).mockResolvedValueOnce({ items: [{ ...previewSession, items: undefined }] })
+    vi.mocked(importsApi.upload).mockRejectedValueOnce(new Error('upload failed'))
+    vi.mocked(importsApi.get).mockRejectedValueOnce(new Error('open failed'))
+    const user = userEvent.setup()
+    await renderPage()
+    const file = new File(['OFXDATA'], 'extrato.ofx', { type: 'application/x-ofx' })
+    await user.upload(screen.getByLabelText('Arquivo OFX ou CSV'), file)
+    await user.click(screen.getByRole('button', { name: 'Enviar e preparar prévia' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('Não foi possível enviar o arquivo')
+
+    await user.click(screen.getByRole('button', { name: 'Ver detalhes' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('Não foi possível abrir esta importação')
+  })
+
+  it('keeps the preview unchanged when saving an adjustment fails', async () => {
+    vi.mocked(importsApi.list).mockResolvedValueOnce({ items: [{ ...previewSession, items: undefined }] })
+    vi.mocked(importsApi.get).mockResolvedValueOnce(previewSession)
+    vi.mocked(importsApi.updateItem).mockRejectedValueOnce(new Error('update failed'))
+    const user = userEvent.setup()
+    await renderPage()
+    await user.click(await screen.findByRole('button', { name: 'Ver detalhes' }))
+    const item = (await screen.findByText('Movimentação 1')).closest('li') as HTMLElement
+    await user.selectOptions(within(item).getByLabelText('Categoria'), 'income-category')
+    await user.click(within(item).getByRole('button', { name: 'Salvar ajuste' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Não foi possível atualizar a movimentação')
+    expect(screen.getByRole('button', { name: 'Confirmar 1 movimentação' })).toBeDisabled()
+    expect(screen.getByText(/Existem ajustes não salvos/)).toBeVisible()
   })
 })
