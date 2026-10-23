@@ -9,6 +9,7 @@ import { CreditCardsPage } from './creditCards/CreditCardsPage'
 import { IncomesPage } from './incomes/IncomesPage'
 import { GoalsPage } from './goals/GoalsPage'
 import { DashboardPage } from './dashboard/DashboardPage'
+import { FinancialImportsPage } from './imports/FinancialImportsPage'
 import { WalletProvider } from './wallets/WalletContext'
 import { WalletInvitationPage } from './wallets/WalletInvitationPage'
 import { WalletAccessRequestPage } from './wallets/WalletAccessRequestPage'
@@ -16,7 +17,7 @@ import { WalletSharingPage } from './wallets/WalletSharingPage'
 import { getPendingInviteToken, storePendingInviteToken } from './wallets/walletApi'
 import './App.css'
 
-type Page = 'login' | 'register' | 'verify-email' | 'wallet-invite' | 'wallet-access-request' | 'wallet-sharing' | 'dashboard' | 'categories' | 'incomes' | 'expenses' | 'goals' | 'payment-methods' | 'credit-cards'
+type Page = 'login' | 'register' | 'verify-email' | 'wallet-invite' | 'wallet-access-request' | 'wallet-sharing' | 'dashboard' | 'categories' | 'incomes' | 'expenses' | 'goals' | 'payment-methods' | 'credit-cards' | 'imports'
 const pendingVerifications = new Map<string, Promise<unknown>>()
 const passwordPolicyMessage =
   'A senha deve ter pelo menos 8 caracteres, incluindo uma letra maiúscula, uma letra minúscula, um número e um caractere especial.'
@@ -76,6 +77,7 @@ function getPage(): Page {
   if (path.endsWith('/categories')) return 'categories'
   if (path.endsWith('/payment-methods')) return 'payment-methods'
   if (path.endsWith('/credit-cards')) return 'credit-cards'
+  if (path.endsWith('/imports')) return 'imports'
   if (path.endsWith('/incomes')) return 'incomes'
   if (path.endsWith('/expenses')) return 'expenses'
   if (path.endsWith('/goals')) return 'goals'
@@ -280,6 +282,14 @@ function App() {
     return (
       <WalletProvider userId={user.id}>
         <GoalsPage userEmail={user.email} isLoggingOut={isSubmitting} onLogout={handleLogout} />
+      </WalletProvider>
+    )
+  }
+
+  if (!checkingSession && user && page === 'imports') {
+    return (
+      <WalletProvider userId={user.id}>
+        <FinancialImportsPage userEmail={user.email} isLoggingOut={isSubmitting} onLogout={handleLogout} />
       </WalletProvider>
     )
   }
