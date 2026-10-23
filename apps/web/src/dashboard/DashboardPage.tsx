@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
-import { DashboardApiError, dashboardApi } from './dashboardApi'
+import { dashboardApi } from './dashboardApi'
+import { getApiErrorFeedback } from '../feedback/apiErrorFeedback'
 import type { FinancialSummary } from './dashboardApi'
 import type { InvestmentGoal } from '../goals/goalsApi'
 import { FinancialSidebar } from '../layout/FinancialSidebar'
@@ -18,14 +19,7 @@ type DashboardData = { summary: FinancialSummary; previous: FinancialSummary; go
 type LoadState = { key: string; data?: DashboardData; error?: string }
 
 function getErrorMessage(error: unknown) {
-  if (error instanceof DashboardApiError) {
-    if (error.status === 401 || error.status === 403) {
-      window.location.assign('/login')
-      return 'Sua sessão expirou. Entre novamente para continuar.'
-    }
-    if (error.message.trim()) return error.message
-  }
-  return 'Não foi possível carregar a visão geral. Verifique sua conexão e tente novamente.'
+  return getApiErrorFeedback(error, 'Não foi possível carregar a visão geral. Verifique sua conexão e tente novamente.')
 }
 
 export function DashboardPage({ userEmail, isLoggingOut, onLogout }: DashboardPageProps) {

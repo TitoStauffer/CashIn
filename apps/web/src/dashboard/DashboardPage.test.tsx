@@ -166,13 +166,22 @@ describe('DashboardPage', () => {
     expect(screen.getByLabelText('Selecionar mês e ano')).toHaveValue('2026-09')
   })
 
-  it('displays API errors and recovers from a failed goals request', async () => {
-    vi.mocked(dashboardApi.goals).mockRejectedValueOnce(new DashboardApiError('Serviço temporariamente indisponível.', 503))
+  it('hides internal API details and recovers from a failed goals request', async () => {
+    vi.mocked(dashboardApi.goals).mockRejectedValueOnce(new DashboardApiError('Internal synthetic database detail', 503))
     await renderPage()
-    expect(await screen.findByRole('alert')).toHaveTextContent('Serviço temporariamente indisponível.')
+    expect(await screen.findByRole('alert')).toHaveTextContent('Não foi possível carregar a visão geral.')
+    expect(screen.queryByText('Internal synthetic database detail')).not.toBeInTheDocument()
     vi.mocked(dashboardApi.goals).mockRejectedValueOnce(new DashboardApiError('', 500))
     await userEvent.setup().click(screen.getByRole('button', { name: 'Tentar novamente' }))
     expect(await screen.findByRole('alert')).toHaveTextContent('Não foi possível carregar a visão geral.')
+  })
+
+  it('explains denied wallet permission without claiming the session expired', async () => {
+    vi.mocked(dashboardApi.summary).mockRejectedValueOnce(new DashboardApiError('Internal authorization detail', 403))
+    await renderPage()
+    expect(await screen.findByRole('alert')).toHaveTextContent('Você não tem permissão para concluir esta ação nesta carteira.')
+    expect(screen.queryByText(/Sua sessão expirou/)).not.toBeInTheDocument()
+    expect(screen.queryByText('Internal authorization detail')).not.toBeInTheDocument()
   })
 
   it('hides old wallet data immediately and ignores a late success from an aborted wallet request', async () => {
