@@ -32,7 +32,7 @@ export interface AgentCheckEvidence {
 }
 
 const MAX_SOURCE_FILES = 32;
-const MAX_DEPENDENCY_FILES = 20;
+const MAX_DEPENDENCY_FILES = 64;
 const MAX_SOURCE_BYTES = 500_000;
 
 export async function loadAgentReviewInputs(
