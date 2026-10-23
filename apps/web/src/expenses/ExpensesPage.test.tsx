@@ -61,6 +61,7 @@ describe('ExpensesPage currency input', () => {
     expect(screen.getByRole('alert')).toHaveTextContent('duas casas decimais')
     await user.click(screen.getByRole('button', { name: 'Registrar despesa' }))
     expect(expensesApi.create).not.toHaveBeenCalled()
+    expect(screen.getAllByRole('alert')).toHaveLength(1)
 
     fireEvent.change(amount, { target: { value: '1234,56' } })
     expect(amount).toHaveValue('1.234,56')
@@ -86,7 +87,7 @@ describe('ExpensesPage currency input', () => {
     vi.mocked(expensesApi.list).mockRejectedValueOnce(new Error('offline'))
     await renderPage()
 
-    expect(await screen.findByRole('alert')).toHaveTextContent('Não foi possível conectar ao serviço.')
+    expect(await screen.findByRole('alert')).toHaveTextContent('Não foi possível carregar as despesas.')
     await user.click(screen.getByRole('button', { name: 'Tentar novamente' }))
 
     expect(await screen.findByText('Aluguel')).toBeVisible()
@@ -112,6 +113,17 @@ describe('ExpensesPage currency input', () => {
     expect(screen.getByRole('button', { name: 'Salvando…' })).toBeVisible()
     createRequest.resolve(expense)
     expect(await screen.findByRole('status')).toHaveTextContent('Despesa registrada.')
+  })
+
+  it('explains the expense-category prerequisite even when the month already has records', async () => {
+    vi.mocked(categoriesApi.list).mockResolvedValueOnce({ items: [] })
+    await renderPage()
+
+    const prerequisite = await screen.findByRole('note')
+    expect(prerequisite).toHaveTextContent('Para registrar uma despesa, primeiro')
+    expect(prerequisite.querySelector('a')).toHaveAttribute('href', '/categories')
+    expect(screen.getByRole('button', { name: /Nova despesa/ })).toBeDisabled()
+    expect(await screen.findByText('Aluguel')).toBeVisible()
   })
 
   it('associates an optional payment method when creating an expense and shows its historical label', async () => {
@@ -157,5 +169,42 @@ describe('ExpensesPage currency input', () => {
     await user.selectOptions(screen.getByLabelText('Cartão de crédito *'), 'card-1')
     await user.click(screen.getByRole('button', { name: 'Registrar despesa' }))
     await waitFor(() => expect(expensesApi.create).toHaveBeenCalledWith(expect.objectContaining({ paymentMethodId: 'credit', creditCardId: 'card-1' })))
+  })
+
+  it('explains how to continue when no active card is available for a credit purchase', async () => {
+    vi.mocked(paymentMethodsApi.list).mockResolvedValueOnce({ items: [{ id: 'credit', name: 'Crédito', nature: 'credit_card', isActive: true }] })
+    const user = userEvent.setup()
+    await renderPage()
+    await user.click(await screen.findByRole('button', { name: /Nova despesa/ }))
+    await user.selectOptions(screen.getByLabelText(/Forma de pagamento/), 'credit')
+    expect(screen.getByLabelText('Cartão de crédito *')).toHaveAccessibleDescription(/Cadastre e ative um cartão/)
+    expect(screen.getByText(/Cadastre e ative um cartão/).querySelector('a')).toHaveAttribute('href', '/credit-cards')
+  })
+
+  it('identifies deletion and preserves its success if refreshing the list fails', async () => {
+    const request = deferred<void>()
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    vi.spyOn(expensesApi, 'remove').mockReturnValueOnce(request.promise)
+    vi.mocked(expensesApi.list).mockResolvedValueOnce({ items: [expense] }).mockRejectedValueOnce(new Error('offline'))
+    const user = userEvent.setup()
+    await renderPage()
+    await user.click(await screen.findByRole('button', { name: 'Editar despesa Aluguel' }))
+    await user.click(screen.getByRole('button', { name: 'Excluir despesa Aluguel' }))
+    expect(screen.getByRole('note')).toHaveTextContent('Excluindo a despesa.')
+    request.resolve()
+    expect(await screen.findByRole('status')).toHaveTextContent('Despesa excluída.')
+    expect(await screen.findByRole('alert')).toHaveTextContent('A alteração da despesa foi concluída, mas não foi possível atualizar a lista')
+    expect(screen.queryByLabelText('Valor *')).not.toBeInTheDocument()
+  })
+
+  it('uses safe validation feedback instead of server payloads', async () => {
+    vi.mocked(expensesApi.create).mockRejectedValueOnce(Object.assign(new Error('server-only-detail'), { status: 400 }))
+    const user = userEvent.setup()
+    await renderPage()
+    await user.click(await screen.findByRole('button', { name: /Nova despesa/ }))
+    fireEvent.change(screen.getByLabelText('Valor *'), { target: { value: '100,00' } })
+    await user.click(screen.getByRole('button', { name: 'Registrar despesa' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('Confira os dados informados e tente novamente.')
+    expect(screen.queryByText('server-only-detail')).not.toBeInTheDocument()
   })
 })

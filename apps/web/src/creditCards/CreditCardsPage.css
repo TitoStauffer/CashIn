@@ -14,6 +14,7 @@
 .credit-cards-alert { margin: 0 0 15px; padding: 12px 14px; border: 1px solid; border-radius: 8px; font-size: 12px; line-height: 1.6; }
 .credit-cards-alert--error { border-color: #f0d4d0; background: #fff8f6; color: #96483f; }
 .credit-cards-alert--success { border-color: #d2e6d5; background: #f3faf3; color: #326c45; }
+.credit-cards-alert--pending { border-color: #d8e5d9; background: #f8faf7; color: #5e6e62; }
 .credit-cards-loading { min-height: 190px; display: grid; place-items: center; color: #748176; font-size: 12px; }
 .credit-cards-empty { min-height: 235px; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 30px 22px; border: 1px solid #e5ebe4; border-radius: 14px; background: rgb(255 255 255 / 84%); text-align: center; }
 .credit-cards-empty > span { width: 40px; height: 40px; display: grid; place-items: center; margin-bottom: 14px; border-radius: 50%; background: #eaf4eb; color: #39764c; font-size: 18px; }

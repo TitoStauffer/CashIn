@@ -1,9 +1,10 @@
+import { getApiErrorFeedback } from '../feedback/apiErrorFeedback'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import type { Category } from '../categories/categoriesApi'
 import { categoriesApi } from '../categories/categoriesApi'
 import type { Expense, ExpenseInput } from './expensesApi'
-import { ExpenseApiError, expensesApi } from './expensesApi'
+import { expensesApi } from './expensesApi'
 import { getPaymentMethodNatureLabel, paymentMethodsApi } from '../paymentMethods/paymentMethodsApi'
 import type { PaymentMethod } from '../paymentMethods/paymentMethodsApi'
 import { creditCardsApi } from '../creditCards/creditCardsApi'
@@ -36,20 +37,11 @@ function formatAmount(amount: string) {
 }
 
 function getErrorMessage(error: unknown, action: 'load' | 'save' | 'delete') {
-  if (!(error instanceof ExpenseApiError)) {
-    return 'Não foi possível conectar ao serviço. Verifique sua conexão e tente novamente.'
-  }
-  if (error.status === 401 || error.status === 403) {
-    window.location.assign('/login')
-    return 'Sua sessão expirou. Entre novamente para continuar.'
-  }
-  if (error.message.trim()) return error.message
-  if (error.status === 400) return 'Confira os dados informados e tente novamente.'
-  if (error.status === 404) return 'Esta despesa não foi encontrada. Atualize a lista e tente novamente.'
-  if (action === 'delete' && error.status === 409) return 'Esta despesa não pode ser excluída agora.'
-  return action === 'load'
-    ? 'Não foi possível carregar as despesas. Tente novamente.'
-    : 'Não foi possível concluir a operação. Tente novamente.'
+  const actionLabel = { load: 'carregar as despesas', save: 'salvar a despesa', delete: 'excluir a despesa' }[action]
+  return getApiErrorFeedback(error, `Não foi possível ${actionLabel}. Verifique sua conexão e tente novamente.`, {
+    404: 'Esta despesa não foi encontrada. Atualize a lista e tente novamente.',
+    409: 'Esta despesa não pode ser alterada agora. Atualize a lista e confira os dados antes de tentar novamente.',
+  })
 }
 
 type ExpensesPageProps = {
@@ -67,7 +59,9 @@ export function ExpensesPage({ userEmail, isLoggingOut, onLogout }: ExpensesPage
   const [expenses, setExpenses] = useState<Expense[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [loadedWalletId, setLoadedWalletId] = useState<string | null>(null)
-  const [isSaving, setIsSaving] = useState(false)
+  const [pendingAction, setPendingAction] = useState<'save' | 'delete' | null>(null)
+  const isSaving = pendingAction !== null
+  const pendingMessage = pendingAction ? {"save":"Salvando a despesa.","delete":"Excluindo a despesa."}[pendingAction] : ''
   const [loadError, setLoadError] = useState('')
   const [formError, setFormError] = useState('')
   const [successMessage, setSuccessMessage] = useState('')
@@ -87,6 +81,7 @@ export function ExpensesPage({ userEmail, isLoggingOut, onLogout }: ExpensesPage
       expensesApi.list(range.from, range.to, controller.signal),
     ])
       .then(([categoryResponse, paymentMethodResponse, creditCardResponse, expenseResponse]) => {
+        if (controller.signal.aborted) return
         if (lastLoadedWalletId.current !== activeWalletId) {
           setEditor(null)
           setAmountInput('')
@@ -103,7 +98,7 @@ export function ExpensesPage({ userEmail, isLoggingOut, onLogout }: ExpensesPage
         setLoadError('')
       })
       .catch((error: unknown) => {
-        if (error instanceof Error && error.name === 'AbortError') return
+        if (controller.signal.aborted || error instanceof Error && error.name === 'AbortError') return
         setLoadedWalletId(activeWalletId)
         setLoadError(getErrorMessage(error, 'load'))
       })
@@ -170,8 +165,8 @@ export function ExpensesPage({ userEmail, isLoggingOut, onLogout }: ExpensesPage
       const { items } = await expensesApi.list(range.from, range.to)
       setExpenses(items)
       setLoadError('')
-    } catch (error) {
-      setLoadError(getErrorMessage(error, 'load'))
+    } catch {
+      setLoadError('A alteração da despesa foi concluída, mas não foi possível atualizar a lista. Use Tentar novamente para consultar os registros.')
     }
   }
 
@@ -179,7 +174,7 @@ export function ExpensesPage({ userEmail, isLoggingOut, onLogout }: ExpensesPage
     event.preventDefault()
     if (!editor) return
     if (amountInputInvalid) {
-      setFormError('Use apenas números, até duas casas decimais e respeite o limite de R$ 999.999.999.999,99.')
+      setFormError('')
       return
     }
     const amount = parseBrazilianCurrencyInput(amountInput)
@@ -207,7 +202,7 @@ export function ExpensesPage({ userEmail, isLoggingOut, onLogout }: ExpensesPage
       ...(selectedPaymentMethod?.nature === 'credit_card' ? { creditCardId: editor.creditCardId } : {}),
     }
     resetMessages()
-    setIsSaving(true)
+    setPendingAction('save')
     try {
       if (editor.expenseId) {
         await expensesApi.update(editor.expenseId, input)
@@ -223,23 +218,23 @@ export function ExpensesPage({ userEmail, isLoggingOut, onLogout }: ExpensesPage
     } catch (error) {
       setFormError(getErrorMessage(error, 'save'))
     } finally {
-      setIsSaving(false)
+      setPendingAction(null)
     }
   }
 
   async function handleDelete(expense: Expense) {
     if (!window.confirm(`Excluir a despesa de ${formatAmount(expense.amount)} em ${formatDate(expense.date)}?`)) return
     resetMessages()
-    setIsSaving(true)
+    setPendingAction('delete')
     try {
       await expensesApi.remove(expense.id)
-      setSuccessMessage('Despesa excluída.')
       if (editor?.expenseId === expense.id) closeEditor()
+      setSuccessMessage('Despesa excluída.')
       await reloadExpenses()
     } catch (error) {
       setFormError(getErrorMessage(error, 'delete'))
     } finally {
-      setIsSaving(false)
+      setPendingAction(null)
     }
   }
 
@@ -269,15 +264,23 @@ export function ExpensesPage({ userEmail, isLoggingOut, onLogout }: ExpensesPage
               <h1 id="expenses-title">Despesas</h1>
               <p>Registre e acompanhe o dinheiro que saiu no período.</p>
             </div>
-            <button className="expenses-primary-button" type="button" onClick={startCreate} disabled={isSaving || categories.length === 0}>
+            <button className="expenses-primary-button" type="button" onClick={startCreate} disabled={isSaving || isLoading || isWalletLoading || !!loadError || categories.length === 0} aria-describedby={categories.length === 0 && !isLoading && !isWalletLoading && !loadError ? 'expense-category-prerequisite' : undefined}>
               <span aria-hidden="true">＋</span> Nova despesa
             </button>
           </div>
 
+          {categories.length === 0 && !isLoading && !isWalletLoading && !loadError && (
+            <p className="expenses-prerequisite" id="expense-category-prerequisite" role="note">
+              Para registrar uma despesa, primeiro <a href="/categories">cadastre uma categoria de despesa</a> nesta carteira.
+            </p>
+          )}
+
+          {isSaving && <p className="expenses-operation-status" role="note" aria-live="polite">{pendingMessage} Aguarde a confirmação antes de iniciar outra ação.</p>}
+
           <MonthYearSelector month={month} onMonthChange={selectMonth} />
 
-          {formError && <p className="expenses-alert expenses-alert--error" role="alert">{formError}</p>}
-          {successMessage && <p className="expenses-alert expenses-alert--success" role="status">{successMessage}</p>}
+          {!isWalletLoading && formError && <p className="expenses-alert expenses-alert--error" role="alert">{formError}</p>}
+          {!isWalletLoading && successMessage && <p className="expenses-alert expenses-alert--success" role="status">{successMessage}</p>}
 
           {editor && !isWalletLoading && (
             <form className="expense-editor" onSubmit={handleSave} aria-labelledby="expense-editor-title">
@@ -333,10 +336,12 @@ export function ExpensesPage({ userEmail, isLoggingOut, onLogout }: ExpensesPage
                     value={editor.subcategoryId}
                     onChange={(event) => setEditor({ ...editor, subcategoryId: event.target.value })}
                     disabled={!editor.categoryId || availableSubcategories.length === 0}
+                    aria-describedby="expense-subcategory-hint"
                   >
                     <option value="">Sem subcategoria</option>
                     {availableSubcategories.map((subcategory) => <option key={subcategory.id} value={subcategory.id}>{subcategory.name}</option>)}
                   </select>
+                  <small id="expense-subcategory-hint">{!editor.categoryId ? 'Selecione uma categoria para consultar as subcategorias.' : availableSubcategories.length === 0 ? 'Esta categoria não possui subcategorias; este campo é opcional.' : 'Escolha uma subcategoria ou mantenha sem subcategoria.'}</small>
                 </div>
                 <div className="expense-field">
                   <label htmlFor="expense-payment-method">Forma de pagamento <span>(opcional)</span></label>
@@ -359,13 +364,14 @@ export function ExpensesPage({ userEmail, isLoggingOut, onLogout }: ExpensesPage
                       <option key={method.id} value={method.id}>{method.name} · {getPaymentMethodNatureLabel(method.nature)}</option>
                     ))}
                   </select>
-                  {paymentMethods.length === 0 && <small>Cadastre formas de pagamento em <a href="/payment-methods">Formas de pagamento</a>.</small>}
+                  {paymentMethods.filter((method) => method.isActive).length === 0 && <small>Não há formas de pagamento ativas. Cadastre ou ative uma em <a href="/payment-methods">Formas de pagamento</a>, ou mantenha este campo opcional sem preenchimento.</small>}
                 </div>
                 {paymentMethods.find((method) => method.id === editor.paymentMethodId)?.nature === 'credit_card' && (
                   <div className="expense-field">
                     <label htmlFor="expense-credit-card">Cartão de crédito *</label>
                     <select
                       id="expense-credit-card"
+                      aria-describedby={creditCards.some((card) => card.isActive) ? undefined : 'expense-credit-card-hint'}
                       value={editor.creditCardId}
                       onChange={(event) => setEditor({ ...editor, creditCardId: event.target.value })}
                       required
@@ -378,7 +384,7 @@ export function ExpensesPage({ userEmail, isLoggingOut, onLogout }: ExpensesPage
                         <option key={card.id} value={card.id}>{card.nickname}</option>
                       ))}
                     </select>
-                    {creditCards.filter((card) => card.isActive).length === 0 && <small>Cadastre e ative um cartão em <a href="/credit-cards">Cartões e faturas</a>.</small>}
+                    {creditCards.filter((card) => card.isActive).length === 0 && <small id="expense-credit-card-hint">Cadastre e ative um cartão em <a href="/credit-cards">Cartões e faturas</a> para registrar uma nova compra no crédito.</small>}
                   </div>
                 )}
                 <div className="expense-field expense-field--wide">
@@ -396,7 +402,7 @@ export function ExpensesPage({ userEmail, isLoggingOut, onLogout }: ExpensesPage
               <div className="expense-editor__actions">
                 <button className="expenses-secondary-button" type="button" onClick={closeEditor} disabled={isSaving}>Cancelar</button>
                 <button className="expenses-primary-button" type="submit" disabled={isSaving || categories.length === 0}>
-                  {isSaving ? 'Salvando…' : editor.expenseId ? 'Salvar alterações' : 'Registrar despesa'}
+                  {isSaving ? pendingAction === 'delete' ? 'Excluindo…' : 'Salvando…' : editor.expenseId ? 'Salvar alterações' : 'Registrar despesa'}
                 </button>
               </div>
             </form>
@@ -416,8 +422,7 @@ export function ExpensesPage({ userEmail, isLoggingOut, onLogout }: ExpensesPage
               <span className="expenses-state-icon" aria-hidden="true">↗</span>
               <h2>Nenhuma despesa neste mês</h2>
               <p>Quando você registrar uma despesa, ela aparecerá aqui para facilitar o acompanhamento do período.</p>
-              <button type="button" className="expenses-secondary-button" onClick={startCreate} disabled={categories.length === 0}>Registrar primeira despesa</button>
-              {categories.length === 0 && <p className="expenses-state-note">Antes, crie uma categoria de despesa em <a href="/categories">Categorias</a>.</p>}
+              <button type="button" className="expenses-secondary-button" onClick={startCreate} disabled={isSaving || categories.length === 0} aria-describedby={categories.length === 0 ? 'expense-category-prerequisite' : undefined}>Registrar primeira despesa</button>
             </div>
           ) : (
             <>

@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import type { Category, CategoryNature } from './categoriesApi'
-import { CategoryApiError, categoriesApi } from './categoriesApi'
+import { categoriesApi } from './categoriesApi'
+import { getApiErrorFeedback } from '../feedback/apiErrorFeedback'
 import { FinancialSidebar } from '../layout/FinancialSidebar'
 import { useWallet } from '../wallets/useWallet'
 import './CategoriesPage.css'
@@ -35,34 +36,20 @@ function normalizeName(value: string) {
 }
 
 function getErrorMessage(error: unknown, action?: MutationAction) {
-  if (!(error instanceof CategoryApiError)) {
-    return 'Não foi possível conectar ao serviço. Verifique sua conexão e tente novamente.'
+  const actionLabel = action ? {
+    'save-category': 'salvar a categoria', 'delete-category': 'excluir a categoria',
+    'save-subcategory': 'salvar a subcategoria', 'delete-subcategory': 'excluir a subcategoria',
+  }[action] : 'carregar as categorias'
+  const conflicts = {
+    'delete-category': 'A categoria ou uma de suas subcategorias está associada a movimentos ou metas. A exclusão foi recusada e nenhum registro financeiro foi removido. Você pode editar o nome da categoria.',
+    'delete-subcategory': 'Esta subcategoria está associada a movimentos ou metas. A exclusão foi recusada e nenhum registro financeiro foi removido. Você pode editar o nome da subcategoria.',
+    'save-category': 'Já existe uma categoria com esse nome para esta natureza. Escolha outro nome.',
+    'save-subcategory': 'Já existe uma subcategoria com esse nome nesta categoria. Escolha outro nome.',
   }
-
-  if (error.status === 401 || error.status === 403) {
-    window.location.assign('/login')
-    return 'Sua sessão expirou. Entre novamente para continuar.'
-  }
-
-  if (error.status === 409) {
-    if (action === 'delete-category') {
-      return 'A categoria ou uma de suas subcategorias está associada a movimentos ou metas. A exclusão foi recusada e nenhum registro financeiro foi removido.'
-    }
-    if (action === 'delete-subcategory') {
-      return 'Esta subcategoria está associada a movimentos ou metas. A exclusão foi recusada e nenhum registro financeiro foi removido.'
-    }
-    if (action === 'save-category') {
-      return 'Já existe uma categoria com esse nome para esta natureza.'
-    }
-    if (action === 'save-subcategory') {
-      return 'Já existe uma subcategoria com esse nome nesta categoria.'
-    }
-    return error.message.trim() || 'A operação não pôde ser concluída por causa de um conflito com os dados existentes.'
-  }
-
-  if (error.message.trim()) return error.message
-  if (error.status === 400) return 'Confira os dados informados e tente novamente.'
-  return 'Ocorreu um erro ao processar sua solicitação. Tente novamente.'
+  return getApiErrorFeedback(error, `Não foi possível ${actionLabel}. Verifique sua conexão e tente novamente.`, {
+    404: 'Esta categoria ou subcategoria não está mais disponível. Atualize a lista e tente novamente.',
+    409: action ? conflicts[action] : 'As categorias mudaram desde a última consulta. Atualize a lista e tente novamente.',
+  })
 }
 
 type CategoriesPageProps = {
@@ -82,7 +69,9 @@ export function CategoriesPage({ userEmail, isLoggingOut, onLogout }: Categories
   const [successMessage, setSuccessMessage] = useState('')
   const [categoryEditor, setCategoryEditor] = useState<CategoryEditor>(null)
   const [subcategoryEditor, setSubcategoryEditor] = useState<SubcategoryEditor>(null)
-  const [isSaving, setIsSaving] = useState(false)
+  const [pendingAction, setPendingAction] = useState<'save-category' | 'delete-category' | 'save-subcategory' | 'delete-subcategory' | null>(null)
+  const isSaving = pendingAction !== null
+  const pendingMessage = pendingAction ? {"save-category":"Salvando a categoria.","delete-category":"Excluindo a categoria.","save-subcategory":"Salvando a subcategoria.","delete-subcategory":"Excluindo a subcategoria."}[pendingAction] : ''
   const [reloadKey, setReloadKey] = useState(0)
   const lastLoadedWalletId = useRef<string | null>(null)
 
@@ -91,6 +80,7 @@ export function CategoriesPage({ userEmail, isLoggingOut, onLogout }: Categories
     categoriesApi
       .list(nature, controller.signal)
       .then(({ items }) => {
+        if (controller.signal.aborted) return
         if (lastLoadedWalletId.current !== activeWalletId) {
           setCategoryEditor(null)
           setSubcategoryEditor(null)
@@ -103,7 +93,7 @@ export function CategoriesPage({ userEmail, isLoggingOut, onLogout }: Categories
         setLoadError('')
       })
       .catch((error: unknown) => {
-        if (error instanceof Error && error.name === 'AbortError') return
+        if (controller.signal.aborted || error instanceof Error && error.name === 'AbortError') return
         setLoadedWalletId(activeWalletId)
         setLoadError(getErrorMessage(error))
       })
@@ -121,8 +111,8 @@ export function CategoriesPage({ userEmail, isLoggingOut, onLogout }: Categories
       const { items } = await categoriesApi.list(nature)
       setCategories(items)
       setLoadError('')
-    } catch (error) {
-      setLoadError(getErrorMessage(error))
+    } catch {
+      setLoadError('A alteração foi concluída, mas não foi possível atualizar as categorias. Use Tentar novamente para atualizar a lista.')
     }
   }
 
@@ -187,7 +177,7 @@ export function CategoriesPage({ userEmail, isLoggingOut, onLogout }: Categories
 
     setFormError('')
     setSuccessMessage('')
-    setIsSaving(true)
+    setPendingAction('save-category')
     try {
       if (categoryEditor.categoryId) {
         await categoriesApi.update(categoryEditor.categoryId, name)
@@ -201,19 +191,19 @@ export function CategoriesPage({ userEmail, isLoggingOut, onLogout }: Categories
     } catch (error) {
       setFormError(getErrorMessage(error, 'save-category'))
     } finally {
-      setIsSaving(false)
+      setPendingAction(null)
     }
   }
 
   async function handleDeleteCategory(category: Category) {
     const confirmed = window.confirm(
-      `Excluir a categoria “${category.name}”? As subcategorias sem uso também serão removidas. Se alguma estiver vinculada a movimentos ou metas, a API recusará a exclusão e preservará os dados.`,
+      `Excluir a categoria “${category.name}”? As subcategorias sem uso também serão removidas. Se alguma estiver vinculada a movimentos ou metas, a exclusão será recusada e os dados serão preservados.`,
     )
     if (!confirmed) return
 
     setFormError('')
     setSuccessMessage('')
-    setIsSaving(true)
+    setPendingAction('delete-category')
     try {
       await categoriesApi.remove(category.id)
       setSuccessMessage('Categoria excluída.')
@@ -223,7 +213,7 @@ export function CategoriesPage({ userEmail, isLoggingOut, onLogout }: Categories
     } catch (error) {
       setFormError(getErrorMessage(error, 'delete-category'))
     } finally {
-      setIsSaving(false)
+      setPendingAction(null)
     }
   }
 
@@ -250,7 +240,7 @@ export function CategoriesPage({ userEmail, isLoggingOut, onLogout }: Categories
 
     setFormError('')
     setSuccessMessage('')
-    setIsSaving(true)
+    setPendingAction('save-subcategory')
     try {
       if (subcategoryEditor.subcategoryId) {
         await categoriesApi.updateSubcategory(
@@ -268,7 +258,7 @@ export function CategoriesPage({ userEmail, isLoggingOut, onLogout }: Categories
     } catch (error) {
       setFormError(getErrorMessage(error, 'save-subcategory'))
     } finally {
-      setIsSaving(false)
+      setPendingAction(null)
     }
   }
 
@@ -284,7 +274,7 @@ export function CategoriesPage({ userEmail, isLoggingOut, onLogout }: Categories
 
     setFormError('')
     setSuccessMessage('')
-    setIsSaving(true)
+    setPendingAction('delete-subcategory')
     try {
       await categoriesApi.removeSubcategory(categoryId, subcategoryId)
       setSuccessMessage('Subcategoria excluída.')
@@ -293,7 +283,7 @@ export function CategoriesPage({ userEmail, isLoggingOut, onLogout }: Categories
     } catch (error) {
       setFormError(getErrorMessage(error, 'delete-subcategory'))
     } finally {
-      setIsSaving(false)
+      setPendingAction(null)
     }
   }
 
@@ -337,8 +327,10 @@ export function CategoriesPage({ userEmail, isLoggingOut, onLogout }: Categories
             ))}
           </div>
 
-          {formError && <p className="categories-alert categories-alert--error" role="alert">{formError}</p>}
-          {successMessage && <p className="categories-alert categories-alert--success" role="status">{successMessage}</p>}
+          {isSaving && <p className="categories-operation-status" role="note" aria-live="polite">{pendingMessage} Aguarde a confirmação antes de iniciar outra ação.</p>}
+
+          {!isWalletLoading && formError && <p className="categories-alert categories-alert--error" role="alert">{formError}</p>}
+          {!isWalletLoading && successMessage && <p className="categories-alert categories-alert--success" role="status">{successMessage}</p>}
 
           {categoryEditor?.categoryId === null && !isWalletLoading && (
             <CategoryForm

@@ -23,6 +23,7 @@ export default defineConfig({
       provider: 'v8',
       reporter: ['text', 'lcov'],
       include: [
+        'src/feedback/apiErrorFeedback.ts',
         'src/layout/FinancialSidebar.tsx',
         'src/period/MonthYearSelector.tsx',
         'src/period/month.ts',
@@ -46,6 +47,7 @@ export default defineConfig({
       ],
       exclude: ['src/**/*.test.ts', 'src/**/*.test.tsx', 'src/test/**'],
       thresholds: {
+        'src/feedback/**': { lines: 80, functions: 80, branches: 80, statements: 80 },
         'src/layout/**': { lines: 80, functions: 80, branches: 80, statements: 80 },
         'src/period/**': { lines: 80, functions: 80, branches: 80, statements: 80 },
         'src/money/**': { lines: 80, functions: 80, branches: 80, statements: 80 },

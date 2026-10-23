@@ -52,6 +52,7 @@ describe('PaymentMethodsPage', () => {
     await user.click(await screen.findByRole('button', { name: /Nova forma/ }))
     const nature = screen.getByLabelText('Natureza *')
     expect(nature).toHaveDisplayValue('Imediata (dinheiro, débito ou Pix)')
+    expect(nature).toHaveAccessibleDescription(/VA e VR usam um único saldo de benefícios/)
     expect(screen.getByRole('option', { name: 'Cartão de benefícios (VA/VR)' })).toBeInTheDocument()
     expect(screen.getByRole('option', { name: 'Auxílio home office (AHO)' })).toBeInTheDocument()
     expect(screen.queryByRole('option', { name: 'Vale-alimentação (VA)' })).not.toBeInTheDocument()
@@ -110,5 +111,49 @@ describe('PaymentMethodsPage', () => {
     await renderPage()
     await user.click(await screen.findByRole('button', { name: 'Ativar Pix' }))
     await waitFor(() => expect(paymentMethodsApi.update).toHaveBeenCalledWith('pix', { isActive: true }))
+  })
+
+  it('explains the preserved nature when editing a historical VA method', async () => {
+    vi.mocked(paymentMethodsApi.list).mockResolvedValueOnce({ items: [{ ...paymentMethod, nature: 'food_benefit' }] })
+    const user = userEvent.setup()
+    await renderPage()
+    await user.click(await screen.findByRole('button', { name: 'Editar Pix' }))
+    expect(screen.getByLabelText('Natureza *')).toHaveValue('food_benefit')
+    expect(screen.getByLabelText('Natureza *')).toHaveAccessibleDescription(/Esta forma mantém sua natureza histórica/)
+  })
+
+  it('shows safe load feedback without exposing a server message', async () => {
+    vi.mocked(paymentMethodsApi.list).mockRejectedValueOnce(Object.assign(new Error('server-only-detail'), { status: 500 }))
+    await renderPage()
+    expect(await screen.findByRole('alert')).toHaveTextContent('Não foi possível carregar as formas de pagamento.')
+    expect(screen.queryByText('server-only-detail')).not.toBeInTheDocument()
+  })
+
+  it('identifies deactivation while preserving the completed result if refreshing fails', async () => {
+    let finish!: (method: typeof paymentMethod) => void
+    vi.mocked(paymentMethodsApi.update).mockReturnValueOnce(new Promise((resolve) => { finish = resolve }))
+    vi.mocked(paymentMethodsApi.list).mockResolvedValueOnce({ items: [paymentMethod] }).mockRejectedValueOnce(new Error('offline'))
+    const user = userEvent.setup()
+    await renderPage()
+    await user.click(await screen.findByRole('button', { name: 'Desativar Pix' }))
+    expect(screen.getByRole('note')).toHaveTextContent('Desativando a forma de pagamento.')
+    finish({ ...paymentMethod, isActive: false })
+    expect(await screen.findByText('Forma de pagamento desativada.')).toBeVisible()
+    expect(await screen.findByRole('alert')).toHaveTextContent('Não foi possível carregar as formas de pagamento.')
+  })
+
+  it('hides the previous wallet editor and feedback when another wallet is selected', async () => {
+    let finish!: (response: { items: typeof paymentMethod[] }) => void
+    vi.mocked(walletApi.list).mockResolvedValueOnce({ items: [personalWallet, { ...personalWallet, id: 'wallet-shared', name: 'Casa', isPersonal: false }] })
+    vi.mocked(paymentMethodsApi.list).mockResolvedValueOnce({ items: [paymentMethod] }).mockReturnValueOnce(new Promise((resolve) => { finish = resolve }))
+    const user = userEvent.setup()
+    await renderPage()
+    await user.click(await screen.findByRole('button', { name: 'Editar Pix' }))
+    await user.selectOptions(screen.getByRole('combobox', { name: /Carteira ativa/ }), 'wallet-shared')
+    expect(screen.getByRole('status')).toHaveTextContent('Carregando formas de pagamento')
+    expect(screen.queryByLabelText('Nome *')).not.toBeInTheDocument()
+    finish({ items: [] })
+    expect(await screen.findByRole('heading', { name: 'Nenhuma forma cadastrada' })).toBeVisible()
+    expect(screen.queryByLabelText('Nome *')).not.toBeInTheDocument()
   })
 })

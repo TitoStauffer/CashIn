@@ -60,6 +60,7 @@ describe('IncomesPage currency input', () => {
     expect(screen.getByRole('alert')).toHaveTextContent('duas casas decimais')
     await user.click(screen.getByRole('button', { name: 'Registrar entrada' }))
     expect(incomesApi.create).not.toHaveBeenCalled()
+    expect(screen.getAllByRole('alert')).toHaveLength(1)
 
     fireEvent.change(amount, { target: { value: '1234,56' } })
     expect(amount).toHaveValue('1.234,56')
@@ -78,6 +79,7 @@ describe('IncomesPage currency input', () => {
     await renderPage()
     await user.click(await screen.findByRole('button', { name: /Nova entrada/ }))
     await user.selectOptions(screen.getByLabelText('Destino do valor *'), 'food_meal_benefit')
+    expect(screen.getByLabelText('Destino do valor *')).toHaveAccessibleDescription(/VA e VR usam um único saldo/)
     fireEvent.change(screen.getByLabelText('Valor *'), { target: { value: '500,00' } })
     await user.click(screen.getByRole('button', { name: 'Registrar entrada' }))
 
@@ -99,12 +101,21 @@ describe('IncomesPage currency input', () => {
     expect(incomesApi.update).toHaveBeenCalledWith('income-1', expect.objectContaining({ balanceType: 'cash' }))
   })
 
+  it('explains the historical destination without changing a legacy benefit income', async () => {
+    vi.mocked(incomesApi.list).mockResolvedValueOnce({ items: [{ ...income, balanceType: 'meal_benefit' }] })
+    const user = userEvent.setup()
+    await renderPage()
+    await user.click(await screen.findByRole('button', { name: 'Editar entrada Salário mensal' }))
+    expect(screen.getByLabelText('Destino do valor *')).toHaveValue('meal_benefit')
+    expect(screen.getByLabelText('Destino do valor *')).toHaveAccessibleDescription(/Este registro mantém seu destino histórico/)
+  })
+
   it('shows a recoverable error when incomes cannot be loaded', async () => {
     const user = userEvent.setup()
     vi.mocked(incomesApi.list).mockRejectedValueOnce(new Error('offline'))
     await renderPage()
 
-    expect(await screen.findByRole('alert')).toHaveTextContent('Não foi possível conectar ao serviço.')
+    expect(await screen.findByRole('alert')).toHaveTextContent('Não foi possível carregar as entradas.')
     await user.click(screen.getByRole('button', { name: 'Tentar novamente' }))
 
     expect(await screen.findByText('Salário mensal')).toBeVisible()
@@ -130,6 +141,58 @@ describe('IncomesPage currency input', () => {
     expect(screen.getByRole('button', { name: 'Salvando…' })).toBeVisible()
     createRequest.resolve(income)
     expect(await screen.findByRole('status')).toHaveTextContent('Entrada registrada.')
+  })
+
+  it('explains the income-category prerequisite even when the month already has records', async () => {
+    vi.mocked(categoriesApi.list).mockResolvedValueOnce({ items: [] })
+    await renderPage()
+
+    const prerequisite = await screen.findByRole('note')
+    expect(prerequisite).toHaveTextContent('Para registrar uma entrada, primeiro')
+    expect(prerequisite.querySelector('a')).toHaveAttribute('href', '/categories')
+    expect(screen.getByRole('button', { name: /Nova entrada/ })).toBeDisabled()
+    expect(screen.getByRole('button', { name: /Nova entrada/ })).toHaveAccessibleDescription(/cadastre uma categoria de entrada/)
+    expect(await screen.findByText('Salário mensal')).toBeVisible()
+  })
+
+  it('shows safe load feedback without a premature category prerequisite', async () => {
+    const request = deferred<{ items: typeof income[] }>()
+    vi.mocked(incomesApi.list).mockReturnValueOnce(request.promise)
+    vi.mocked(categoriesApi.list).mockResolvedValueOnce({ items: [] })
+    await renderPage()
+    expect(screen.getByRole('status')).toHaveTextContent('Carregando entradas')
+    expect(screen.queryByRole('note')).not.toBeInTheDocument()
+    request.resolve({ items: [] })
+    expect(await screen.findByRole('note')).toHaveTextContent('cadastre uma categoria de entrada')
+    expect(screen.getByRole('button', { name: 'Registrar primeira entrada' })).toHaveAccessibleDescription(/cadastre uma categoria de entrada/)
+  })
+
+  it('does not display a server payload when saving fails', async () => {
+    vi.mocked(incomesApi.create).mockRejectedValueOnce(Object.assign(new Error('server-only-detail'), { status: 500 }))
+    const user = userEvent.setup()
+    await renderPage()
+    await user.click(await screen.findByRole('button', { name: /Nova entrada/ }))
+    fireEvent.change(screen.getByLabelText('Valor *'), { target: { value: '100,00' } })
+    await user.click(screen.getByRole('button', { name: 'Registrar entrada' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('Não foi possível salvar a entrada.')
+    expect(screen.queryByText('server-only-detail')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Registrar entrada' })).toBeEnabled()
+  })
+
+  it('identifies deletion and keeps its success when the edited income is removed', async () => {
+    const request = deferred<void>()
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    vi.spyOn(incomesApi, 'remove').mockReturnValueOnce(request.promise)
+    vi.mocked(incomesApi.list).mockResolvedValueOnce({ items: [income] }).mockResolvedValueOnce({ items: [] })
+    const user = userEvent.setup()
+    await renderPage()
+    await user.click(await screen.findByRole('button', { name: 'Editar entrada Salário mensal' }))
+    await user.click(screen.getByRole('button', { name: 'Excluir entrada Salário mensal' }))
+    expect(screen.getByRole('note')).toHaveTextContent('Excluindo a entrada.')
+    request.resolve()
+    expect(await screen.findByRole('status')).toHaveTextContent('Entrada excluída.')
+    expect(screen.queryByRole('heading', { name: 'Editar entrada' })).not.toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'Nenhuma entrada neste mês' })).toBeVisible()
   })
 
   it('reloads records for the selected wallet without showing the previous wallet data', async () => {
