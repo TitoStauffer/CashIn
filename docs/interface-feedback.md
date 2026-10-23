@@ -29,7 +29,9 @@ Carregamentos/resultados usam `role="status"`; falhas usam `role="alert"`; opera
 
 Execute em `apps/web`: `npm run test:coverage`, `npm run lint` e `npm run build`. O primeiro comando verifica os limites de cobertura configurados; o build inclui TypeScript. Na raiz, execute `git diff --check`. CI e SonarQube devem ser consultados no PR para o SHA revisado.
 
-Rodada local de 23/10/2026: 20 arquivos e 180 testes aprovados; cobertura global de 89,28% das linhas, 86,66% das instruções, 84,46% dos ramos e 89,47% das funções. Todos os limites configurados foram atendidos. Lint sem avisos, TypeScript/build e `git diff --check` aprovados. Estes resultados são locais; não representam aprovação do CI, SonarQube, Code Review ou QA.
+Rodada local de 23/10/2026 após ajuste do Code Review: 20 arquivos e 181 testes aprovados; cobertura global de 89,29% das linhas, 86,73% das instruções, 84,53% dos ramos e 89,49% das funções. Todos os limites configurados foram atendidos. Lint sem avisos, TypeScript/build e `git diff --check` aprovados. Estes resultados são locais; não representam aprovação do CI, SonarQube, Code Review ou QA.
+
+A regressão de aportes cobre consulta inicial com falha, registro confirmado e atualização bem-sucedida: o erro da meta é limpo somente após a atualização, a lista fica visível e reabrir o painel reutiliza o cache sem restaurar o alerta. O teste também confirma que a nova tentativa de consulta permanece desabilitada durante a atualização.
 
 O audit de produção foi tentado em 23/10/2026 com `npm audit --omit=dev --audit-level=high --json --fetch-timeout=15000 --fetch-retries=1`. O registro npm encerrou a conexão com `ECONNRESET`; a consulta direta ao mesmo endpoint também recebeu conexão encerrada. O resultado local é inconclusivo e não indica ausência ou presença de vulnerabilidades. Nenhuma dependência foi adicionada ou atualizada nesta História; a conferência deve ser repetida em ambiente com conectividade, como o CI.
 

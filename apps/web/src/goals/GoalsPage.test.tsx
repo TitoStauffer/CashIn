@@ -199,6 +199,35 @@ describe('GoalsPage currency inputs', () => {
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
   })
 
+  it('clears a prior contribution load error after saving and refreshing successfully', async () => {
+    const refresh = deferred<{ items: typeof contribution[] }>()
+    vi.mocked(goalsApi.contributions)
+      .mockRejectedValueOnce(new Error('offline'))
+      .mockReturnValueOnce(refresh.promise)
+    const user = userEvent.setup()
+    await renderPage()
+    await user.click(await screen.findByRole('button', { name: '＋ Registrar aporte' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('Não foi possível carregar os aportes.')
+
+    await user.type(screen.getByLabelText('Valor *'), '15,25')
+    await user.click(screen.getByRole('button', { name: 'Registrar aporte' }))
+    await waitFor(() => expect(goalsApi.contributions).toHaveBeenCalledTimes(2))
+    expect(screen.getByRole('button', { name: 'Tentar carregar aportes novamente' })).toBeDisabled()
+    expect(goalsApi.createContribution).toHaveBeenCalledTimes(1)
+
+    refresh.resolve({ items: [contribution] })
+    expect(await screen.findByText(/Aporte mensal/)).toBeVisible()
+    expect(screen.getByRole('status')).toHaveTextContent('Aporte registrado.')
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Tentar carregar aportes novamente' })).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Ocultar aportes' }))
+    await user.click(screen.getByRole('button', { name: 'Ver aportes' }))
+    expect(screen.getByText(/Aporte mensal/)).toBeVisible()
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    expect(goalsApi.contributions).toHaveBeenCalledTimes(2)
+  })
+
   it('identifies contribution loading without claiming that changes are being saved', async () => {
     const request = deferred<{ items: typeof contribution[] }>()
     vi.mocked(goalsApi.contributions).mockReturnValueOnce(request.promise)
