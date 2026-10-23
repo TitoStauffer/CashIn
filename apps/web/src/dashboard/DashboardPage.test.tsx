@@ -1,4 +1,4 @@
-import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { DashboardPage } from './DashboardPage'
@@ -27,6 +27,7 @@ const goal: InvestmentGoal = { id: 'goal-1', title: 'Reserva', description: 'Res
 async function renderPage() {
   const result = render(<WalletProvider userId="user-1"><DashboardPage userEmail="demo@example.com" isLoggingOut={false} onLogout={vi.fn()} /></WalletProvider>)
   await screen.findByRole('combobox', { name: /Carteira ativa/ })
+  await waitFor(() => expect(dashboardApi.summary).toHaveBeenCalled())
   return result
 }
 function deferred<T>() {
