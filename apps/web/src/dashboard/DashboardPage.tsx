@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { dashboardApi } from './dashboardApi'
 import { getApiErrorFeedback } from '../feedback/apiErrorFeedback'
 import type { FinancialSummary } from './dashboardApi'
@@ -16,7 +16,8 @@ import './DashboardPage.css'
 
 type DashboardPageProps = { userEmail: string; isLoggingOut: boolean; onLogout: () => void }
 type DashboardData = { summary: FinancialSummary; previous: FinancialSummary; goals: InvestmentGoal[] }
-type LoadState = { key: string; data?: DashboardData; error?: string }
+type RequestKey = { walletId: string | null; month: string; reloadKey: number }
+type LoadState = { key: RequestKey; data?: DashboardData; error?: string }
 
 function getErrorMessage(error: unknown) {
   return getApiErrorFeedback(error, 'Não foi possível carregar a visão geral. Verifique sua conexão e tente novamente.')
@@ -27,7 +28,8 @@ export function DashboardPage({ userEmail, isLoggingOut, onLogout }: DashboardPa
   const [month, setMonth] = useState(getInitialMonth)
   const [reloadKey, setReloadKey] = useState(0)
   const [loaded, setLoaded] = useState<LoadState | null>(null)
-  const requestKey = `${activeWalletId}/${month}/${reloadKey}`
+  // A repeated selection receives a new identity after any intervening selection.
+  const requestKey = useMemo(() => ({ walletId: activeWalletId, month, reloadKey }), [activeWalletId, month, reloadKey])
 
   useEffect(() => {
     const controller = new AbortController()
