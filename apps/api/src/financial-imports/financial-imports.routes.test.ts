@@ -527,6 +527,7 @@ test("upload enforces the 10 MB and 10,000 movement limits", async () => {
     payload: Buffer.alloc(10 * 1024 * 1024 + 1, "a"),
   });
   assert.equal(oversizedResponse.statusCode, 413);
+  assert.deepEqual(oversizedResponse.json(), { message: "O arquivo deve ter no máximo 10 MB." });
   await oversized.app.close();
 });
 
