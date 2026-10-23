@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import type { User } from '../authApi'
-import { WalletApiError, walletApi, storePendingInviteToken, storeWalletId } from './walletApi'
+import { walletApi, storePendingInviteToken, storeWalletId } from './walletApi'
+import { getApiErrorFeedback } from '../feedback/apiErrorFeedback'
 import './WalletInvitationPage.css'
 
 type WalletInvitationPageProps = {
@@ -9,13 +10,13 @@ type WalletInvitationPageProps = {
 }
 
 function getErrorMessage(error: unknown) {
-  if (error instanceof WalletApiError) {
-    if (error.status === 401 || error.status === 403) return 'Entre na conta que recebeu este convite para continuar.'
-    if (error.status === 404 || error.status === 410) return 'Este convite é inválido, expirou ou já foi cancelado.'
-    if (error.status === 409) return 'Este convite já foi aceito ou sua conta já pertence a esta carteira.'
-    if (error.message.trim()) return error.message
-  }
-  return 'Não foi possível aceitar o convite. Verifique sua conexão e tente novamente.'
+  return getApiErrorFeedback(error, 'Não foi possível aceitar o convite. Verifique sua conexão e tente novamente.', {
+    401: 'Entre na conta que recebeu este convite para continuar.',
+    403: 'Entre na conta que recebeu este convite para continuar.',
+    404: 'Este convite é inválido, expirou ou já foi cancelado. Peça um novo convite ao dono da carteira.',
+    410: 'Este convite é inválido, expirou ou já foi cancelado. Peça um novo convite ao dono da carteira.',
+    409: 'Este convite já foi aceito ou sua conta já pertence a esta carteira. Abra sua carteira para continuar.',
+  })
 }
 
 export function WalletInvitationPage({ token, user }: WalletInvitationPageProps) {
@@ -31,10 +32,10 @@ export function WalletInvitationPage({ token, user }: WalletInvitationPageProps)
     setSuccess('')
     setIsSubmitting(true)
     try {
-      const { wallet, message } = await walletApi.acceptInvitation(token)
+      const { wallet } = await walletApi.acceptInvitation(token)
       storeWalletId(user.id, wallet.id)
       storePendingInviteToken(null)
-      setSuccess(message || 'Você agora tem acesso à carteira ' + wallet.name + '.')
+      setSuccess('Convite aceito. Abra a carteira compartilhada para continuar.')
     } catch (cause) {
       setError(getErrorMessage(cause))
     } finally {

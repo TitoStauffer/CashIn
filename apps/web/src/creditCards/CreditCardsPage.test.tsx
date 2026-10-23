@@ -5,7 +5,8 @@ import { CreditCardApiError, creditCardsApi } from './creditCardsApi'
 import type { CreditCard, CreditCardStatement } from './creditCardsApi'
 import { CreditCardsPage } from './CreditCardsPage'
 
-vi.mock('../wallets/useWallet', () => ({ useWallet: () => ({ activeWalletId: 'wallet-1' }) }))
+const walletContext = vi.hoisted(() => ({ activeWalletId: 'wallet-1' }))
+vi.mock('../wallets/useWallet', () => ({ useWallet: () => walletContext }))
 vi.mock('../layout/FinancialSidebar', () => ({ FinancialSidebar: () => <nav aria-label="Navegação principal" /> }))
 
 const card: CreditCard = { id: 'card-1', nickname: 'Principal', closingDay: 10, dueDay: 17, isActive: true }
@@ -22,7 +23,7 @@ function deferred<T>() {
 }
 
 describe('CreditCardsPage', () => {
-  afterEach(() => { cleanup(); vi.restoreAllMocks() })
+  afterEach(() => { cleanup(); vi.restoreAllMocks(); walletContext.activeWalletId = 'wallet-1' })
 
   it('lists cards and statements and allows paying an unpaid statement in full', async () => {
     vi.spyOn(creditCardsApi, 'list').mockResolvedValue({ items: [card] })
@@ -122,7 +123,7 @@ describe('CreditCardsPage', () => {
     const user = userEvent.setup()
     render(<CreditCardsPage userEmail="user@example.com" isLoggingOut={false} onLogout={vi.fn()} />)
 
-    expect(await screen.findByRole('alert')).toHaveTextContent('Não foi possível conectar ao serviço')
+    expect(await screen.findByRole('alert')).toHaveTextContent('Não foi possível carregar cartões e faturas')
     expect(screen.queryByRole('heading', { name: 'Nenhum cartão cadastrado' })).not.toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'Tentar novamente' }))
     expect(await screen.findByRole('heading', { name: 'Nenhum cartão cadastrado' })).toBeVisible()
@@ -209,5 +210,41 @@ describe('CreditCardsPage', () => {
     expect(screen.queryByText('Mercado')).not.toBeInTheDocument()
     await user.selectOptions(screen.getByRole('combobox', { name: 'Selecionar cartão para consultar faturas' }), card.id)
     expect(await screen.findByText('Mercado')).toBeVisible()
+  })
+
+  it('uses safe payment feedback instead of exposing server details', async () => {
+    const request = deferred<CreditCardStatement>()
+    vi.spyOn(creditCardsApi, 'list').mockResolvedValue({ items: [card] })
+    vi.spyOn(creditCardsApi, 'statements').mockResolvedValue({ items: [statement] })
+    vi.spyOn(creditCardsApi, 'payStatement')
+      .mockRejectedValueOnce(new CreditCardApiError('server-only-detail', 409))
+      .mockReturnValueOnce(request.promise)
+    const user = userEvent.setup()
+    render(<CreditCardsPage userEmail="user@example.com" isLoggingOut={false} onLogout={vi.fn()} />)
+    await screen.findByText('Mercado')
+    await user.click(screen.getByRole('button', { name: 'Pagar fatura integral' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('Esta fatura mudou ou já foi paga.')
+    expect(screen.queryByText('server-only-detail')).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Pagar fatura integral' }))
+    expect(screen.getByRole('note')).toHaveTextContent('Registrando o pagamento integral da fatura.')
+    request.resolve({ ...statement, paidDate: '2026-10-18', paidAmount: statement.totalAmount })
+    expect(await screen.findByRole('status')).toHaveTextContent('Fatura paga')
+  })
+
+  it('hides cards and the previous editor while loading another wallet', async () => {
+    const nextWallet = deferred<{ items: CreditCard[] }>()
+    vi.spyOn(creditCardsApi, 'list').mockResolvedValueOnce({ items: [card] }).mockReturnValueOnce(nextWallet.promise)
+    vi.spyOn(creditCardsApi, 'statements').mockResolvedValue({ items: [statement] })
+    const user = userEvent.setup()
+    const view = render(<CreditCardsPage userEmail="user@example.com" isLoggingOut={false} onLogout={vi.fn()} />)
+    await user.click(await screen.findByRole('button', { name: 'Editar' }))
+    walletContext.activeWalletId = 'wallet-2'
+    view.rerender(<CreditCardsPage userEmail="user@example.com" isLoggingOut={false} onLogout={vi.fn()} />)
+    expect(screen.getByRole('status')).toHaveTextContent('Carregando cartões')
+    expect(screen.queryByLabelText('Apelido')).not.toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'Principal' })).not.toBeInTheDocument()
+    nextWallet.resolve({ items: [] })
+    expect(await screen.findByRole('heading', { name: 'Nenhum cartão cadastrado' })).toBeVisible()
+    expect(screen.queryByLabelText('Apelido')).not.toBeInTheDocument()
   })
 })

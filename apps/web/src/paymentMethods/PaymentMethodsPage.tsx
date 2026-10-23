@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react'
+import { getApiErrorFeedback } from '../feedback/apiErrorFeedback'
+import { useEffect, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import { FinancialSidebar } from '../layout/FinancialSidebar'
 import { useWallet } from '../wallets/useWallet'
@@ -19,19 +20,12 @@ type PaymentMethodsPageProps = {
 }
 
 function getErrorMessage(error: unknown, action: 'load' | 'save') {
-  if (error instanceof Error && 'status' in error) {
-    const status = Number(error.status)
-    if (status === 401 || status === 403) {
-      window.location.assign('/login')
-      return 'Sua sessão expirou. Entre novamente para continuar.'
-    }
-    if (error.message.trim()) return error.message
-    if (status === 409) return 'Já existe uma forma de pagamento com esse nome.'
-    if (status === 400) return 'Confira os dados informados e tente novamente.'
-  }
-  return action === 'load'
-    ? 'Não foi possível carregar as formas de pagamento. Tente novamente.'
-    : 'Não foi possível salvar a forma de pagamento. Tente novamente.'
+  return getApiErrorFeedback(error, action === 'load'
+    ? 'Não foi possível carregar as formas de pagamento. Verifique sua conexão e tente novamente.'
+    : 'Não foi possível atualizar a forma de pagamento. Confira os dados e tente novamente.', {
+    404: 'Esta forma de pagamento não está mais disponível. Atualize a lista e tente novamente.',
+    409: 'Já existe uma forma de pagamento com esse nome. Escolha outro nome e tente novamente.',
+  })
 }
 
 export function PaymentMethodsPage({ userEmail, isLoggingOut, onLogout }: PaymentMethodsPageProps) {
@@ -39,23 +33,33 @@ export function PaymentMethodsPage({ userEmail, isLoggingOut, onLogout }: Paymen
   const [items, setItems] = useState<PaymentMethod[]>([])
   const [editor, setEditor] = useState<Editor>(null)
   const [isLoading, setIsLoading] = useState(true)
-  const [isSaving, setIsSaving] = useState(false)
+  const [pendingAction, setPendingAction] = useState<'save' | 'activate' | 'deactivate' | null>(null)
+  const isSaving = pendingAction !== null
+  const pendingMessage = pendingAction ? {"save":"Salvando a forma de pagamento.","activate":"Ativando a forma de pagamento.","deactivate":"Desativando a forma de pagamento."}[pendingAction] : ''
   const [loadedWalletId, setLoadedWalletId] = useState<string | null>(null)
   const [loadError, setLoadError] = useState('')
   const [formError, setFormError] = useState('')
   const [successMessage, setSuccessMessage] = useState('')
   const [reloadKey, setReloadKey] = useState(0)
+  const lastLoadedWalletId = useRef<string | null>(null)
 
   useEffect(() => {
     const controller = new AbortController()
     paymentMethodsApi.list(controller.signal)
       .then(({ items: methods }) => {
+        if (controller.signal.aborted) return
+        if (lastLoadedWalletId.current !== activeWalletId) {
+          setEditor(null)
+          setFormError('')
+          setSuccessMessage('')
+        }
+        lastLoadedWalletId.current = activeWalletId
         setItems(methods)
         setLoadedWalletId(activeWalletId)
         setLoadError('')
       })
       .catch((error: unknown) => {
-        if (error instanceof Error && error.name === 'AbortError') return
+        if (controller.signal.aborted || error instanceof Error && error.name === 'AbortError') return
         setLoadedWalletId(activeWalletId)
         setLoadError(getErrorMessage(error, 'load'))
       })
@@ -90,7 +94,7 @@ export function PaymentMethodsPage({ userEmail, isLoggingOut, onLogout }: Paymen
 
     setFormError('')
     setSuccessMessage('')
-    setIsSaving(true)
+    setPendingAction('save')
     try {
       if (editor.id) {
         await paymentMethodsApi.update(editor.id, { name, nature: editor.nature })
@@ -105,14 +109,14 @@ export function PaymentMethodsPage({ userEmail, isLoggingOut, onLogout }: Paymen
     } catch (error) {
       setFormError(getErrorMessage(error, 'save'))
     } finally {
-      setIsSaving(false)
+      setPendingAction(null)
     }
   }
 
   async function toggleActive(method: PaymentMethod) {
     setFormError('')
     setSuccessMessage('')
-    setIsSaving(true)
+    setPendingAction(method.isActive ? 'deactivate' : 'activate')
     try {
       await paymentMethodsApi.update(method.id, { isActive: !method.isActive })
       setSuccessMessage(method.isActive ? 'Forma de pagamento desativada.' : 'Forma de pagamento ativada.')
@@ -121,7 +125,7 @@ export function PaymentMethodsPage({ userEmail, isLoggingOut, onLogout }: Paymen
     } catch (error) {
       setFormError(getErrorMessage(error, 'save'))
     } finally {
-      setIsSaving(false)
+      setPendingAction(null)
     }
   }
 
@@ -137,16 +141,16 @@ export function PaymentMethodsPage({ userEmail, isLoggingOut, onLogout }: Paymen
                 <h1 id="payment-methods-title">Formas de pagamento</h1>
                 <p>Organize como as despesas são pagas nesta carteira.</p>
               </div>
-              <button className="payment-methods-primary-button" type="button" onClick={openCreate} disabled={isSaving}>
+              <button className="payment-methods-primary-button" type="button" onClick={openCreate} disabled={isSaving || isLoading || isWalletLoading || !!loadError}>
                 <span aria-hidden="true">＋</span> Nova forma
               </button>
             </div>
 
-            {formError && <p className="payment-methods-alert payment-methods-alert--error" role="alert">{formError}</p>}
-            {successMessage && <p className="payment-methods-alert payment-methods-alert--success" role="status">{successMessage}</p>}
-            {isSaving && <p className="payment-methods-operation-status" role="note" aria-live="polite">Salvando alterações da forma de pagamento. Aguarde a confirmação antes de iniciar outra ação.</p>}
+            {!isWalletLoading && formError && <p className="payment-methods-alert payment-methods-alert--error" role="alert">{formError}</p>}
+            {!isWalletLoading && successMessage && <p className="payment-methods-alert payment-methods-alert--success" role="status">{successMessage}</p>}
+            {isSaving && <p className="payment-methods-operation-status" role="note" aria-live="polite">{pendingMessage} Aguarde a confirmação antes de iniciar outra ação.</p>}
 
-            {editor && !isWalletLoading && (
+            {editor && !isWalletLoading && !loadError && (
               <form className="payment-method-editor" onSubmit={handleSave} aria-labelledby="payment-method-editor-title">
                 <div className="payment-method-editor__heading">
                   <h2 id="payment-method-editor-title">{editor.id ? 'Editar forma de pagamento' : 'Nova forma de pagamento'}</h2>

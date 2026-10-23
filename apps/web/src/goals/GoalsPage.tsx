@@ -1,9 +1,10 @@
+import { getApiErrorFeedback } from '../feedback/apiErrorFeedback'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import type { Category } from '../categories/categoriesApi'
 import { categoriesApi } from '../categories/categoriesApi'
 import type { InvestmentContribution, InvestmentGoal, InvestmentGoalInput } from './goalsApi'
-import { GoalApiError, goalsApi } from './goalsApi'
+import { goalsApi } from './goalsApi'
 import { FinancialSidebar } from '../layout/FinancialSidebar'
 import { useWallet } from '../wallets/useWallet'
 import { formatBrazilianCurrency, formatBrazilianCurrencyInput, hasInvalidBrazilianCurrencyInput, isPositiveCurrencyAmount, maskBrazilianCurrencyInput, parseBrazilianCurrencyInput } from '../money/currency'
@@ -44,17 +45,10 @@ function getToday() {
 }
 
 function getErrorMessage(error: unknown, action: string) {
-  if (error instanceof GoalApiError) {
-    if (error.status === 401 || error.status === 403) {
-      window.location.assign('/login')
-      return 'Sua sessão expirou. Entre novamente para continuar.'
-    }
-    if (error.status === 404) return 'Este registro não está mais disponível.'
-    if (error.message.trim()) return error.message
-    if (error.status === 400) return 'Confira os dados informados e tente novamente.'
-    if (error.status === 409) return 'Não foi possível concluir a operação por causa dos dados vinculados.'
-  }
-  return `Não foi possível ${action}. Verifique sua conexão e tente novamente.`
+  return getApiErrorFeedback(error, `Não foi possível ${action}. Verifique sua conexão e tente novamente.`, {
+    404: 'Esta meta ou este aporte não está mais disponível. Atualize a lista e tente novamente.',
+    409: 'Esta meta ou este aporte não pode ser alterado agora. Atualize a lista e confira se a meta está em andamento.',
+  })
 }
 
 function emptyGoal(): GoalEditor {
@@ -77,7 +71,9 @@ export function GoalsPage({ userEmail, isLoggingOut, onLogout }: GoalsPageProps)
   const [contributionGoalId, setContributionGoalId] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [loadedWalletId, setLoadedWalletId] = useState<string | null>(null)
-  const [saving, setSaving] = useState(false)
+  const [pendingAction, setPendingAction] = useState<'save-goal' | 'close-goal' | 'load-contributions' | 'save-contribution' | 'delete-contribution' | null>(null)
+  const saving = pendingAction !== null
+  const pendingMessage = pendingAction ? {"save-goal":"Salvando a meta.","close-goal":"Encerrando a meta.","load-contributions":"Carregando os aportes.","save-contribution":"Salvando o aporte.","delete-contribution":"Excluindo o aporte."}[pendingAction] : ''
   const [loadError, setLoadError] = useState('')
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
@@ -95,6 +91,7 @@ export function GoalsPage({ userEmail, isLoggingOut, onLogout }: GoalsPageProps)
       ]),
     ])
       .then(([goalResponse, categoryResponses]) => {
+        if (controller.signal.aborted) return
         if (lastLoadedWalletId.current !== activeWalletId) {
           setEditor(null)
           setContributionEditor(null)
@@ -112,7 +109,7 @@ export function GoalsPage({ userEmail, isLoggingOut, onLogout }: GoalsPageProps)
         setLoadError('')
       })
       .catch((cause: unknown) => {
-        if (cause instanceof Error && cause.name === 'AbortError') return
+        if (controller.signal.aborted || cause instanceof Error && cause.name === 'AbortError') return
         setLoadedWalletId(activeWalletId)
         setLoadError(getErrorMessage(cause, 'carregar suas metas'))
       })
@@ -126,8 +123,12 @@ export function GoalsPage({ userEmail, isLoggingOut, onLogout }: GoalsPageProps)
   const selectedCategory = categories.find((category) => category.id === editor?.categoryId)
 
   async function refreshGoals() {
-    const response = await goalsApi.list()
-    setGoals(response.items)
+    try {
+      const response = await goalsApi.list()
+      setGoals(response.items)
+    } catch {
+      setError('A alteração da meta foi concluída, mas não foi possível atualizar a lista. Recarregue a página para consultar as metas atualizadas.')
+    }
   }
 
   function createGoal() {
@@ -156,7 +157,7 @@ export function GoalsPage({ userEmail, isLoggingOut, onLogout }: GoalsPageProps)
     event.preventDefault()
     if (!editor) return
     if (goalAmountInvalid) {
-      setError('Use apenas números, até duas casas decimais e respeite o limite de R$ 999.999.999.999,99.')
+      setError('')
       return
     }
     const amount = parseBrazilianCurrencyInput(editor.targetAmount)
@@ -172,7 +173,7 @@ export function GoalsPage({ userEmail, isLoggingOut, onLogout }: GoalsPageProps)
       categoryId: editor.categoryId || null,
       subcategoryId: editor.subcategoryId || null,
     }
-    setSaving(true)
+    setPendingAction('save-goal')
     setError('')
     setMessage('')
     try {
@@ -188,12 +189,12 @@ export function GoalsPage({ userEmail, isLoggingOut, onLogout }: GoalsPageProps)
       await refreshGoals()
     } catch (cause) {
       setError(getErrorMessage(cause, 'salvar a meta'))
-    } finally { setSaving(false) }
+    } finally { setPendingAction(null) }
   }
 
   async function closeGoal(goal: InvestmentGoal) {
     if (!window.confirm(`Encerrar a meta “${goal.title}”? Os aportes registrados serão preservados.`)) return
-    setSaving(true)
+    setPendingAction('close-goal')
     setError('')
     setMessage('')
     try {
@@ -202,12 +203,12 @@ export function GoalsPage({ userEmail, isLoggingOut, onLogout }: GoalsPageProps)
       setMessage('Meta encerrada. Os aportes foram preservados.')
     } catch (cause) {
       setError(getErrorMessage(cause, 'encerrar a meta'))
-    } finally { setSaving(false) }
+    } finally { setPendingAction(null) }
   }
 
   async function loadContributions(goalId: string) {
     if (contributions[goalId]) return
-    setSaving(true)
+    setPendingAction('load-contributions')
     setLoadingContributionId(goalId)
     setContributionLoadErrors((previous) => ({ ...previous, [goalId]: '' }))
     setError('')
@@ -218,7 +219,7 @@ export function GoalsPage({ userEmail, isLoggingOut, onLogout }: GoalsPageProps)
       setContributionLoadErrors((previous) => ({ ...previous, [goalId]: getErrorMessage(cause, 'carregar os aportes') }))
     } finally {
       setLoadingContributionId(null)
-      setSaving(false)
+      setPendingAction(null)
     }
   }
 
@@ -263,7 +264,7 @@ export function GoalsPage({ userEmail, isLoggingOut, onLogout }: GoalsPageProps)
     event.preventDefault()
     if (!contributionEditor || !contributionGoalId || savingContributionRef.current) return
     if (contributionAmountInvalid) {
-      setError('Use apenas números, até duas casas decimais e respeite o limite de R$ 999.999.999.999,99.')
+      setError('')
       return
     }
     const amount = parseBrazilianCurrencyInput(contributionEditor.amount)
@@ -273,7 +274,7 @@ export function GoalsPage({ userEmail, isLoggingOut, onLogout }: GoalsPageProps)
     }
     const input = { amount, date: contributionEditor.date, description: contributionEditor.description.trim() || null }
     savingContributionRef.current = true
-    setSaving(true)
+    setPendingAction('save-contribution')
     setError('')
     setMessage('')
     try {
@@ -296,13 +297,13 @@ export function GoalsPage({ userEmail, isLoggingOut, onLogout }: GoalsPageProps)
       setError(getErrorMessage(cause, 'salvar o aporte'))
     } finally {
       savingContributionRef.current = false
-      setSaving(false)
+      setPendingAction(null)
     }
   }
 
   async function deleteContribution(goalId: string, item: InvestmentContribution) {
     if (!window.confirm(`Excluir o aporte de ${formatAmount(item.amount)}?`)) return
-    setSaving(true)
+    setPendingAction('delete-contribution')
     setError('')
     setMessage('')
     try {
@@ -315,7 +316,7 @@ export function GoalsPage({ userEmail, isLoggingOut, onLogout }: GoalsPageProps)
       }
     } catch (cause) {
       setError(getErrorMessage(cause, 'excluir o aporte'))
-    } finally { setSaving(false) }
+    } finally { setPendingAction(null) }
   }
 
   return (
@@ -328,9 +329,9 @@ export function GoalsPage({ userEmail, isLoggingOut, onLogout }: GoalsPageProps)
           <div className="goals-filters" role="group" aria-label="Filtrar metas">
             {([['active', 'Em andamento'], ['closed', 'Encerradas'], ['all', 'Todas']] as const).map(([value, label]) => <button type="button" className={`goals-filter${filter === value ? ' goals-filter--active' : ''}`} key={value} onClick={() => setFilter(value)} aria-pressed={filter === value}>{label}</button>)}
           </div>
-          {saving && !loadingContributionId && <p className="goals-operation-status" role="note" aria-live="polite">Atualizando a meta ou o aporte. Aguarde a confirmação antes de iniciar outra ação.</p>}
-          {error && <p className="goals-alert goals-alert--error" role="alert">{error}</p>}
-          {message && <p className="goals-alert goals-alert--success" role="status">{message}</p>}
+          {saving && !loadingContributionId && <p className="goals-operation-status" role="note" aria-live="polite">{pendingMessage} Aguarde a confirmação antes de iniciar outra ação.</p>}
+          {!isWalletLoading && error && <p className="goals-alert goals-alert--error" role="alert">{error}</p>}
+          {!isWalletLoading && message && <p className="goals-alert goals-alert--success" role="status">{message}</p>}
 
           {editor && !isWalletLoading && <form className="goal-editor" onSubmit={(event) => void saveGoal(event)} aria-labelledby="goal-editor-title">
             <div className="goal-editor__heading"><h2 id="goal-editor-title">{editor.id ? 'Editar meta' : 'Criar meta'}</h2><p>O prazo e a categoria são opcionais. Aportes ficam separados das despesas.</p></div>
