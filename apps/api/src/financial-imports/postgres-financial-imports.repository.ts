@@ -283,6 +283,14 @@ export class PostgresFinancialImportsRepository implements FinancialImportReposi
     input: Required<UpdateFinancialImportItemInput>,
   ): Promise<FinancialImportItem | null> {
     return this.database.transaction(async (transaction) => {
+      const session = await transaction.query<{ id: string }>(
+        `SELECT id FROM import_sessions
+         WHERE id = $1 AND wallet_id = $2 AND status = 'preview'
+         FOR UPDATE`,
+        [importId, walletId],
+      );
+      if (!session.rows[0]) return null;
+
       const categoryId = input.type === "transfer" ? null : input.categoryId;
       const subcategoryId = input.type === "transfer" ? null : input.subcategoryId;
       const validationStatus = input.type === "transfer" || categoryId === null ? "uncategorized" : "valid";
@@ -302,14 +310,10 @@ export class PostgresFinancialImportsRepository implements FinancialImportReposi
              validation_status = $9,
              error_message = $10,
              updated_at = now()
-         FROM import_sessions AS session
          WHERE item.id = $1
            AND item.import_session_id = $2
            AND item.wallet_id = $3
-           AND session.id = item.import_session_id
-           AND session.wallet_id = item.wallet_id
-           AND session.wallet_id = $3
-           AND session.status = 'preview'
+           AND item.validation_status IN ('valid', 'uncategorized')
            AND ($7::uuid IS NULL OR EXISTS (
              SELECT 1 FROM categories AS category
              WHERE category.id = $7::uuid AND category.wallet_id = $3 AND category.nature = $6

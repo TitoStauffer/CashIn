@@ -3,6 +3,9 @@ import { randomBytes } from "node:crypto";
 import test from "node:test";
 import { setTimeout as delay } from "node:timers/promises";
 import { Pool } from "pg";
+import { createApp } from "../app.js";
+import { PostgresAuthRepository } from "../auth/postgres-auth.repository.js";
+import { createOpaqueToken, hashToken } from "../auth/token.js";
 import { createDatabase, runMigrations } from "../database.js";
 import { PostgresFinancialImportsRepository } from "./postgres-financial-imports.repository.js";
 
@@ -14,6 +17,7 @@ test("PostgreSQL financial import confirms exact amounts, isolates wallets, and 
   const schemaName = `financial_import_${randomBytes(8).toString("hex")}`;
   const adminPool = new Pool({ connectionString: testDatabaseUrl });
   let scopedPool: Pool | undefined;
+  let app: ReturnType<typeof createApp> | undefined;
 
   try {
     await adminPool.query(`CREATE SCHEMA ${schemaName}`);
@@ -51,6 +55,18 @@ test("PostgreSQL financial import confirms exact amounts, isolates wallets, and 
     );
     const incomeCategoryId = categories.rows.find((row) => row.nature === "income")!.id;
     const expenseCategoryId = categories.rows.find((row) => row.nature === "expense")!.id;
+    const sessionToken = createOpaqueToken();
+    await new PostgresAuthRepository(database).createSession(
+      userId,
+      hashToken(sessionToken),
+      new Date(Date.now() + 60_000),
+    );
+    app = createApp(database, { financialImportRepository: repository });
+    await app.ready();
+    const authenticatedHeaders = {
+      cookie: `cashin_session=${sessionToken}`,
+      "x-wallet-id": walletId,
+    };
 
     const created = await repository.createImport(userId, walletId, {
       format: "csv",
@@ -98,16 +114,34 @@ test("PostgreSQL financial import confirms exact amounts, isolates wallets, and 
         validationStatus: "invalid",
         errorMessage: "Data e valor inválidos.",
       },
+      {
+        sequence: 5,
+        date: "2026-10-22",
+        description: "Sequência original repetida",
+        signedAmount: "5.00",
+        type: "expense",
+        validationStatus: "invalid",
+        errorMessage: "A sequência original da movimentação está duplicada no arquivo.",
+      },
+      {
+        sequence: 6,
+        date: "2026-10-22",
+        description: "Lançamento duplicado",
+        signedAmount: "5.00",
+        type: "expense",
+        validationStatus: "duplicate",
+        errorMessage: "A movimentação já existe.",
+      },
     ]);
     assert.deepEqual(preview?.summary, {
-      total: 4,
+      total: 6,
       valid: 2,
-      duplicate: 0,
-      invalid: 1,
+      duplicate: 1,
+      invalid: 2,
       uncategorized: 1,
       imported: 0,
     });
-    assert.equal(preview?.items?.length, 4);
+    assert.equal(preview?.items?.length, 6);
     assert.deepEqual(preview?.items?.[3], {
       id: preview?.items?.[3]?.id,
       sequence: 4,
@@ -122,6 +156,30 @@ test("PostgreSQL financial import confirms exact amounts, isolates wallets, and 
       createdAt: preview?.items?.[3]?.createdAt,
       updatedAt: preview?.items?.[3]?.updatedAt,
     });
+
+    for (const excludedItem of [preview?.items?.[4], preview?.items?.[5]]) {
+      assert.ok(excludedItem);
+      const patchResponse: { statusCode: number } = await app.inject({
+        method: "PATCH",
+        url: `/financial-imports/${created.id}/items/${excludedItem.id}`,
+        headers: authenticatedHeaders,
+        payload: {
+          date: "2026-10-23",
+          description: excludedItem.description,
+          type: "expense",
+          categoryId: expenseCategoryId,
+          subcategoryId: null,
+        },
+      });
+      assert.equal(patchResponse.statusCode, 409);
+    }
+    const excludedItems = await database.query<{ validation_status: string }>(
+      `SELECT validation_status FROM import_items
+       WHERE import_session_id = $1 AND sequence IN (5, 6)
+       ORDER BY sequence`,
+      [created.id],
+    );
+    assert.deepEqual(excludedItems.rows.map((row) => row.validation_status), ["invalid", "duplicate"]);
 
     const completed = await repository.confirmImport(otherUserId, walletId, created.id);
     assert.equal(completed?.status, "completed");
@@ -222,7 +280,64 @@ test("PostgreSQL financial import confirms exact amounts, isolates wallets, and 
       await blocker.query("ROLLBACK").catch(() => undefined);
       blocker.release();
     }
+
+    const editSession = await repository.createImport(userId, walletId, {
+      format: "csv",
+      fileName: "edit-confirm.csv",
+      fileSize: 64,
+      fileHash: "d".repeat(64),
+    });
+    const editPreview = await repository.savePreview(userId, walletId, editSession.id, [{
+      sequence: 1,
+      date: "2026-10-23",
+      description: "Classificação concorrente",
+      signedAmount: "15.00",
+      type: "income",
+      validationStatus: "uncategorized",
+    }]);
+    const editItem = editPreview?.items?.[0];
+    assert.ok(editItem);
+    const itemBlocker = await scopedPool.connect();
+    try {
+      await itemBlocker.query("BEGIN");
+      await itemBlocker.query(
+        "SELECT id FROM import_items WHERE id = $1 AND wallet_id = $2 FOR UPDATE",
+        [editItem.id, walletId],
+      );
+
+      const editPromise = repository.updateItem(userId, walletId, editSession.id, editItem.id, {
+        date: "2026-10-23",
+        description: "Classificação concorrente",
+        type: "income",
+        categoryId: incomeCategoryId,
+        subcategoryId: null,
+      });
+      await delay(100);
+      const confirmationPromise = repository.confirmImport(userId, walletId, editSession.id);
+      const concurrentRace = await Promise.race([
+        confirmationPromise.then(() => "finished" as const),
+        delay(100).then(() => "waiting" as const),
+      ]);
+      assert.equal(concurrentRace, "waiting", "confirmation must wait for the editing session lock");
+
+      await itemBlocker.query("COMMIT");
+      assert.equal((await editPromise)?.validationStatus, "valid");
+      const confirmation = await confirmationPromise;
+      assert.equal(confirmation?.status, "completed");
+      assert.equal(confirmation?.summary.imported, 1);
+      assert.equal(
+        (await database.query(
+          "SELECT count(*)::integer AS count FROM incomes WHERE wallet_id = $1 AND description = $2",
+          [walletId, "Classificação concorrente"],
+        )).rows[0]!.count,
+        1,
+      );
+    } finally {
+      await itemBlocker.query("ROLLBACK").catch(() => undefined);
+      itemBlocker.release();
+    }
   } finally {
+    await app?.close();
     await scopedPool?.end();
     await adminPool.query(`DROP SCHEMA IF EXISTS ${schemaName} CASCADE`);
     await adminPool.end();
