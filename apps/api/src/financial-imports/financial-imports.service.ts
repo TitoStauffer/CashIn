@@ -13,6 +13,7 @@ import {
 
 export const MAX_FINANCIAL_IMPORT_FILE_SIZE = 10 * 1024 * 1024;
 export const MAX_FINANCIAL_IMPORT_ITEMS = 10_000;
+const MAX_FINANCIAL_IMPORT_DESCRIPTION_BYTES = 4_000;
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
@@ -33,6 +34,18 @@ function normalizeFileName(value: string): string {
   return fileName;
 }
 
+function truncateUtf8(value: string, maxBytes: number): string {
+  let byteLength = 0;
+  let result = "";
+  for (const character of value) {
+    const characterBytes = Buffer.byteLength(character, "utf8");
+    if (byteLength + characterBytes > maxBytes) break;
+    result += character;
+    byteLength += characterBytes;
+  }
+  return result;
+}
+
 function normalizeParsedItem(item: ParsedFinancialImportItem, fallbackSequence: number): ParsedFinancialImportItem {
   const hasValidSourceSequence = Number.isSafeInteger(item.sequence)
     && item.sequence > 0
@@ -42,7 +55,12 @@ function normalizeParsedItem(item: ParsedFinancialImportItem, fallbackSequence: 
     && SIGNED_MONEY_PATTERN.test(item.signedAmount)
     && !ZERO_MONEY_PATTERN.test(item.signedAmount);
   const hasValidType = FINANCIAL_IMPORT_ITEM_TYPES.includes(item.type);
-  const description = item.description?.trim() || null;
+  const rawDescription = item.description?.trim() || null;
+  const hasValidDescription = rawDescription === null
+    || Buffer.byteLength(rawDescription, "utf8") <= MAX_FINANCIAL_IMPORT_DESCRIPTION_BYTES;
+  const description = rawDescription === null
+    ? null
+    : truncateUtf8(rawDescription, MAX_FINANCIAL_IMPORT_DESCRIPTION_BYTES);
   const rawCategoryId = item.categoryId ?? null;
   const rawSubcategoryId = item.subcategoryId ?? null;
   const hasValidCategory = rawCategoryId === null || UUID_PATTERN.test(rawCategoryId);
@@ -56,6 +74,7 @@ function normalizeParsedItem(item: ParsedFinancialImportItem, fallbackSequence: 
   if (!hasValidAmount) invalidReasons.push("O valor da movimentação deve ser diferente de zero e ter até duas casas decimais.");
   if (!hasValidType) invalidReasons.push("O tipo da movimentação é inválido.");
   if (!hasValidCategory || !hasValidSubcategory) invalidReasons.push("A categoria ou subcategoria da movimentação é inválida.");
+  if (!hasValidDescription) invalidReasons.push("A descrição da movimentação deve ter no máximo 4.000 bytes.");
 
   let validationStatus = item.validationStatus ?? "valid";
   let errorMessage = item.errorMessage?.trim() || null;

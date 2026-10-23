@@ -269,6 +269,38 @@ describe('FinancialImportsPage', () => {
     expect(screen.getByText((_, element) => Boolean(element?.classList.contains('imports-wallet') && element.textContent === 'Carteira: Família'))).toBeVisible()
   })
 
+  it('clears wallet-scoped state and blocks upload when the new wallet fails to load', async () => {
+    vi.mocked(importsApi.list)
+      .mockResolvedValueOnce({ items: [{ ...previewSession, items: undefined }] })
+      .mockRejectedValueOnce(new Error('load failed'))
+    const user = userEvent.setup()
+    await renderPage()
+    await user.click(await screen.findByRole('button', { name: 'Ver detalhes' }))
+    const firstItem = (await screen.findByText('Movimentação 1')).closest('li') as HTMLElement
+    await user.selectOptions(within(firstItem).getByLabelText('Categoria'), 'income-category')
+
+    const input = screen.getByLabelText('Arquivo OFX ou CSV') as HTMLInputElement
+    const previousWalletFile = new File(['OFXDATA'], 'carteira-pessoal.ofx', { type: 'application/x-ofx' })
+    await user.upload(input, previousWalletFile)
+    expect(screen.getByText(/carteira-pessoal\.ofx/)).toBeVisible()
+
+    await user.selectOptions(screen.getByRole('combobox', { name: /Carteira ativa/ }), 'wallet-shared')
+    expect(await screen.findByRole('alert')).toHaveTextContent('Não foi possível carregar o histórico de importações')
+
+    expect(screen.queryByText('Movimentação 1')).not.toBeInTheDocument()
+    expect(screen.queryByText(/Existem ajustes não salvos/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/carteira-pessoal\.ofx/)).not.toBeInTheDocument()
+    const currentInput = screen.getByLabelText('Arquivo OFX ou CSV') as HTMLInputElement
+    expect(currentInput).not.toBe(input)
+    expect(currentInput.files).toHaveLength(0)
+    expect(currentInput).toBeDisabled()
+    const uploadButton = screen.getByRole('button', { name: 'Enviar e preparar prévia' })
+    expect(uploadButton).toBeDisabled()
+    await user.click(uploadButton)
+    fireEvent.submit(uploadButton.closest('form')!)
+    expect(importsApi.upload).not.toHaveBeenCalled()
+  })
+
   it('shows action errors while the user remains in the same wallet', async () => {
     vi.mocked(importsApi.list).mockResolvedValueOnce({ items: [{ ...previewSession, items: undefined }] })
     vi.mocked(importsApi.upload).mockRejectedValueOnce(new Error('upload failed'))

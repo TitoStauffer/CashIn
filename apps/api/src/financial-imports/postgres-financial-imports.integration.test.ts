@@ -336,6 +336,70 @@ test("PostgreSQL financial import confirms exact amounts, isolates wallets, and 
       await itemBlocker.query("ROLLBACK").catch(() => undefined);
       itemBlocker.release();
     }
+
+    await app.close();
+    app = createApp(database, {
+      financialImportRepository: repository,
+      financialImportParser: {
+        parse: async () => [
+          {
+            sequence: 1,
+            date: "2026-10-24",
+            description: "Linha válida",
+            signedAmount: "30.00",
+            type: "income",
+            categoryId: incomeCategoryId,
+          },
+          {
+            sequence: 2,
+            date: "2026-10-24",
+            description: "á".repeat(2_001),
+            signedAmount: "5.00",
+            type: "income",
+            categoryId: incomeCategoryId,
+          },
+        ],
+      },
+    });
+    await app.ready();
+    const oversizedDescription = await app.inject({
+      method: "POST",
+      url: "/financial-imports",
+      headers: {
+        ...authenticatedHeaders,
+        "content-type": "application/octet-stream",
+        "x-file-name": "description.csv",
+        "x-file-format": "csv",
+      },
+      payload: Buffer.from("description-test"),
+    });
+    assert.equal(oversizedDescription.statusCode, 201);
+    assert.deepEqual(oversizedDescription.json().summary, {
+      total: 2,
+      valid: 1,
+      duplicate: 0,
+      invalid: 1,
+      uncategorized: 0,
+      imported: 0,
+    });
+    assert.equal(Buffer.byteLength(oversizedDescription.json().items[1].description, "utf8"), 4_000);
+    assert.match(oversizedDescription.json().items[1].errorMessage, /máximo 4\.000 bytes/i);
+
+    const confirmedDescriptionImport = await app.inject({
+      method: "POST",
+      url: `/financial-imports/${oversizedDescription.json().id}/confirm`,
+      headers: authenticatedHeaders,
+    });
+    assert.equal(confirmedDescriptionImport.statusCode, 200);
+    assert.equal(confirmedDescriptionImport.json().summary.imported, 1);
+    assert.equal(confirmedDescriptionImport.json().summary.invalid, 1);
+    assert.equal(
+      (await database.query(
+        "SELECT count(*)::integer AS count FROM incomes WHERE wallet_id = $1 AND description = 'Linha válida'",
+        [walletId],
+      )).rows[0]!.count,
+      1,
+    );
   } finally {
     await app?.close();
     await scopedPool?.end();

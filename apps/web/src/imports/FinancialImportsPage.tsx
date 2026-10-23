@@ -114,7 +114,12 @@ function hasDraftChanged(item: FinancialImportItem, draft: FinancialImportItemIn
     || original.subcategoryId !== draft.subcategoryId
 }
 
-export function FinancialImportsPage({ userEmail, isLoggingOut, onLogout }: FinancialImportsPageProps) {
+export function FinancialImportsPage(props: FinancialImportsPageProps) {
+  const { activeWalletId } = useWallet()
+  return <FinancialImportsWalletPage key={String(activeWalletId)} {...props} />
+}
+
+function FinancialImportsWalletPage({ userEmail, isLoggingOut, onLogout }: FinancialImportsPageProps) {
   const { activeWalletId, activeWallet } = useWallet()
   const fileInputRef = useRef<HTMLInputElement>(null)
   const activeWalletIdRef = useRef(activeWalletId)
@@ -239,6 +244,7 @@ export function FinancialImportsPage({ userEmail, isLoggingOut, onLogout }: Fina
 
   async function handleUpload(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
+    if (loadError) return
     if (!selectedFile) {
       setFormError('Selecione um arquivo OFX ou CSV para continuar.')
       return
@@ -401,11 +407,11 @@ export function FinancialImportsPage({ userEmail, isLoggingOut, onLogout }: Fina
                   aria-label="Arquivo OFX ou CSV"
                   accept=".ofx,.csv,application/x-ofx,text/csv"
                   onChange={handleFileChange}
-                  disabled={pendingAction !== null || isLoading}
+                  disabled={pendingAction !== null || isLoading || Boolean(loadError)}
                 />
                 <small>{selectedFile ? `${selectedFile.name} · ${formatFileSize(selectedFile.size)}` : 'O arquivo será processado temporariamente e não ficará armazenado.'}</small>
               </label>
-              <button className="imports-primary-button" type="submit" disabled={!selectedFile || pendingAction !== null || isLoading}>
+              <button className="imports-primary-button" type="submit" disabled={!selectedFile || pendingAction !== null || isLoading || Boolean(loadError)}>
                 {pendingAction === 'upload' ? 'Enviando arquivo…' : 'Enviar e preparar prévia'}
               </button>
             </form>
