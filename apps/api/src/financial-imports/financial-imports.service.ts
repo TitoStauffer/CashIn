@@ -13,6 +13,7 @@ import {
 
 export const MAX_FINANCIAL_IMPORT_FILE_SIZE = 10 * 1024 * 1024;
 export const MAX_FINANCIAL_IMPORT_ITEMS = 10_000;
+const MAX_FINANCIAL_IMPORT_FILE_NAME_BYTES = 512;
 const MAX_FINANCIAL_IMPORT_DESCRIPTION_BYTES = 4_000;
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -28,7 +29,12 @@ function validateDate(value: string): boolean {
 
 function normalizeFileName(value: string): string {
   const fileName = value.split(/[\\/]/).at(-1)?.trim() ?? "";
-  if (!fileName || fileName.length > 255 || /[\u0000-\u001f\u007f]/.test(fileName)) {
+  if (
+    !fileName
+    || fileName.length > 255
+    || Buffer.byteLength(fileName, "utf8") > MAX_FINANCIAL_IMPORT_FILE_NAME_BYTES
+    || /[\u0000-\u001f\u007f]/.test(fileName)
+  ) {
     throw new FinancialImportError("O nome do arquivo é inválido.", 400);
   }
   return fileName;
@@ -136,9 +142,13 @@ function normalizeUpdateInput(input: UpdateFinancialImportItemInput): Required<U
   if (subcategoryId !== null && categoryId === null) {
     throw new FinancialImportError("Selecione uma categoria para usar a subcategoria.", 400);
   }
+  const description = input.description?.trim() || null;
+  if (description !== null && Buffer.byteLength(description, "utf8") > MAX_FINANCIAL_IMPORT_DESCRIPTION_BYTES) {
+    throw new FinancialImportError("A descrição da movimentação deve ter no máximo 4.000 bytes.", 400);
+  }
   return {
     date: input.date,
-    description: input.description?.trim() || null,
+    description,
     type: input.type,
     categoryId,
     subcategoryId,

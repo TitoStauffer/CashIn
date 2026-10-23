@@ -420,6 +420,87 @@ test("upload failures are safe, validated, and retained as failed history", asyn
   await app.close();
 });
 
+test("upload and preview edits enforce UTF-8 byte limits before persistence", async () => {
+  const { app } = createTestApp();
+  const fileNameAtLimit = `${"界".repeat(168)}${"á".repeat(2)}.csv`;
+  assert.equal(Buffer.byteLength(fileNameAtLimit, "utf8"), 512);
+  const acceptedUpload = await app.inject({
+    method: "POST",
+    url: "/financial-imports",
+    headers: {
+      cookie: authCookie(),
+      "content-type": "application/octet-stream",
+      "x-file-name": encodeURIComponent(fileNameAtLimit),
+      "x-file-format": "csv",
+    },
+    payload: Buffer.from("content"),
+  });
+  assert.equal(acceptedUpload.statusCode, 201);
+  assert.equal(acceptedUpload.json().fileName, fileNameAtLimit);
+
+  const oversizedFileName = `${"界".repeat(169)}á.csv`;
+  assert.equal(Buffer.byteLength(oversizedFileName, "utf8"), 513);
+  const rejectedUpload = await app.inject({
+    method: "POST",
+    url: "/financial-imports",
+    headers: {
+      cookie: authCookie(),
+      "content-type": "application/octet-stream",
+      "x-file-name": encodeURIComponent(oversizedFileName),
+      "x-file-format": "csv",
+    },
+    payload: Buffer.from("content"),
+  });
+  assert.equal(rejectedUpload.statusCode, 400);
+  assert.equal(rejectedUpload.json().message, "O nome do arquivo é inválido.");
+
+  const detail = await app.inject({
+    method: "GET",
+    url: `/financial-imports/${acceptedUpload.json().id}`,
+    headers: { cookie: authCookie() },
+  });
+  const itemId = detail.json().items[0].id;
+  const descriptionAtLimit = `${"界".repeat(1_332)}${"á".repeat(2)}`;
+  assert.equal(Buffer.byteLength(descriptionAtLimit, "utf8"), 4_000);
+  const acceptedEdit = await app.inject({
+    method: "PATCH",
+    url: `/financial-imports/${acceptedUpload.json().id}/items/${itemId}`,
+    headers: { cookie: authCookie() },
+    payload: {
+      date: "2026-10-20",
+      description: descriptionAtLimit,
+      type: "income",
+      categoryId: CATEGORY_A,
+    },
+  });
+  assert.equal(acceptedEdit.statusCode, 200);
+  assert.equal(acceptedEdit.json().description, descriptionAtLimit);
+
+  const oversizedDescription = `${descriptionAtLimit}a`;
+  assert.equal(Buffer.byteLength(oversizedDescription, "utf8"), 4_001);
+  const rejectedEdit = await app.inject({
+    method: "PATCH",
+    url: `/financial-imports/${acceptedUpload.json().id}/items/${itemId}`,
+    headers: { cookie: authCookie() },
+    payload: {
+      date: "2026-10-20",
+      description: oversizedDescription,
+      type: "income",
+      categoryId: CATEGORY_A,
+    },
+  });
+  assert.equal(rejectedEdit.statusCode, 400);
+  assert.equal(rejectedEdit.json().message, "A descrição da movimentação deve ter no máximo 4.000 bytes.");
+
+  const unchangedDetail = await app.inject({
+    method: "GET",
+    url: `/financial-imports/${acceptedUpload.json().id}`,
+    headers: { cookie: authCookie() },
+  });
+  assert.equal(unchangedDetail.json().items[0].description, descriptionAtLimit);
+  await app.close();
+});
+
 test("upload enforces the 10 MB and 10,000 movement limits", async () => {
   const tooMany = createTestApp(new TestParser(false, 10_001));
   const tooManyResponse = await upload(tooMany.app);
