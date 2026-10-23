@@ -65,15 +65,24 @@ function normalizeParsedItem(item: ParsedFinancialImportItem, fallbackSequence: 
   const rawSubcategoryId = item.subcategoryId ?? null;
   const hasValidCategory = rawCategoryId === null || UUID_PATTERN.test(rawCategoryId);
   const hasValidSubcategory = rawSubcategoryId === null || UUID_PATTERN.test(rawSubcategoryId);
+  const hasCompatibleReferences = rawSubcategoryId === null
+    || (rawCategoryId !== null && hasValidCategory && hasValidSubcategory);
   const type = hasValidType ? item.type : "transfer";
   const categoryId = type === "transfer" || !hasValidCategory ? null : rawCategoryId;
-  const subcategoryId = type === "transfer" || !hasValidSubcategory ? null : rawSubcategoryId;
+  const subcategoryId = type === "transfer"
+    || categoryId === null
+    || !hasValidSubcategory
+    || !hasCompatibleReferences
+    ? null
+    : rawSubcategoryId;
   const invalidReasons: string[] = [];
   if (!hasValidSourceSequence) invalidReasons.push("A sequência original da movimentação é inválida.");
   if (!hasValidDate) invalidReasons.push("A data da movimentação é inválida.");
   if (!hasValidAmount) invalidReasons.push("O valor da movimentação deve ser diferente de zero e ter até duas casas decimais.");
   if (!hasValidType) invalidReasons.push("O tipo da movimentação é inválido.");
-  if (!hasValidCategory || !hasValidSubcategory) invalidReasons.push("A categoria ou subcategoria da movimentação é inválida.");
+  if (!hasValidCategory || !hasValidSubcategory || !hasCompatibleReferences) {
+    invalidReasons.push("A categoria ou subcategoria da movimentação é inválida.");
+  }
   if (!hasValidDescription) invalidReasons.push("A descrição da movimentação deve ter no máximo 4.000 bytes.");
 
   let validationStatus = item.validationStatus ?? "valid";

@@ -358,6 +358,15 @@ test("PostgreSQL financial import confirms exact amounts, isolates wallets, and 
             type: "income",
             categoryId: incomeCategoryId,
           },
+          {
+            sequence: 3,
+            date: "2026-10-24",
+            description: "Referências incompatíveis",
+            signedAmount: "7.00",
+            type: "expense",
+            categoryId: "categoria-malformada",
+            subcategoryId: "22222222-2222-4222-8222-222222222222",
+          },
         ],
       },
     });
@@ -375,15 +384,19 @@ test("PostgreSQL financial import confirms exact amounts, isolates wallets, and 
     });
     assert.equal(oversizedDescription.statusCode, 201);
     assert.deepEqual(oversizedDescription.json().summary, {
-      total: 2,
+      total: 3,
       valid: 1,
       duplicate: 0,
-      invalid: 1,
+      invalid: 2,
       uncategorized: 0,
       imported: 0,
     });
     assert.equal(Buffer.byteLength(oversizedDescription.json().items[1].description, "utf8"), 4_000);
     assert.match(oversizedDescription.json().items[1].errorMessage, /máximo 4\.000 bytes/i);
+    assert.equal(oversizedDescription.json().items[2].validationStatus, "invalid");
+    assert.equal(oversizedDescription.json().items[2].categoryId, null);
+    assert.equal(oversizedDescription.json().items[2].subcategoryId, null);
+    assert.match(oversizedDescription.json().items[2].errorMessage, /categoria ou subcategoria.+inválida/i);
 
     const confirmedDescriptionImport = await app.inject({
       method: "POST",
@@ -392,7 +405,7 @@ test("PostgreSQL financial import confirms exact amounts, isolates wallets, and 
     });
     assert.equal(confirmedDescriptionImport.statusCode, 200);
     assert.equal(confirmedDescriptionImport.json().summary.imported, 1);
-    assert.equal(confirmedDescriptionImport.json().summary.invalid, 1);
+    assert.equal(confirmedDescriptionImport.json().summary.invalid, 2);
     assert.equal(
       (await database.query(
         "SELECT count(*)::integer AS count FROM incomes WHERE wallet_id = $1 AND description = 'Linha válida'",
