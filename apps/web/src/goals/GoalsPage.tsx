@@ -258,6 +258,7 @@ export function GoalsPage({ userEmail, isLoggingOut, onLogout }: GoalsPageProps)
     const [goalResponse, contributionResponse] = await Promise.all([goalsApi.list(), goalsApi.contributions(goalId)])
     setGoals(goalResponse.items)
     setContributions((previous) => ({ ...previous, [goalId]: contributionResponse.items }))
+    setContributionLoadErrors((previous) => ({ ...previous, [goalId]: '' }))
   }
 
   async function saveContribution(event: FormEvent<HTMLFormElement>) {
