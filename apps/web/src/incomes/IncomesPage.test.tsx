@@ -45,8 +45,35 @@ describe('IncomesPage currency input', () => {
 
   afterEach(() => {
     cleanup()
+    window.history.replaceState({}, '', '/')
     vi.restoreAllMocks()
     vi.unstubAllGlobals()
+  })
+
+  it('opens the dashboard month and category, filters totals and lets the user clear the category', async () => {
+    window.history.replaceState({}, '', '/incomes?month=2024-02&categoryId=income-category')
+    const other = { ...income, id: 'other', categoryId: 'other-category', categoryName: 'Venda', description: 'Venda de item', amount: '5.01' }
+    vi.mocked(incomesApi.list).mockResolvedValue({ items: [income, other] })
+    await renderPage()
+    expect(await screen.findByText('Salário mensal')).toBeVisible()
+    expect(incomesApi.list).toHaveBeenCalledWith('2024-02-01', '2024-02-29', expect.any(AbortSignal))
+    expect(screen.getByLabelText('Selecionar mês e ano')).toHaveValue('2024-02')
+    expect(screen.getByLabelText('Filtrar por categoria')).toHaveValue('income-category')
+    expect(screen.queryByText('Venda de item')).not.toBeInTheDocument()
+    expect(screen.getByText('Total').parentElement).toHaveTextContent('R$ 1.234,56')
+    await userEvent.setup().selectOptions(screen.getByLabelText('Filtrar por categoria'), '')
+    expect(screen.getByText('Venda de item')).toBeVisible()
+    expect(screen.getByText('Total').parentElement).toHaveTextContent('R$ 1.239,57')
+  })
+
+  it('keeps a missing linked category explicit and clears it on wallet change', async () => {
+    window.history.replaceState({}, '', '/incomes?month=2026-10&categoryId=missing')
+    await renderPage()
+    expect(await screen.findByText('Nenhuma entrada nesta categoria e mês')).toBeVisible()
+    expect(screen.getByRole('option', { name: 'Categoria vinculada' })).toBeVisible()
+    await userEvent.setup().selectOptions(screen.getByRole('combobox', { name: /Carteira ativa/ }), 'wallet-shared')
+    expect(await screen.findByText('Salário mensal')).toBeVisible()
+    expect(screen.getByLabelText('Filtrar por categoria')).toHaveValue('')
   })
 
   it('formats saved values, rejects invalid pasted values, and sends a canonical decimal on create', async () => {

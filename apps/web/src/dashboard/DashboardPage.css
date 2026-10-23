@@ -123,3 +123,28 @@
   .dashboard-summary-card small { font-size: 8px; }
 }
 @media (prefers-reduced-motion: reduce) { .dashboard-flow__bar, .dashboard-goal__track span, .dashboard-spinner { animation-duration: .01ms !important; transition-duration: .01ms !important; } }
+
+.dashboard-summary-card strong { overflow: visible; overflow-wrap: anywhere; white-space: normal; }
+.dashboard-summary-card a, .dashboard-record-link, .dashboard-record-links a, .dashboard-category__label a, .dashboard-comparison a { color: #356348; font-size: 11px; line-height: 1.5; text-underline-offset: 3px; }
+.dashboard-summary-card a { margin-top: auto; padding-top: 12px; }
+.dashboard-record-link { display: inline-block; margin-top: 14px; }
+.dashboard-content a:focus-visible { outline: 3px solid #79a487; outline-offset: 3px; }
+.dashboard-section-note, .dashboard-comparison > p { color: #596b5f; font-size: 12px; line-height: 1.65; }
+.dashboard-benefit-balance { flex-wrap: wrap; }
+.dashboard-benefit-balance span { overflow: visible; white-space: normal; }
+.dashboard-benefit-balance strong { overflow-wrap: anywhere; max-width: 100%; }
+.dashboard-cash-details { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin: 20px 0; }
+.dashboard-cash-details > div { padding: 12px; border-radius: 8px; background: #f5f8f3; }
+.dashboard-cash-details dt { color: #596b5f; font-size: 11px; }
+.dashboard-cash-details dd { margin: 7px 0 0; color: #284a36; font-size: 14px; font-weight: 700; overflow-wrap: anywhere; }
+.dashboard-record-links { display: flex; flex-wrap: wrap; gap: 10px 18px; }
+.dashboard-category__label { flex-wrap: wrap; }
+.dashboard-category__label strong { overflow-wrap: anywhere; max-width: 100%; }
+.dashboard-comparison__table { overflow-x: auto; }
+.dashboard-comparison table { width: 100%; border-collapse: collapse; text-align: left; font-size: 11px; line-height: 1.5; }
+.dashboard-comparison caption { text-align: left; margin: 8px 0; color: #596b5f; }
+.dashboard-comparison th, .dashboard-comparison td { padding: 12px 8px; border-bottom: 1px solid #e5ebe4; color: #385743; }
+.dashboard-category-comparison h3 { font-size: 13px; color: #385743; margin-top: 20px; }
+.dashboard-category-comparison ul { display: grid; gap: 12px; list-style: none; padding: 0; }
+.dashboard-category-comparison li { display: grid; gap: 5px; font-size: 11px; color: #596b5f; }
+@media (max-width: 500px) { .dashboard-cash-details { grid-template-columns: 1fr; } }

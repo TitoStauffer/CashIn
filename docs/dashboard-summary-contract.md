@@ -1,6 +1,6 @@
-# Contrato incremental do resumo financeiro — DEV-38
+# Contrato do resumo financeiro do dashboard — DEV-38
 
-Este incremento amplia `GET /financial-summary` com os componentes monetários necessários à base do dashboard de saúde financeira. A implementação completa da DEV-38 ainda depende da interface, Top 5, comparação de períodos e indicadores por meta.
+`GET /financial-summary` fornece os componentes monetários, categorias e aportes por meta do dashboard de saúde financeira. O cliente usa esse resumo para o período selecionado e consulta separadamente o período anterior para comparar os valores reais. O Top 5 é calculado a partir das categorias do período, sem um novo endpoint.
 
 ## Consulta e representação
 
@@ -8,7 +8,7 @@ O endpoint exige sessão autenticada e usa a carteira acessível selecionada pel
 
 Os parâmetros opcionais `from` e `to` aceitam datas `AAAA-MM-DD`, com limites inclusivos. Cada parâmetro também pode ser usado sozinho; sem ambos, a consulta inclui todos os registros da carteira. Datas inválidas e intervalos invertidos retornam `400`. Carteiras inexistentes ou sem acesso retornam `404`, conforme o contrato existente de contexto da carteira.
 
-Valores monetários continuam sendo strings decimais, com precisão de centavos e `"0.00"` em períodos vazios. Os quatro campos novos sempre apresentam duas casas decimais; os campos existentes preservam sua representação, que pode ser `"100"` ou `"100.00"` conforme a escala dos registros. As somas e subtrações são executadas com `numeric` no PostgreSQL e retornadas como texto, sem conversão intermediária para ponto flutuante em JavaScript. A formatação dos novos campos usa `trunc(total, 2)`, sem limitar a precisão inteira dos agregados; os valores persistidos já são restritos a centavos.
+Valores monetários continuam sendo strings decimais, com precisão de centavos e `"0.00"` em períodos vazios. Os quatro componentes adicionados e cada `contributionsByGoal[].amount` sempre apresentam duas casas decimais; os campos existentes preservam sua representação, que pode ser `"100"` ou `"100.00"` conforme a escala dos registros. As somas e subtrações são executadas com `numeric` no PostgreSQL e retornadas como texto, sem conversão intermediária para ponto flutuante em JavaScript. A formatação usa `trunc(total, 2)`, sem limitar a precisão inteira dos agregados; os valores persistidos já são restritos a centavos.
 
 ## Campos adicionados
 
@@ -20,6 +20,14 @@ Valores monetários continuam sendo strings decimais, com precisão de centavos 
 | `cardPaymentTotal` | Valores efetivamente pagos nas faturas com `paid_date` preenchida. Faturas em aberto não entram. | Data do pagamento (`paid_date`) |
 
 A classificação usa a natureza registrada na despesa, preservando o histórico mesmo se a forma de pagamento mudar posteriormente.
+
+## Aportes por meta
+
+`contributionsByGoal` é um array de `{ "goalId": "uuid", "amount": "0.30" }`, com a soma dos aportes de cada meta no período e carteira consultados. O agrupamento usa a mesma seleção de registros de `contributionTotal`; a soma dos itens equivale numericamente a esse total.
+
+Os limites de data são inclusivos e se aplicam à data do aporte. O resultado inclui o histórico de metas ativas e encerradas, ordenado por `goalId`. Metas sem aportes no intervalo não geram item; sem aportes na consulta, o valor é `[]`. Aportes de outras carteiras são excluídos mesmo quando pertencem ao mesmo usuário.
+
+O cliente combina os itens pelo identificador com `GET /investment-goals`, que fornece título, alvo (`targetAmount`), acumulado geral (`contributedAmount`), percentual (`progressPercentage`), prazo (`dueDate`) e situação. A ausência de item corresponde a `"0.00"` de aportes no período. O acumulado geral e seu percentual não são recalculados com o período; o restante usa os dados gerais da meta. Esta resposta não calcula previsões.
 
 ## Semântica preservada
 
@@ -53,6 +61,9 @@ Com receita em dinheiro de `100.00`, despesa imediata de `5.00`, compra no créd
   "creditPurchaseTotal": "10.00",
   "cardPaymentTotal": "10.00",
   "contributionTotal": "20.00",
+  "contributionsByGoal": [
+    { "goalId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", "amount": "20.00" }
+  ],
   "cashBalance": "65.00",
   "availableBalance": "65.00"
 }

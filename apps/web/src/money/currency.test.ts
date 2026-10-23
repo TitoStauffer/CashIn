@@ -54,9 +54,9 @@ describe('Brazilian currency helpers', () => {
     expect(formatBrazilianCurrency('-1234.56')).toBe('-R$ 1.234,56')
     expect(formatBrazilianCurrency('1234')).toBe('R$ 1.234,00')
     expect(formatBrazilianCurrency('invalid')).toBe('R$ 0,00')
-    expect(formatBrazilianCurrency('9'.repeat(10_000))).toBe('R$ 0,00')
     expect(formatBrazilianCurrencyInput('1234.5')).toBe('1.234,50')
-    expect(formatBrazilianCurrency('1000000000000.00')).toBe('R$ 0,00')
+    expect(formatBrazilianCurrency('1000000000000.00')).toBe('R$ 1.000.000.000.000,00')
+    expect(formatBrazilianCurrency('9007199254740993123456789.01')).toBe('R$ 9.007.199.254.740.993.123.456.789,01')
   })
 
   it('checks positivity from the decimal string', () => {

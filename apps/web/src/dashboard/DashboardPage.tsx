@@ -1,71 +1,21 @@
-import { useEffect, useMemo, useState } from 'react'
-import type { BenefitBalanceSummary, CategorySummary, FinancialSummary } from './dashboardApi'
+import { useEffect, useState } from 'react'
 import { DashboardApiError, dashboardApi } from './dashboardApi'
+import type { FinancialSummary } from './dashboardApi'
 import type { InvestmentGoal } from '../goals/goalsApi'
-import { formatBrazilianCurrency } from '../money/currency'
 import { FinancialSidebar } from '../layout/FinancialSidebar'
 import { useWallet } from '../wallets/useWallet'
 import { MonthYearSelector } from '../period/MonthYearSelector'
-import { formatMonth, getCurrentMonth, getMonthRange } from '../period/month'
+import { getMonthRange, shiftMonth } from '../period/month'
+import { getInitialMonth, recordLink } from '../period/recordLinks'
+import { DashboardOverview } from './DashboardOverview'
+import { DashboardCategories } from './DashboardCategories'
+import { DashboardComparison } from './DashboardComparison'
+import { DashboardGoals } from './DashboardGoals'
 import './DashboardPage.css'
 
 type DashboardPageProps = { userEmail: string; isLoggingOut: boolean; onLogout: () => void }
-
-function formatAmount(value: string) {
-  return formatBrazilianCurrency(value)
-}
-
-const benefitLabels: Record<BenefitBalanceSummary['balanceType'], string> = {
-  food_benefit: 'Vale-alimentação (VA)',
-  meal_benefit: 'Vale-refeição (VR)',
-  food_meal_benefit: 'Cartão de benefícios (VA/VR)',
-  home_office_benefit: 'Auxílio home office (AHO)',
-}
-
-function CategoryBreakdown({ title, items, tone }: { title: string; items: CategorySummary[]; tone: 'income' | 'expense' }) {
-  const amountsInCents = items.map((item) => amountToCents(item.amount))
-  const maximum = Math.max(0, ...amountsInCents)
-
-  return (
-    <section className={`dashboard-category dashboard-category--${tone}`} aria-label={`${title} por categoria`}>
-      <h3>{title}</h3>
-      {items.length === 0 ? (
-        <p className="dashboard-category__empty">Nenhuma {tone === 'income' ? 'entrada' : 'despesa'} neste período.</p>
-      ) : (
-        <ul className="dashboard-category__list">
-          {items.map((item, index) => {
-            const amountInCents = amountsInCents[index]
-            const width = maximum > 0 ? amountInCents / maximum * 100 : 0
-            return (
-              <li className="dashboard-category__item" key={item.categoryId}>
-                <div className="dashboard-category__label"><span>{item.categoryName}</span><strong>{formatAmount(item.amount)}</strong></div>
-                <div className="dashboard-category__track" role="img" aria-label={`${item.categoryName}: ${formatAmount(item.amount)}`}>
-                  <span style={{ width: `${width}%` }} />
-                </div>
-              </li>
-            )
-          })}
-        </ul>
-      )}
-    </section>
-  )
-}
-
-function amountToCents(value: string) {
-  const [integerPart, fractionPart = ''] = value.split('.')
-  const cents = Number(`${integerPart}${fractionPart.padEnd(2, '0').slice(0, 2)}`)
-  return Number.isFinite(cents) ? cents : 0
-}
-
-function centsToAmount(value: number) {
-  return `${Math.floor(value / 100)}.${String(value % 100).padStart(2, '0')}`
-}
-
-function formatDate(value: string | null) {
-  if (!value) return 'Prazo não definido'
-  const [year, month, day] = value.slice(0, 10).split('-')
-  return `Prazo: ${day}/${month}/${year}`
-}
+type DashboardData = { summary: FinancialSummary; previous: FinancialSummary; goals: InvestmentGoal[] }
+type LoadState = { key: string; data?: DashboardData; error?: string }
 
 function getErrorMessage(error: unknown) {
   if (error instanceof DashboardApiError) {
@@ -80,190 +30,46 @@ function getErrorMessage(error: unknown) {
 
 export function DashboardPage({ userEmail, isLoggingOut, onLogout }: DashboardPageProps) {
   const { activeWalletId } = useWallet()
-  const [month, setMonth] = useState(getCurrentMonth)
-  const [summary, setSummary] = useState<FinancialSummary | null>(null)
-  const [goals, setGoals] = useState<InvestmentGoal[]>([])
-  const [isLoading, setIsLoading] = useState(true)
-  const [loadedWalletId, setLoadedWalletId] = useState<string | null>(null)
-  const [loadError, setLoadError] = useState('')
+  const [month, setMonth] = useState(getInitialMonth)
   const [reloadKey, setReloadKey] = useState(0)
-  const range = useMemo(() => getMonthRange(month), [month])
+  const [loaded, setLoaded] = useState<LoadState | null>(null)
+  const requestKey = `${activeWalletId}/${month}/${reloadKey}`
 
   useEffect(() => {
     const controller = new AbortController()
+    const range = getMonthRange(month)
+    const previousRange = getMonthRange(shiftMonth(month, -1))
     Promise.all([
       dashboardApi.summary(range.from, range.to, controller.signal),
+      dashboardApi.summary(previousRange.from, previousRange.to, controller.signal),
       dashboardApi.goals(controller.signal),
-    ])
-      .then(([nextSummary, goalResponse]) => {
-        setSummary(nextSummary)
-        setGoals(goalResponse.items)
-        setLoadedWalletId(activeWalletId)
-        setLoadError('')
-      })
-      .catch((error: unknown) => {
-        if (error instanceof Error && error.name === 'AbortError') return
-        setLoadedWalletId(activeWalletId)
-        setLoadError(getErrorMessage(error))
-      })
-      .finally(() => { if (!controller.signal.aborted) setIsLoading(false) })
+    ]).then(([summary, previous, goals]) => {
+      if (!controller.signal.aborted) setLoaded({ key: requestKey, data: { summary, previous, goals: goals.items } })
+    }).catch((error: unknown) => {
+      if (!controller.signal.aborted) setLoaded({ key: requestKey, error: getErrorMessage(error) })
+    })
     return () => controller.abort()
-  }, [activeWalletId, range.from, range.to, reloadKey])
+  }, [month, requestKey])
 
-  const isWalletLoading = loadedWalletId !== activeWalletId
+  const current = loaded?.key === requestKey ? loaded : null
+  const data = current?.data
 
-  const outflowCents = summary
-    ? amountToCents(summary.expenseTotal) + amountToCents(summary.contributionTotal)
-    : 0
-  const incomeCents = summary ? amountToCents(summary.incomeTotal) : 0
-  const outflow = centsToAmount(outflowCents)
-  const scale = Math.max(incomeCents, outflowCents)
-  const visibleGoals = useMemo(() => goals
-    .filter((goal) => goal.status === 'active')
-    .sort((a, b) => a.title.localeCompare(b.title, 'pt-BR')), [goals])
-
-  function selectMonth(selectedMonth: string) {
-    if (selectedMonth === month) return
-    setLoadError('')
-    setIsLoading(true)
-    setMonth(selectedMonth)
-  }
-
-  return (
-    <>
+  return <>
     <FinancialSidebar activePage="dashboard" userEmail={userEmail} isLoggingOut={isLoggingOut} onLogout={onLogout} />
-    <main className="dashboard-page">
-      <div className="dashboard-shell">
-        <section className="dashboard-content" aria-labelledby="dashboard-title">
-          <div className="dashboard-heading">
-            <div>
-              <p className="dashboard-eyebrow">SUA VIDA FINANCEIRA EM UM SÓ LUGAR</p>
-              <h1 id="dashboard-title">Visão geral</h1>
-              <p>Acompanhe o movimento do mês e o caminho até suas metas.</p>
-            </div>
-            <MonthYearSelector month={month} onMonthChange={selectMonth} />
-          </div>
-
-          {loadError && !isWalletLoading && (
-            <div className="dashboard-alert" role="alert">
-              <span>{loadError}</span>
-              <button type="button" onClick={() => { setLoadError(''); setIsLoading(true); setReloadKey((value) => value + 1) }}>Tentar novamente</button>
-            </div>
-          )}
-
-          {isLoading || isWalletLoading ? (
-            <div className="dashboard-loading" role="status" aria-live="polite"><span className="dashboard-spinner" />Carregando sua visão financeira…</div>
-          ) : !loadError && summary ? (
-            <>
-              <div className="dashboard-summary-grid" aria-label={`Resumo financeiro de ${formatMonth(month)}`}>
-                <article className="dashboard-summary-card dashboard-summary-card--income">
-                  <span>Entradas</span><strong>{formatAmount(summary.incomeTotal)}</strong><small>no mês</small>
-                </article>
-                <article className="dashboard-summary-card dashboard-summary-card--expense">
-                  <span>Despesas</span><strong>{formatAmount(summary.expenseTotal)}</strong><small>no mês</small>
-                </article>
-                <article className="dashboard-summary-card dashboard-summary-card--contribution">
-                  <span>Aportes</span><strong>{formatAmount(summary.contributionTotal)}</strong><small>destinados às metas</small>
-                </article>
-                <article className={`dashboard-summary-card dashboard-summary-card--balance${(summary.cashBalance ?? summary.availableBalance).startsWith('-') ? ' dashboard-summary-card--negative' : ''}`}>
-                  <span>Saldo em dinheiro</span><strong>{formatAmount(summary.cashBalance ?? summary.availableBalance)}</strong><small>disponível após despesas e aportes em dinheiro</small>
-                </article>
-              </div>
-
-              {(summary.benefitBalances?.length ?? 0) > 0 && (
-                <section className="dashboard-benefit-balances" aria-label="Saldos de benefícios">
-                  {summary.benefitBalances?.map((balance) => (
-                    <article className="dashboard-benefit-balance" key={balance.balanceType}>
-                      <span>{benefitLabels[balance.balanceType]}</span>
-                      <strong>{formatAmount(balance.amount)}</strong>
-                    </article>
-                  ))}
-                </section>
-              )}
-
-              <nav className="dashboard-quick-actions" aria-label="Ações rápidas">
-                <a className="dashboard-primary-button" href="/incomes">＋ Registrar entrada</a>
-                <a className="dashboard-secondary-button" href="/expenses">＋ Registrar despesa</a>
-                <a className="dashboard-secondary-button" href="/goals">＋ Registrar aporte</a>
-              </nav>
-
-              <section className="dashboard-panel dashboard-flow" aria-labelledby="flow-title">
-                <div className="dashboard-panel__heading">
-                  <div><p className="dashboard-eyebrow">MOVIMENTO DO MÊS</p><h2 id="flow-title">Entradas e saídas</h2></div>
-                  <a href="/expenses">Ver despesas <span aria-hidden="true">→</span></a>
-                </div>
-                {scale === 0 ? (
-                  <div className="dashboard-empty dashboard-empty--compact">
-                    <span className="dashboard-empty__icon" aria-hidden="true">↗</span>
-                    <p>Nenhuma entrada, despesa ou aporte neste mês.</p>
-                    <div><a href="/incomes">Registrar entrada</a><a href="/expenses">Registrar despesa</a><a href="/goals">Registrar aporte</a></div>
-                  </div>
-                ) : (
-                  <div className="dashboard-flow__rows">
-                    <div className="dashboard-flow__row">
-                      <div><span>Entradas</span><strong>{formatAmount(summary.incomeTotal)}</strong></div>
-                      <div className="dashboard-flow__track" role="img" aria-label={`Entradas: ${formatAmount(summary.incomeTotal)}`}><span className="dashboard-flow__bar dashboard-flow__bar--income" style={{ width: `${scale ? incomeCents / scale * 100 : 0}%` }} /></div>
-                    </div>
-                    <div className="dashboard-flow__row">
-                      <div><span>Saídas <small>(despesas + aportes)</small></span><strong>{formatAmount(outflow)}</strong></div>
-                      <div className="dashboard-flow__track" role="img" aria-label={`Saídas: ${formatAmount(outflow)}`}><span className="dashboard-flow__bar dashboard-flow__bar--outflow" style={{ width: `${scale ? outflowCents / scale * 100 : 0}%` }} /></div>
-                    </div>
-                    <p className="dashboard-flow__note">Os aportes aparecem separados no resumo e também compõem as saídas para calcular o saldo disponível.</p>
-                  </div>
-                )}
-              </section>
-
-              <section className="dashboard-panel dashboard-categories" aria-labelledby="categories-title">
-                <div className="dashboard-panel__heading">
-                  <div><p className="dashboard-eyebrow">PARA ONDE VAI E DE ONDE VEM</p><h2 id="categories-title">Movimentações por categoria</h2></div>
-                  <a href="/categories">Gerenciar categorias <span aria-hidden="true">→</span></a>
-                </div>
-                <div className="dashboard-categories__grid">
-                  <CategoryBreakdown title="Entradas" items={summary.incomeByCategory ?? []} tone="income" />
-                  <CategoryBreakdown title="Despesas" items={summary.expenseByCategory ?? []} tone="expense" />
-                </div>
-              </section>
-            </>
-          ) : null}
-
-          {!isLoading && !isWalletLoading && !loadError && (
-            <section className="dashboard-panel dashboard-goals" aria-labelledby="goals-title">
-              <div className="dashboard-panel__heading">
-                <div><p className="dashboard-eyebrow">PLANOS PARA O FUTURO</p><h2 id="goals-title">Progresso das metas</h2></div>
-                <a href="/goals">Gerenciar metas <span aria-hidden="true">→</span></a>
-              </div>
-              {visibleGoals.length === 0 ? (
-                <div className="dashboard-empty">
-                  <span className="dashboard-empty__icon" aria-hidden="true">◎</span>
-                  <h3>Suas metas começam com um plano.</h3>
-                  <p>Crie uma meta para acompanhar quanto já guardou e quanto falta para chegar ao seu objetivo.</p>
-                  <a className="dashboard-primary-button" href="/goals">Criar primeira meta</a>
-                </div>
-              ) : (
-                <ul className="dashboard-goal-list">
-                  {visibleGoals.map((goal) => {
-                    const progress = Math.min(100, Math.max(0, goal.progressPercentage))
-                    return (
-                      <li className={`dashboard-goal${goal.status === 'closed' ? ' dashboard-goal--closed' : ''}`} key={goal.id}>
-                        <div className="dashboard-goal__header">
-                          <div><h3>{goal.title}</h3>{goal.description && <p>{goal.description}</p>}</div>
-                          <span className={`dashboard-goal__status${goal.status === 'closed' ? ' dashboard-goal__status--closed' : ''}`}>{goal.status === 'closed' ? 'Encerrada' : 'Em andamento'}</span>
-                        </div>
-                        <div className="dashboard-goal__meta"><span>{formatDate(goal.dueDate)}</span><span>Alvo: {formatAmount(goal.targetAmount)}</span></div>
-                        <div className="dashboard-goal__progress-label"><span>{formatAmount(goal.contributedAmount)} guardados</span><strong>{new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 1 }).format(progress)}%</strong></div>
-                        <div className="dashboard-goal__track" role="progressbar" aria-label={`Progresso da meta ${goal.title}`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={progress}><span style={{ width: `${progress}%` }} /></div>
-                      </li>
-                    )
-                  })}
-                </ul>
-              )}
-            </section>
-          )}
-        </section>
-
-        <footer className="dashboard-footer"><span>Saldo Certo · clareza para cada escolha</span><a href="/categories">Gerenciar categorias</a></footer>
-      </div>
-    </main>
-    </>
-  )
+    <main className="dashboard-page"><div className="dashboard-shell">
+      <section className="dashboard-content" aria-labelledby="dashboard-title">
+        <div className="dashboard-heading"><div><p className="dashboard-eyebrow">SUA VIDA FINANCEIRA EM UM SÓ LUGAR</p><h1 id="dashboard-title">Visão geral</h1><p>Acompanhe o movimento do mês e o caminho até suas metas.</p></div><MonthYearSelector month={month} onMonthChange={setMonth} /></div>
+        {!current && <div className="dashboard-loading" role="status" aria-live="polite"><span className="dashboard-spinner" />Carregando sua visão financeira…</div>}
+        {current?.error && <div className="dashboard-alert" role="alert"><span>{current.error}</span><button type="button" onClick={() => setReloadKey((key) => key + 1)}>Tentar novamente</button></div>}
+        {data && <>
+          <DashboardOverview summary={data.summary} month={month} />
+          <nav className="dashboard-quick-actions" aria-label="Ações rápidas"><a className="dashboard-primary-button" href={recordLink('/incomes', month)}>＋ Registrar entrada</a><a className="dashboard-secondary-button" href={recordLink('/expenses', month)}>＋ Registrar despesa</a><a className="dashboard-secondary-button" href={recordLink('/goals', month)}>＋ Registrar aporte</a></nav>
+          <section className="dashboard-panel dashboard-categories" aria-labelledby="categories-title"><div className="dashboard-panel__heading"><div><p className="dashboard-eyebrow">PARA ONDE VAI E DE ONDE VEM</p><h2 id="categories-title">Movimentações por categoria</h2></div><a href="/categories">Gerenciar categorias →</a></div><p className="dashboard-section-note">Categorias ordenadas pelo total registrado no mês, incluindo benefícios e compras no crédito. Pagamentos de faturas não são somados novamente às despesas.</p><div className="dashboard-categories__grid"><DashboardCategories items={data.summary.incomeByCategory} tone="income" month={month} /><DashboardCategories items={data.summary.expenseByCategory} tone="expense" month={month} /></div></section>
+          <DashboardComparison current={data.summary} previous={data.previous} month={month} />
+          <DashboardGoals goals={data.goals} contributions={data.summary.contributionsByGoal} month={month} />
+        </>}
+      </section>
+      <footer className="dashboard-footer"><span>Saldo Certo · clareza para cada escolha</span><a href="/categories">Gerenciar categorias</a></footer>
+    </div></main>
+  </>
 }

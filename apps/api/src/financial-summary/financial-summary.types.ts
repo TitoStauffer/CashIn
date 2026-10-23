@@ -8,6 +8,7 @@ export interface FinancialSummary {
   creditPurchaseTotal: string;
   cardPaymentTotal: string;
   contributionTotal: string;
+  contributionsByGoal: FinancialSummaryGoalContribution[];
   availableBalance: string;
   cashBalance: string;
   benefitBalances: FinancialSummaryBalance[];
@@ -23,6 +24,11 @@ export interface FinancialSummaryBalance {
 export interface FinancialSummaryCategory {
   categoryId: string;
   categoryName: string;
+  amount: string;
+}
+
+export interface FinancialSummaryGoalContribution {
+  goalId: string;
   amount: string;
 }
 

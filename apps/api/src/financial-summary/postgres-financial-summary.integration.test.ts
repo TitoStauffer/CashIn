@@ -91,6 +91,7 @@ test("PostgreSQL financial summary filters inclusive dates and subtracts contrib
     assert.equal(summary.creditPurchaseTotal, "50.00");
     assert.equal(summary.cardPaymentTotal, "0.00");
     assert.equal(summary.contributionTotal, "100.05");
+    assert.deepEqual(summary.contributionsByGoal, [{ goalId: goal.rows[0]!.id, amount: "100.05" }]);
     assert.equal(summary.availableBalance, "321.95");
     assert.equal(summary.cashBalance, "321.95");
     assert.deepEqual(summary.benefitBalances, [
@@ -117,6 +118,7 @@ test("PostgreSQL financial summary filters inclusive dates and subtracts contrib
     assert.equal(empty.creditPurchaseTotal, "0.00");
     assert.equal(empty.cardPaymentTotal, "0.00");
     assert.equal(empty.contributionTotal, "0.00");
+    assert.deepEqual(empty.contributionsByGoal, []);
     assert.equal(empty.availableBalance, "0.00");
     assert.equal(empty.cashBalance, "0.00");
     assert.deepEqual(empty.benefitBalances, [
@@ -243,6 +245,88 @@ test("PostgreSQL summary preserves exact cents, benefit separation and wallet bo
     assert.equal(toOnly.cashIncomeTotal, "7.00");
     assert.equal(toOnly.creditPurchaseTotal, "9.00");
     assert.equal(toOnly.cardPaymentTotal, "0.30");
+  } finally {
+    await scopedPool?.end();
+    await adminPool.query(`DROP SCHEMA IF EXISTS ${schemaName} CASCADE`);
+    await adminPool.end();
+  }
+});
+
+test("PostgreSQL summary groups contributions by goal with exact cents and inclusive wallet-scoped periods", {
+  skip: !testDatabaseUrl,
+}, async () => {
+  const schemaName = `summary_goals_test_${randomBytes(8).toString("hex")}`;
+  const adminPool = new Pool({ connectionString: testDatabaseUrl });
+  let scopedPool: Pool | undefined;
+  try {
+    await adminPool.query(`CREATE SCHEMA ${schemaName}`);
+    scopedPool = new Pool({ connectionString: testDatabaseUrl, options: `-c search_path=${schemaName}` });
+    const database = createDatabase(scopedPool);
+    await runMigrations(database);
+    const users = await database.query<{ id: string }>(
+      "INSERT INTO users (email, password_hash, email_verified_at) VALUES ($1, 'test-hash', now()) RETURNING id",
+      [`goal-summary-${schemaName}@example.com`],
+    );
+    const userId = users.rows[0]!.id;
+    const personal = await database.query<{ id: string }>(
+      "SELECT id FROM wallets WHERE owner_user_id = $1 AND is_personal", [userId],
+    );
+    const walletId = personal.rows[0]!.id;
+    const otherWallet = await database.query<{ id: string }>(
+      "INSERT INTO wallets (owner_user_id, name) VALUES ($1, 'Other wallet') RETURNING id", [userId],
+    );
+    const otherWalletId = otherWallet.rows[0]!.id;
+    const goals = await database.query<{ id: string; title: string }>(
+      `INSERT INTO investment_goals (user_id, wallet_id, title, target_amount, closed_at)
+       VALUES ($1, $2, 'Cents', 100, NULL), ($1, $2, 'Closed', 100, now()),
+              ($1, $2, 'Outside period', 100, NULL), ($1, $2, 'No contributions', 100, NULL),
+              ($1, $3, 'Other wallet goal', 100, NULL) RETURNING id, title`,
+      [userId, walletId, otherWalletId],
+    );
+    const goalId = (title: string) => goals.rows.find((row) => row.title === title)!.id;
+    await database.query(
+      `INSERT INTO investment_contributions (user_id, wallet_id, goal_id, amount, date)
+       VALUES ($1, $2, $3, '0.10', '2026-10-01'), ($1, $2, $3, '0.20', '2026-10-31'),
+              ($1, $2, $3, '9.00', '2026-09-30'), ($1, $2, $3, '10', '2026-11-01'),
+              ($1, $2, $4, '0.40', '2026-10-15'), ($1, $2, $5, '20', '2026-11-01'),
+              ($1, $6, $7, '900.00', '2026-10-15')`,
+      [userId, walletId, goalId("Cents"), goalId("Closed"), goalId("Outside period"), otherWalletId, goalId("Other wallet goal")],
+    );
+    const repository = new PostgresFinancialSummaryRepository(database);
+    const byGoalId = (left: { goalId: string }, right: { goalId: string }) => left.goalId.localeCompare(right.goalId);
+    const summary = await repository.getSummary(walletId, "2026-10-01", "2026-10-31");
+    assert.deepEqual(summary.contributionsByGoal, [
+      { goalId: goalId("Cents"), amount: "0.30" },
+      { goalId: goalId("Closed"), amount: "0.40" },
+    ].sort(byGoalId));
+    assert.equal(summary.contributionTotal, "0.70");
+    assert.equal(summary.cashBalance, "-0.70");
+    assert.equal(summary.availableBalance, "-0.70");
+    const firstDay = await repository.getSummary(walletId, "2026-10-01", "2026-10-01");
+    assert.deepEqual(firstDay.contributionsByGoal, [{ goalId: goalId("Cents"), amount: "0.10" }]);
+    const lastDay = await repository.getSummary(walletId, "2026-10-31", "2026-10-31");
+    assert.deepEqual(lastDay.contributionsByGoal, [{ goalId: goalId("Cents"), amount: "0.20" }]);
+    const fromOnly = await repository.getSummary(walletId, "2026-11-01");
+    assert.deepEqual(fromOnly.contributionsByGoal, [
+      { goalId: goalId("Cents"), amount: "10.00" },
+      { goalId: goalId("Outside period"), amount: "20.00" },
+    ].sort(byGoalId));
+    assert.equal(fromOnly.contributionTotal, "30");
+    const toOnly = await repository.getSummary(walletId, undefined, "2026-09-30");
+    assert.deepEqual(toOnly.contributionsByGoal, [{ goalId: goalId("Cents"), amount: "9.00" }]);
+    const allTime = await repository.getSummary(walletId);
+    assert.deepEqual(allTime.contributionsByGoal, [
+      { goalId: goalId("Cents"), amount: "19.30" },
+      { goalId: goalId("Closed"), amount: "0.40" },
+      { goalId: goalId("Outside period"), amount: "20.00" },
+    ].sort(byGoalId));
+    assert.equal(allTime.contributionTotal, "39.70");
+    const otherSummary = await repository.getSummary(otherWalletId, "2026-10-01", "2026-10-31");
+    assert.deepEqual(otherSummary.contributionsByGoal, [{ goalId: goalId("Other wallet goal"), amount: "900.00" }]);
+    assert.equal(otherSummary.contributionTotal, "900.00");
+    const empty = await repository.getSummary(walletId, "2026-11-02", "2026-11-30");
+    assert.deepEqual(empty.contributionsByGoal, []);
+    assert.equal(empty.contributionTotal, "0.00");
   } finally {
     await scopedPool?.end();
     await adminPool.query(`DROP SCHEMA IF EXISTS ${schemaName} CASCADE`);

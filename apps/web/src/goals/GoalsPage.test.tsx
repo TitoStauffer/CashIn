@@ -44,8 +44,46 @@ describe('GoalsPage currency inputs', () => {
 
   afterEach(() => {
     cleanup()
+    window.history.replaceState({}, '', '/')
     vi.restoreAllMocks()
     vi.unstubAllGlobals()
+  })
+
+  it('opens the linked goal, preserves cumulative progress and filters its contributions by month', async () => {
+    window.history.replaceState({}, '', '/goals?month=2026-10&goalId=goal-1')
+    vi.mocked(goalsApi.list).mockResolvedValue({ items: [goal, { ...goal, id: 'second', title: 'Outra meta' }] })
+    vi.mocked(goalsApi.contributions).mockResolvedValue({ items: [contribution, { ...contribution, id: 'previous', date: '2026-09-30', description: 'Aporte anterior' }] })
+    await renderPage()
+    expect(await screen.findByText(/Aporte mensal/)).toBeVisible()
+    expect(screen.queryByText(/Aporte anterior/)).not.toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'Outra meta' })).not.toBeInTheDocument()
+    expect(screen.getByText('R$ 15.000,00')).toBeVisible()
+    expect(goalsApi.contributions).toHaveBeenCalledTimes(1)
+    expect(goalsApi.contributions).toHaveBeenCalledWith('goal-1', expect.any(AbortSignal))
+    await userEvent.setup().click(screen.getByRole('button', { name: 'Mês anterior' }))
+    expect(screen.getByText(/Aporte anterior/)).toBeVisible()
+    expect(screen.queryByText(/Aporte mensal/)).not.toBeInTheDocument()
+    await userEvent.setup().click(screen.getByRole('button', { name: 'Ver aportes de todo o histórico' }))
+    expect(screen.getByText(/Aporte anterior/)).toBeVisible()
+    expect(screen.getByText(/Aporte mensal/)).toBeVisible()
+    await userEvent.setup().click(screen.getByRole('button', { name: 'Mostrar todas as metas' }))
+    expect(await screen.findByRole('heading', { name: 'Outra meta' })).toBeVisible()
+  })
+
+  it('includes closed goals when opening monthly contributions and filters after expanding a goal', async () => {
+    window.history.replaceState({}, '', '/goals?month=2026-09')
+    vi.mocked(goalsApi.list).mockResolvedValue({ items: [{ ...goal, status: 'closed' }] })
+    await renderPage()
+    await userEvent.setup().click(await screen.findByRole('button', { name: 'Ver aportes' }))
+    expect(await screen.findByText('Nenhum aporte nesta meta no período selecionado.')).toBeVisible()
+    expect(screen.queryByText(/Aporte mensal/)).not.toBeInTheDocument()
+  })
+
+  it('does not request contributions for a linked goal unavailable in the current wallet', async () => {
+    window.history.replaceState({}, '', '/goals?month=2026-10&goalId=missing')
+    await renderPage()
+    expect(await screen.findByText('Nenhuma meta cadastrada')).toBeVisible()
+    expect(goalsApi.contributions).not.toHaveBeenCalled()
   })
 
   it('masks and validates a new goal amount, then sends the canonical decimal on create', async () => {

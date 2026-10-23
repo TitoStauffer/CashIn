@@ -11,8 +11,9 @@ import type { CreditCard } from '../creditCards/creditCardsApi'
 import { FinancialSidebar } from '../layout/FinancialSidebar'
 import { useWallet } from '../wallets/useWallet'
 import { MonthYearSelector } from '../period/MonthYearSelector'
-import { formatMonth, getCurrentMonth, getMonthRange } from '../period/month'
+import { formatMonth, getMonthRange } from '../period/month'
 import { formatBrazilianCurrency, formatBrazilianCurrencyInput, hasInvalidBrazilianCurrencyInput, maskBrazilianCurrencyInput, parseBrazilianCurrencyInput } from '../money/currency'
+import { getInitialMonth } from '../period/recordLinks'
 import './ExpensesPage.css'
 
 type ExpenseEditor = {
@@ -60,7 +61,8 @@ type ExpensesPageProps = {
 
 export function ExpensesPage({ userEmail, isLoggingOut, onLogout }: ExpensesPageProps) {
   const { activeWalletId } = useWallet()
-  const [month, setMonth] = useState(getCurrentMonth)
+  const [month, setMonth] = useState(getInitialMonth)
+  const [categoryFilter, setCategoryFilter] = useState(() => new URLSearchParams(window.location.search).get('categoryId') ?? '')
   const [categories, setCategories] = useState<Category[]>([])
   const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>([])
   const [creditCards, setCreditCards] = useState<CreditCard[]>([])
@@ -87,7 +89,9 @@ export function ExpensesPage({ userEmail, isLoggingOut, onLogout }: ExpensesPage
       expensesApi.list(range.from, range.to, controller.signal),
     ])
       .then(([categoryResponse, paymentMethodResponse, creditCardResponse, expenseResponse]) => {
+        if (controller.signal.aborted) return
         if (lastLoadedWalletId.current !== activeWalletId) {
+          if (lastLoadedWalletId.current) setCategoryFilter('')
           setEditor(null)
           setAmountInput('')
           setAmountInputInvalid(false)
@@ -103,7 +107,7 @@ export function ExpensesPage({ userEmail, isLoggingOut, onLogout }: ExpensesPage
         setLoadError('')
       })
       .catch((error: unknown) => {
-        if (error instanceof Error && error.name === 'AbortError') return
+        if (controller.signal.aborted || (error instanceof Error && error.name === 'AbortError')) return
         setLoadedWalletId(activeWalletId)
         setLoadError(getErrorMessage(error, 'load'))
       })
@@ -118,7 +122,8 @@ export function ExpensesPage({ userEmail, isLoggingOut, onLogout }: ExpensesPage
 
   const selectedCategory = categories.find((category) => category.id === editor?.categoryId)
   const availableSubcategories = selectedCategory?.subcategories ?? []
-  const total = expenses.reduce((sum, expense) => addDecimalAmounts(sum, expense.amount), '0.00')
+  const visibleRecords = expenses.filter((item) => !categoryFilter || item.categoryId === categoryFilter)
+  const total = visibleRecords.reduce((sum, expense) => addDecimalAmounts(sum, expense.amount), '0.00')
 
   function resetMessages() {
     setFormError('')
@@ -275,6 +280,14 @@ export function ExpensesPage({ userEmail, isLoggingOut, onLogout }: ExpensesPage
           </div>
 
           <MonthYearSelector month={month} onMonthChange={selectMonth} />
+          <div className="record-category-filter">
+            <label htmlFor="record-category-filter">Filtrar por categoria</label>
+            <select id="record-category-filter" value={categoryFilter} onChange={(event) => setCategoryFilter(event.target.value)}>
+              <option value="">Todas as categorias</option>
+              {categoryFilter && !categories.some((item) => item.id === categoryFilter) && <option value={categoryFilter}>Categoria vinculada</option>}
+              {categories.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+            </select>
+          </div>
 
           {formError && <p className="expenses-alert expenses-alert--error" role="alert">{formError}</p>}
           {successMessage && <p className="expenses-alert expenses-alert--success" role="status">{successMessage}</p>}
@@ -411,10 +424,10 @@ export function ExpensesPage({ userEmail, isLoggingOut, onLogout }: ExpensesPage
             </div>
           ) : isLoading || isWalletLoading ? (
             <div className="expenses-loading" role="status"><span className="expenses-spinner" aria-hidden="true" />Carregando despesas…</div>
-          ) : expenses.length === 0 ? (
+          ) : visibleRecords.length === 0 ? (
             <div className="expenses-state-card">
               <span className="expenses-state-icon" aria-hidden="true">↗</span>
-              <h2>Nenhuma despesa neste mês</h2>
+              <h2>{categoryFilter ? 'Nenhuma despesa nesta categoria e mês' : 'Nenhuma despesa neste mês'}</h2>
               <p>Quando você registrar uma despesa, ela aparecerá aqui para facilitar o acompanhamento do período.</p>
               <button type="button" className="expenses-secondary-button" onClick={startCreate} disabled={categories.length === 0}>Registrar primeira despesa</button>
               {categories.length === 0 && <p className="expenses-state-note">Antes, crie uma categoria de despesa em <a href="/categories">Categorias</a>.</p>}
@@ -422,11 +435,11 @@ export function ExpensesPage({ userEmail, isLoggingOut, onLogout }: ExpensesPage
           ) : (
             <>
               <div className="expenses-summary" aria-live="polite">
-                <span>{expenses.length === 1 ? '1 despesa no mês' : `${expenses.length} despesas no mês`}</span>
+                <span>{visibleRecords.length === 1 ? '1 despesa no mês' : `${visibleRecords.length} despesas no mês`}</span>
                 <strong>Total <b>{formatAmount(total)}</b></strong>
               </div>
               <ul className="expense-list" aria-label={`Despesas de ${formatMonth(month)}`}>
-                {expenses.map((expense) => (
+                {visibleRecords.map((expense) => (
                   <li className="expense-card" key={expense.id}>
                     <div className="expense-card__main">
                       <span className="expense-card__marker" aria-hidden="true" />

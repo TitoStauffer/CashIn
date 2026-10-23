@@ -46,8 +46,32 @@ describe('ExpensesPage currency input', () => {
 
   afterEach(() => {
     cleanup()
+    window.history.replaceState({}, '', '/')
     vi.restoreAllMocks()
     vi.unstubAllGlobals()
+  })
+
+  it('opens the dashboard month and category, filters totals and allows all categories again', async () => {
+    window.history.replaceState({}, '', '/expenses?month=2024-02&categoryId=expense-category')
+    const other = { ...expense, id: 'other', categoryId: 'other-category', categoryName: 'Alimentação', description: 'Mercado', amount: '5.01' }
+    vi.mocked(expensesApi.list).mockResolvedValue({ items: [expense, other] })
+    await renderPage()
+    expect(await screen.findByText('Aluguel')).toBeVisible()
+    expect(expensesApi.list).toHaveBeenCalledWith('2024-02-01', '2024-02-29', expect.any(AbortSignal))
+    expect(screen.getByLabelText('Selecionar mês e ano')).toHaveValue('2024-02')
+    expect(screen.getByLabelText('Filtrar por categoria')).toHaveValue('expense-category')
+    expect(screen.queryByText('Mercado')).not.toBeInTheDocument()
+    expect(screen.getByText('Total').parentElement).toHaveTextContent('R$ 1.234,56')
+    await userEvent.setup().selectOptions(screen.getByLabelText('Filtrar por categoria'), '')
+    expect(screen.getByText('Mercado')).toBeVisible()
+    expect(screen.getByText('Total').parentElement).toHaveTextContent('R$ 1.239,57')
+  })
+
+  it('does not silently remove an unknown category filter', async () => {
+    window.history.replaceState({}, '', '/expenses?month=2026-10&categoryId=missing')
+    await renderPage()
+    expect(await screen.findByText('Nenhuma despesa nesta categoria e mês')).toBeVisible()
+    expect(screen.getByRole('option', { name: 'Categoria vinculada' })).toBeVisible()
   })
 
   it('formats saved values, rejects invalid pasted values, and sends a canonical decimal on create', async () => {

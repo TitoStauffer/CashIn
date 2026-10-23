@@ -59,7 +59,6 @@ export function formatBrazilianCurrency(amount: string) {
 
   const sign = match[1]
   const integer = match[2].replace(/^0+(?=\d)/, '')
-  if (integer.length > MAX_INTEGER_DIGITS) return 'R$ 0,00'
   const fraction = (match[3] ?? '').padEnd(2, '0')
   const groupedInteger = groupIntegerDigits(integer)
   return `${sign}R$ ${groupedInteger},${fraction}`
