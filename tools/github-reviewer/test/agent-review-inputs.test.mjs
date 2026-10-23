@@ -136,10 +136,36 @@ test('keeps the direct dependency limit at 20 additional files', async () => {
 
 test('fails closed when changed source context exceeds the supported byte limit', async () => {
   await assert.rejects(
-    loadAgentReviewInputs(createFetch({ source: 'x'.repeat(250_001) }), 'owner/repo', 7, { head: { sha: headSha }, base: { sha: baseSha } }, 'token'),
+    loadAgentReviewInputs(createFetch({ source: 'x'.repeat(500_001) }), 'owner/repo', 7, { head: { sha: headSha }, base: { sha: baseSha } }, 'token'),
     /supported review context size/,
   );
 });
+
+for (const totalBytes of [499_999, 500_000, 500_001]) {
+  test(`enforces the cumulative UTF-8 source boundary at ${totalBytes} bytes across changed, removed and dependency files`, async () => {
+    const source = "import { value } from './helper.js';\n";
+    const removed = 'á'.repeat(100_000);
+    const dependency = 'x'.repeat(totalBytes - Buffer.byteLength(source, 'utf8') - Buffer.byteLength(removed, 'utf8'));
+    const expected = [
+      { path: 'src/example.ts', revision: 'head', content: source },
+      { path: 'src/removed.ts', revision: 'base', content: removed },
+      { path: 'src/helper.ts', revision: 'head', content: dependency },
+    ];
+    const pending = loadAgentReviewInputs(createFetch({
+      files: [{ filename: 'src/example.ts', status: 'modified' }, { filename: 'src/removed.ts', status: 'removed' }],
+      source,
+      sources: { [`${baseSha}:src/removed.ts`]: removed, 'src/helper.ts': dependency },
+    }), 'owner/repo', 7, { head: { sha: headSha }, base: { sha: baseSha } }, 'token');
+
+    if (totalBytes > 500_000) {
+      await assert.rejects(pending, /supported review context size/);
+    } else {
+      const inputs = await pending;
+      assert.deepEqual(inputs.sourceFiles, expected);
+      assert.equal(inputs.sourceFiles.reduce((size, file) => size + Buffer.byteLength(file.content, 'utf8'), 0), totalBytes);
+    }
+  });
+}
 
 test('loads every page returned by the GitHub pagination helper', async () => {
   const requests = [];
