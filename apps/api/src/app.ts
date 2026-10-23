@@ -46,6 +46,11 @@ import { CreditCardsService } from "./credit-cards/credit-cards.service.js";
 import { PostgresCreditCardsRepository } from "./credit-cards/postgres-credit-cards.repository.js";
 import { registerCreditCardRoutes } from "./credit-cards/credit-cards.routes.js";
 import type { CreditCardRepository } from "./credit-cards/credit-cards.types.js";
+import { FinancialImportsService } from "./financial-imports/financial-imports.service.js";
+import { PostgresFinancialImportsRepository } from "./financial-imports/postgres-financial-imports.repository.js";
+import { UnsupportedFinancialImportParser } from "./financial-imports/financial-imports.parser.js";
+import { registerFinancialImportRoutes } from "./financial-imports/financial-imports.routes.js";
+import type { FinancialImportParser, FinancialImportRepository } from "./financial-imports/financial-imports.types.js";
 
 export interface AppOptions {
   logger?: boolean;
@@ -61,6 +66,8 @@ export interface AppOptions {
   walletAccessRequestRepository?: WalletAccessRequestRepository;
   paymentMethodRepository?: PaymentMethodRepository;
   creditCardRepository?: CreditCardRepository;
+  financialImportRepository?: FinancialImportRepository;
+  financialImportParser?: FinancialImportParser;
   authConfiguration?: Partial<AuthConfiguration>;
   walletInvitationTokenTtlHours?: number;
   walletAccessLinkTtlHours?: number;
@@ -229,6 +236,13 @@ export function createApp(
   registerFinancialSummaryRoutes(app, {
     financialSummaryService: new FinancialSummaryService(
       options.financialSummaryRepository ?? new PostgresFinancialSummaryRepository(database),
+    ),
+  });
+
+  registerFinancialImportRoutes(app, {
+    financialImportsService: new FinancialImportsService(
+      options.financialImportRepository ?? new PostgresFinancialImportsRepository(database),
+      options.financialImportParser ?? new UnsupportedFinancialImportParser(),
     ),
   });
 

@@ -1,0 +1,157 @@
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { categoriesApi } from '../categories/categoriesApi'
+import { WalletProvider } from '../wallets/WalletContext'
+import { walletApi } from '../wallets/walletApi'
+import { FinancialImportsPage } from './FinancialImportsPage'
+import type { FinancialImportSession } from './importsApi'
+import { importsApi } from './importsApi'
+
+const previewSession: FinancialImportSession = {
+  id: 'import-1',
+  format: 'ofx',
+  fileName: 'extrato.ofx',
+  fileSize: 2048,
+  status: 'preview',
+  summary: { total: 2, valid: 1, duplicate: 0, invalid: 0, uncategorized: 1, imported: 0 },
+  items: [
+    {
+      id: 'item-1', sequence: 1, date: '2026-10-01', description: 'Salário', amount: '3000.00',
+      type: 'income', categoryId: null, subcategoryId: null, validationStatus: 'uncategorized', errorMessage: null,
+    },
+    {
+      id: 'item-2', sequence: 2, date: '2026-10-02', description: 'Mercado', amount: '150.00',
+      type: 'expense', categoryId: 'expense-category', subcategoryId: null, validationStatus: 'valid', errorMessage: null,
+    },
+  ],
+  canUndo: false,
+  undoBlockedReason: null,
+  createdAt: '2026-10-23T12:00:00.000Z',
+  confirmedAt: null,
+}
+
+const completedSession: FinancialImportSession = {
+  ...previewSession,
+  status: 'completed',
+  summary: { ...previewSession.summary, imported: 2 },
+  canUndo: true,
+  confirmedAt: '2026-10-23T12:05:00.000Z',
+}
+
+async function renderPage() {
+  const result = render(
+    <WalletProvider userId="user-1">
+      <FinancialImportsPage userEmail="tito@example.com" isLoggingOut={false} onLogout={vi.fn()} />
+    </WalletProvider>,
+  )
+  await screen.findByRole('heading', { name: 'Importar arquivo financeiro' })
+  await waitFor(() => expect(importsApi.list).toHaveBeenCalled())
+  return result
+}
+
+describe('FinancialImportsPage', () => {
+  beforeEach(() => {
+    vi.stubGlobal('matchMedia', vi.fn(() => ({
+      matches: false,
+      media: '(max-width: 760px)',
+      onchange: null,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    })))
+    vi.spyOn(walletApi, 'list').mockResolvedValue({ items: [
+      { id: 'wallet-personal', name: 'Pessoal', isPersonal: true, role: 'owner' },
+      { id: 'wallet-shared', name: 'Família', isPersonal: false, role: 'member' },
+    ] })
+    vi.spyOn(categoriesApi, 'list').mockImplementation(async (nature) => ({ items: nature === 'income' ? [{
+      id: 'income-category', name: 'Salário', nature: 'income', subcategories: [{ id: 'income-subcategory', name: 'Mensal', categoryId: 'income-category' }],
+    }] : [{
+      id: 'expense-category', name: 'Alimentação', nature: 'expense', subcategories: [{ id: 'expense-subcategory', name: 'Mercado', categoryId: 'expense-category' }],
+    }] }))
+    vi.spyOn(importsApi, 'list').mockResolvedValue({ items: [] })
+    vi.spyOn(importsApi, 'get').mockResolvedValue(previewSession)
+    vi.spyOn(importsApi, 'upload').mockResolvedValue({ ...previewSession, status: 'processing', items: [] })
+    vi.spyOn(importsApi, 'updateItem').mockImplementation(async (_importId, itemId, input) => ({
+      ...previewSession.items!.find((item) => item.id === itemId)!,
+      ...input,
+      validationStatus: input.categoryId ? 'valid' : 'uncategorized',
+    }))
+    vi.spyOn(importsApi, 'confirm').mockResolvedValue(completedSession)
+    vi.spyOn(importsApi, 'undo').mockResolvedValue({ ...completedSession, status: 'undone', canUndo: false, undoneAt: '2026-10-23T12:10:00.000Z' })
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+  })
+
+  afterEach(() => {
+    cleanup()
+    vi.restoreAllMocks()
+    vi.unstubAllGlobals()
+    window.localStorage.clear()
+  })
+
+  it('uploads a supported file only after showing its name and limit', async () => {
+    const user = userEvent.setup()
+    await renderPage()
+    expect(screen.getByText(/Limite de 10 MB e 10.000 movimentações/)).toBeVisible()
+    const file = new File(['OFXDATA'], 'extrato.ofx', { type: 'application/x-ofx' })
+
+    await user.upload(screen.getByLabelText('Arquivo OFX ou CSV'), file)
+    expect(screen.getByText(/extrato\.ofx/)).toBeVisible()
+    await user.click(screen.getByRole('button', { name: 'Enviar e preparar prévia' }))
+
+    await waitFor(() => expect(importsApi.upload).toHaveBeenCalledWith(file, 'ofx'))
+    expect(await screen.findByText(/Arquivo recebido/)).toBeVisible()
+    expect(screen.getByText(/processado temporariamente/i)).toBeVisible()
+  })
+
+  it('rejects unsupported and oversized files before calling the API', async () => {
+    await renderPage()
+    const input = screen.getByLabelText('Arquivo OFX ou CSV')
+
+    fireEvent.change(input, { target: { files: [new File(['texto'], 'extrato.txt', { type: 'text/plain' })] } })
+    expect(await screen.findByRole('alert')).toHaveTextContent('extensão .ofx ou .csv')
+    expect(importsApi.upload).not.toHaveBeenCalled()
+
+    const oversized = new File([new Uint8Array(10 * 1024 * 1024 + 1)], 'extrato.csv', { type: 'text/csv' })
+    fireEvent.change(input, { target: { files: [oversized] } })
+    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('ultrapassa o limite de 10 MB'))
+    expect(importsApi.upload).not.toHaveBeenCalled()
+  })
+
+  it('opens the preview, edits classification and confirms only reviewable items', async () => {
+    vi.mocked(importsApi.list).mockResolvedValueOnce({ items: [{ ...previewSession, items: undefined }] })
+    const user = userEvent.setup()
+    await renderPage()
+    await user.click(await screen.findByRole('button', { name: 'Ver detalhes' }))
+
+    const firstItem = (await screen.findByText('Movimentação 1')).closest('li') as HTMLElement
+    expect(within(firstItem).getAllByText('Não categorizada')[0]).toBeVisible()
+    await user.selectOptions(within(firstItem).getByLabelText('Categoria'), 'income-category')
+    await user.selectOptions(within(firstItem).getByLabelText('Subcategoria'), 'income-subcategory')
+    await user.clear(within(firstItem).getByLabelText('Descrição'))
+    await user.type(within(firstItem).getByLabelText('Descrição'), 'Salário mensal')
+    await user.click(within(firstItem).getByRole('button', { name: 'Salvar ajuste' }))
+
+    await waitFor(() => expect(importsApi.updateItem).toHaveBeenCalledWith('import-1', 'item-1', expect.objectContaining({
+      description: 'Salário mensal', categoryId: 'income-category', subcategoryId: 'income-subcategory',
+    })))
+    await user.click(screen.getByRole('button', { name: 'Confirmar 2 movimentações' }))
+    await waitFor(() => expect(importsApi.confirm).toHaveBeenCalledWith('import-1'))
+    expect(await screen.findByText(/2 movimentações foram importadas/)).toBeVisible()
+  })
+
+  it('shows undo eligibility and refreshes the history when the active wallet changes', async () => {
+    vi.mocked(importsApi.list).mockResolvedValue({ items: [{ ...completedSession, items: undefined }] })
+    const user = userEvent.setup()
+    await renderPage()
+    await user.click(await screen.findByRole('button', { name: 'Desfazer' }))
+    await waitFor(() => expect(importsApi.undo).toHaveBeenCalledWith('import-1'))
+    expect(await screen.findByText(/Importação desfeita/)).toBeVisible()
+
+    await user.selectOptions(screen.getByRole('combobox', { name: /Carteira ativa/ }), 'wallet-shared')
+    await waitFor(() => expect(importsApi.list).toHaveBeenCalledTimes(2))
+    expect(screen.getByText((_, element) => Boolean(element?.classList.contains('imports-wallet') && element.textContent === 'Carteira: Família'))).toBeVisible()
+  })
+})

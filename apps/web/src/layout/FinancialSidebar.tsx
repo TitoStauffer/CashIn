@@ -27,6 +27,7 @@ const navigationGroups: { id: string; label: string; items: NavigationItem[] }[]
       { href: '/incomes', label: 'Entradas', icon: '↗', key: 'incomes' },
       { href: '/expenses', label: 'Saídas', icon: '↘', key: 'expenses' },
       { href: '/goals', label: 'Metas e aportes', icon: '◎', key: 'goals' },
+      { href: '/imports', label: 'Importar arquivo', icon: '⇩', key: 'imports' },
     ],
   },
   {

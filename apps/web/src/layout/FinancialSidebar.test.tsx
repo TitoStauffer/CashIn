@@ -79,6 +79,7 @@ describe('FinancialSidebar', () => {
     expect(screen.getByRole('link', { name: 'Visão geral' })).toHaveAttribute('href', '/dashboard')
     expect(screen.getByRole('link', { name: 'Entradas' })).toHaveAttribute('href', '/incomes')
     expect(screen.getByRole('link', { name: 'Metas e aportes' })).toHaveAttribute('href', '/goals')
+    expect(screen.getByRole('link', { name: 'Importar arquivo' })).toHaveAttribute('href', '/imports')
     expect(screen.getByRole('link', { name: 'Categorias' })).toHaveAttribute('href', '/categories')
     expect(screen.getByText('tito@example.com')).toBeVisible()
 

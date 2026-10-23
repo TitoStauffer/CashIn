@@ -148,6 +148,8 @@ O total aportado e o percentual são derivados na consulta, portanto criação, 
 
 O MVP 1 será validado com API e Web. A API é independente do cliente e poderá ser consumida pelo aplicativo Mobile quando essa etapa entrar no escopo.
 
+O contrato da fundação para importação financeira, incluindo limites, estados, prévia, confirmação atômica e desfazer, está em [docs/financial-imports-contract.md](docs/financial-imports-contract.md). Os parsers específicos de OFX e CSV são entregas separadas.
+
 ## Integração contínua
 
 O workflow `.github/workflows/ci.yml` (GitHub Actions) valida a API e a Web em todo Pull Request e push para `master`: lint (Web), typecheck, testes unitários e de integração com PostgreSQL (API) e build. Detalhes, checks obrigatórios do GitHub e a preparação para o SonarQube estão em [docs/ci.md](docs/ci.md).
