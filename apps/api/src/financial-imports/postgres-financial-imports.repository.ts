@@ -51,6 +51,31 @@ interface ImportItemRow {
   updated_at: string | Date;
 }
 
+interface CategoryReferenceRow {
+  id: string;
+  nature: "income" | "expense";
+}
+
+interface SubcategoryReferenceRow {
+  id: string;
+  category_id: string;
+}
+
+function invalidateReference(
+  item: ParsedFinancialImportItem,
+  message: string,
+  categoryId: string | null,
+): ParsedFinancialImportItem {
+  const currentMessage = item.errorMessage?.trim();
+  return {
+    ...item,
+    categoryId,
+    subcategoryId: null,
+    validationStatus: "invalid",
+    errorMessage: currentMessage ? `${currentMessage} ${message}` : message,
+  };
+}
+
 function dateValue(value: string | Date | null): string {
   if (value === null) return "";
   return value instanceof Date ? value.toISOString().slice(0, 10) : value.slice(0, 10);
@@ -223,7 +248,54 @@ export class PostgresFinancialImportsRepository implements FinancialImportReposi
       );
       if (!locked.rows[0]) return null;
 
-      for (const item of items) {
+      const categoryIds = [...new Set(items.flatMap((item) => item.categoryId ? [item.categoryId] : []))];
+      const subcategoryIds = [...new Set(items.flatMap((item) => item.subcategoryId ? [item.subcategoryId] : []))];
+      const categories = categoryIds.length === 0
+        ? { rows: [] as CategoryReferenceRow[] }
+        : await transaction.query<CategoryReferenceRow>(
+          `SELECT id, nature FROM categories
+           WHERE wallet_id = $1 AND id = ANY($2::uuid[])
+           FOR KEY SHARE`,
+          [walletId, categoryIds],
+        );
+      const subcategories = subcategoryIds.length === 0
+        ? { rows: [] as SubcategoryReferenceRow[] }
+        : await transaction.query<SubcategoryReferenceRow>(
+          `SELECT id, category_id FROM subcategories
+           WHERE wallet_id = $1 AND id = ANY($2::uuid[])
+           FOR KEY SHARE`,
+          [walletId, subcategoryIds],
+        );
+      const categoriesById = new Map(categories.rows.map((category) => [category.id, category]));
+      const subcategoriesById = new Map(subcategories.rows.map((subcategory) => [subcategory.id, subcategory]));
+      const validatedItems = items.map((item) => {
+        if (item.type === "transfer") return { ...item, categoryId: null, subcategoryId: null };
+        if (!item.categoryId) {
+          return item.subcategoryId
+            ? invalidateReference(item, "A subcategoria informada não pertence a uma categoria válida desta carteira.", null)
+            : item;
+        }
+        const category = categoriesById.get(item.categoryId);
+        if (!category || category.nature !== item.type) {
+          return invalidateReference(
+            item,
+            "A categoria informada não existe nesta carteira ou não corresponde ao tipo da movimentação.",
+            null,
+          );
+        }
+        if (!item.subcategoryId) return item;
+        const subcategory = subcategoriesById.get(item.subcategoryId);
+        if (!subcategory || subcategory.category_id !== category.id) {
+          return invalidateReference(
+            item,
+            "A subcategoria informada não pertence à categoria selecionada nesta carteira.",
+            category.id,
+          );
+        }
+        return item;
+      });
+
+      for (const item of validatedItems) {
         await transaction.query(
           `INSERT INTO import_items (
              import_session_id, wallet_id, sequence, transaction_date, description,
