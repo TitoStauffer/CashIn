@@ -8,8 +8,9 @@ import { incomesApi } from './incomesApi'
 import { FinancialSidebar } from '../layout/FinancialSidebar'
 import { useWallet } from '../wallets/useWallet'
 import { MonthYearSelector } from '../period/MonthYearSelector'
-import { formatMonth, getCurrentMonth, getMonthRange } from '../period/month'
+import { formatMonth, getMonthRange } from '../period/month'
 import { formatBrazilianCurrency, formatBrazilianCurrencyInput, hasInvalidBrazilianCurrencyInput, maskBrazilianCurrencyInput, parseBrazilianCurrencyInput } from '../money/currency'
+import { getInitialMonth } from '../period/recordLinks'
 import './IncomesPage.css'
 
 type IncomeEditor = {
@@ -57,7 +58,8 @@ type IncomesPageProps = {
 
 export function IncomesPage({ userEmail, isLoggingOut, onLogout }: IncomesPageProps) {
   const { activeWalletId } = useWallet()
-  const [month, setMonth] = useState(getCurrentMonth)
+  const [month, setMonth] = useState(getInitialMonth)
+  const [categoryFilter, setCategoryFilter] = useState(() => new URLSearchParams(window.location.search).get('categoryId') ?? '')
   const [categories, setCategories] = useState<Category[]>([])
   const [incomes, setIncomes] = useState<Income[]>([])
   const [isLoading, setIsLoading] = useState(true)
@@ -84,6 +86,7 @@ export function IncomesPage({ userEmail, isLoggingOut, onLogout }: IncomesPagePr
       .then(([categoryResponse, incomeResponse]) => {
         if (controller.signal.aborted) return
         if (lastLoadedWalletId.current !== activeWalletId) {
+          if (lastLoadedWalletId.current) setCategoryFilter('')
           setEditor(null)
           setAmountInput('')
           setAmountInputInvalid(false)
@@ -97,7 +100,7 @@ export function IncomesPage({ userEmail, isLoggingOut, onLogout }: IncomesPagePr
         setLoadError('')
       })
       .catch((error: unknown) => {
-        if (controller.signal.aborted || error instanceof Error && error.name === 'AbortError') return
+        if (controller.signal.aborted || (error instanceof Error && error.name === 'AbortError')) return
         setLoadedWalletId(activeWalletId)
         setLoadError(getErrorMessage(error, 'load'))
       })
@@ -112,7 +115,8 @@ export function IncomesPage({ userEmail, isLoggingOut, onLogout }: IncomesPagePr
 
   const selectedCategory = categories.find((category) => category.id === editor?.categoryId)
   const availableSubcategories = selectedCategory?.subcategories ?? []
-  const total = incomes.reduce((sum, income) => addDecimalAmounts(sum, income.amount), '0.00')
+  const visibleRecords = incomes.filter((item) => !categoryFilter || item.categoryId === categoryFilter)
+  const total = visibleRecords.reduce((sum, income) => addDecimalAmounts(sum, income.amount), '0.00')
 
   function resetMessages() {
     setFormError('')
@@ -269,6 +273,14 @@ export function IncomesPage({ userEmail, isLoggingOut, onLogout }: IncomesPagePr
           {isSaving && <p className="incomes-operation-status" role="note" aria-live="polite">{pendingMessage} Aguarde a confirmação antes de iniciar outra ação.</p>}
 
           <MonthYearSelector month={month} onMonthChange={selectMonth} />
+          <div className="record-category-filter">
+            <label htmlFor="record-category-filter">Filtrar por categoria</label>
+            <select id="record-category-filter" value={categoryFilter} onChange={(event) => setCategoryFilter(event.target.value)}>
+              <option value="">Todas as categorias</option>
+              {categoryFilter && !categories.some((item) => item.id === categoryFilter) && <option value={categoryFilter}>Categoria vinculada</option>}
+              {categories.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+            </select>
+          </div>
 
           {!isWalletLoading && formError && <p className="incomes-alert incomes-alert--error" role="alert">{formError}</p>}
           {!isWalletLoading && successMessage && <p className="incomes-alert incomes-alert--success" role="status">{successMessage}</p>}
@@ -382,21 +394,21 @@ export function IncomesPage({ userEmail, isLoggingOut, onLogout }: IncomesPagePr
             </div>
           ) : isLoading || isWalletLoading ? (
             <div className="incomes-loading" role="status"><span className="incomes-spinner" aria-hidden="true" />Carregando entradas…</div>
-          ) : incomes.length === 0 ? (
+          ) : visibleRecords.length === 0 ? (
             <div className="incomes-state-card">
               <span className="incomes-state-icon" aria-hidden="true">↗</span>
-              <h2>Nenhuma entrada neste mês</h2>
+              <h2>{categoryFilter ? 'Nenhuma entrada nesta categoria e mês' : 'Nenhuma entrada neste mês'}</h2>
               <p>Quando você registrar uma entrada, ela aparecerá aqui para facilitar o acompanhamento do período.</p>
               <button type="button" className="incomes-secondary-button" onClick={startCreate} disabled={isSaving || categories.length === 0} aria-describedby={categories.length === 0 ? 'income-category-prerequisite' : undefined}>Registrar primeira entrada</button>
             </div>
           ) : (
             <>
               <div className="incomes-summary" aria-live="polite">
-                <span>{incomes.length === 1 ? '1 entrada no mês' : `${incomes.length} entradas no mês`}</span>
+                <span>{visibleRecords.length === 1 ? '1 entrada no mês' : `${visibleRecords.length} entradas no mês`}</span>
                 <strong>Total <b>{formatAmount(total)}</b></strong>
               </div>
               <ul className="income-list" aria-label={`Entradas de ${formatMonth(month)}`}>
-                {incomes.map((income) => (
+                {visibleRecords.map((income) => (
                   <li className="income-card" key={income.id}>
                     <div className="income-card__main">
                       <span className="income-card__marker" aria-hidden="true" />

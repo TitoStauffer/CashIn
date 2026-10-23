@@ -6,9 +6,14 @@ export type FinancialSummary = {
   incomeTotal: string
   expenseTotal: string
   contributionTotal: string
+  cashIncomeTotal: string
+  cashExpenseTotal: string
+  creditPurchaseTotal: string
+  cardPaymentTotal: string
+  contributionsByGoal: { goalId: string; amount: string }[]
   availableBalance: string
-  cashBalance?: string
-  benefitBalances?: BenefitBalanceSummary[]
+  cashBalance: string
+  benefitBalances: BenefitBalanceSummary[]
   incomeByCategory: CategorySummary[]
   expenseByCategory: CategorySummary[]
 }

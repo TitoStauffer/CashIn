@@ -90,6 +90,10 @@ test("credit-card billing assigns purchases by card close date and pays the stat
     const summaryRepository = new PostgresFinancialSummaryRepository(database);
     const beforePayment = await summaryRepository.getSummary(walletId, "2026-10-01", "2026-10-31");
     assert.equal(beforePayment.expenseTotal, "65.00");
+    assert.equal(beforePayment.cashIncomeTotal, "100.00");
+    assert.equal(beforePayment.cashExpenseTotal, "5.00");
+    assert.equal(beforePayment.creditPurchaseTotal, "60.00");
+    assert.equal(beforePayment.cardPaymentTotal, "0.00");
     assert.equal(beforePayment.cashBalance, "95.00");
 
     const octoberStatement = goldStatements!.find((statement) => statement.closingDate === "2026-10-10")!;
@@ -98,7 +102,25 @@ test("credit-card billing assigns purchases by card close date and pays the stat
     assert.equal(paid?.paidAmount, "10.00");
     const afterPayment = await summaryRepository.getSummary(walletId, "2026-10-01", "2026-10-31");
     assert.equal(afterPayment.expenseTotal, "65.00");
+    assert.equal(afterPayment.cashExpenseTotal, "5.00");
+    assert.equal(afterPayment.creditPurchaseTotal, "60.00");
+    assert.equal(afterPayment.cardPaymentTotal, "10.00");
     assert.equal(afterPayment.cashBalance, "85.00");
+    assert.equal(afterPayment.availableBalance, "85.00");
+    const purchaseDay = await summaryRepository.getSummary(walletId, "2026-10-10", "2026-10-10");
+    assert.equal(purchaseDay.expenseTotal, "45.00");
+    assert.equal(purchaseDay.cashExpenseTotal, "5.00");
+    assert.equal(purchaseDay.creditPurchaseTotal, "40.00");
+    assert.equal(purchaseDay.cardPaymentTotal, "0.00");
+    assert.equal(purchaseDay.cashBalance, "-5.00");
+    const paymentDay = await summaryRepository.getSummary(walletId, "2026-10-20", "2026-10-20");
+    assert.equal(paymentDay.expenseTotal, "0.00");
+    assert.equal(paymentDay.cashExpenseTotal, "0.00");
+    assert.equal(paymentDay.creditPurchaseTotal, "0.00");
+    assert.equal(paymentDay.cardPaymentTotal, "10.00");
+    assert.equal(paymentDay.cashBalance, "-10.00");
+    const afterPaymentDay = await summaryRepository.getSummary(walletId, "2026-10-21", "2026-10-31");
+    assert.equal(afterPaymentDay.cardPaymentTotal, "0.00");
     await assert.rejects(
       () => cards.payStatement(walletId, firstCard.id, octoberStatement.id, "2026-10-21"),
       (error: unknown) => error instanceof CreditCardError && error.statusCode === 409,

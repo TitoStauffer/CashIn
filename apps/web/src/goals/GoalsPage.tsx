@@ -7,6 +7,9 @@ import type { InvestmentContribution, InvestmentGoal, InvestmentGoalInput } from
 import { goalsApi } from './goalsApi'
 import { FinancialSidebar } from '../layout/FinancialSidebar'
 import { useWallet } from '../wallets/useWallet'
+import { getLinkedMonth } from '../period/recordLinks'
+import { formatMonth } from '../period/month'
+import { MonthYearSelector } from '../period/MonthYearSelector'
 import { formatBrazilianCurrency, formatBrazilianCurrencyInput, hasInvalidBrazilianCurrencyInput, isPositiveCurrencyAmount, maskBrazilianCurrencyInput, parseBrazilianCurrencyInput } from '../money/currency'
 import './GoalsPage.css'
 
@@ -63,7 +66,9 @@ export function GoalsPage({ userEmail, isLoggingOut, onLogout }: GoalsPageProps)
   const [contributionLoadErrors, setContributionLoadErrors] = useState<Record<string, string>>({})
   const [loadingContributionId, setLoadingContributionId] = useState<string | null>(null)
   const [expandedId, setExpandedId] = useState<string | null>(null)
-  const [filter, setFilter] = useState<'active' | 'closed' | 'all'>('active')
+  const [contributionMonth, setContributionMonth] = useState(getLinkedMonth)
+  const [linkedGoalId, setLinkedGoalId] = useState(() => new URLSearchParams(window.location.search).get('goalId'))
+  const [filter, setFilter] = useState<'active' | 'closed' | 'all'>(() => getLinkedMonth() ? 'all' : 'active')
   const [editor, setEditor] = useState<GoalEditor | null>(null)
   const [contributionEditor, setContributionEditor] = useState<ContributionEditor | null>(null)
   const [goalAmountInvalid, setGoalAmountInvalid] = useState(false)
@@ -90,9 +95,22 @@ export function GoalsPage({ userEmail, isLoggingOut, onLogout }: GoalsPageProps)
         categoriesApi.list('investment_goal', controller.signal),
       ]),
     ])
-      .then(([goalResponse, categoryResponses]) => {
+      .then(async ([goalResponse, categoryResponses]) => {
+        if (controller.signal.aborted) return
+        const initialGoalId = !lastLoadedWalletId.current ? linkedGoalId : null
+        let initialContributions: InvestmentContribution[] | null = null
+        let initialContributionError = ''
+        if (initialGoalId && goalResponse.items.some((goal) => goal.id === initialGoalId)) {
+          try {
+            initialContributions = (await goalsApi.contributions(initialGoalId, controller.signal)).items
+          } catch (cause) {
+            if (controller.signal.aborted) return
+            initialContributionError = getErrorMessage(cause, 'carregar os aportes')
+          }
+        }
         if (controller.signal.aborted) return
         if (lastLoadedWalletId.current !== activeWalletId) {
+          if (lastLoadedWalletId.current) setLinkedGoalId(null)
           setEditor(null)
           setContributionEditor(null)
           setContributionGoalId(null)
@@ -102,24 +120,24 @@ export function GoalsPage({ userEmail, isLoggingOut, onLogout }: GoalsPageProps)
         lastLoadedWalletId.current = activeWalletId
         setGoals(goalResponse.items)
         setCategories(categoryResponses.flatMap((response) => response.items))
-        setContributions({})
-        setContributionLoadErrors({})
-        setExpandedId(null)
+        setContributions(initialGoalId && initialContributions ? { [initialGoalId]: initialContributions } : {})
+        setExpandedId(initialContributions || initialContributionError ? initialGoalId : null)
+        setContributionLoadErrors(initialGoalId && initialContributionError ? { [initialGoalId]: initialContributionError } : {})
         setLoadedWalletId(activeWalletId)
         setLoadError('')
       })
       .catch((cause: unknown) => {
-        if (controller.signal.aborted || cause instanceof Error && cause.name === 'AbortError') return
+        if (controller.signal.aborted || (cause instanceof Error && cause.name === 'AbortError')) return
         setLoadedWalletId(activeWalletId)
         setLoadError(getErrorMessage(cause, 'carregar suas metas'))
       })
       .finally(() => { if (!controller.signal.aborted) setLoading(false) })
     return () => controller.abort()
-  }, [activeWalletId, reloadKey])
+  }, [activeWalletId, reloadKey, linkedGoalId])
 
   const isWalletLoading = loadedWalletId !== activeWalletId
 
-  const visibleGoals = useMemo(() => goals.filter((goal) => filter === 'all' || goal.status === filter), [filter, goals])
+  const visibleGoals = useMemo(() => goals.filter((goal) => (!linkedGoalId || goal.id === linkedGoalId) && (filter === 'all' || goal.status === filter)), [filter, goals, linkedGoalId])
   const selectedCategory = categories.find((category) => category.id === editor?.categoryId)
 
   async function refreshGoals() {
@@ -330,6 +348,8 @@ export function GoalsPage({ userEmail, isLoggingOut, onLogout }: GoalsPageProps)
           <div className="goals-filters" role="group" aria-label="Filtrar metas">
             {([['active', 'Em andamento'], ['closed', 'Encerradas'], ['all', 'Todas']] as const).map(([value, label]) => <button type="button" className={`goals-filter${filter === value ? ' goals-filter--active' : ''}`} key={value} onClick={() => setFilter(value)} aria-pressed={filter === value}>{label}</button>)}
           </div>
+          {linkedGoalId && <button className="goal-text-action" type="button" onClick={() => setLinkedGoalId(null)}>Mostrar todas as metas</button>}
+          {contributionMonth && <div className="goals-linked-period"><MonthYearSelector month={contributionMonth} onMonthChange={setContributionMonth} /><p>Aportes de {formatMonth(contributionMonth)}. O progresso das metas considera todo o histórico.</p><button className="goal-text-action" type="button" onClick={() => setContributionMonth(null)}>Ver aportes de todo o histórico</button></div>}
           {saving && !loadingContributionId && <p className="goals-operation-status" role="note" aria-live="polite">{pendingMessage} Aguarde a confirmação antes de iniciar outra ação.</p>}
           {!isWalletLoading && error && <p className="goals-alert goals-alert--error" role="alert">{error}</p>}
           {!isWalletLoading && message && <p className="goals-alert goals-alert--success" role="status">{message}</p>}
@@ -351,7 +371,7 @@ export function GoalsPage({ userEmail, isLoggingOut, onLogout }: GoalsPageProps)
             : loading || isWalletLoading ? <div className="goals-loading" role="status"><span className="goals-spinner" aria-hidden="true" />Carregando metas…</div>
               : visibleGoals.length === 0 ? <div className="goals-state-card"><span className="goals-state-icon" aria-hidden="true">◎</span><h2>{filter === 'closed' ? 'Nenhuma meta encerrada' : filter === 'all' ? 'Nenhuma meta cadastrada' : 'Você ainda não tem metas'}</h2><p>{filter === 'active' ? 'Crie uma meta para acompanhar seus aportes e seu progresso.' : 'Quando houver metas neste filtro, elas aparecerão aqui.'}</p>{filter === 'active' && <button type="button" className="goals-secondary-button" onClick={createGoal}>Criar primeira meta</button>}</div>
                 : <ul className="goal-list" aria-label="Metas de investimento">{visibleGoals.map((goal) => {
-                  const items = contributions[goal.id]
+                  const items = contributions[goal.id]?.filter((item) => !contributionMonth || item.date.slice(0, 7) === contributionMonth)
                   const categoryLabel = [goal.categoryName, goal.subcategoryName].filter(Boolean).join(' / ')
                   const progress = Math.max(0, Math.min(100, goal.progressPercentage))
                   return <li className={`goal-card${goal.status === 'closed' ? ' goal-card--closed' : ''}`} key={goal.id}><article>
@@ -362,7 +382,7 @@ export function GoalsPage({ userEmail, isLoggingOut, onLogout }: GoalsPageProps)
                     <div className="goal-card__actions"><button className="goal-text-action" type="button" onClick={() => void showContributions(goal.id)} disabled={saving}>{expandedId === goal.id ? 'Ocultar aportes' : 'Ver aportes'}</button>{goal.status === 'active' && <><button className="goal-text-action" type="button" onClick={() => editGoal(goal)} disabled={saving}>Editar meta</button><button className="goal-text-action" type="button" onClick={() => createContribution(goal.id)} disabled={saving}>＋ Registrar aporte</button><button className="goal-text-action goal-text-action--danger" type="button" onClick={() => void closeGoal(goal)} disabled={saving}>Encerrar meta</button></>}</div>
                     {expandedId === goal.id && <div className="goal-contributions"><div className="goal-contributions__heading"><h3>Aportes</h3>{goal.status === 'active' && <button className="goal-text-action" type="button" onClick={() => createContribution(goal.id)} disabled={saving}>＋ Novo aporte</button>}</div>
                       {contributionEditor && !isWalletLoading && contributionGoalId === goal.id && <form className="contribution-editor" onSubmit={(event) => void saveContribution(event)}><div className="goal-editor__grid"><div className="goal-field"><label htmlFor="contribution-amount">Valor *</label><div className="goal-amount-input"><span aria-hidden="true">R$</span><input id="contribution-amount" type="text" inputMode="decimal" autoComplete="off" value={contributionEditor.amount} onChange={(event) => { setContributionAmountInvalid(hasInvalidBrazilianCurrencyInput(event.target.value)); setContributionEditor({ ...contributionEditor, amount: maskBrazilianCurrencyInput(event.target.value) }) }} aria-invalid={contributionAmountInvalid} aria-describedby={contributionAmountInvalid ? 'contribution-amount-hint contribution-amount-error' : 'contribution-amount-hint'} placeholder="0,00" required /></div><small id="contribution-amount-hint">Use vírgula para os centavos, por exemplo 1.234,56.</small>{contributionAmountInvalid && <small id="contribution-amount-error" role="alert">Use apenas números, até duas casas decimais e respeite o limite de R$ 999.999.999.999,99.</small>}</div><div className="goal-field"><label htmlFor="contribution-date">Data *</label><input id="contribution-date" type="date" value={contributionEditor.date} onChange={(event) => setContributionEditor({ ...contributionEditor, date: event.target.value })} required /></div><div className="goal-field goal-field--wide"><label htmlFor="contribution-description">Descrição <span>(opcional)</span></label><input id="contribution-description" maxLength={500} value={contributionEditor.description} onChange={(event) => setContributionEditor({ ...contributionEditor, description: event.target.value })} placeholder="Ex.: aporte mensal" /></div></div><div className="goal-editor__actions"><button className="goals-secondary-button" type="button" onClick={() => setContributionEditor(null)} disabled={saving}>Cancelar</button><button className="goals-primary-button" type="submit" disabled={saving}>{saving ? loadingContributionId ? 'Carregando aportes…' : 'Salvando…' : contributionEditor.id ? 'Salvar aporte' : 'Registrar aporte'}</button></div></form>}
-                      {contributionLoadErrors[goal.id] ? <div className="goals-alert goals-alert--error" role="alert"><p>{contributionLoadErrors[goal.id]}</p><button className="goal-text-action" type="button" onClick={() => void loadContributions(goal.id)} disabled={saving}>Tentar carregar aportes novamente</button></div> : items === undefined ? <p className="goal-contribution-note" role="status">Carregando aportes desta meta…</p> : items.length === 0 ? <p className="goal-contribution-note">{goal.status === 'active' ? 'Nenhum aporte registrado nesta meta. Use “Registrar aporte” para começar.' : 'Nenhum aporte foi registrado nesta meta. Metas encerradas permitem apenas consulta.'}</p> : <ul className="contribution-list">{items.map((item) => <li className="contribution-row" key={item.id}><div><strong>{formatAmount(item.amount)}</strong><span>{formatDate(item.date)}{item.description ? ` · ${item.description}` : ''}</span></div>{goal.status === 'active' && <div className="contribution-row__actions"><button className="goal-text-action" type="button" onClick={() => editContribution(goal.id, item)} disabled={saving}>Editar</button><button className="goal-text-action goal-text-action--danger" type="button" onClick={() => void deleteContribution(goal.id, item)} disabled={saving}>Excluir</button></div>}</li>)}</ul>}
+                      {contributionLoadErrors[goal.id] ? <div className="goals-alert goals-alert--error" role="alert"><p>{contributionLoadErrors[goal.id]}</p><button className="goal-text-action" type="button" onClick={() => void loadContributions(goal.id)} disabled={saving}>Tentar carregar aportes novamente</button></div> : items === undefined ? <p className="goal-contribution-note" role="status">Carregando aportes desta meta…</p> : items.length === 0 ? <p className="goal-contribution-note">{contributionMonth ? 'Nenhum aporte nesta meta no período selecionado.' : 'Nenhum aporte registrado nesta meta.'} {goal.status === 'active' ? 'Use “Registrar aporte” para começar.' : 'Metas encerradas permitem apenas consulta.'}</p> : <ul className="contribution-list">{items.map((item) => <li className="contribution-row" key={item.id}><div><strong>{formatAmount(item.amount)}</strong><span>{formatDate(item.date)}{item.description ? ` · ${item.description}` : ''}</span></div>{goal.status === 'active' && <div className="contribution-row__actions"><button className="goal-text-action" type="button" onClick={() => editContribution(goal.id, item)} disabled={saving}>Editar</button><button className="goal-text-action goal-text-action--danger" type="button" onClick={() => void deleteContribution(goal.id, item)} disabled={saving}>Excluir</button></div>}</li>)}</ul>}
                     </div>}
                   </article></li>
                 })}</ul>}
