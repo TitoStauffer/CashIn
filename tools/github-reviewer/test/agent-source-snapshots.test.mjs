@@ -35,6 +35,9 @@ test('supplies complete source snapshots as untrusted context for review', () =>
   assert.match(prompt, /https:\/\/github\.test\/checks\/1/);
   assert.match(prompt, /Formal Code Review evidence/);
   assert.match(prompt, /cashin-devagents\[bot\]/);
+  assert.match(prompt, /Encontrar um problema não encerra a revisão/);
+  assert.match(prompt, /consolide no mesmo relatório todos os achados comprovados da rodada/);
+  assert.match(prompt, /áreas revisadas sem bloqueios relevantes/);
 });
 
 test('checks added diff lines and full source snapshots for prompt injection', () => {

@@ -84,6 +84,7 @@
 
 ### Processo de Code Review no GitHub
 - O Agent de Code Review deve confirmar o repositório, o número e o título do PR, seu estado atual e o diff a revisar. Deve consultar o contexto adicional necessário e não presumir problemas sem evidências suficientes.
+- O Agent de Code Review deve concluir uma análise abrangente antes de emitir a decisão. Encontrar um problema não encerra a revisão: percorra todo o diff, os arquivos relacionados disponíveis, os critérios de aceitação, os contratos afetados e os testes; consolide no mesmo relatório todos os achados comprovados da rodada e registre as áreas revisadas sem bloqueios relevantes. Não retenha achados para rodadas posteriores quando as evidências já estiverem disponíveis.
 - A revisão deve avaliar, no mínimo:
   - Bugs, erros de lógica e atendimento aos critérios de aceitação.
   - Vulnerabilidades, exposição de dados sensíveis, validações, tratamento de erros e casos extremos.
