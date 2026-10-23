@@ -75,7 +75,8 @@ describe('GoalsPage currency inputs', () => {
     vi.mocked(goalsApi.list).mockResolvedValue({ items: [{ ...goal, status: 'closed' }] })
     await renderPage()
     await userEvent.setup().click(await screen.findByRole('button', { name: 'Ver aportes' }))
-    expect(await screen.findByText('Nenhum aporte nesta meta no período selecionado.')).toBeVisible()
+    expect(await screen.findByText(/Nenhum aporte nesta meta no período selecionado\./)).toBeVisible()
+    expect(screen.getByText(/Metas encerradas permitem apenas consulta\./)).toBeVisible()
     expect(screen.queryByText(/Aporte mensal/)).not.toBeInTheDocument()
   })
 
@@ -84,6 +85,24 @@ describe('GoalsPage currency inputs', () => {
     await renderPage()
     expect(await screen.findByText('Nenhuma meta cadastrada')).toBeVisible()
     expect(goalsApi.contributions).not.toHaveBeenCalled()
+  })
+
+  it('recovers a failed linked contribution request inside the goal while preserving its month', async () => {
+    window.history.replaceState({}, '', '/goals?month=2026-10&goalId=goal-1')
+    vi.mocked(goalsApi.contributions)
+      .mockRejectedValueOnce(Object.assign(new Error('server-only-detail'), { status: 503 }))
+      .mockResolvedValueOnce({ items: [contribution, { ...contribution, id: 'previous', date: '2026-09-30', description: 'Aporte anterior' }] })
+    await renderPage()
+    expect(await screen.findByRole('heading', { name: 'Carro novo' })).toBeVisible()
+    expect(screen.getByRole('alert')).toHaveTextContent('Não foi possível carregar os aportes.')
+    expect(screen.queryByText('server-only-detail')).not.toBeInTheDocument()
+    expect(screen.queryByText('Carregando aportes desta meta…')).not.toBeInTheDocument()
+    expect(screen.getByLabelText('Selecionar mês e ano')).toHaveValue('2026-10')
+    await userEvent.setup().click(screen.getByRole('button', { name: 'Tentar carregar aportes novamente' }))
+    expect(await screen.findByText(/Aporte mensal/)).toBeVisible()
+    expect(screen.queryByText(/Aporte anterior/)).not.toBeInTheDocument()
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    expect(goalsApi.list).toHaveBeenCalledTimes(1)
   })
 
   it('masks and validates a new goal amount, then sends the canonical decimal on create', async () => {
@@ -98,6 +117,7 @@ describe('GoalsPage currency inputs', () => {
     expect(amount).toHaveAttribute('aria-invalid', 'true')
     await user.click(screen.getByRole('button', { name: 'Criar meta' }))
     expect(goalsApi.create).not.toHaveBeenCalled()
+    expect(screen.getAllByRole('alert')).toHaveLength(1)
 
     fireEvent.change(amount, { target: { value: '1234,56' } })
     expect(amount).toHaveValue('1.234,56')
@@ -171,8 +191,35 @@ describe('GoalsPage currency inputs', () => {
     await user.click(await screen.findByRole('button', { name: '＋ Registrar aporte' }))
 
     expect(await screen.findByRole('alert')).toHaveTextContent('Não foi possível carregar os aportes.')
+    expect(screen.queryByText('Carregando aportes desta meta…')).not.toBeInTheDocument()
     expect(screen.getByLabelText('Valor *')).toBeVisible()
     expect(goalsApi.createContribution).not.toHaveBeenCalled()
+    await user.click(screen.getByRole('button', { name: 'Tentar carregar aportes novamente' }))
+    expect(await screen.findByText(/Aporte mensal/)).toBeVisible()
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  })
+
+  it('identifies contribution loading without claiming that changes are being saved', async () => {
+    const request = deferred<{ items: typeof contribution[] }>()
+    vi.mocked(goalsApi.contributions).mockReturnValueOnce(request.promise)
+    const user = userEvent.setup()
+    await renderPage()
+    await user.click(await screen.findByRole('button', { name: 'Ver aportes' }))
+    expect(screen.getByRole('status')).toHaveTextContent('Carregando aportes desta meta')
+    expect(screen.queryByRole('note')).not.toBeInTheDocument()
+    request.resolve({ items: [] })
+    expect(await screen.findByText(/Use “Registrar aporte” para começar/)).toBeVisible()
+  })
+
+  it('explains that a closed goal with no contributions is only available for consultation', async () => {
+    vi.mocked(goalsApi.list).mockResolvedValueOnce({ items: [{ ...goal, status: 'closed' }] })
+    vi.mocked(goalsApi.contributions).mockResolvedValueOnce({ items: [] })
+    const user = userEvent.setup()
+    await renderPage()
+    await user.click(screen.getByRole('button', { name: 'Encerradas' }))
+    await user.click(await screen.findByRole('button', { name: 'Ver aportes' }))
+    expect(await screen.findByText(/Metas encerradas permitem apenas consulta/)).toBeVisible()
+    expect(screen.queryByRole('button', { name: /Registrar aporte/ })).not.toBeInTheDocument()
   })
 
   it('shows a recoverable error when goals cannot be loaded', async () => {
@@ -279,5 +326,41 @@ describe('GoalsPage currency inputs', () => {
     expect(goalsApi.createContribution).toHaveBeenCalledTimes(1)
     createRequest.resolve(contribution)
     expect(await screen.findByRole('status')).toHaveTextContent('Aporte registrado.')
+  })
+
+  it('keeps a saved goal successful when the following list refresh fails', async () => {
+    vi.mocked(goalsApi.list).mockResolvedValueOnce({ items: [goal] }).mockRejectedValueOnce(new Error('offline'))
+    const user = userEvent.setup()
+    await renderPage()
+    await user.click(await screen.findByRole('button', { name: 'Editar meta' }))
+    await user.click(screen.getByRole('button', { name: 'Salvar alterações' }))
+    expect(await screen.findByRole('status')).toHaveTextContent('Meta atualizada.')
+    expect(await screen.findByRole('alert')).toHaveTextContent('A alteração da meta foi concluída, mas não foi possível atualizar a lista')
+    expect(goalsApi.update).toHaveBeenCalledTimes(1)
+    expect(screen.queryByRole('button', { name: 'Salvar alterações' })).not.toBeInTheDocument()
+  })
+
+  it('identifies goal closure and confirms it even if the following refresh fails', async () => {
+    const request = deferred<Awaited<ReturnType<typeof goalsApi.close>>>()
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    vi.spyOn(goalsApi, 'close').mockReturnValueOnce(request.promise)
+    vi.mocked(goalsApi.list).mockResolvedValueOnce({ items: [goal] }).mockRejectedValueOnce(new Error('offline'))
+    const user = userEvent.setup()
+    await renderPage()
+    await user.click(await screen.findByRole('button', { name: 'Encerrar meta' }))
+    expect(screen.getByRole('note')).toHaveTextContent('Encerrando a meta.')
+    request.resolve({ ...goal, status: 'closed' })
+    expect(await screen.findByRole('status')).toHaveTextContent('Meta encerrada. Os aportes foram preservados.')
+    expect(await screen.findByRole('alert')).toHaveTextContent('A alteração da meta foi concluída')
+  })
+
+  it('shows safe contribution-load feedback without server details', async () => {
+    vi.mocked(goalsApi.contributions).mockRejectedValueOnce(Object.assign(new Error('server-only-detail'), { status: 503 }))
+    const user = userEvent.setup()
+    await renderPage()
+    await user.click(await screen.findByRole('button', { name: 'Ver aportes' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('Não foi possível carregar os aportes.')
+    expect(screen.queryByText('server-only-detail')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Tentar carregar aportes novamente' })).toBeEnabled()
   })
 })

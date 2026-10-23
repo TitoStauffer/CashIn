@@ -1,4 +1,4 @@
-import { cleanup, render, screen } from '@testing-library/react'
+import { cleanup, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { CategoriesPage } from './CategoriesPage'
@@ -79,7 +79,7 @@ describe('CategoriesPage duplicate names', () => {
     vi.mocked(categoriesApi.list).mockRejectedValueOnce(new Error('offline'))
     await renderPage()
 
-    expect(await screen.findByRole('alert')).toHaveTextContent('Não foi possível conectar ao serviço.')
+    expect(await screen.findByRole('alert')).toHaveTextContent('Não foi possível carregar as categorias.')
     await user.click(screen.getByRole('button', { name: 'Tentar novamente' }))
 
     expect(await screen.findByRole('heading', { name: 'Salário' })).toBeVisible()
@@ -105,5 +105,35 @@ describe('CategoriesPage duplicate names', () => {
     createRequest.resolve()
     expect(await screen.findByRole('status')).toHaveTextContent('Categoria criada.')
     expect(await screen.findByRole('heading', { name: 'Freelance' })).toBeVisible()
+  })
+
+  it('shows safe load feedback without server details or a false empty state', async () => {
+    vi.mocked(categoriesApi.list).mockRejectedValueOnce(Object.assign(new Error('server-only-detail'), { status: 503 }))
+    await renderPage()
+    expect(await screen.findByRole('alert')).toHaveTextContent('Não foi possível carregar as categorias.')
+    expect(screen.queryByText(/server-only-detail|Nenhuma categoria de entradas ainda/)).not.toBeInTheDocument()
+  })
+
+  it('explains a linked-category deletion conflict and preserves the category', async () => {
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    vi.spyOn(categoriesApi, 'remove').mockRejectedValueOnce(Object.assign(new Error('server-only-detail'), { status: 409 }))
+    const user = userEvent.setup()
+    await renderPage()
+    const categoryCard = (await screen.findByRole('heading', { name: 'Salário' })).closest('article') as HTMLElement
+    await user.click(within(categoryCard).getAllByRole('button', { name: 'Excluir' })[0])
+    expect(await screen.findByRole('alert')).toHaveTextContent('nenhum registro financeiro foi removido. Você pode editar o nome')
+    expect(screen.getByRole('heading', { name: 'Salário' })).toBeVisible()
+    expect(screen.queryByText('server-only-detail')).not.toBeInTheDocument()
+  })
+
+  it('preserves category-creation success when refreshing the list fails', async () => {
+    vi.mocked(categoriesApi.list).mockResolvedValueOnce({ items: [] }).mockRejectedValueOnce(new Error('offline'))
+    const user = userEvent.setup()
+    await renderPage()
+    await user.click(await screen.findByRole('button', { name: 'Nova categoria' }))
+    await user.type(screen.getByLabelText('Nome da categoria'), 'Trabalho')
+    await user.click(screen.getByRole('button', { name: 'Salvar categoria' }))
+    expect(await screen.findByRole('status')).toHaveTextContent('Categoria criada.')
+    expect(await screen.findByRole('alert')).toHaveTextContent('A alteração foi concluída, mas não foi possível atualizar as categorias')
   })
 })

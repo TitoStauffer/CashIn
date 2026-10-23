@@ -1,8 +1,9 @@
-import { useEffect, useState } from 'react'
+import { getApiErrorFeedback } from '../feedback/apiErrorFeedback'
+import { useEffect, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import { FinancialSidebar } from '../layout/FinancialSidebar'
 import { useWallet } from './useWallet'
-import { WalletApiError, walletApi } from './walletApi'
+import { walletApi } from './walletApi'
 import type { WalletAccessLink, WalletAccessRequest, WalletInvitation, WalletMember } from './walletApi'
 import './WalletSharingPage.css'
 
@@ -16,19 +17,14 @@ function formatDate(value: string) {
   return new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(value))
 }
 
-function getErrorMessage(error: unknown, action: 'load' | 'invite' | 'cancel' | 'remove') {
-  if (error instanceof WalletApiError) {
-    if (error.status === 401 || error.status === 403) {
-      window.location.assign('/login')
-      return 'Sua sessão expirou. Entre novamente para continuar.'
-    }
-    if (error.status === 409) return 'Já existe um convite pendente ou este usuário já faz parte da carteira.'
-    if (error.status === 404) return 'Este convite, membro ou carteira não está mais disponível.'
-    if (error.message.trim()) return error.message
-  }
-  return action === 'load'
-    ? 'Não foi possível carregar o compartilhamento da carteira. Tente novamente.'
-    : 'Não foi possível concluir a operação. Tente novamente.'
+function getErrorMessage(error: unknown, action: 'load' | 'invite' | 'cancel' | 'remove' | 'link' | 'request') {
+  const actionLabel = { load: 'carregar o compartilhamento da carteira', invite: 'enviar o convite', cancel: 'cancelar o convite', remove: 'remover o membro', link: 'gerar o link de acesso', request: 'atualizar a solicitação de acesso' }[action]
+  return getApiErrorFeedback(error, `Não foi possível ${actionLabel}. Verifique sua conexão e tente novamente.`, {
+    404: 'Este convite, membro ou carteira não está mais disponível. Atualize a lista e tente novamente.',
+    409: action === 'invite'
+      ? 'Já existe um convite pendente ou este usuário já faz parte da carteira. Confira os convites e membros antes de tentar novamente.'
+      : 'O acesso à carteira mudou desde a última consulta. Atualize a lista e tente novamente.',
+  })
 }
 
 export function WalletSharingPage({ userEmail, isLoggingOut, onLogout }: WalletSharingPageProps) {
@@ -41,10 +37,13 @@ export function WalletSharingPage({ userEmail, isLoggingOut, onLogout }: WalletS
   const [email, setEmail] = useState('')
   const [isLoading, setIsLoading] = useState(true)
   const [loadedWalletId, setLoadedWalletId] = useState<string | null>(null)
-  const [isSubmitting, setIsSubmitting] = useState(false)
+  const [pendingAction, setPendingAction] = useState<'invite' | 'link' | 'cancel' | 'remove' | 'request' | null>(null)
+  const isSubmitting = pendingAction !== null
   const [error, setError] = useState('')
+  const [loadError, setLoadError] = useState('')
   const [message, setMessage] = useState('')
   const [reloadKey, setReloadKey] = useState(0)
+  const lastLoadedWalletId = useRef<string | null>(null)
 
   useEffect(() => {
     const walletId = activeWalletId
@@ -56,16 +55,23 @@ export function WalletSharingPage({ userEmail, isLoggingOut, onLogout }: WalletS
       walletApi.listAccessRequests(walletId, controller.signal),
     ])
       .then(([invitationResponse, memberResponse, accessRequestResponse]) => {
+        if (controller.signal.aborted) return
+        if (lastLoadedWalletId.current !== walletId) {
+          setError('')
+          setMessage('')
+          setEmail('')
+        }
+        lastLoadedWalletId.current = walletId
         setInvitations(invitationResponse.items)
         setMembers(memberResponse.items)
         setAccessRequests(accessRequestResponse.items)
         setLoadedWalletId(walletId)
-        setError('')
+        setLoadError('')
       })
       .catch((cause: unknown) => {
-        if (cause instanceof Error && cause.name === 'AbortError') return
+        if (controller.signal.aborted || cause instanceof Error && cause.name === 'AbortError') return
         setLoadedWalletId(walletId)
-        setError(getErrorMessage(cause, 'load'))
+        setLoadError(getErrorMessage(cause, 'load'))
       })
       .finally(() => {
         if (!controller.signal.aborted) setIsLoading(false)
@@ -77,7 +83,7 @@ export function WalletSharingPage({ userEmail, isLoggingOut, onLogout }: WalletS
 
   async function reload() {
     setIsLoading(true)
-    setError('')
+    setLoadError('')
     setReloadKey((current) => current + 1)
   }
 
@@ -91,17 +97,18 @@ export function WalletSharingPage({ userEmail, isLoggingOut, onLogout }: WalletS
       return
     }
 
-    setIsSubmitting(true)
+    setPendingAction('invite')
     try {
       if (!activeWalletId) throw new Error('Nenhuma carteira está selecionada.')
       await walletApi.createInvitation(activeWalletId, invitedEmail)
       setEmail('')
       setMessage(`Convite enviado para ${invitedEmail}.`)
+      setIsLoading(true)
       setReloadKey((current) => current + 1)
     } catch (cause) {
       setError(getErrorMessage(cause, 'invite'))
     } finally {
-      setIsSubmitting(false)
+      setPendingAction(null)
     }
   }
 
@@ -109,16 +116,17 @@ export function WalletSharingPage({ userEmail, isLoggingOut, onLogout }: WalletS
     if (!window.confirm(`Cancelar o convite enviado para ${invitation.email}?`)) return
     setError('')
     setMessage('')
-    setIsSubmitting(true)
+    setPendingAction('cancel')
     try {
       if (!activeWalletId) throw new Error('Nenhuma carteira está selecionada.')
       await walletApi.cancelInvitation(activeWalletId, invitation.id)
       setMessage(`Convite de ${invitation.email} cancelado.`)
+      setIsLoading(true)
       setReloadKey((current) => current + 1)
     } catch (cause) {
       setError(getErrorMessage(cause, 'cancel'))
     } finally {
-      setIsSubmitting(false)
+      setPendingAction(null)
     }
   }
 
@@ -126,37 +134,40 @@ export function WalletSharingPage({ userEmail, isLoggingOut, onLogout }: WalletS
     if (!window.confirm(`Remover ${member.email} da carteira? Essa pessoa perderá acesso aos dados compartilhados.`)) return
     setError('')
     setMessage('')
-    setIsSubmitting(true)
+    setPendingAction('remove')
     try {
       if (!activeWalletId) throw new Error('Nenhuma carteira está selecionada.')
       await walletApi.removeMember(activeWalletId, member.id)
       setMessage(`${member.email} removido da carteira.`)
+      setIsLoading(true)
       setReloadKey((current) => current + 1)
     } catch (cause) {
       setError(getErrorMessage(cause, 'remove'))
     } finally {
-      setIsSubmitting(false)
+      setPendingAction(null)
     }
   }
 
   async function handleCreateAccessLink() {
     setError('')
     setMessage('')
-    setIsSubmitting(true)
+    setPendingAction('link')
     try {
       if (!activeWalletId) throw new Error('Nenhuma carteira está selecionada.')
       const response = await walletApi.createAccessLink(activeWalletId)
       setAccessLink({ walletId: activeWalletId, link: response.link })
       setMessage('Link de solicitação criado. Compartilhe-o com quem deseja pedir acesso.')
     } catch (cause) {
-      setError(getErrorMessage(cause, 'invite'))
+      setError(getErrorMessage(cause, 'link'))
     } finally {
-      setIsSubmitting(false)
+      setPendingAction(null)
     }
   }
 
   async function handleCopyAccessLink() {
     if (!accessLink || accessLink.walletId !== activeWalletId) return
+    setError('')
+    setMessage('')
     try {
       await navigator.clipboard.writeText(accessLink.link.url)
       setMessage('Link copiado. Compartilhe-o com quem deseja pedir acesso.')
@@ -169,18 +180,19 @@ export function WalletSharingPage({ userEmail, isLoggingOut, onLogout }: WalletS
     if (decision === 'reject' && !window.confirm(`Recusar a solicitação de ${request.email}?`)) return
     setError('')
     setMessage('')
-    setIsSubmitting(true)
+    setPendingAction('request')
     try {
       if (!activeWalletId) throw new Error('Nenhuma carteira está selecionada.')
       await walletApi.decideAccessRequest(activeWalletId, request.id, decision)
       setMessage(decision === 'approve'
         ? `Solicitação de ${request.email} aprovada. Um convite foi enviado por e-mail.`
         : `Solicitação de ${request.email} recusada.`)
+      setIsLoading(true)
       setReloadKey((current) => current + 1)
     } catch (cause) {
-      setError(getErrorMessage(cause, 'cancel'))
+      setError(getErrorMessage(cause, 'request'))
     } finally {
-      setIsSubmitting(false)
+      setPendingAction(null)
     }
   }
 
@@ -188,16 +200,17 @@ export function WalletSharingPage({ userEmail, isLoggingOut, onLogout }: WalletS
     if (!window.confirm(`Cancelar a solicitação de ${request.email}?`)) return
     setError('')
     setMessage('')
-    setIsSubmitting(true)
+    setPendingAction('request')
     try {
       if (!activeWalletId) throw new Error('Nenhuma carteira está selecionada.')
       await walletApi.cancelAccessRequest(activeWalletId, request.id)
       setMessage(`Solicitação de ${request.email} cancelada.`)
+      setIsLoading(true)
       setReloadKey((current) => current + 1)
     } catch (cause) {
-      setError(getErrorMessage(cause, 'cancel'))
+      setError(getErrorMessage(cause, 'request'))
     } finally {
-      setIsSubmitting(false)
+      setPendingAction(null)
     }
   }
 
@@ -221,8 +234,9 @@ export function WalletSharingPage({ userEmail, isLoggingOut, onLogout }: WalletS
 
           {error && <p className="wallet-sharing-alert wallet-sharing-alert--error" role="alert">{error}</p>}
           {message && <p className="wallet-sharing-alert wallet-sharing-alert--success" role="status">{message}</p>}
+          {pendingAction && <p className="wallet-sharing-alert wallet-sharing-alert--pending" role="note" aria-live="polite">{{ invite: 'Enviando o convite.', link: 'Gerando o link de acesso.', cancel: 'Cancelando o convite.', remove: 'Removendo o membro da carteira.', request: 'Atualizando a solicitação de acesso.' }[pendingAction]} Aguarde a confirmação antes de iniciar outra ação.</p>}
 
-          {!canManage ? (
+          {!activeWallet ? <div className="wallet-sharing-loading" role="status">Carregando carteira…</div> : !canManage ? (
             <section className="wallet-sharing-state" role="alert">
               <h2>{activeWallet?.isPersonal ? 'Escolha uma carteira compartilhada' : 'Apenas o dono pode gerenciar o acesso'}</h2>
               <p>{activeWallet?.isPersonal
@@ -235,8 +249,8 @@ export function WalletSharingPage({ userEmail, isLoggingOut, onLogout }: WalletS
                 <div className="wallet-sharing-card__heading">
                   <div><h2 id="wallet-access-link-heading">Compartilhar link de solicitação</h2><p>Qualquer pessoa com o link pode pedir acesso. Nenhum dado financeiro é exibido antes da sua aprovação.</p></div>
                 </div>
-                <button className="wallet-sharing-primary" type="button" onClick={() => void handleCreateAccessLink()} disabled={isSubmitting}>
-                  {isSubmitting ? 'Gerando link…' : activeAccessLink ? 'Gerar novo link' : 'Gerar link de acesso'}
+                <button className="wallet-sharing-primary" type="button" onClick={() => void handleCreateAccessLink()} disabled={isSubmitting || isLoading || isWalletLoading || !!loadError}>
+                  {pendingAction === 'link' ? 'Gerando link…' : activeAccessLink ? 'Gerar novo link' : 'Gerar link de acesso'}
                 </button>
                 {activeAccessLink && <div className="wallet-sharing-access-link">
                   <label htmlFor="wallet-access-link-url">Link compartilhável · expira em {formatDate(activeAccessLink.expiresAt)}</label>
@@ -255,14 +269,14 @@ export function WalletSharingPage({ userEmail, isLoggingOut, onLogout }: WalletS
                   <label htmlFor="wallet-invite-email">E-mail</label>
                   <div className="wallet-sharing-invite-form__row">
                     <input id="wallet-invite-email" type="email" autoComplete="email" maxLength={254} value={email} onChange={(event) => setEmail(event.target.value)} placeholder="pessoa@exemplo.com" required />
-                    <button className="wallet-sharing-primary" type="submit" disabled={isSubmitting}>{isSubmitting ? 'Enviando…' : 'Enviar convite'}</button>
+                    <button className="wallet-sharing-primary" type="submit" disabled={isSubmitting || isLoading || isWalletLoading || !!loadError}>{pendingAction === 'invite' ? 'Enviando…' : 'Enviar convite'}</button>
                   </div>
                 </form>
               </section>
 
               {isLoading || isWalletLoading ? (
-                <div className="wallet-sharing-loading" role="status">Carregando acessos…</div>
-              ) : (
+                <div className="wallet-sharing-loading" role="status">Carregando membros, convites e solicitações de acesso…</div>
+              ) : loadError ? <section className="wallet-sharing-state" role="alert"><p>{loadError}</p><button type="button" className="wallet-sharing-secondary" onClick={() => void reload()}>Tentar novamente</button></section> : (
                 <>
                   <section className="wallet-sharing-card" aria-labelledby="wallet-members-heading">
                     <div className="wallet-sharing-card__heading">
@@ -345,7 +359,6 @@ export function WalletSharingPage({ userEmail, isLoggingOut, onLogout }: WalletS
               )}
             </>
           )}
-          {!isLoading && error && <button type="button" className="wallet-sharing-secondary" onClick={() => void reload()}>Tentar novamente</button>}
         </div>
       </main>
     </>

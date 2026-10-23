@@ -8,7 +8,6 @@ type WalletAccessRequestPageProps = { token: string | null }
 function getErrorMessage(error: unknown) {
   if (error instanceof WalletApiError) {
     if (error.status === 429) return 'Muitas tentativas. Aguarde um pouco e tente novamente.'
-    if (error.message.trim()) return error.message
   }
   return 'Não foi possível enviar a solicitação. Verifique sua conexão e tente novamente.'
 }

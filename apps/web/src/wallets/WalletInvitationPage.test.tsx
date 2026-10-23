@@ -40,6 +40,20 @@ describe('wallet invitation flow', () => {
     expect(screen.getByRole('link', { name: /Abrir carteira compartilhada/ })).toHaveAttribute('href', '/dashboard')
   })
 
+  it('uses local feedback instead of error or success payloads from the server', async () => {
+    vi.mocked(walletApi.acceptInvitation)
+      .mockRejectedValueOnce(new WalletApiError('server-only-detail', 500))
+      .mockResolvedValueOnce({ wallet: { id: 'wallet-shared', name: 'Casa', isPersonal: false, role: 'member' }, message: 'server-only-detail' })
+    const user = userEvent.setup()
+    render(<WalletInvitationPage token="invite-token" user={{ id: 'user-2', email: 'guest@example.com' }} />)
+    await user.click(screen.getByRole('button', { name: 'Aceitar convite' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('Não foi possível aceitar o convite.')
+    expect(screen.queryByText('server-only-detail')).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Aceitar convite' }))
+    expect(await screen.findByRole('status')).toHaveTextContent('Convite aceito. Abra a carteira compartilhada para continuar.')
+    expect(screen.queryByText('server-only-detail')).not.toBeInTheDocument()
+  })
+
   it('explains when the invitation is expired or invalid', async () => {
     const user = userEvent.setup()
     vi.mocked(walletApi.acceptInvitation).mockRejectedValueOnce(new WalletApiError('', 410))

@@ -1,11 +1,12 @@
-import { useEffect, useMemo, useState } from 'react'
+import { getApiErrorFeedback } from '../feedback/apiErrorFeedback'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import { FinancialSidebar } from '../layout/FinancialSidebar'
 import { formatBrazilianCurrency } from '../money/currency'
 import { formatMonth, getCurrentMonth, getMonthRange } from '../period/month'
 import { MonthYearSelector } from '../period/MonthYearSelector'
 import { useWallet } from '../wallets/useWallet'
-import { CreditCardApiError, creditCardsApi } from './creditCardsApi'
+import { creditCardsApi } from './creditCardsApi'
 import type { CreditCard, CreditCardInput, CreditCardStatement } from './creditCardsApi'
 import './CreditCardsPage.css'
 
@@ -21,15 +22,13 @@ function displayMoney(value: string | null) {
 }
 
 function getErrorMessage(error: unknown, action: 'load' | 'save' | 'pay') {
-  if (!(error instanceof CreditCardApiError)) return 'Não foi possível conectar ao serviço. Verifique sua conexão e tente novamente.'
-  if (error.status === 401 || error.status === 403) {
-    window.location.assign('/login')
-    return 'Sua sessão expirou. Entre novamente para continuar.'
-  }
-  if (error.message.trim()) return error.message
-  if (error.status === 400) return 'Confira os dados informados e tente novamente.'
-  if (error.status === 409) return 'Este cartão possui informações relacionadas e não pode ser alterado agora.'
-  return action === 'load' ? 'Não foi possível carregar cartões e faturas. Tente novamente.' : 'Não foi possível concluir a operação. Tente novamente.'
+  const actionLabel = { load: 'carregar cartões e faturas', save: 'salvar o cartão', pay: 'registrar o pagamento da fatura' }[action]
+  return getApiErrorFeedback(error, `Não foi possível ${actionLabel}. Verifique sua conexão e tente novamente.`, {
+    404: 'Este cartão ou esta fatura não está mais disponível. Atualize a lista e tente novamente.',
+    409: action === 'pay'
+      ? 'Esta fatura mudou ou já foi paga. Atualize as faturas e confira a situação antes de tentar novamente.'
+      : 'Não foi possível alterar o cartão com os dados atuais. Confira o apelido e as informações do cartão antes de tentar novamente.',
+  })
 }
 
 function today() {
@@ -46,46 +45,66 @@ export function CreditCardsPage({ userEmail, isLoggingOut, onLogout }: { userEma
   const [editor, setEditor] = useState<EditorState | null>(null)
   const [paymentDates, setPaymentDates] = useState<Record<string, string>>({})
   const [isLoading, setIsLoading] = useState(true)
-  const [isSaving, setIsSaving] = useState(false)
+  const [loadedWalletId, setLoadedWalletId] = useState<string | null>(null)
+  const lastLoadedWalletId = useRef<string | null>(null)
+  const [pendingAction, setPendingAction] = useState<'save' | 'toggle' | 'pay' | null>(null)
+  const isSaving = pendingAction !== null
+  const pendingMessage = pendingAction ? {"save":"Salvando o cartão.","toggle":"Atualizando o estado do cartão.","pay":"Registrando o pagamento integral da fatura."}[pendingAction] : ''
+  const [loadError, setLoadError] = useState('')
+  const [statementLoad, setStatementLoad] = useState({ key: '', error: '' })
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
   const [reloadKey, setReloadKey] = useState(0)
   const range = useMemo(() => getMonthRange(month), [month])
+  const statementRequestKey = [activeWalletId, selectedCardId, month, reloadKey].join(':')
+  const isStatementsLoading = statementLoad.key !== statementRequestKey
+  const isWalletLoading = loadedWalletId !== activeWalletId
 
   useEffect(() => {
     const controller = new AbortController()
     creditCardsApi.list(controller.signal)
       .then(({ items }) => {
+        if (controller.signal.aborted) return
+        if (lastLoadedWalletId.current !== activeWalletId) {
+          setEditor(null)
+          setPaymentDates({})
+          setMessage('')
+          setError('')
+        }
+        lastLoadedWalletId.current = activeWalletId
         setCards(items)
+        setLoadedWalletId(activeWalletId)
         setSelectedCardId((current) => items.some((card) => card.id === current)
           ? current
           : items.find((card) => card.isActive)?.id ?? items[0]?.id ?? '')
-        setError('')
+        setLoadError('')
       })
       .catch((cause: unknown) => {
-        if (cause instanceof Error && cause.name === 'AbortError') return
-        setError(getErrorMessage(cause, 'load'))
+        if (controller.signal.aborted || cause instanceof Error && cause.name === 'AbortError') return
+        setLoadedWalletId(activeWalletId)
+        setLoadError(getErrorMessage(cause, 'load'))
       })
       .finally(() => { if (!controller.signal.aborted) setIsLoading(false) })
     return () => controller.abort()
   }, [activeWalletId, reloadKey])
 
   useEffect(() => {
-    if (!selectedCardId) {
+    if (!selectedCardId || isWalletLoading || loadError) {
       return
     }
     const controller = new AbortController()
     creditCardsApi.statements(selectedCardId, range.from, range.to, controller.signal)
       .then(({ items }) => {
+        if (controller.signal.aborted) return
         setStatements(items)
-        setError('')
+        setStatementLoad({ key: statementRequestKey, error: '' })
       })
       .catch((cause: unknown) => {
-        if (cause instanceof Error && cause.name === 'AbortError') return
-        setError(getErrorMessage(cause, 'load'))
+        if (controller.signal.aborted || cause instanceof Error && cause.name === 'AbortError') return
+        setStatementLoad({ key: statementRequestKey, error: getErrorMessage(cause, 'load') })
       })
     return () => controller.abort()
-  }, [activeWalletId, range.from, range.to, selectedCardId, reloadKey])
+  }, [activeWalletId, range.from, range.to, selectedCardId, reloadKey, statementRequestKey, isWalletLoading, loadError])
 
   function startCreate() {
     setError('')
@@ -110,7 +129,7 @@ export function CreditCardsPage({ userEmail, isLoggingOut, onLogout }: { userEma
       return
     }
     const input: CreditCardInput = { nickname, closingDay, dueDay }
-    setIsSaving(true)
+    setPendingAction('save')
     setError('')
     setMessage('')
     try {
@@ -126,12 +145,12 @@ export function CreditCardsPage({ userEmail, isLoggingOut, onLogout }: { userEma
     } catch (cause) {
       setError(getErrorMessage(cause, 'save'))
     } finally {
-      setIsSaving(false)
+      setPendingAction(null)
     }
   }
 
   async function toggleActive(card: CreditCard) {
-    setIsSaving(true)
+    setPendingAction('toggle')
     setError('')
     setMessage('')
     try {
@@ -144,13 +163,13 @@ export function CreditCardsPage({ userEmail, isLoggingOut, onLogout }: { userEma
     } catch (cause) {
       setError(getErrorMessage(cause, 'save'))
     } finally {
-      setIsSaving(false)
+      setPendingAction(null)
     }
   }
 
   async function payStatement(statement: CreditCardStatement) {
     const date = paymentDates[statement.id] || today()
-    setIsSaving(true)
+    setPendingAction('pay')
     setError('')
     setMessage('')
     try {
@@ -160,14 +179,26 @@ export function CreditCardsPage({ userEmail, isLoggingOut, onLogout }: { userEma
     } catch (cause) {
       setError(getErrorMessage(cause, 'pay'))
     } finally {
-      setIsSaving(false)
+      setPendingAction(null)
     }
   }
 
   function retry() {
     setIsLoading(true)
-    setError('')
+    setLoadError('')
     setReloadKey((current) => current + 1)
+  }
+
+  function selectStatementCard(cardId: string) {
+    if (cardId === selectedCardId) return
+    setStatementLoad({ key: '', error: '' })
+    setSelectedCardId(cardId)
+  }
+
+  function selectStatementMonth(selectedMonth: string) {
+    if (selectedMonth === month) return
+    setStatementLoad({ key: '', error: '' })
+    setMonth(selectedMonth)
   }
 
   return <>
@@ -181,13 +212,14 @@ export function CreditCardsPage({ userEmail, isLoggingOut, onLogout }: { userEma
               <h1 id="credit-cards-title">Cartões e faturas</h1>
               <p>Cadastre cartões e acompanhe as compras agrupadas por fechamento da fatura.</p>
             </div>
-            <button type="button" className="credit-cards-primary" onClick={startCreate} disabled={isSaving}>＋ Novo cartão</button>
+            <button type="button" className="credit-cards-primary" onClick={startCreate} disabled={isSaving || isLoading || isWalletLoading || !!loadError}>＋ Novo cartão</button>
           </header>
 
-          {error && <div className="credit-cards-alert credit-cards-alert--error" role="alert"><span>{error}</span> <button type="button" onClick={retry}>Tentar novamente</button></div>}
-          {message && <p className="credit-cards-alert credit-cards-alert--success" role="status">{message}</p>}
+          {!isWalletLoading && error && <p className="credit-cards-alert credit-cards-alert--error" role="alert">{error}</p>}
+          {!isWalletLoading && message && <p className="credit-cards-alert credit-cards-alert--success" role="status">{message}</p>}
+          {isSaving && <p className="credit-cards-alert credit-cards-alert--pending" role="note" aria-live="polite">{pendingMessage} Aguarde a confirmação antes de iniciar outra ação.</p>}
 
-          {editor && <form className="credit-card-editor" onSubmit={handleSave} aria-label={editor.id ? 'Editar cartão' : 'Novo cartão'}>
+          {editor && !isWalletLoading && !loadError && <form className="credit-card-editor" onSubmit={handleSave} aria-label={editor.id ? 'Editar cartão' : 'Novo cartão'}>
             <h2>{editor.id ? 'Editar cartão' : 'Cadastrar cartão de crédito'}</h2>
             <div className="credit-card-editor__grid">
               <label>Apelido
@@ -206,7 +238,7 @@ export function CreditCardsPage({ userEmail, isLoggingOut, onLogout }: { userEma
             </div>
           </form>}
 
-          {isLoading ? <div className="credit-cards-loading" role="status">Carregando cartões…</div> : cards.length === 0 ? (
+          {isLoading || isWalletLoading ? <div className="credit-cards-loading" role="status">Carregando cartões…</div> : loadError ? <div className="credit-cards-alert credit-cards-alert--error" role="alert"><p>{loadError}</p><button type="button" className="credit-cards-secondary" onClick={retry}>Tentar novamente</button></div> : cards.length === 0 ? (
             <section className="credit-cards-empty">
               <span aria-hidden="true">▣</span>
               <h2>Nenhum cartão cadastrado</h2>
@@ -231,13 +263,14 @@ export function CreditCardsPage({ userEmail, isLoggingOut, onLogout }: { userEma
             <section className="statement-section" aria-labelledby="statements-title">
               <div className="statement-heading">
                 <div><p className="credit-cards-eyebrow">FATURAS</p><h2 id="statements-title">Visão mensal por fechamento</h2></div>
-                <select aria-label="Selecionar cartão para consultar faturas" value={selectedCardId} onChange={(event) => setSelectedCardId(event.target.value)}>
+                <select aria-label="Selecionar cartão para consultar faturas" value={selectedCardId} onChange={(event) => selectStatementCard(event.target.value)}>
+                  <option value="" disabled>Selecione um cartão</option>
                   {cards.map((card) => <option key={card.id} value={card.id}>{card.nickname}{card.isActive ? '' : ' (inativo)'}</option>)}
                 </select>
               </div>
-              <MonthYearSelector month={month} onMonthChange={setMonth} />
+              <MonthYearSelector month={month} onMonthChange={selectStatementMonth} />
               <p className="statement-period">Faturas com fechamento em {formatMonth(month).toLocaleLowerCase('pt-BR')}.</p>
-              {statements.length === 0 ? <div className="credit-cards-empty credit-cards-empty--compact">
+              {!selectedCardId ? <p className="statement-period">Selecione um cartão para consultar suas faturas, incluindo cartões inativos.</p> : isStatementsLoading ? <div className="credit-cards-loading" role="status">Carregando faturas do cartão selecionado…</div> : statementLoad.error ? <div className="credit-cards-alert credit-cards-alert--error" role="alert"><p>{statementLoad.error}</p><button type="button" className="credit-cards-secondary" onClick={() => setReloadKey((current) => current + 1)}>Tentar novamente</button></div> : statements.length === 0 ? <div className="credit-cards-empty credit-cards-empty--compact">
                 <h3>Nenhuma fatura neste período</h3><p>As faturas aparecerão aqui conforme houver compras no cartão.</p>
               </div> : <div className="statement-list">{statements.map((statement) => <article className="statement-card" key={statement.id}>
                 <header className="statement-card__header">
@@ -251,7 +284,8 @@ export function CreditCardsPage({ userEmail, isLoggingOut, onLogout }: { userEma
                 <footer className="statement-card__footer">
                   {statement.paidDate ? <p className="statement-paid">Paga em {formatDate(statement.paidDate)} · {displayMoney(statement.paidAmount)}</p> : <>
                     <label>Data do pagamento <input type="date" value={paymentDates[statement.id] ?? today()} onChange={(event) => setPaymentDates((current) => ({ ...current, [statement.id]: event.target.value }))} /></label>
-                    <button type="button" className="credit-cards-primary" onClick={() => void payStatement(statement)} disabled={isSaving || statement.purchases.length === 0}>Pagar fatura integral</button>
+                    <button type="button" className="credit-cards-primary" onClick={() => void payStatement(statement)} disabled={isSaving || statement.purchases.length === 0} aria-describedby={statement.purchases.length === 0 ? `statement-payment-hint-${statement.id}` : undefined}>Pagar fatura integral</button>
+                    {statement.purchases.length === 0 && <p id={`statement-payment-hint-${statement.id}`} className="statement-period">Esta fatura não possui compras para pagar. Registre uma despesa vinculada ao cartão para gerar uma fatura com valor.</p>}
                   </>}
                 </footer>
               </article>)}</div>}

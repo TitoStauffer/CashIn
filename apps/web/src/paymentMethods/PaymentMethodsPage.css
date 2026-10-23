@@ -15,6 +15,7 @@
 .payment-methods-alert { margin: 0 0 15px; padding: 12px 14px; border: 1px solid; border-radius: 8px; font-size: 12px; line-height: 1.6; }
 .payment-methods-alert--error { border-color: #f0d4d0; background: #fff8f6; color: #96483f; }
 .payment-methods-alert--success { border-color: #d2e6d5; background: #f3faf3; color: #326c45; }
+.payment-methods-operation-status { margin: 12px 0; padding: 12px 14px; border: 1px solid #d8e5d9; border-radius: 9px; background: #f8faf7; color: #5e6e62; font-size: 12px; line-height: 1.55; }
 .payment-methods-loading { min-height: 195px; display: grid; place-items: center; color: #748176; font-size: 12px; }
 .payment-methods-state { min-height: 250px; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 35px 22px; border: 1px solid #e5ebe4; border-radius: 14px; background: rgb(255 255 255 / 84%); text-align: center; }
 .payment-methods-state__icon { width: 39px; height: 39px; display: grid; place-items: center; margin-bottom: 17px; border-radius: 50%; background: #eaf4eb; color: #39764c; font-size: 17px; font-weight: 700; }

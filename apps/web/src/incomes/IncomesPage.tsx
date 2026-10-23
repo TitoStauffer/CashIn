@@ -1,9 +1,10 @@
+import { getApiErrorFeedback } from '../feedback/apiErrorFeedback'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import type { Category } from '../categories/categoriesApi'
 import { categoriesApi } from '../categories/categoriesApi'
 import type { Income, IncomeBalanceType, IncomeInput } from './incomesApi'
-import { IncomeApiError, incomesApi } from './incomesApi'
+import { incomesApi } from './incomesApi'
 import { FinancialSidebar } from '../layout/FinancialSidebar'
 import { useWallet } from '../wallets/useWallet'
 import { MonthYearSelector } from '../period/MonthYearSelector'
@@ -42,20 +43,11 @@ function formatAmount(amount: string) {
 }
 
 function getErrorMessage(error: unknown, action: 'load' | 'save' | 'delete') {
-  if (!(error instanceof IncomeApiError)) {
-    return 'Não foi possível conectar ao serviço. Verifique sua conexão e tente novamente.'
-  }
-  if (error.status === 401 || error.status === 403) {
-    window.location.assign('/login')
-    return 'Sua sessão expirou. Entre novamente para continuar.'
-  }
-  if (error.message.trim()) return error.message
-  if (error.status === 400) return 'Confira os dados informados e tente novamente.'
-  if (error.status === 404) return 'Esta entrada não foi encontrada. Atualize a lista e tente novamente.'
-  if (action === 'delete' && error.status === 409) return 'Esta entrada não pode ser excluída agora.'
-  return action === 'load'
-    ? 'Não foi possível carregar as entradas. Tente novamente.'
-    : 'Não foi possível concluir a operação. Tente novamente.'
+  const actionLabel = { load: 'carregar as entradas', save: 'salvar a entrada', delete: 'excluir a entrada' }[action]
+  return getApiErrorFeedback(error, `Não foi possível ${actionLabel}. Verifique sua conexão e tente novamente.`, {
+    404: 'Esta entrada não foi encontrada. Atualize a lista e tente novamente.',
+    409: 'Esta entrada não pode ser alterada agora. Atualize a lista e confira os dados antes de tentar novamente.',
+  })
 }
 
 type IncomesPageProps = {
@@ -72,7 +64,9 @@ export function IncomesPage({ userEmail, isLoggingOut, onLogout }: IncomesPagePr
   const [incomes, setIncomes] = useState<Income[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [loadedWalletId, setLoadedWalletId] = useState<string | null>(null)
-  const [isSaving, setIsSaving] = useState(false)
+  const [pendingAction, setPendingAction] = useState<'save' | 'delete' | null>(null)
+  const isSaving = pendingAction !== null
+  const pendingMessage = pendingAction ? {"save":"Salvando a entrada.","delete":"Excluindo a entrada."}[pendingAction] : ''
   const [loadError, setLoadError] = useState('')
   const [formError, setFormError] = useState('')
   const [successMessage, setSuccessMessage] = useState('')
@@ -172,8 +166,8 @@ export function IncomesPage({ userEmail, isLoggingOut, onLogout }: IncomesPagePr
       const { items } = await incomesApi.list(range.from, range.to)
       setIncomes(items)
       setLoadError('')
-    } catch (error) {
-      setLoadError(getErrorMessage(error, 'load'))
+    } catch {
+      setLoadError('A alteração da entrada foi concluída, mas não foi possível atualizar a lista. Use Tentar novamente para consultar os registros.')
     }
   }
 
@@ -181,7 +175,7 @@ export function IncomesPage({ userEmail, isLoggingOut, onLogout }: IncomesPagePr
     event.preventDefault()
     if (!editor) return
     if (amountInputInvalid) {
-      setFormError('Use apenas números, até duas casas decimais e respeite o limite de R$ 999.999.999.999,99.')
+      setFormError('')
       return
     }
     const amount = parseBrazilianCurrencyInput(amountInput)
@@ -203,7 +197,7 @@ export function IncomesPage({ userEmail, isLoggingOut, onLogout }: IncomesPagePr
       balanceType: editor.balanceType,
     }
     resetMessages()
-    setIsSaving(true)
+    setPendingAction('save')
     try {
       if (editor.incomeId) {
         await incomesApi.update(editor.incomeId, input)
@@ -219,23 +213,23 @@ export function IncomesPage({ userEmail, isLoggingOut, onLogout }: IncomesPagePr
     } catch (error) {
       setFormError(getErrorMessage(error, 'save'))
     } finally {
-      setIsSaving(false)
+      setPendingAction(null)
     }
   }
 
   async function handleDelete(income: Income) {
     if (!window.confirm(`Excluir a entrada de ${formatAmount(income.amount)} em ${formatDate(income.date)}?`)) return
     resetMessages()
-    setIsSaving(true)
+    setPendingAction('delete')
     try {
       await incomesApi.remove(income.id)
-      setSuccessMessage('Entrada excluída.')
       if (editor?.incomeId === income.id) closeEditor()
+      setSuccessMessage('Entrada excluída.')
       await reloadIncomes()
     } catch (error) {
       setFormError(getErrorMessage(error, 'delete'))
     } finally {
-      setIsSaving(false)
+      setPendingAction(null)
     }
   }
 
@@ -265,10 +259,18 @@ export function IncomesPage({ userEmail, isLoggingOut, onLogout }: IncomesPagePr
               <h1 id="incomes-title">Entradas</h1>
               <p>Registre e acompanhe o dinheiro que entrou no período.</p>
             </div>
-            <button className="incomes-primary-button" type="button" onClick={startCreate} disabled={isSaving || categories.length === 0}>
+            <button className="incomes-primary-button" type="button" onClick={startCreate} disabled={isSaving || isLoading || isWalletLoading || !!loadError || categories.length === 0} aria-describedby={categories.length === 0 && !isLoading && !isWalletLoading && !loadError ? 'income-category-prerequisite' : undefined}>
               <span aria-hidden="true">＋</span> Nova entrada
             </button>
           </div>
+
+          {categories.length === 0 && !isLoading && !isWalletLoading && !loadError && (
+            <p className="incomes-prerequisite" id="income-category-prerequisite" role="note">
+              Para registrar uma entrada, primeiro <a href="/categories">cadastre uma categoria de entrada</a> nesta carteira.
+            </p>
+          )}
+
+          {isSaving && <p className="incomes-operation-status" role="note" aria-live="polite">{pendingMessage} Aguarde a confirmação antes de iniciar outra ação.</p>}
 
           <MonthYearSelector month={month} onMonthChange={selectMonth} />
           <div className="record-category-filter">
@@ -280,8 +282,8 @@ export function IncomesPage({ userEmail, isLoggingOut, onLogout }: IncomesPagePr
             </select>
           </div>
 
-          {formError && <p className="incomes-alert incomes-alert--error" role="alert">{formError}</p>}
-          {successMessage && <p className="incomes-alert incomes-alert--success" role="status">{successMessage}</p>}
+          {!isWalletLoading && formError && <p className="incomes-alert incomes-alert--error" role="alert">{formError}</p>}
+          {!isWalletLoading && successMessage && <p className="incomes-alert incomes-alert--success" role="status">{successMessage}</p>}
 
           {editor && !isWalletLoading && (
             <form className="income-editor" onSubmit={handleSave} aria-labelledby="income-editor-title">
@@ -337,15 +339,18 @@ export function IncomesPage({ userEmail, isLoggingOut, onLogout }: IncomesPagePr
                     value={editor.subcategoryId}
                     onChange={(event) => setEditor({ ...editor, subcategoryId: event.target.value })}
                     disabled={!editor.categoryId || availableSubcategories.length === 0}
+                    aria-describedby="income-subcategory-hint"
                   >
                     <option value="">Sem subcategoria</option>
                     {availableSubcategories.map((subcategory) => <option key={subcategory.id} value={subcategory.id}>{subcategory.name}</option>)}
                   </select>
+                  <small id="income-subcategory-hint">{!editor.categoryId ? 'Selecione uma categoria para consultar as subcategorias.' : availableSubcategories.length === 0 ? 'Esta categoria não possui subcategorias; este campo é opcional.' : 'Escolha uma subcategoria ou mantenha sem subcategoria.'}</small>
                 </div>
                 <div className="income-field">
                   <label htmlFor="income-balance-type">Destino do valor *</label>
                   <select
                     id="income-balance-type"
+                    aria-describedby="income-balance-type-hint"
                     value={editor.balanceType}
                     onChange={(event) => setEditor({ ...editor, balanceType: event.target.value as IncomeBalanceType })}
                     required
@@ -357,7 +362,7 @@ export function IncomesPage({ userEmail, isLoggingOut, onLogout }: IncomesPagePr
                       <option value={editor.balanceType}>{balanceTypeLabels[editor.balanceType]} (histórico)</option>
                     )}
                   </select>
-                  <small>Benefícios ficam separados do saldo em dinheiro.</small>
+                  <small id="income-balance-type-hint">{editor.balanceType === 'food_benefit' || editor.balanceType === 'meal_benefit' ? 'Este registro mantém seu destino histórico. Para novas entradas de VA ou VR, use Cartão de benefícios (VA/VR).' : 'VA e VR usam um único saldo no cartão de benefícios. Benefícios ficam separados do saldo em dinheiro.'}</small>
                 </div>
                 <div className="income-field income-field--wide">
                   <label htmlFor="income-description">Descrição <span>(opcional)</span></label>
@@ -374,7 +379,7 @@ export function IncomesPage({ userEmail, isLoggingOut, onLogout }: IncomesPagePr
               <div className="income-editor__actions">
                 <button className="incomes-secondary-button" type="button" onClick={closeEditor} disabled={isSaving}>Cancelar</button>
                 <button className="incomes-primary-button" type="submit" disabled={isSaving || categories.length === 0}>
-                  {isSaving ? 'Salvando…' : editor.incomeId ? 'Salvar alterações' : 'Registrar entrada'}
+                  {isSaving ? pendingAction === 'delete' ? 'Excluindo…' : 'Salvando…' : editor.incomeId ? 'Salvar alterações' : 'Registrar entrada'}
                 </button>
               </div>
             </form>
@@ -394,8 +399,7 @@ export function IncomesPage({ userEmail, isLoggingOut, onLogout }: IncomesPagePr
               <span className="incomes-state-icon" aria-hidden="true">↗</span>
               <h2>{categoryFilter ? 'Nenhuma entrada nesta categoria e mês' : 'Nenhuma entrada neste mês'}</h2>
               <p>Quando você registrar uma entrada, ela aparecerá aqui para facilitar o acompanhamento do período.</p>
-              <button type="button" className="incomes-secondary-button" onClick={startCreate} disabled={categories.length === 0}>Registrar primeira entrada</button>
-              {categories.length === 0 && <p className="incomes-state-note">Antes, crie uma categoria de entrada em <a href="/categories">Categorias</a>.</p>}
+              <button type="button" className="incomes-secondary-button" onClick={startCreate} disabled={isSaving || categories.length === 0} aria-describedby={categories.length === 0 ? 'income-category-prerequisite' : undefined}>Registrar primeira entrada</button>
             </div>
           ) : (
             <>
