@@ -231,6 +231,94 @@ test("PostgreSQL financial import confirms exact amounts, isolates wallets, and 
     assert.equal(removed?.canUndo, false);
     assert.equal(removed?.undoBlockedReason, "Um ou mais lançamentos importados foram alterados ou removidos.");
 
+    const removableCategory = await database.query<{ id: string }>(
+      `INSERT INTO categories (user_id, wallet_id, name, nature)
+       VALUES ($1, $2, 'Categoria liberada pelo desfazer', 'expense')
+       RETURNING id`,
+      [userId, walletId],
+    );
+    const removableCategoryId = removableCategory.rows[0]!.id;
+    const removableSubcategory = await database.query<{ id: string }>(
+      `INSERT INTO subcategories (user_id, wallet_id, category_id, name)
+       VALUES ($1, $2, $3, 'Subcategoria liberada pelo desfazer')
+       RETURNING id`,
+      [userId, walletId, removableCategoryId],
+    );
+    const removableSubcategoryId = removableSubcategory.rows[0]!.id;
+    const removableSession = await repository.createImport(userId, walletId, {
+      format: "csv",
+      fileName: "remove-references.csv",
+      fileSize: 64,
+      fileHash: "e".repeat(64),
+    });
+    await repository.savePreview(userId, walletId, removableSession.id, [{
+      sequence: 1,
+      date: "2026-10-23",
+      description: "Histórico preservado sem classificação",
+      signedAmount: "19.99",
+      type: "expense",
+      categoryId: removableCategoryId,
+      subcategoryId: removableSubcategoryId,
+      validationStatus: "valid",
+    }]);
+
+    for (const [table, id] of [
+      ["subcategories", removableSubcategoryId],
+      ["categories", removableCategoryId],
+    ] as const) {
+      await assert.rejects(
+        database.query(`DELETE FROM ${table} WHERE id = $1 AND wallet_id = $2`, [id, walletId]),
+        (error: unknown) => (error as { code?: string }).code === "23503",
+      );
+    }
+
+    await repository.confirmImport(userId, walletId, removableSession.id);
+    for (const [table, id] of [
+      ["subcategories", removableSubcategoryId],
+      ["categories", removableCategoryId],
+    ] as const) {
+      await assert.rejects(
+        database.query(`DELETE FROM ${table} WHERE id = $1 AND wallet_id = $2`, [id, walletId]),
+        (error: unknown) => (error as { code?: string }).code === "23503",
+      );
+    }
+
+    assert.equal((await repository.undoImport(userId, walletId, removableSession.id))?.status, "undone");
+    const historicalItem = (await repository.getImport(userId, walletId, removableSession.id))?.items?.[0];
+    assert.deepEqual(historicalItem && {
+      date: historicalItem.date,
+      description: historicalItem.description,
+      amount: historicalItem.amount,
+      type: historicalItem.type,
+      validationStatus: historicalItem.validationStatus,
+      errorMessage: historicalItem.errorMessage,
+      categoryId: historicalItem.categoryId,
+      subcategoryId: historicalItem.subcategoryId,
+    }, {
+      date: "2026-10-23",
+      description: "Histórico preservado sem classificação",
+      amount: "19.99",
+      type: "expense",
+      validationStatus: "valid",
+      errorMessage: null,
+      categoryId: null,
+      subcategoryId: null,
+    });
+    assert.equal(
+      (await database.query(
+        "DELETE FROM subcategories WHERE id = $1 AND wallet_id = $2 RETURNING id",
+        [removableSubcategoryId, walletId],
+      )).rowCount,
+      1,
+    );
+    assert.equal(
+      (await database.query(
+        "DELETE FROM categories WHERE id = $1 AND wallet_id = $2 RETURNING id",
+        [removableCategoryId, walletId],
+      )).rowCount,
+      1,
+    );
+
     const concurrentSession = await repository.createImport(userId, walletId, {
       format: "csv",
       fileName: "concurrent.csv",

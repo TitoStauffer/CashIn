@@ -591,6 +591,8 @@ export class PostgresFinancialImportsRepository implements FinancialImportReposi
       await transaction.query(
         `UPDATE import_items
          SET validation_status = 'valid',
+             category_id = NULL,
+             subcategory_id = NULL,
              resulting_income_id = NULL,
              resulting_expense_id = NULL,
              resulting_updated_at = NULL,
