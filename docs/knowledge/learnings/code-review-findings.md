@@ -1,0 +1,96 @@
+# Aprendizados de Code Review
+
+**Status:** auditado até o PR #43
+**Última revisão:** 25/10/2026
+
+Esta nota converte os achados históricos do Agent de Code Review em regras preventivas. O inventário e os links das revisões estão em [`code-review-audit.md`](code-review-audit.md).
+
+## 1. Validar contratos atravessando as camadas
+
+- **Evidências:** [PR #18](https://github.com/TitoStauffer/CashIn/pull/18#pullrequestreview-5591622458), [PR #39 — primeira rodada](https://github.com/TitoStauffer/CashIn/pull/39#pullrequestreview-5633704229) e [limite de upload](https://github.com/TitoStauffer/CashIn/pull/39#pullrequestreview-5634639324).
+- **Problema recorrente:** Web, API e banco aceitavam contratos individualmente plausíveis, mas incompatíveis em conjunto: rota divergente, nulabilidade incorreta, resposta sem itens, contadores diferentes e erro genérico antes do handler.
+- **Causa-raiz:** testes isolados reproduziam mocks locais e não exercitavam o contrato real entre consumidor e provedor.
+- **Impacto:** 404, prévia vazia, confirmação incorreta, falhas no cliente e mensagens que escondem a causa.
+- **Regra preventiva:** toda alteração de contrato precisa de uma única definição coerente de rota, formato, nulabilidade, estado e erro em todas as camadas.
+- **Detecção:** teste de integração da rota real e, para fluxos críticos, teste Web/API com respostas reais ou fixtures derivadas do contrato da API.
+
+## 2. Dados inválidos também precisam ser persistíveis
+
+- **Evidências:** rodadas do [PR #39 sobre representação inválida](https://github.com/TitoStauffer/CashIn/pull/39#pullrequestreview-5633704229), [shape de categoria](https://github.com/TitoStauffer/CashIn/pull/39#pullrequestreview-5634418250), [referências incompatíveis](https://github.com/TitoStauffer/CashIn/pull/39#pullrequestreview-5634520107) e [compatibilidade PostgreSQL](https://github.com/TitoStauffer/CashIn/pull/39#pullrequestreview-5644937242).
+- **Problema recorrente:** itens reconhecidos como inválidos ainda carregavam datas, valores, texto ou referências capazes de violar constraints e derrubar toda a transação.
+- **Causa-raiz:** a validação de negócio mudava o status, mas não normalizava o registro para uma representação aceita pelo armazenamento.
+- **Impacto:** uma única linha defeituosa descartava a prévia inteira, inclusive registros válidos.
+- **Regra preventiva:** quando o produto promete preservar entradas inválidas para revisão, deve existir uma representação persistível e segura para cada campo inválido.
+- **Detecção:** testes com PostgreSQL real combinando uma linha válida e uma inválida para cada constraint, incluindo limites e caracteres não armazenáveis.
+
+## 3. Estados bloqueantes devem ser monotônicos
+
+- **Evidências:** [duplicidade promovida por PATCH](https://github.com/TitoStauffer/CashIn/pull/39#pullrequestreview-5633860892), [duplicidade degradada para reparável](https://github.com/TitoStauffer/CashIn/pull/39#pullrequestreview-5644763711) e [invalidação do parser perdida](https://github.com/TitoStauffer/CashIn/pull/39#pullrequestreview-5644848346).
+- **Problema recorrente:** uma correção parcial substituía o estado inteiro e apagava outro motivo independente que ainda bloqueava o item.
+- **Causa-raiz:** o modelo guardava um estado ou texto agregado, sem preservar causas independentes e sua reparabilidade.
+- **Impacto:** duplicidades e linhas não reparáveis podiam virar movimentações válidas.
+- **Regra preventiva:** motivos bloqueantes acumulam; uma transição só libera o recurso quando todos os motivos ativos foram resolvidos. Duplicidade confirmada nunca é reparável por edição comum.
+- **Detecção:** testes de máquina de estados com múltiplos motivos simultâneos e tentativas de promoção por API, sem depender da interface.
+
+## 4. Concorrência exige uma ordem única e uma publicação linearizável
+
+- **Evidências:** [PR #29](https://github.com/TitoStauffer/CashIn/pull/29#pullrequestreview-5605663297), [PR #30](https://github.com/TitoStauffer/CashIn/pull/30#pullrequestreview-5605934772), [locks de desfazer do PR #39](https://github.com/TitoStauffer/CashIn/pull/39#pullrequestreview-5633704229), [edição contra confirmação](https://github.com/TitoStauffer/CashIn/pull/39#pullrequestreview-5633860892) e [PR #43](https://github.com/TitoStauffer/CashIn/pull/43#pullrequestreview-5645356157).
+- **Problema recorrente:** execuções concorrentes usavam chaves ou ordens de lock diferentes; cancelamento de runner era tratado como se cancelasse uma escrita remota; atualizações integrais usavam uma leitura antiga.
+- **Causa-raiz:** cada caminho foi analisado isoladamente, sem definir o ponto de linearização compartilhado.
+- **Impacto:** status antigo por último, deadlock, perda de edição, exclusão de registro atualizado, lease preso e sobrescrita da descrição do PR.
+- **Regra preventiva:** defina ordem global de locks, chave de concorrência estável, revalidação imediatamente antes da escrita e reconciliação depois de resultado incerto.
+- **Detecção:** testes com duas operações controladas por barreiras, invertendo a ordem de conclusão; testes de subprocesso para timeout e liberação de lease.
+
+## 5. Estado assíncrono da interface pertence à requisição que o produziu
+
+- **Evidências:** [PR #25](https://github.com/TitoStauffer/CashIn/pull/25#pullrequestreview-5609054300), [PR #36](https://github.com/TitoStauffer/CashIn/pull/36#pullrequestreview-5630867714), [PR #38](https://github.com/TitoStauffer/CashIn/pull/38#pullrequestreview-5631278149) e rodadas do PR #39 sobre [troca de carteira](https://github.com/TitoStauffer/CashIn/pull/39#pullrequestreview-5634010920), [edição durante PATCH](https://github.com/TitoStauffer/CashIn/pull/39#pullrequestreview-5634183629) e [troca com falha](https://github.com/TitoStauffer/CashIn/pull/39#pullrequestreview-5634297808).
+- **Problema recorrente:** respostas atrasadas, mensagens antigas e rascunhos locais eram aplicados ao contexto atual sem provar que ainda pertenciam à carteira, período ou versão exibida.
+- **Causa-raiz:** flags globais de loading/sucesso substituíam identidade e versão da operação.
+- **Impacto:** dados financeiros antigos sob outra carteira, feedback contraditório e perda silenciosa de alterações.
+- **Regra preventiva:** associe cada requisição ao contexto e à versão do rascunho; descarte resposta obsoleta e bloqueie ou mescle edições concorrentes explicitamente.
+- **Detecção:** testes com promises controladas cobrindo troca A → B → A, falha seguida de recuperação e edição durante resposta pendente.
+
+## 6. Migrações devem preservar personalizações e semântica
+
+- **Evidência:** [PR #24](https://github.com/TitoStauffer/CashIn/pull/24#pullrequestreview-5609195904).
+- **Problema recorrente:** `ON CONFLICT DO NOTHING` evitava erro técnico, mas aceitava um registro preexistente com semântica incompatível.
+- **Causa-raiz:** idempotência foi tratada como ausência de exceção, sem validar o pós-estado do domínio.
+- **Impacto:** despesas de benefício poderiam reduzir o saldo em dinheiro.
+- **Regra preventiva:** migrations reconciliam colisões sem destruir personalizações e comprovam as invariantes no estado final.
+- **Detecção:** testes de migration com conflito de nome, registro inativo, natureza divergente e reaplicação.
+
+## 7. Projeções de entrada não confiável devem ser estruturais
+
+- **Evidências:** [PR #33](https://github.com/TitoStauffer/CashIn/pull/33#pullrequestreview-5608351923) e [PR #35](https://github.com/TitoStauffer/CashIn/pull/35#pullrequestreview-5609434005).
+- **Problema recorrente:** retirar o diff do detector abriu um caminho para prompt injection; interpretar YAML por posição de linha deixou valores de `env` em formato flow escaparem à redação.
+- **Causa-raiz:** redução de falso positivo e sanitização foram implementadas removendo cobertura ou usando heurística textual incompleta.
+- **Impacto:** instruções não confiáveis alcançam o modelo e valores de ambiente podem ser expostos no contexto.
+- **Regra preventiva:** analisar todas as fontes não confiáveis e usar parser estrutural ou rejeitar formato não suportado; segurança falha fechada.
+- **Detecção:** corpus adversarial com payload apenas no diff/snapshot e variantes sintáticas válidas da configuração.
+
+## 8. Workflows precisam ser testados como grafo de eventos
+
+- **Evidências:** três rodadas do PR #43: [cancelamento e corrida](https://github.com/TitoStauffer/CashIn/pull/43#pullrequestreview-5645356157), [recuperação do título](https://github.com/TitoStauffer/CashIn/pull/43#pullrequestreview-5645393420) e [ator App/CI ainda ativo](https://github.com/TitoStauffer/CashIn/pull/43#pullrequestreview-5645458028).
+- **Problema recorrente:** condições corretas dentro de um job produziam comportamento incorreto quando um evento acionava outro workflow ou participava do grupo de concorrência antes do `if`.
+- **Causa-raiz:** testes verificavam trechos YAML e não a sequência completa de eventos.
+- **Impacto:** Agents cancelados pelo próprio App, CI irrecuperável após corrigir título e PRs legítimos do App sem orquestração.
+- **Regra preventiva:** documentar produtores e consumidores de cada evento, identidade do ator, contexto do check e regra de concorrência antes de alterar triggers.
+- **Detecção:** teste contratual da sequência abertura/edição/publicação/conclusão e ensaio controlado em PR de baixo risco.
+
+## 9. Evidência e documentação acompanham o HEAD
+
+- **Evidências:** [PR #11](https://github.com/TitoStauffer/CashIn/pull/11#pullrequestreview-5586988527), rodadas do [PR #16](https://github.com/TitoStauffer/CashIn/pull/16#pullrequestreview-5590951918) e [PR #24](https://github.com/TitoStauffer/CashIn/pull/24#pullrequestreview-5609320295).
+- **Problema recorrente:** descrição do PR, contagem de testes, cobertura e README permaneceram com números ou comportamento anteriores.
+- **Causa-raiz:** documentação era atualizada na abertura, sem reconciliação após novos commits.
+- **Impacto:** reviewer e QA recebem evidência contraditória e consumidores leem contrato antigo.
+- **Regra preventiva:** antes de mover para review e antes do merge, o Product Manager reconcilia descrição, checklists, comandos e documentação com o HEAD.
+- **Detecção:** checklist factual do PR e revisão de documentação no diff; evitar números voláteis quando um link para o check é suficiente.
+
+## 10. Testes devem reproduzir o risco, não apenas a configuração
+
+- **Evidências:** os achados anteriores e a observação de cobertura no [PR #33](https://github.com/TitoStauffer/CashIn/pull/33#pullrequestreview-5608397261).
+- **Problema recorrente:** testes por regex, mocks felizes ou transformações puras passavam enquanto o contrato real, a transação ou o interleaving falhava.
+- **Causa-raiz:** o teste comprovava implementação esperada, mas não a propriedade de segurança ou recuperação declarada.
+- **Impacto:** ciclos sucessivos de correção para uma mesma feature.
+- **Regra preventiva:** cada regressão deve falhar na versão defeituosa e atravessar a fronteira onde ocorreu o problema.
+- **Detecção:** tabela de riscos no planejamento do teste: contrato, persistência, concorrência, contexto assíncrono, limite e falha parcial.

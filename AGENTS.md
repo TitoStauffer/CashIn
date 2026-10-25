@@ -7,6 +7,15 @@
 - Tome decisões de implementação rotineiras com bom senso, seguindo boas práticas de engenharia de software. Peça esclarecimento apenas quando uma decisão puder causar falha grave, perda de dados, risco material, custo relevante ou mudança de escopo.
 - Mantenha as alterações limitadas à funcionalidade solicitada.
 
+## Uso do vault de conhecimento
+
+- Antes de investigar o projeto inteiro, leia `docs/knowledge/README.md`, `docs/knowledge/current-state.md` e somente as notas relacionadas ao ticket.
+- Use o vault como índice e contexto inicial. Confirme decisões nos arquivos de código, migrations, workflows e configurações citados pela nota; essas fontes executáveis prevalecem em caso de divergência.
+- Se uma nota estiver desatualizada, corrija-a na mesma entrega que altera ou confirma o comportamento.
+- Atualize o vault quando mudar regra de negócio, contrato público, arquitetura, operação, segurança ou automação. Mudanças internas sem impacto nessas áreas não exigem uma nova nota.
+- Registre padrões comprovados de falhas recorrentes em `docs/knowledge/learnings/`; não transforme um apontamento isolado ou ainda hipotético em regra geral.
+- Não armazene no vault secrets, tokens, dados pessoais, credenciais, valores de ambientes reais ou logs integrais.
+
 ## Stack e arquitetura
 
 - API: Node.js, TypeScript e Fastify.

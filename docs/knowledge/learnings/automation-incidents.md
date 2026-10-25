@@ -1,0 +1,34 @@
+# Aprendizados de incidentes da automação
+
+**Status:** histórico vivo
+**Última revisão:** 25/10/2026
+
+## Evidência sempre pertence ao SHA
+
+Comentários e aprovações antigos pareciam válidos depois de novos commits. A correção foi vincular relatórios, revisão formal e readiness ao HEAD completo e invalidar evidência desatualizada.
+
+## Comentário não é aprovação formal
+
+Um relatório textual aprovado não satisfaz a regra de revisão do GitHub. A publicação passou a registrar revisão formal com identidade distinta da autora quando suportado.
+
+## Permissões incompletas produzem 403
+
+Checks, status, branch protection e rulesets exigem permissões específicas do GitHub App e podem ser indisponíveis conforme o plano do repositório. O gate deve reportar a limitação como `INCONCLUSIVE`, nunca presumir proteção.
+
+## Nomes de secrets fazem parte do contrato
+
+A divergência entre `GITHUB_APP_*` e `CASHIN_APP_*` impediu autenticação. Cada CLI e workflow agora possui nomes documentados; aliases indiscriminados aumentam ambiguidade.
+
+## Ordem do CI reduz desperdício
+
+Título é validado antes dos jobs caros; API, Web e ferramentas executam antes do Sonar; Agents só iniciam após o CI aprovado. Isso reduz execuções inúteis e consumo do runner/Codex.
+
+## Revisão precisa percorrer todo o diff
+
+Interromper a análise no primeiro achado causou ciclos repetidos. O prompt de Code Review agora exige investigação completa e consolidação dos achados da rodada.
+
+## Fontes verificáveis
+
+- Histórico Git e PRs do repositório.
+- [`docs/hosted-agent-orchestration.md`](../../hosted-agent-orchestration.md)
+- [`tools/github-reviewer/src/codex-cli-agent.ts`](../../../tools/github-reviewer/src/codex-cli-agent.ts)
