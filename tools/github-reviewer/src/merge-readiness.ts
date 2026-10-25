@@ -199,7 +199,7 @@ export async function evaluateMergeReadiness(options: MergeReadinessOptions): Pr
 
   const requiredCheckCandidates: RequiredCheck[] = [
     ...REQUIRED_QUALITY_CHECKS.map((context) => ({ context })),
-    { context: 'GitHub Reviewer', appId: ACTIONS_APP_ID },
+    { context: 'Automation Tools', appId: ACTIONS_APP_ID },
     ...requiredContexts,
   ];
   const requiredChecks = [...new Map(requiredCheckCandidates.map((requirement) => [`${requirement.context}:${requirement.appId ?? ''}`, requirement])).values()];

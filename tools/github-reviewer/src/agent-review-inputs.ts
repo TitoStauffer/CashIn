@@ -6,7 +6,7 @@ import { ACTIONS_APP_ID, loadActionsEvidence, loadCiSnapshots, unavailableAction
 const REQUIRED_AGENT_CHECKS = {
   api: (name: string) => /(^|\/\s*)api(\s|$)/i.test(name),
   web: (name: string) => /(^|\/\s*)web(\s|$)/i.test(name),
-  githubReviewer: (name: string) => /(^|\/\s*)github reviewer$/i.test(name),
+  githubReviewer: (name: string) => /(^|\/\s*)(?:automation tools|github reviewer)$/i.test(name),
   sonarQube: (name: string) => /sonarqube/i.test(name),
   sonarCloud: (name: string) => /sonarcloud code analysis/i.test(name),
 } as const;

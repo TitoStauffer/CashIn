@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { formatReadinessSummary, mapReadinessToCommitStatus, MERGE_READINESS_CONTEXT, publishCommitStatus } from '../dist/workflow-status.js';
+import { formatReadinessSummary, mapReadinessToCommitStatus, MERGE_READINESS_CONTEXT, publishCommitStatus, workflowExecutionExitCode } from '../dist/workflow-status.js';
 
 function result(status, overrides = {}) {
   return {
@@ -18,6 +18,11 @@ test('maps gate outcomes to non-ambiguous commit status states', () => {
   assert.equal(mapReadinessToCommitStatus(result('READY_TO_MERGE')).state, 'success');
   assert.equal(mapReadinessToCommitStatus(result('BLOCKED', { reasons: ['CI failed'] })).state, 'failure');
   assert.equal(mapReadinessToCommitStatus(result('INCONCLUSIVE', { limitations: ['HTTP 403'] })).state, 'error');
+});
+
+test('keeps readiness in the commit status while failing the workflow only when publication fails', () => {
+  assert.equal(workflowExecutionExitCode(true), 0);
+  assert.equal(workflowExecutionExitCode(false), 2);
 });
 
 test('truncates status descriptions to the GitHub limit', () => {

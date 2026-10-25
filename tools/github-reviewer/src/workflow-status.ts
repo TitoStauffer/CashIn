@@ -4,6 +4,10 @@ const API_BASE = 'https://api.github.com';
 const API_VERSION = '2022-11-28';
 export const MERGE_READINESS_CONTEXT = 'Merge Readiness';
 
+export function workflowExecutionExitCode(statusPublished: boolean): 0 | 2 {
+  return statusPublished ? 0 : 2;
+}
+
 export interface CommitStatusOptions {
   owner: string;
   repository: string;
