@@ -1,5 +1,8 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
+import { readFile } from 'node:fs/promises';
 import test from 'node:test';
+import { gunzipSync } from 'node:zlib';
 import { loadAgentReviewInputs, summarizeAgentChecks, summarizeCheckRunEvidence } from '../dist/agent-review-inputs.js';
 import { requestGitHubApiPages } from '../dist/github-api-client.js';
 
@@ -118,6 +121,88 @@ test('loads all 32 changed files at the supported boundary without omitting sour
   assert.deepEqual(inputs.sourceFiles.map(({ path }) => path), files.map(({ filename }) => filename));
 });
 
+test('keeps all 23 changed files when auxiliary dependencies exceed the byte budget', async () => {
+  const files = Array.from({ length: 23 }, (_, index) => ({ filename: `src/changed-${index}.ts`, status: 'modified' }));
+  const sources = Object.fromEntries(files.flatMap(({ filename }, index) => [
+    [filename, `import { dependency } from './dependency-${index}.js';\n${'x'.repeat(12_900)}`],
+    [`src/dependency-${index}.ts`, `export const dependency = '${'y'.repeat(9_960)}';`],
+  ]));
+
+  const inputs = await loadAgentReviewInputs(
+    createFetch({ files, sources }),
+    'owner/repo',
+    7,
+    { head: { sha: headSha }, base: { sha: baseSha } },
+    'token',
+  );
+  const changedPaths = new Set(files.map(({ filename }) => filename));
+  const includedChangedPaths = inputs.sourceFiles.filter(({ path }) => changedPaths.has(path)).map(({ path }) => path);
+  const dependencyCount = inputs.sourceFiles.length - includedChangedPaths.length;
+
+  assert.deepEqual(includedChangedPaths, files.map(({ filename }) => filename));
+  assert.equal(dependencyCount > 0 && dependencyCount < files.length, true);
+  assert.equal(inputs.sourceFiles.reduce((total, file) => total + Buffer.byteLength(file.content, 'utf8'), 0) <= 500_000, true);
+});
+
+test('replays the authenticated DEV-51 snapshot and includes every changed PR file', async () => {
+  const packed = await readFile(new URL('./fixtures/pr-39-source-snapshot.json.gz.base64', import.meta.url), 'utf8');
+  const snapshot = JSON.parse(gunzipSync(Buffer.from(packed.trim(), 'base64')).toString('utf8'));
+  const decodedSources = new Map();
+  for (const source of [...snapshot.sourceFiles, snapshot.repositoryInstructions]) {
+    const content = Buffer.from(source.contentBase64, 'base64');
+    const gitBlobSha = createHash('sha1').update(`blob ${content.length}\0`).update(content).digest('hex');
+    assert.equal(gitBlobSha, source.gitBlobSha, `Git blob identity mismatch for ${source.path}`);
+    assert.equal(createHash('sha256').update(content).digest('hex'), source.sha256, `Content hash mismatch for ${source.path}`);
+    assert.equal(content.length, source.bytes, `Byte size mismatch for ${source.path}`);
+    decodedSources.set(`${source.revision === 'base' ? snapshot.baseSha : snapshot.headSha}:${source.path}`, content.toString('utf8'));
+  }
+
+  const fetchImpl = async (url, options = {}) => {
+    const parsed = new URL(url);
+    const path = parsed.pathname;
+    let payload;
+    let text = false;
+    if (path.endsWith(`/pulls/${snapshot.pullRequestNumber}`) && options.headers?.Accept === 'application/vnd.github.v3.diff') {
+      payload = 'authenticated DEV-51 snapshot replay';
+      text = true;
+    } else if (path.endsWith(`/commits/${snapshot.headSha}/check-runs`)) {
+      payload = { check_runs: [] };
+    } else if (path.endsWith('/contents/AGENTS.md')) {
+      payload = { encoding: 'base64', content: snapshot.repositoryInstructions.contentBase64 };
+    } else if (path.endsWith(`/pulls/${snapshot.pullRequestNumber}/files`)) {
+      payload = snapshot.changedFiles.map(({ path: filename, status }) => ({ filename, status }));
+    } else if (path.includes('/contents/')) {
+      const sourcePath = decodeURIComponent(path.split('/contents/')[1]);
+      const content = decodedSources.get(`${parsed.searchParams.get('ref')}:${sourcePath}`);
+      if (content === undefined) return new Response('{}', { status: 404 });
+      payload = { encoding: 'base64', content: encoded(content) };
+    } else {
+      return new Response('{}', { status: 404 });
+    }
+    return new Response(text ? payload : JSON.stringify(payload), { status: 200 });
+  };
+
+  const inputs = await loadAgentReviewInputs(fetchImpl, snapshot.repository, snapshot.pullRequestNumber, {
+    head: { sha: snapshot.headSha },
+    base: { sha: snapshot.baseSha },
+  }, 'token');
+  const actual = inputs.sourceFiles.map(({ path, revision, content }) => ({
+    path,
+    revision,
+    bytes: Buffer.byteLength(content, 'utf8'),
+    sha256: createHash('sha256').update(content).digest('hex'),
+  }));
+
+  assert.equal(snapshot.repository, 'TitoStauffer/CashIn');
+  assert.equal(snapshot.pullRequestNumber, 39);
+  assert.equal(new Set(snapshot.changedFiles.map(({ path }) => path)).size, 23);
+  assert.deepEqual(actual, snapshot.expectedIncludedSourceFiles);
+  assert.deepEqual(
+    actual.slice(0, snapshot.changedFiles.length).map(({ path }) => path),
+    snapshot.changedFiles.map(({ path }) => path),
+  );
+});
+
 test('fails closed when changed source context exceeds the supported file limit', async () => {
   const files = Array.from({ length: 33 }, (_, index) => ({ filename: `src/file-${index}.ts`, status: 'modified' }));
   await assert.rejects(
@@ -154,8 +239,19 @@ test('fails closed when changed source context exceeds the supported byte limit'
   );
 });
 
+test('fails closed when cumulative changed source context exceeds the supported byte limit', async () => {
+  await assert.rejects(
+    loadAgentReviewInputs(createFetch({
+      files: [{ filename: 'src/example.ts', status: 'modified' }, { filename: 'src/removed.ts', status: 'removed' }],
+      source: 'x'.repeat(300_000),
+      sources: { [`${baseSha}:src/removed.ts`]: 'x'.repeat(200_001) },
+    }), 'owner/repo', 7, { head: { sha: headSha }, base: { sha: baseSha } }, 'token'),
+    /supported review context size/,
+  );
+});
+
 for (const totalBytes of [499_999, 500_000, 500_001]) {
-  test(`enforces the cumulative UTF-8 source boundary at ${totalBytes} bytes across changed, removed and dependency files`, async () => {
+  test(`enforces the UTF-8 source boundary at ${totalBytes} bytes while preserving every changed file`, async () => {
     const source = "import { value } from './helper.js';\n";
     const removed = 'á'.repeat(100_000);
     const dependency = 'x'.repeat(totalBytes - Buffer.byteLength(source, 'utf8') - Buffer.byteLength(removed, 'utf8'));
@@ -170,13 +266,13 @@ for (const totalBytes of [499_999, 500_000, 500_001]) {
       sources: { [`${baseSha}:src/removed.ts`]: removed, 'src/helper.ts': dependency },
     }), 'owner/repo', 7, { head: { sha: headSha }, base: { sha: baseSha } }, 'token');
 
-    if (totalBytes > 500_000) {
-      await assert.rejects(pending, /supported review context size/);
-    } else {
-      const inputs = await pending;
-      assert.deepEqual(inputs.sourceFiles, expected);
-      assert.equal(inputs.sourceFiles.reduce((size, file) => size + Buffer.byteLength(file.content, 'utf8'), 0), totalBytes);
-    }
+    const inputs = await pending;
+    const expectedFiles = totalBytes > 500_000 ? expected.slice(0, 2) : expected;
+    assert.deepEqual(inputs.sourceFiles, expectedFiles);
+    assert.equal(
+      inputs.sourceFiles.reduce((size, file) => size + Buffer.byteLength(file.content, 'utf8'), 0),
+      totalBytes > 500_000 ? Buffer.byteLength(source, 'utf8') + Buffer.byteLength(removed, 'utf8') : totalBytes,
+    );
   });
 }
 
