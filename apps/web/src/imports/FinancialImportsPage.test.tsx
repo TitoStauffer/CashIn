@@ -26,19 +26,20 @@ const previewSession: FinancialImportSession = {
   items: [
     {
       id: 'item-1', sequence: 1, date: '2026-10-01', description: 'Salário', amount: '3000.00',
-      type: 'income', categoryId: null, subcategoryId: null, validationStatus: 'uncategorized', errorMessage: null,
+      type: 'income', categoryId: null, subcategoryId: null, validationStatus: 'uncategorized', errorMessage: null, canEdit: true,
     },
     {
       id: 'item-2', sequence: 2, date: '2026-10-02', description: 'Mercado', amount: '150.00',
-      type: 'expense', categoryId: 'expense-category', subcategoryId: null, validationStatus: 'valid', errorMessage: null,
+      type: 'expense', categoryId: 'expense-category', subcategoryId: null, validationStatus: 'valid', errorMessage: null, canEdit: true,
     },
     {
       id: 'item-3', sequence: 3, date: '2026-10-03', description: 'Registro incompleto', amount: '20.00',
-      type: 'expense', categoryId: null, subcategoryId: null, validationStatus: 'invalid', errorMessage: 'Dados insuficientes para importar.',
+      type: 'expense', categoryId: null, subcategoryId: null, validationStatus: 'invalid', errorMessage: 'Dados insuficientes para importar.', canEdit: false,
     },
   ],
   canUndo: false,
   undoBlockedReason: null,
+  failureMessage: null,
   createdAt: '2026-10-23T12:00:00.000Z',
   confirmedAt: null,
 }
@@ -69,6 +70,38 @@ const nullDescriptionSession: FinancialImportSession = {
     ...previewSession.items![0],
     description: null,
   }],
+}
+
+const repairableInvalidSession: FinancialImportSession = {
+  ...previewSession,
+  summary: { total: 2, valid: 0, duplicate: 1, invalid: 1, uncategorized: 0, imported: 0 },
+  items: [
+    {
+      ...previewSession.items![0],
+      validationStatus: 'invalid',
+      errorMessage: 'A categoria informada não existe nesta carteira.',
+      canEdit: true,
+    },
+    {
+      ...previewSession.items![1],
+      validationStatus: 'duplicate',
+      errorMessage: 'Esta movimentação já foi importada.',
+      canEdit: false,
+    },
+  ],
+}
+
+const failedSession: FinancialImportSession = {
+  ...previewSession,
+  status: 'failed',
+  summary: { total: 0, valid: 0, duplicate: 0, invalid: 0, uncategorized: 0, imported: 0 },
+  items: [],
+  failureMessage: 'Não foi possível interpretar o conteúdo do arquivo enviado.',
+}
+
+const confirmingSession: FinancialImportSession = {
+  ...previewSession,
+  status: 'confirming',
 }
 
 async function renderPage() {
@@ -114,10 +147,24 @@ describe('FinancialImportsPage', () => {
     }))
     vi.spyOn(importsApi, 'confirm').mockResolvedValue(completedSession)
     vi.spyOn(importsApi, 'undo').mockResolvedValue({ ...completedSession, status: 'undone', canUndo: false, undoneAt: '2026-10-23T12:10:00.000Z' })
+    vi.spyOn(importsApi, 'discard').mockResolvedValue({
+      ...previewSession,
+      status: 'failed',
+      failureMessage: 'Importação descartada pelo usuário.',
+      summary: { ...previewSession.summary, valid: 0, uncategorized: 2 },
+      items: previewSession.items!.map((item) => ({
+        ...item,
+        categoryId: null,
+        subcategoryId: null,
+        validationStatus: item.validationStatus === 'valid' ? 'uncategorized' as const : item.validationStatus,
+        canEdit: false,
+      })),
+    })
     vi.spyOn(window, 'confirm').mockReturnValue(true)
   })
 
   afterEach(() => {
+    vi.useRealTimers()
     cleanup()
     vi.restoreAllMocks()
     vi.unstubAllGlobals()
@@ -212,6 +259,163 @@ describe('FinancialImportsPage', () => {
     })))
     expect(screen.queryByText(/Informe a data e a descrição/)).not.toBeInTheDocument()
   })
+
+  it('allows repairing editable invalid items while keeping duplicates locked', async () => {
+    vi.mocked(importsApi.list).mockResolvedValueOnce({ items: [{ ...repairableInvalidSession, items: undefined }] })
+    vi.mocked(importsApi.get).mockResolvedValueOnce(repairableInvalidSession)
+    const user = userEvent.setup()
+    await renderPage()
+    await user.click(await screen.findByRole('button', { name: 'Ver detalhes' }))
+
+    const repairable = (await screen.findByText('Movimentação 1')).closest('li') as HTMLElement
+    const duplicate = screen.getByText('Movimentação 2').closest('li') as HTMLElement
+    expect(within(repairable).getByLabelText('Categoria')).toBeEnabled()
+    expect(within(repairable).getByRole('button', { name: 'Salvar ajuste' })).toBeEnabled()
+    expect(within(duplicate).getByLabelText('Categoria')).toBeDisabled()
+    expect(within(duplicate).queryByRole('button', { name: 'Salvar ajuste' })).not.toBeInTheDocument()
+
+    await user.selectOptions(within(repairable).getByLabelText('Categoria'), 'income-category')
+    await user.click(within(repairable).getByRole('button', { name: 'Salvar ajuste' }))
+    await waitFor(() => expect(importsApi.updateItem).toHaveBeenCalledWith('import-1', 'item-1', expect.objectContaining({
+      categoryId: 'income-category',
+    })))
+  })
+
+  it('keeps the returned items visible after confirmation and undo', async () => {
+    const confirmed = {
+      ...completedSession,
+      summary: { ...completedSession.summary, valid: 0, imported: 1 },
+      items: previewSession.items!.map((item) => item.id === 'item-2'
+        ? { ...item, validationStatus: 'imported' as const, canEdit: false }
+        : item),
+    }
+    const undone = {
+      ...confirmed,
+      status: 'undone' as const,
+      canUndo: false,
+      items: confirmed.items.map((item) => item.id === 'item-2'
+        ? { ...item, validationStatus: 'valid' as const, canEdit: false }
+        : item),
+    }
+    vi.mocked(importsApi.list).mockResolvedValueOnce({ items: [{ ...previewSession, items: undefined }] })
+    vi.mocked(importsApi.get).mockResolvedValueOnce(previewSession)
+    vi.mocked(importsApi.confirm).mockResolvedValueOnce(confirmed)
+    vi.mocked(importsApi.undo).mockResolvedValueOnce(undone)
+    const user = userEvent.setup()
+    await renderPage()
+    await user.click(await screen.findByRole('button', { name: 'Ver detalhes' }))
+    await user.click(screen.getByRole('button', { name: 'Confirmar 1 movimentação' }))
+
+    const preview = (await screen.findByText('extrato.ofx', { selector: 'h2' })).closest('section') as HTMLElement
+    expect(within(preview).getByText('Movimentação 2')).toBeVisible()
+    expect(within(preview).getByText('Importada')).toBeVisible()
+    await user.click(within(preview).getByRole('button', { name: 'Desfazer importação' }))
+    expect(await within(preview).findByText('Pronta para importar')).toBeVisible()
+    expect(within(preview).getByText('Movimentação 2')).toBeVisible()
+  })
+
+  it('discards a preview only after confirmation and preserves the returned history', async () => {
+    vi.mocked(importsApi.list).mockResolvedValueOnce({ items: [{ ...previewSession, items: undefined }] })
+    vi.mocked(importsApi.get).mockResolvedValueOnce(previewSession)
+    const user = userEvent.setup()
+    await renderPage()
+    await user.click(await screen.findByRole('button', { name: 'Ver detalhes' }))
+
+    await user.click(screen.getByRole('button', { name: 'Descartar prévia' }))
+
+    await waitFor(() => expect(importsApi.discard).toHaveBeenCalledWith('import-1'))
+    expect(window.confirm).toHaveBeenCalledWith(expect.stringContaining('extrato.ofx'))
+    expect(await screen.findByText('Prévia descartada. Nenhuma movimentação foi criada.')).toBeVisible()
+    expect(screen.getAllByText('Importação descartada pelo usuário.')).toHaveLength(2)
+    expect(screen.getAllByText('Descartada').length).toBeGreaterThan(0)
+    expect(screen.queryByRole('button', { name: 'Descartar prévia' })).not.toBeInTheDocument()
+  })
+
+  it('shows safe failure details and the confirming state without actions', async () => {
+    vi.mocked(importsApi.list).mockResolvedValueOnce({ items: [{ ...failedSession, items: undefined }] })
+    vi.mocked(importsApi.get).mockResolvedValueOnce(failedSession)
+    const user = userEvent.setup()
+    await renderPage()
+    expect(screen.getByText(failedSession.failureMessage!)).toBeVisible()
+    await user.click(screen.getByRole('button', { name: 'Ver detalhes' }))
+    expect(screen.getAllByText(failedSession.failureMessage!)).toHaveLength(2)
+
+    cleanup()
+    vi.mocked(importsApi.list).mockResolvedValueOnce({ items: [{ ...confirmingSession, items: undefined }] })
+    vi.mocked(importsApi.get).mockResolvedValueOnce(confirmingSession)
+    render(
+      <WalletProvider userId="user-1">
+        <FinancialImportsPage userEmail="tito@example.com" isLoggingOut={false} onLogout={vi.fn()} />
+      </WalletProvider>,
+    )
+    await user.click(await screen.findByRole('button', { name: 'Ver detalhes' }))
+    expect(await screen.findByText(/Confirmando os lançamentos/)).toBeVisible()
+    expect(screen.queryByRole('button', { name: /Confirmar \d/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Desfazer importação' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Salvar ajuste' })).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Descrição')).not.toBeInTheDocument()
+  })
+
+  it('paginates large previews locally', async () => {
+    const items = Array.from({ length: 205 }, (_, index): FinancialImportItem => ({
+      ...previewSession.items![1],
+      id: `item-${index + 1}`,
+      sequence: index + 1,
+      description: `Movimentação paginada ${index + 1}`,
+    }))
+    const largeSession: FinancialImportSession = {
+      ...previewSession,
+      summary: { total: items.length, valid: items.length, duplicate: 0, invalid: 0, uncategorized: 0, imported: 0 },
+      items,
+    }
+    vi.mocked(importsApi.list).mockResolvedValueOnce({ items: [{ ...largeSession, items: undefined }] })
+    vi.mocked(importsApi.get).mockResolvedValueOnce(largeSession)
+    const user = userEvent.setup()
+    await renderPage()
+    await user.click(await screen.findByRole('button', { name: 'Ver detalhes' }))
+
+    expect(await screen.findByText('Movimentação 100')).toBeVisible()
+    expect(screen.queryByText('Movimentação 101')).not.toBeInTheDocument()
+    expect(screen.getByText('Mostrando 1–100 de 205')).toBeVisible()
+    await user.click(screen.getByRole('button', { name: 'Próxima' }))
+    expect(screen.queryByText('Movimentação 1')).not.toBeInTheDocument()
+    expect(screen.getByText('Movimentação 101')).toBeVisible()
+    expect(screen.getByText('Mostrando 101–200 de 205')).toBeVisible()
+    await user.click(screen.getByRole('button', { name: 'Última' }))
+    expect(screen.getByText('Movimentação 205')).toBeVisible()
+    expect(screen.getByText('Página 3 de 3')).toBeVisible()
+  })
+
+  it('pauses polling after bounded backoff and recovers through the explicit retry', async () => {
+    vi.mocked(importsApi.list).mockResolvedValueOnce({ items: [{ ...confirmingSession, items: undefined }] })
+    vi.mocked(importsApi.get)
+      .mockResolvedValueOnce(confirmingSession)
+      .mockRejectedValueOnce(new Error('temporary 1'))
+      .mockRejectedValueOnce(new Error('temporary 2'))
+      .mockRejectedValueOnce(new Error('temporary 3'))
+      .mockResolvedValueOnce(completedSession)
+    await renderPage()
+    vi.useFakeTimers()
+    fireEvent.click(screen.getByRole('button', { name: 'Ver detalhes' }))
+    await act(async () => { await Promise.resolve() })
+    expect(importsApi.get).toHaveBeenCalledTimes(1)
+
+    await act(async () => { await vi.advanceTimersByTimeAsync(1500) })
+    expect(importsApi.get).toHaveBeenCalledTimes(2)
+    expect(screen.getByText(/Nova tentativa automática 2 de 3/)).toBeVisible()
+    await act(async () => { await vi.advanceTimersByTimeAsync(3000) })
+    expect(importsApi.get).toHaveBeenCalledTimes(3)
+    expect(screen.getByText(/Nova tentativa automática 3 de 3/)).toBeVisible()
+    await act(async () => { await vi.advanceTimersByTimeAsync(6000) })
+    expect(importsApi.get).toHaveBeenCalledTimes(4)
+    expect(screen.getByText(/acompanhamento automático foi pausado/i)).toBeVisible()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Tentar acompanhar novamente' }))
+    await act(async () => { await vi.advanceTimersByTimeAsync(1500) })
+    expect(importsApi.get).toHaveBeenCalledTimes(5)
+    expect(screen.getByText(/2 movimentações foram importadas com segurança/)).toBeVisible()
+    expect(screen.queryByRole('button', { name: 'Tentar acompanhar novamente' })).not.toBeInTheDocument()
+  }, 10_000)
 
   it('shows undo eligibility and refreshes the history when the active wallet changes', async () => {
     vi.mocked(importsApi.list).mockResolvedValue({ items: [{ ...completedSession, items: undefined }] })

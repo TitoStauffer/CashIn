@@ -49,6 +49,7 @@ class MemoryFinancialImportRepository implements FinancialImportRepository {
       summary: { total: 0, valid: 0, duplicate: 0, invalid: 0, uncategorized: 0, imported: 0 },
       canUndo: false,
       undoBlockedReason: "Somente importações concluídas podem ser desfeitas.",
+      failureMessage: null,
       createdAt: now,
       updatedAt: now,
       confirmedAt: null,
@@ -81,6 +82,8 @@ class MemoryFinancialImportRepository implements FinancialImportRepository {
       subcategoryId: item.subcategoryId ?? null,
       validationStatus: item.validationStatus ?? "valid",
       errorMessage: item.errorMessage ?? null,
+      canEdit: item.validationStatus !== "duplicate"
+        && (item.validationStatus !== "invalid" || item.isRepairable === true),
       createdAt: now,
       updatedAt: now,
     }));
@@ -100,10 +103,11 @@ class MemoryFinancialImportRepository implements FinancialImportRepository {
     return { ...this.publicSession(session), items: session.items.map((item) => ({ ...item })) };
   }
 
-  async markFailed(userId: string, walletId: string, importId: string): Promise<void> {
+  async markFailed(userId: string, walletId: string, importId: string, failureMessage: string): Promise<void> {
     const session = this.mutableSession(userId, walletId, importId, "processing");
     if (!session) return;
     session.status = "failed";
+    session.failureMessage = failureMessage;
     session.failedAt = new Date().toISOString();
     session.updatedAt = session.failedAt;
   }
@@ -117,7 +121,7 @@ class MemoryFinancialImportRepository implements FinancialImportRepository {
   ): Promise<FinancialImportItem | null> {
     const session = this.mutableSession(userId, walletId, importId, "preview");
     const item = session?.items.find((candidate) => candidate.id === itemId);
-    if (!session || !item) return null;
+    if (!session || !item || !item.canEdit) return null;
     const transfer = input.type === "transfer";
     Object.assign(item, {
       date: input.date,
@@ -127,6 +131,7 @@ class MemoryFinancialImportRepository implements FinancialImportRepository {
       subcategoryId: transfer ? null : input.subcategoryId,
       validationStatus: transfer || input.categoryId === null ? "uncategorized" : "valid",
       errorMessage: transfer || input.categoryId === null ? "Classificação pendente." : null,
+      canEdit: true,
       updatedAt: new Date().toISOString(),
     });
     this.refreshSummary(session);
@@ -137,7 +142,10 @@ class MemoryFinancialImportRepository implements FinancialImportRepository {
     const session = this.mutableSession(userId, walletId, importId, "preview");
     const valid = session?.items.filter((item) => item.validationStatus === "valid") ?? [];
     if (!session || valid.length === 0) return null;
-    for (const item of valid) item.validationStatus = "imported";
+    for (const item of valid) {
+      item.validationStatus = "imported";
+      item.canEdit = false;
+    }
     const now = new Date().toISOString();
     session.status = "completed";
     session.confirmedAt = now;
@@ -152,7 +160,14 @@ class MemoryFinancialImportRepository implements FinancialImportRepository {
   async undoImport(userId: string, walletId: string, importId: string): Promise<FinancialImportSession | null> {
     const session = this.mutableSession(userId, walletId, importId, "completed");
     if (!session || !session.canUndo) return null;
-    for (const item of session.items) if (item.validationStatus === "imported") item.validationStatus = "valid";
+    for (const item of session.items) {
+      if (item.validationStatus !== "imported") continue;
+      item.validationStatus = "uncategorized";
+      item.categoryId = null;
+      item.subcategoryId = null;
+      item.errorMessage = "Selecione uma categoria para importar a movimentação.";
+      item.canEdit = true;
+    }
     session.status = "undone";
     session.undoneAt = new Date().toISOString();
     session.updatedAt = session.undoneAt;
@@ -160,6 +175,29 @@ class MemoryFinancialImportRepository implements FinancialImportRepository {
     session.undoBlockedReason = "Somente importações concluídas podem ser desfeitas.";
     this.refreshSummary(session);
     return this.publicSession(session);
+  }
+
+  async discardImport(userId: string, walletId: string, importId: string): Promise<FinancialImportSession | null> {
+    const session = this.mutableSession(userId, walletId, importId, "preview");
+    if (!session) return null;
+    for (const item of session.items) {
+      item.categoryId = null;
+      item.subcategoryId = null;
+      if (item.validationStatus === "valid") {
+        item.validationStatus = "uncategorized";
+        item.errorMessage = "A prévia foi descartada antes da confirmação.";
+      }
+      item.canEdit = false;
+    }
+    const now = new Date().toISOString();
+    session.status = "failed";
+    session.failureMessage = "Importação descartada pelo usuário.";
+    session.failedAt = now;
+    session.updatedAt = now;
+    session.canUndo = false;
+    session.undoBlockedReason = "Somente importações concluídas podem ser desfeitas.";
+    this.refreshSummary(session);
+    return { ...this.publicSession(session), items: session.items.map((item) => ({ ...item })) };
   }
 
   private mutableSession(userId: string, walletId: string, importId: string, status: StoredSession["status"]) {
@@ -389,6 +427,38 @@ test("preview items can be classified, confirmed atomically, and undone", async 
   await app.close();
 });
 
+test("preview can be discarded without creating movements and remains wallet scoped", async () => {
+  const { app } = createTestApp();
+  const created = await upload(app);
+
+  const hidden = await app.inject({
+    method: "DELETE",
+    url: `/financial-imports/${created.json().id}`,
+    headers: { cookie: authCookie(SESSION_B) },
+  });
+  assert.equal(hidden.statusCode, 409);
+
+  const discarded = await app.inject({
+    method: "DELETE",
+    url: `/financial-imports/${created.json().id}`,
+    headers: { cookie: authCookie() },
+  });
+  assert.equal(discarded.statusCode, 200);
+  assert.equal(discarded.json().status, "failed");
+  assert.equal(discarded.json().failureMessage, "Importação descartada pelo usuário.");
+  assert.equal(discarded.json().summary.valid, 0);
+  assert.equal(discarded.json().summary.uncategorized, 2);
+  assert.ok(discarded.json().items.every((item: FinancialImportItem) => item.categoryId === null));
+
+  const repeated = await app.inject({
+    method: "DELETE",
+    url: `/financial-imports/${created.json().id}`,
+    headers: { cookie: authCookie() },
+  });
+  assert.equal(repeated.statusCode, 409);
+  await app.close();
+});
+
 test("upload failures are safe, validated, and retained as failed history", async () => {
   const { app } = createTestApp(new TestParser(true));
   const failed = await upload(app);
@@ -417,6 +487,23 @@ test("upload failures are safe, validated, and retained as failed history", asyn
     payload: { date: "2026-02-30", type: "income", categoryId: CATEGORY_A },
   });
   assert.equal(invalidDate.statusCode, 400);
+  await app.close();
+});
+
+test("persisted import failures respect the UTF-8 database limit", async () => {
+  const parser: FinancialImportParser = {
+    parse: async () => {
+      throw new FinancialImportError(`Falha ${"界".repeat(500)}`, 422);
+    },
+  };
+  const { app } = createTestApp(parser);
+  const failed = await upload(app);
+  assert.equal(failed.statusCode, 422);
+
+  const list = await app.inject({ method: "GET", url: "/financial-imports", headers: { cookie: authCookie() } });
+  const failureMessage = list.json().items[0].failureMessage as string;
+  assert.ok(Buffer.byteLength(failureMessage, "utf8") <= 1_000);
+  assert.match(failureMessage, /^Falha /);
   await app.close();
 });
 

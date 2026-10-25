@@ -15,6 +15,7 @@ export const MAX_FINANCIAL_IMPORT_FILE_SIZE = 10 * 1024 * 1024;
 export const MAX_FINANCIAL_IMPORT_ITEMS = 10_000;
 const MAX_FINANCIAL_IMPORT_FILE_NAME_BYTES = 512;
 const MAX_FINANCIAL_IMPORT_DESCRIPTION_BYTES = 4_000;
+const MAX_FINANCIAL_IMPORT_FAILURE_MESSAGE_BYTES = 1_000;
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
@@ -82,14 +83,17 @@ function normalizeParsedItem(item: ParsedFinancialImportItem, fallbackSequence: 
     ? null
     : rawSubcategoryId;
   const invalidReasons: string[] = [];
-  if (!hasValidSourceSequence) invalidReasons.push("A sequência original da movimentação é inválida.");
-  if (!hasValidDate) invalidReasons.push("A data da movimentação é inválida.");
-  if (!hasValidAmount) invalidReasons.push("O valor da movimentação deve ser diferente de zero e ter até duas casas decimais.");
-  if (!hasValidType) invalidReasons.push("O tipo da movimentação é inválido.");
+  const nonRepairableReasons: string[] = [];
+  const repairableReasons: string[] = [];
+  if (!hasValidSourceSequence) nonRepairableReasons.push("A sequência original da movimentação é inválida.");
+  if (!hasValidDate) repairableReasons.push("A data da movimentação é inválida.");
+  if (!hasValidAmount) nonRepairableReasons.push("O valor da movimentação deve ser diferente de zero e ter até duas casas decimais.");
+  if (!hasValidType) repairableReasons.push("O tipo da movimentação é inválido.");
   if (!hasValidCategory || !hasValidSubcategory || !hasCompatibleReferences) {
-    invalidReasons.push("A categoria ou subcategoria da movimentação é inválida.");
+    repairableReasons.push("A categoria ou subcategoria da movimentação é inválida.");
   }
-  if (!hasValidDescription) invalidReasons.push("A descrição da movimentação deve ter no máximo 4.000 bytes.");
+  if (!hasValidDescription) repairableReasons.push("A descrição da movimentação deve ter no máximo 4.000 bytes.");
+  invalidReasons.push(...nonRepairableReasons, ...repairableReasons);
 
   let validationStatus = item.validationStatus ?? "valid";
   let errorMessage = item.errorMessage?.trim() || null;
@@ -121,6 +125,9 @@ function normalizeParsedItem(item: ParsedFinancialImportItem, fallbackSequence: 
     subcategoryId,
     validationStatus,
     errorMessage,
+    isRepairable: validationStatus === "invalid"
+      && nonRepairableReasons.length === 0
+      && repairableReasons.length > 0,
   };
 }
 
@@ -209,6 +216,7 @@ export class FinancialImportsService {
               normalized.errorMessage,
               "A sequência original da movimentação está duplicada no arquivo.",
             ].filter(Boolean).join(" "),
+            isRepairable: false,
           };
         }
         return normalized;
@@ -217,7 +225,12 @@ export class FinancialImportsService {
       if (!preview) throw new FinancialImportError("A importação não foi encontrada.", 404);
       return preview;
     } catch (error) {
-      await this.repository.markFailed(userId, walletId, session.id);
+      const rawFailureMessage = error instanceof FinancialImportError
+        ? error.message
+        : "Não foi possível processar o arquivo importado.";
+      const failureMessage = truncateUtf8(rawFailureMessage.trim(), MAX_FINANCIAL_IMPORT_FAILURE_MESSAGE_BYTES)
+        || "Não foi possível processar o arquivo importado.";
+      await this.repository.markFailed(userId, walletId, session.id, failureMessage);
       throw error;
     }
   }
@@ -268,6 +281,15 @@ export class FinancialImportsService {
         "A importação não pode ser desfeita porque seus lançamentos foram alterados ou ela não está concluída.",
         409,
       );
+    }
+    return session;
+  }
+
+  async discardImport(userId: string, walletId: string, importId: string): Promise<FinancialImportSession> {
+    this.validateImportId(importId);
+    const session = await this.repository.discardImport(userId, walletId, importId);
+    if (!session) {
+      throw new FinancialImportError("A prévia da importação não foi encontrada ou não pode mais ser descartada.", 409);
     }
     return session;
   }

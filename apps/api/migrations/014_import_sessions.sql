@@ -13,7 +13,7 @@ CREATE TABLE import_sessions (
   file_size_bytes bigint NOT NULL,
   file_hash text NOT NULL,
   status text NOT NULL DEFAULT 'processing'
-    CHECK (status IN ('processing', 'preview', 'completed', 'failed', 'undone')),
+    CHECK (status IN ('processing', 'preview', 'confirming', 'completed', 'failed', 'undone')),
   item_count integer NOT NULL DEFAULT 0,
   valid_count integer NOT NULL DEFAULT 0,
   duplicate_count integer NOT NULL DEFAULT 0,
@@ -49,6 +49,8 @@ CREATE TABLE import_sessions (
     ),
   CONSTRAINT import_sessions_source_metadata_check
     CHECK (jsonb_typeof(source_metadata) = 'object'),
+  CONSTRAINT import_sessions_failure_message_check
+    CHECK (failure_message IS NULL OR (btrim(failure_message) <> '' AND octet_length(failure_message) <= 1000)),
   CONSTRAINT import_sessions_status_timestamps_check
     CHECK (
       (status = 'processing'
@@ -59,6 +61,12 @@ CREATE TABLE import_sessions (
       OR
       (status = 'preview'
         AND confirmed_at IS NULL
+        AND completed_at IS NULL
+        AND failed_at IS NULL
+        AND undone_at IS NULL)
+      OR
+      (status = 'confirming'
+        AND confirmed_at IS NOT NULL
         AND completed_at IS NULL
         AND failed_at IS NULL
         AND undone_at IS NULL)
@@ -106,6 +114,7 @@ CREATE TABLE import_items (
   validation_status text NOT NULL DEFAULT 'valid'
     CHECK (validation_status IN ('valid', 'duplicate', 'invalid', 'uncategorized', 'imported')),
   error_message text,
+  is_repairable boolean NOT NULL DEFAULT false,
   external_id text,
   record_hash text,
   resulting_income_id uuid,
@@ -157,6 +166,8 @@ CREATE TABLE import_items (
       validation_status <> 'invalid'
       OR (error_message IS NOT NULL AND btrim(error_message) <> '')
     ),
+  CONSTRAINT import_items_repairable_check
+    CHECK (NOT is_repairable OR validation_status = 'invalid'),
   CONSTRAINT import_items_external_id_check
     CHECK (external_id IS NULL OR (btrim(external_id) <> '' AND octet_length(external_id) <= 512)),
   CONSTRAINT import_items_record_hash_check

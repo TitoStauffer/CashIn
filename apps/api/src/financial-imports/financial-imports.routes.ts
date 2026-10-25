@@ -32,10 +32,14 @@ const importParamsSchema = {
   properties: { importId: uuidSchema },
 };
 
-function sendFinancialImportError(error: unknown, reply: FastifyReply) {
+function sendFinancialImportError(error: unknown, request: FastifyRequest, reply: FastifyReply) {
   if (error instanceof FinancialImportError) {
     return reply.code(error.statusCode).send({ message: error.message });
   }
+  request.log.error(
+    { errorName: error instanceof Error ? error.name : "UnknownError" },
+    "Financial import request failed",
+  );
   return reply.code(500).send({ message: "Não foi possível concluir a importação." });
 }
 
@@ -90,7 +94,7 @@ export function registerFinancialImportRoutes(app: FastifyInstance, options: Rou
         );
         return reply.code(201).send(session);
       } catch (error) {
-        return sendFinancialImportError(error, reply);
+        return sendFinancialImportError(error, request, reply);
       }
     },
   );
@@ -106,7 +110,7 @@ export function registerFinancialImportRoutes(app: FastifyInstance, options: Rou
         );
         return reply.code(200).send({ items });
       } catch (error) {
-        return sendFinancialImportError(error, reply);
+        return sendFinancialImportError(error, request, reply);
       }
     },
   );
@@ -126,7 +130,7 @@ export function registerFinancialImportRoutes(app: FastifyInstance, options: Rou
         );
         return reply.code(200).send(session);
       } catch (error) {
-        return sendFinancialImportError(error, reply);
+        return sendFinancialImportError(error, request, reply);
       }
     },
   );
@@ -168,7 +172,7 @@ export function registerFinancialImportRoutes(app: FastifyInstance, options: Rou
         );
         return reply.code(200).send(item);
       } catch (error) {
-        return sendFinancialImportError(error, reply);
+        return sendFinancialImportError(error, request, reply);
       }
     },
   );
@@ -188,7 +192,7 @@ export function registerFinancialImportRoutes(app: FastifyInstance, options: Rou
         );
         return reply.code(200).send(session);
       } catch (error) {
-        return sendFinancialImportError(error, reply);
+        return sendFinancialImportError(error, request, reply);
       }
     },
   );
@@ -208,7 +212,27 @@ export function registerFinancialImportRoutes(app: FastifyInstance, options: Rou
         );
         return reply.code(200).send(session);
       } catch (error) {
-        return sendFinancialImportError(error, reply);
+        return sendFinancialImportError(error, request, reply);
+      }
+    },
+  );
+
+  app.delete<{ Params: ImportParams }>(
+    "/financial-imports/:importId",
+    {
+      preHandler: [app.authenticate, app.resolveWalletContext],
+      schema: { params: importParamsSchema },
+    },
+    async (request, reply) => {
+      try {
+        const session = await options.financialImportsService.discardImport(
+          request.currentUser!.id,
+          request.currentWalletId!,
+          request.params.importId,
+        );
+        return reply.code(200).send(session);
+      } catch (error) {
+        return sendFinancialImportError(error, request, reply);
       }
     },
   );

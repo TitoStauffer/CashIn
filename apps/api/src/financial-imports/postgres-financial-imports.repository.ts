@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import type { Database, QueryExecutor } from "../database.js";
 import { FinancialImportError } from "./financial-imports.errors.js";
 import type {
@@ -28,6 +29,7 @@ interface ImportSessionRow {
   imported_count: number;
   can_undo: boolean;
   undo_blocked_reason: string | null;
+  failure_message: string | null;
   confirmed_at: string | Date | null;
   completed_at: string | Date | null;
   failed_at: string | Date | null;
@@ -47,6 +49,7 @@ interface ImportItemRow {
   subcategory_id: string | null;
   validation_status: FinancialImportItemStatus;
   error_message: string | null;
+  is_repairable: boolean;
   created_at: string | Date;
   updated_at: string | Date;
 }
@@ -61,6 +64,14 @@ interface SubcategoryReferenceRow {
   category_id: string;
 }
 
+const IMPORT_BATCH_SIZE = 500;
+
+function chunks<Item>(items: Item[], size = IMPORT_BATCH_SIZE): Item[][] {
+  const result: Item[][] = [];
+  for (let index = 0; index < items.length; index += size) result.push(items.slice(index, index + size));
+  return result;
+}
+
 function invalidateReference(
   item: ParsedFinancialImportItem,
   message: string,
@@ -73,6 +84,7 @@ function invalidateReference(
     subcategoryId: null,
     validationStatus: "invalid",
     errorMessage: currentMessage ? `${currentMessage} ${message}` : message,
+    isRepairable: item.validationStatus === "invalid" ? item.isRepairable === true : true,
   };
 }
 
@@ -104,6 +116,7 @@ function mapSession(row: ImportSessionRow): FinancialImportSession {
     },
     canUndo: row.can_undo,
     undoBlockedReason: row.undo_blocked_reason,
+    failureMessage: row.failure_message,
     confirmedAt: timestampValue(row.confirmed_at),
     completedAt: timestampValue(row.completed_at),
     failedAt: timestampValue(row.failed_at),
@@ -125,6 +138,9 @@ function mapItem(row: ImportItemRow): FinancialImportItem {
     subcategoryId: row.subcategory_id,
     validationStatus: row.validation_status,
     errorMessage: row.error_message,
+    canEdit: row.validation_status === "valid"
+      || row.validation_status === "uncategorized"
+      || (row.validation_status === "invalid" && row.is_repairable),
     createdAt: timestampValue(row.created_at)!,
     updatedAt: timestampValue(row.updated_at)!,
   };
@@ -143,6 +159,7 @@ const sessionColumns = `
   session.invalid_count,
   session.uncategorized_count,
   session.imported_count,
+  session.failure_message,
   session.confirmed_at,
   session.completed_at,
   session.failed_at,
@@ -212,6 +229,7 @@ const itemColumns = `
   item.subcategory_id,
   item.validation_status,
   item.error_message,
+  item.is_repairable,
   item.created_at,
   item.updated_at`;
 
@@ -295,27 +313,44 @@ export class PostgresFinancialImportsRepository implements FinancialImportReposi
         return item;
       });
 
-      for (const item of validatedItems) {
+      for (const batch of chunks(validatedItems)) {
+        const payload = batch.map((item) => ({
+          sequence: item.sequence,
+          transaction_date: item.date,
+          description: item.description ?? null,
+          signed_amount: item.signedAmount,
+          type: item.type,
+          category_id: item.categoryId ?? null,
+          subcategory_id: item.subcategoryId ?? null,
+          category_nature: item.type === "transfer" ? null : item.type,
+          validation_status: item.validationStatus ?? "valid",
+          error_message: item.errorMessage ?? null,
+          is_repairable: item.isRepairable ?? false,
+        }));
         await transaction.query(
           `INSERT INTO import_items (
              import_session_id, wallet_id, sequence, transaction_date, description,
              signed_amount, type, category_id, subcategory_id, category_nature,
-             validation_status, error_message
-           ) VALUES ($1, $2, $3, $4::date, $5, $6::numeric, $7, $8::uuid, $9::uuid, $10, $11, $12)`,
-          [
-            importId,
-            walletId,
-            item.sequence,
-            item.date,
-            item.description ?? null,
-            item.signedAmount,
-            item.type,
-            item.categoryId ?? null,
-            item.subcategoryId ?? null,
-            item.type === "transfer" ? null : item.type,
-            item.validationStatus ?? "valid",
-            item.errorMessage ?? null,
-          ],
+             validation_status, error_message, is_repairable
+           )
+           SELECT $1, $2, item.sequence, item.transaction_date::date, item.description,
+                  item.signed_amount::numeric, item.type, item.category_id::uuid,
+                  item.subcategory_id::uuid, item.category_nature,
+                  item.validation_status, item.error_message, item.is_repairable
+           FROM jsonb_to_recordset($3::jsonb) AS item(
+             sequence integer,
+             transaction_date text,
+             description text,
+             signed_amount text,
+             type text,
+             category_id text,
+             subcategory_id text,
+             category_nature text,
+             validation_status text,
+             error_message text,
+             is_repairable boolean
+           )`,
+          [importId, walletId, JSON.stringify(payload)],
         );
       }
       await this.refreshCounters(transaction, walletId, importId, "preview");
@@ -338,12 +373,17 @@ export class PostgresFinancialImportsRepository implements FinancialImportReposi
     return this.getSessionWithItems(this.database, walletId, importId);
   }
 
-  async markFailed(_userId: string, walletId: string, importId: string): Promise<void> {
+  async markFailed(
+    _userId: string,
+    walletId: string,
+    importId: string,
+    failureMessage: string,
+  ): Promise<void> {
     await this.database.query(
       `UPDATE import_sessions
-       SET status = 'failed', failed_at = now(), updated_at = now()
+       SET status = 'failed', failure_message = $3, failed_at = now(), updated_at = now()
        WHERE id = $1 AND wallet_id = $2 AND status = 'processing'`,
-      [importId, walletId],
+      [importId, walletId, failureMessage],
     );
   }
 
@@ -381,11 +421,15 @@ export class PostgresFinancialImportsRepository implements FinancialImportReposi
              category_nature = CASE WHEN $6 = 'transfer' THEN NULL ELSE $6 END,
              validation_status = $9,
              error_message = $10,
+             is_repairable = false,
              updated_at = now()
          WHERE item.id = $1
            AND item.import_session_id = $2
            AND item.wallet_id = $3
-           AND item.validation_status IN ('valid', 'uncategorized')
+           AND (
+             item.validation_status IN ('valid', 'uncategorized')
+             OR (item.validation_status = 'invalid' AND item.is_repairable)
+           )
            AND ($7::uuid IS NULL OR EXISTS (
              SELECT 1 FROM categories AS category
              WHERE category.id = $7::uuid AND category.wallet_id = $3 AND category.nature = $6
@@ -422,16 +466,17 @@ export class PostgresFinancialImportsRepository implements FinancialImportReposi
   ): Promise<FinancialImportSession | null> {
     return this.database.transaction(async (transaction) => {
       const session = await transaction.query<{ id: string }>(
-        `SELECT id FROM import_sessions
+        `UPDATE import_sessions
+         SET status = 'confirming', confirmed_at = now(), failure_message = NULL, updated_at = now()
          WHERE id = $1 AND wallet_id = $2 AND status = 'preview'
-         FOR UPDATE`,
+         RETURNING id`,
         [importId, walletId],
       );
       if (!session.rows[0]) return null;
       const items = await transaction.query<{
         id: string;
         type: FinancialImportItemType;
-        category_id: string;
+        category_id: string | null;
         subcategory_id: string | null;
         amount: string;
         transaction_date: string | Date;
@@ -445,60 +490,89 @@ export class PostgresFinancialImportsRepository implements FinancialImportReposi
          FOR UPDATE`,
         [importId, walletId],
       );
-      if (items.rows.length === 0) return null;
-
-      for (const item of items.rows) {
-        if (item.type === "transfer") {
-          throw new FinancialImportError("Concilie as transferências antes de confirmar a importação.", 409);
-        }
-        const target = item.type === "income" ? "incomes" : "expenses";
-        const inserted = await transaction.query<{ id: string }>(
-          `INSERT INTO ${target} (user_id, wallet_id, category_id, subcategory_id, amount, date, description)
-           SELECT $1, $2, category.id, $4::uuid, $5::numeric, $6::date, $7
-           FROM categories AS category
-           WHERE category.id = $3::uuid
-             AND category.wallet_id = $2
-             AND category.nature = $8
-             AND ($4::uuid IS NULL OR EXISTS (
-               SELECT 1 FROM subcategories AS subcategory
-               WHERE subcategory.id = $4::uuid
-                 AND subcategory.wallet_id = $2
-                 AND subcategory.category_id = category.id
-             ))
-           RETURNING id`,
-          [userId, walletId, item.category_id, item.subcategory_id, item.amount, dateValue(item.transaction_date), item.description, item.type],
-        );
-        const movement = inserted.rows[0];
-        if (!movement) {
-          throw new FinancialImportError("Uma categoria ou subcategoria da importação não está mais disponível.", 409);
-        }
-        await transaction.query(
-          `UPDATE import_items
-           SET validation_status = 'imported',
-               resulting_income_id = CASE WHEN type = 'income' THEN $2::uuid ELSE NULL END,
-               resulting_expense_id = CASE WHEN type = 'expense' THEN $2::uuid ELSE NULL END,
-               resulting_updated_at = (
-                 SELECT updated_at FROM ${target} WHERE id = $2::uuid AND wallet_id = $4::uuid
-               ),
-               error_message = NULL,
-               updated_at = now()
-           WHERE id = $1 AND import_session_id = $3 AND wallet_id = $4`,
-          [item.id, movement.id, importId, walletId],
-        );
+      if (items.rows.length === 0) {
+        throw new FinancialImportError("A importação não possui movimentações válidas para confirmar.", 409);
       }
 
+      if (items.rows.some((item) => item.type === "transfer")) {
+        throw new FinancialImportError("Concilie as transferências antes de confirmar a importação.", 409);
+      }
+
+      for (const type of ["income", "expense"] as const) {
+        const target = type === "income" ? "incomes" : "expenses";
+        const resultColumn = type === "income" ? "resulting_income_id" : "resulting_expense_id";
+        for (const batch of chunks(items.rows.filter((item) => item.type === type))) {
+          if (batch.length === 0) continue;
+          const payload = batch.map((item) => ({
+            import_item_id: item.id,
+            movement_id: randomUUID(),
+            category_id: item.category_id,
+            subcategory_id: item.subcategory_id,
+            amount: item.amount,
+            transaction_date: dateValue(item.transaction_date),
+            description: item.description,
+          }));
+          const imported = await transaction.query<{ id: string }>(
+            `WITH input AS (
+               SELECT * FROM jsonb_to_recordset($3::jsonb) AS data(
+                 import_item_id uuid,
+                 movement_id uuid,
+                 category_id uuid,
+                 subcategory_id uuid,
+                 amount numeric,
+                 transaction_date date,
+                 description text
+               )
+             ), inserted AS (
+               INSERT INTO ${target} (
+                 id, user_id, wallet_id, category_id, subcategory_id, amount, date, description
+               )
+               SELECT input.movement_id, $1, $2, category.id, input.subcategory_id,
+                      input.amount, input.transaction_date, input.description
+               FROM input
+               JOIN categories AS category
+                 ON category.id = input.category_id
+                AND category.wallet_id = $2
+                AND category.nature = '${type}'
+               LEFT JOIN subcategories AS subcategory
+                 ON subcategory.id = input.subcategory_id
+                AND subcategory.wallet_id = $2
+                AND subcategory.category_id = category.id
+               WHERE input.subcategory_id IS NULL OR subcategory.id IS NOT NULL
+               RETURNING id, updated_at
+             )
+             UPDATE import_items AS item
+             SET validation_status = 'imported',
+                 ${resultColumn} = inserted.id,
+                 resulting_updated_at = inserted.updated_at,
+                 error_message = NULL,
+                 is_repairable = false,
+                 updated_at = now()
+             FROM input
+             JOIN inserted ON inserted.id = input.movement_id
+             WHERE item.id = input.import_item_id
+               AND item.import_session_id = $4
+               AND item.wallet_id = $2
+               AND item.validation_status = 'valid'
+             RETURNING item.id`,
+            [userId, walletId, JSON.stringify(payload), importId],
+          );
+          if (imported.rows.length !== batch.length) {
+            throw new FinancialImportError("Uma categoria ou subcategoria da importação não está mais disponível.", 409);
+          }
+        }
+      }
+
+      await this.refreshCounters(transaction, walletId, importId);
       await transaction.query(
         `UPDATE import_sessions
          SET status = 'completed',
-             valid_count = 0,
-             imported_count = $3,
-             confirmed_at = now(),
              completed_at = now(),
              updated_at = now()
          WHERE id = $1 AND wallet_id = $2`,
-        [importId, walletId, items.rows.length],
+        [importId, walletId],
       );
-      return this.getSession(transaction, walletId, importId);
+      return this.getSessionWithItems(transaction, walletId, importId);
     });
   }
 
@@ -590,10 +664,14 @@ export class PostgresFinancialImportsRepository implements FinancialImportReposi
 
       await transaction.query(
         `UPDATE import_items
-         SET validation_status = 'valid',
+         SET validation_status = 'uncategorized',
+             category_id = NULL,
+             subcategory_id = NULL,
              resulting_income_id = NULL,
              resulting_expense_id = NULL,
              resulting_updated_at = NULL,
+             error_message = 'Selecione uma categoria para importar a movimentação.',
+             is_repairable = false,
              updated_at = now()
          WHERE import_session_id = $1 AND wallet_id = $2 AND validation_status = 'imported'`,
         [importId, walletId],
@@ -617,14 +695,56 @@ export class PostgresFinancialImportsRepository implements FinancialImportReposi
       await transaction.query(
         `UPDATE import_sessions
          SET status = 'undone',
-             valid_count = valid_count + imported_count,
-             imported_count = 0,
              undone_at = now(),
              updated_at = now()
          WHERE id = $1 AND wallet_id = $2`,
         [importId, walletId],
       );
-      return this.getSession(transaction, walletId, importId);
+      await this.refreshCounters(transaction, walletId, importId);
+      return this.getSessionWithItems(transaction, walletId, importId);
+    });
+  }
+
+  async discardImport(
+    _userId: string,
+    walletId: string,
+    importId: string,
+  ): Promise<FinancialImportSession | null> {
+    return this.database.transaction(async (transaction) => {
+      const session = await transaction.query<{ id: string }>(
+        `SELECT id FROM import_sessions
+         WHERE id = $1 AND wallet_id = $2 AND status = 'preview'
+         FOR UPDATE`,
+        [importId, walletId],
+      );
+      if (!session.rows[0]) return null;
+      await transaction.query(
+        `UPDATE import_items
+         SET category_id = NULL,
+             subcategory_id = NULL,
+             validation_status = CASE
+               WHEN validation_status = 'valid' THEN 'uncategorized'
+               ELSE validation_status
+             END,
+             error_message = CASE
+               WHEN validation_status = 'valid' THEN 'A prévia foi descartada antes da confirmação.'
+               ELSE error_message
+             END,
+             updated_at = now()
+         WHERE import_session_id = $1 AND wallet_id = $2`,
+        [importId, walletId],
+      );
+      await this.refreshCounters(transaction, walletId, importId);
+      await transaction.query(
+        `UPDATE import_sessions
+         SET status = 'failed',
+             failure_message = 'Importação descartada pelo usuário.',
+             failed_at = now(),
+             updated_at = now()
+         WHERE id = $1 AND wallet_id = $2`,
+        [importId, walletId],
+      );
+      return this.getSessionWithItems(transaction, walletId, importId);
     });
   }
 
@@ -657,7 +777,13 @@ export class PostgresFinancialImportsRepository implements FinancialImportReposi
        ORDER BY item.sequence, item.id`,
       [importId, walletId],
     );
-    return { ...session, items: items.rows.map(mapItem) };
+    return {
+      ...session,
+      items: items.rows.map((row) => {
+        const item = mapItem(row);
+        return session.status === "preview" ? item : { ...item, canEdit: false };
+      }),
+    };
   }
 
   private async refreshCounters(

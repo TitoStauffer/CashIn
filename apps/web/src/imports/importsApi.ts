@@ -1,7 +1,7 @@
 import { withActiveWallet } from '../wallets/walletApi'
 
 export type FinancialImportFormat = 'ofx' | 'csv'
-export type FinancialImportStatus = 'processing' | 'preview' | 'completed' | 'failed' | 'undone'
+export type FinancialImportStatus = 'processing' | 'preview' | 'confirming' | 'completed' | 'failed' | 'undone'
 export type FinancialImportItemType = 'income' | 'expense' | 'transfer'
 export type FinancialImportItemStatus = 'valid' | 'duplicate' | 'invalid' | 'uncategorized' | 'imported'
 
@@ -25,6 +25,7 @@ export type FinancialImportItem = {
   subcategoryId: string | null
   validationStatus: FinancialImportItemStatus
   errorMessage: string | null
+  canEdit: boolean
 }
 
 export type FinancialImportSession = {
@@ -37,6 +38,7 @@ export type FinancialImportSession = {
   items?: FinancialImportItem[]
   canUndo: boolean
   undoBlockedReason: string | null
+  failureMessage: string | null
   createdAt: string
   confirmedAt: string | null
   completedAt?: string | null
@@ -121,5 +123,9 @@ export const importsApi = {
 
   undo(importId: string) {
     return request<FinancialImportSession>(`${importPath(importId)}/undo`, { method: 'POST' })
+  },
+
+  discard(importId: string) {
+    return request<FinancialImportSession>(importPath(importId), { method: 'DELETE' })
   },
 }

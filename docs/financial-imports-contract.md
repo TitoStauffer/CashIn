@@ -20,11 +20,14 @@ A API mantém sessões de importação por carteira para que o cliente possa env
 | `PATCH` | `/financial-imports/:importId/items/:itemId` | Atualiza data, descrição, tipo, categoria e subcategoria durante a prévia. |
 | `POST` | `/financial-imports/:importId/confirm` | Cria todas as movimentações válidas atomicamente. |
 | `POST` | `/financial-imports/:importId/undo` | Remove os lançamentos gerados se nenhum deles tiver sido alterado. |
+| `DELETE` | `/financial-imports/:importId` | Descarta uma prévia ainda não confirmada e libera suas referências de classificação. |
 
-As sessões usam os estados `processing`, `preview`, `completed`, `failed` e `undone`. O resumo separa itens `valid`, `duplicate`, `invalid`, `uncategorized` e `imported`. `canUndo` e `undoBlockedReason` permitem que o cliente apresente a elegibilidade do desfazer sem presumir o estado.
+As sessões usam os estados `processing`, `preview`, `confirming`, `completed`, `failed` e `undone`. O resumo separa itens `valid`, `duplicate`, `invalid`, `uncategorized` e `imported`. `canUndo` e `undoBlockedReason` permitem que o cliente apresente a elegibilidade do desfazer sem presumir o estado. Falhas persistidas expõem somente uma mensagem segura em `failureMessage`.
 
-Linhas com data impossível, valor zero ou fora da precisão permitida e sequência de origem repetida permanecem na prévia como `invalid`, com motivo explícito. A posição persistida é sempre única e os campos inválidos são armazenados de forma nula internamente, evitando que uma linha defeituosa descarte as demais.
+Linhas inválidas permanecem na prévia com motivo explícito. `canEdit` identifica as linhas que podem ser corrigidas pelo usuário; valor inválido, sequência de origem inválida, duplicidade ou sequência repetida não podem ser reparados manualmente. A posição persistida é sempre única e os campos inválidos são armazenados de forma nula internamente, evitando que uma linha defeituosa descarte as demais.
 
 ## Confirmação e desfazer
 
-A confirmação importa somente itens válidos e ocorre em transação PostgreSQL. Itens inválidos, duplicados ou sem categoria permanecem no histórico e não geram lançamentos. O desfazer também é transacional e compara o `updated_at` de cada entrada ou saída com o valor capturado na confirmação. Se qualquer lançamento tiver sido alterado ou removido, a operação é recusada com `409`.
+A confirmação importa somente itens válidos e ocorre em uma única transação PostgreSQL. Qualquer falha reverte todos os lançamentos e mantém a sessão em `preview`, permitindo nova tentativa. Itens inválidos, duplicados ou sem categoria permanecem no histórico e não geram lançamentos. O desfazer também é transacional e compara o `updated_at` de cada entrada ou saída com o valor capturado na confirmação. Se qualquer lançamento tiver sido alterado ou removido, a operação é recusada com `409`.
+
+O descarte é permitido somente em `preview`, não cria movimentações e remove as referências a categoria e subcategoria dos itens para que cadastros não fiquem bloqueados por uma prévia abandonada. A sessão permanece no histórico como `failed`, com a mensagem explícita de que foi descartada pelo usuário.

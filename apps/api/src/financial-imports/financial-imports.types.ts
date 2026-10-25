@@ -1,5 +1,5 @@
 export const FINANCIAL_IMPORT_FORMATS = ["ofx", "csv"] as const;
-export const FINANCIAL_IMPORT_STATUSES = ["processing", "preview", "completed", "failed", "undone"] as const;
+export const FINANCIAL_IMPORT_STATUSES = ["processing", "preview", "confirming", "completed", "failed", "undone"] as const;
 export const FINANCIAL_IMPORT_ITEM_TYPES = ["income", "expense", "transfer"] as const;
 export const FINANCIAL_IMPORT_ITEM_STATUSES = ["valid", "duplicate", "invalid", "uncategorized", "imported"] as const;
 
@@ -27,6 +27,7 @@ export interface FinancialImportItem {
   subcategoryId: string | null;
   validationStatus: FinancialImportItemStatus;
   errorMessage: string | null;
+  canEdit: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -41,6 +42,7 @@ export interface FinancialImportSession {
   summary: FinancialImportSummary;
   canUndo: boolean;
   undoBlockedReason: string | null;
+  failureMessage: string | null;
   createdAt: string;
   updatedAt: string;
   confirmedAt: string | null;
@@ -60,6 +62,7 @@ export interface ParsedFinancialImportItem {
   subcategoryId?: string | null;
   validationStatus?: Exclude<FinancialImportItemStatus, "imported">;
   errorMessage?: string | null;
+  isRepairable?: boolean;
 }
 
 export interface FinancialImportParserInput {
@@ -97,7 +100,7 @@ export interface FinancialImportRepository {
   ): Promise<FinancialImportSession | null>;
   listImports(userId: string, walletId: string): Promise<FinancialImportSession[]>;
   getImport(userId: string, walletId: string, importId: string): Promise<FinancialImportSession | null>;
-  markFailed(userId: string, walletId: string, importId: string): Promise<void>;
+  markFailed(userId: string, walletId: string, importId: string, failureMessage: string): Promise<void>;
   updateItem(
     userId: string,
     walletId: string,
@@ -107,4 +110,5 @@ export interface FinancialImportRepository {
   ): Promise<FinancialImportItem | null>;
   confirmImport(userId: string, walletId: string, importId: string): Promise<FinancialImportSession | null>;
   undoImport(userId: string, walletId: string, importId: string): Promise<FinancialImportSession | null>;
+  discardImport(userId: string, walletId: string, importId: string): Promise<FinancialImportSession | null>;
 }

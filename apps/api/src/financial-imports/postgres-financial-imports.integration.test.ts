@@ -153,6 +153,7 @@ test("PostgreSQL financial import confirms exact amounts, isolates wallets, and 
       subcategoryId: null,
       validationStatus: "invalid",
       errorMessage: "Data e valor inválidos.",
+      canEdit: false,
       createdAt: preview?.items?.[3]?.createdAt,
       updatedAt: preview?.items?.[3]?.updatedAt,
     });
@@ -313,8 +314,8 @@ test("PostgreSQL financial import confirms exact amounts, isolates wallets, and 
       description: "Histórico preservado sem classificação",
       amount: "19.99",
       type: "expense",
-      validationStatus: "valid",
-      errorMessage: null,
+      validationStatus: "uncategorized",
+      errorMessage: "Selecione uma categoria para importar a movimentação.",
       categoryId: null,
       subcategoryId: null,
     });
@@ -350,6 +351,48 @@ test("PostgreSQL financial import confirms exact amounts, isolates wallets, and 
         "DELETE FROM categories WHERE id = $1 AND wallet_id = $2 RETURNING id",
         [removableCategoryId, walletId],
       )).rowCount,
+      1,
+    );
+
+    const discardCategory = await database.query<{ id: string }>(
+      `INSERT INTO categories (user_id, wallet_id, name, nature)
+       VALUES ($1, $2, 'Categoria da prévia descartada', 'expense') RETURNING id`,
+      [userId, walletId],
+    );
+    const discardCategoryId = discardCategory.rows[0]!.id;
+    const discardSubcategory = await database.query<{ id: string }>(
+      `INSERT INTO subcategories (user_id, wallet_id, category_id, name)
+       VALUES ($1, $2, $3, 'Subcategoria da prévia descartada') RETURNING id`,
+      [userId, walletId, discardCategoryId],
+    );
+    const discardSubcategoryId = discardSubcategory.rows[0]!.id;
+    const discardSession = await repository.createImport(userId, walletId, {
+      format: "csv",
+      fileName: "descartar.csv",
+      fileSize: 64,
+      fileHash: "8".repeat(64),
+    });
+    await repository.savePreview(userId, walletId, discardSession.id, [{
+      sequence: 1,
+      date: "2026-10-23",
+      description: "Prévia abandonada",
+      signedAmount: "4.50",
+      type: "expense",
+      categoryId: discardCategoryId,
+      subcategoryId: discardSubcategoryId,
+      validationStatus: "valid",
+    }]);
+    const discarded = await repository.discardImport(userId, walletId, discardSession.id);
+    assert.equal(discarded?.status, "failed");
+    assert.equal(discarded?.failureMessage, "Importação descartada pelo usuário.");
+    assert.equal(discarded?.items?.[0]?.categoryId, null);
+    assert.equal(discarded?.items?.[0]?.subcategoryId, null);
+    assert.equal(
+      (await database.query("DELETE FROM subcategories WHERE id = $1 AND wallet_id = $2 RETURNING id", [discardSubcategoryId, walletId])).rowCount,
+      1,
+    );
+    assert.equal(
+      (await database.query("DELETE FROM categories WHERE id = $1 AND wallet_id = $2 RETURNING id", [discardCategoryId, walletId])).rowCount,
       1,
     );
 
@@ -459,6 +502,63 @@ test("PostgreSQL financial import confirms exact amounts, isolates wallets, and 
       itemBlocker.release();
     }
 
+    const rollbackSession = await repository.createImport(userId, walletId, {
+      format: "csv",
+      fileName: "rollback.csv",
+      fileSize: 64,
+      fileHash: "f".repeat(64),
+    });
+    await repository.savePreview(userId, walletId, rollbackSession.id, [
+      {
+        sequence: 1,
+        date: "2026-10-24",
+        description: "Inserção anterior à falha",
+        signedAmount: "11.00",
+        type: "income",
+        categoryId: incomeCategoryId,
+        validationStatus: "valid",
+      },
+      {
+        sequence: 2,
+        date: "2026-10-24",
+        description: "Falha determinística",
+        signedAmount: "12.00",
+        type: "income",
+        categoryId: incomeCategoryId,
+        validationStatus: "valid",
+      },
+    ]);
+    await database.query(`
+      CREATE FUNCTION reject_financial_import_test() RETURNS trigger AS $$
+      BEGIN
+        IF NEW.description = 'Falha determinística' THEN
+          RAISE EXCEPTION 'falha determinística de integração';
+        END IF;
+        RETURN NEW;
+      END;
+      $$ LANGUAGE plpgsql;
+      CREATE TRIGGER reject_financial_import_test
+      BEFORE INSERT ON incomes
+      FOR EACH ROW EXECUTE FUNCTION reject_financial_import_test();
+    `);
+    try {
+      await assert.rejects(
+        repository.confirmImport(userId, walletId, rollbackSession.id),
+        /falha determinística de integração/i,
+      );
+      assert.equal((await repository.getImport(userId, walletId, rollbackSession.id))?.status, "preview");
+      assert.equal(
+        (await database.query(
+          "SELECT count(*)::integer AS count FROM incomes WHERE wallet_id = $1 AND description IN ($2, $3)",
+          [walletId, "Inserção anterior à falha", "Falha determinística"],
+        )).rows[0]!.count,
+        0,
+        "confirmation must roll back every movement and the session state",
+      );
+    } finally {
+      await database.query("DROP TRIGGER reject_financial_import_test ON incomes; DROP FUNCTION reject_financial_import_test()");
+    }
+
     await app.close();
     app = createApp(database, {
       financialImportRepository: repository,
@@ -515,10 +615,26 @@ test("PostgreSQL financial import confirms exact amounts, isolates wallets, and 
     });
     assert.equal(Buffer.byteLength(oversizedDescription.json().items[1].description, "utf8"), 4_000);
     assert.match(oversizedDescription.json().items[1].errorMessage, /máximo 4\.000 bytes/i);
+    assert.equal(oversizedDescription.json().items[1].canEdit, true);
     assert.equal(oversizedDescription.json().items[2].validationStatus, "invalid");
     assert.equal(oversizedDescription.json().items[2].categoryId, null);
     assert.equal(oversizedDescription.json().items[2].subcategoryId, null);
     assert.match(oversizedDescription.json().items[2].errorMessage, /categoria ou subcategoria.+inválida/i);
+
+    const repairedDescription = await app.inject({
+      method: "PATCH",
+      url: `/financial-imports/${oversizedDescription.json().id}/items/${oversizedDescription.json().items[1].id}`,
+      headers: authenticatedHeaders,
+      payload: {
+        date: "2026-10-24",
+        description: "Descrição corrigida",
+        type: "income",
+        categoryId: incomeCategoryId,
+        subcategoryId: null,
+      },
+    });
+    assert.equal(repairedDescription.statusCode, 200);
+    assert.equal(repairedDescription.json().validationStatus, "valid");
 
     const confirmedDescriptionImport = await app.inject({
       method: "POST",
@@ -526,8 +642,8 @@ test("PostgreSQL financial import confirms exact amounts, isolates wallets, and 
       headers: authenticatedHeaders,
     });
     assert.equal(confirmedDescriptionImport.statusCode, 200);
-    assert.equal(confirmedDescriptionImport.json().summary.imported, 1);
-    assert.equal(confirmedDescriptionImport.json().summary.invalid, 2);
+    assert.equal(confirmedDescriptionImport.json().summary.imported, 2);
+    assert.equal(confirmedDescriptionImport.json().summary.invalid, 1);
     assert.equal(
       (await database.query(
         "SELECT count(*)::integer AS count FROM incomes WHERE wallet_id = $1 AND description = 'Linha válida'",
@@ -645,6 +761,39 @@ test("PostgreSQL financial import confirms exact amounts, isolates wallets, and 
         [walletId],
       )).rows[0]!.count,
       1,
+    );
+
+    const batchSession = await repository.createImport(userId, walletId, {
+      format: "csv",
+      fileName: "limite-10000.csv",
+      fileSize: 1024,
+      fileHash: "9".repeat(64),
+    });
+    const batchPreview = await repository.savePreview(
+      userId,
+      walletId,
+      batchSession.id,
+      Array.from({ length: 10_000 }, (_, index) => ({
+        sequence: index + 1,
+        date: "2026-10-25",
+        description: `Movimentação em lote ${index + 1}`,
+        signedAmount: "1.00",
+        type: "income" as const,
+        categoryId: incomeCategoryId,
+        validationStatus: "valid" as const,
+      })),
+    );
+    assert.equal(batchPreview?.summary.total, 10_000);
+    assert.equal(batchPreview?.items?.length, 10_000);
+    const batchCompleted = await repository.confirmImport(userId, walletId, batchSession.id);
+    assert.equal(batchCompleted?.summary.imported, 10_000);
+    assert.equal(batchCompleted?.items?.length, 10_000);
+    assert.equal(
+      (await database.query(
+        "SELECT count(*)::integer AS count FROM incomes WHERE wallet_id = $1 AND description LIKE 'Movimentação em lote %'",
+        [walletId],
+      )).rows[0]!.count,
+      10_000,
     );
   } finally {
     await app?.close();
