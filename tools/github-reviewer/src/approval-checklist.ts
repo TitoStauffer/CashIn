@@ -20,8 +20,16 @@ export interface ApprovalChecklistUpdate {
   fetchImpl?: typeof fetch;
 }
 
-export async function syncApprovalCheckbox(options: ApprovalChecklistUpdate): Promise<boolean> {
+interface ApprovalChecklistDependencies {
+  loadReviewInputs?: typeof loadAgentReviewInputs;
+}
+
+export async function syncApprovalCheckbox(
+  options: ApprovalChecklistUpdate,
+  dependencies: ApprovalChecklistDependencies = {},
+): Promise<boolean> {
   const fetchImpl = options.fetchImpl ?? fetch;
+  const loadReviewInputs = dependencies.loadReviewInputs ?? loadAgentReviewInputs;
   const session = await createGitHubInstallationSession({ ...options.credentials, fetchImpl }, true);
   const repositoryPath = getRepositoryPath(options.credentials.owner, options.credentials.repository);
   const pullRequestPath = `${repositoryPath}/pulls/${options.pullRequestNumber}`;
@@ -32,12 +40,29 @@ export async function syncApprovalCheckbox(options: ApprovalChecklistUpdate): Pr
   }
 
   const contextToken = options.credentials.contextToken?.trim() || session.installationToken;
-  const reviewInputs = await loadAgentReviewInputs(fetchImpl, options.repository, options.pullRequestNumber, pullRequest, contextToken);
+  const reviewInputs = await loadReviewInputs(fetchImpl, options.repository, options.pullRequestNumber, pullRequest, contextToken);
   if (computeAgentContextHash(options.repository, options.pullRequestNumber, pullRequest, reviewInputs) !== options.contextHash) {
     throw new Error('Pull Request context changed before approval checklist synchronization.');
   }
 
-  const currentBody = typeof pullRequest.body === 'string' ? pullRequest.body : '';
+  // Reload both the evidence and the Pull Request before writing. This keeps a
+  // user edit or another publisher from being overwritten by a stale body.
+  const refreshedPullRequest = await requestGitHubApi<Record<string, unknown>>(fetchImpl, pullRequestPath, session.installationToken);
+  assertOpenHead(refreshedPullRequest, options.commitSha);
+  const refreshedInputs = await loadReviewInputs(
+    fetchImpl, options.repository, options.pullRequestNumber, refreshedPullRequest, contextToken,
+  );
+  if (computeAgentContextHash(options.repository, options.pullRequestNumber, refreshedPullRequest, refreshedInputs) !== options.contextHash) {
+    throw new Error('Pull Request context changed before approval checklist synchronization.');
+  }
+
+  const prewritePullRequest = await requestGitHubApi<Record<string, unknown>>(fetchImpl, pullRequestPath, session.installationToken);
+  assertOpenHead(prewritePullRequest, options.commitSha);
+  if (computeAgentContextHash(options.repository, options.pullRequestNumber, prewritePullRequest, refreshedInputs) !== options.contextHash) {
+    throw new Error('Pull Request context changed immediately before approval checklist synchronization.');
+  }
+
+  const currentBody = typeof prewritePullRequest.body === 'string' ? prewritePullRequest.body : '';
   const nextBody = updateApprovalCheckbox(currentBody, options.stage, options.approved);
   if (nextBody === currentBody) return false;
 
@@ -49,6 +74,12 @@ export async function syncApprovalCheckbox(options: ApprovalChecklistUpdate): Pr
     throw new Error('GitHub returned an unexpected Pull Request after checklist synchronization.');
   }
   return true;
+}
+
+function assertOpenHead(pullRequest: Record<string, unknown>, commitSha: string): void {
+  if (pullRequest.state !== 'open' || record(pullRequest.head)?.sha !== commitSha) {
+    throw new Error('Pull Request HEAD changed before approval checklist synchronization.');
+  }
 }
 
 export function updateApprovalCheckbox(body: string, stage: ApprovalChecklistStage, approved: boolean): string {

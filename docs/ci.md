@@ -1,6 +1,8 @@
 # Integração contínua (GitHub Actions)
 
-O workflow `.github/workflows/ci.yml` valida metadados do PR, API, Web, ferramentas de automação e SonarQube em todo Pull Request para `master` e em todo push para `master`. A ordem é determinística: `PR title` → `API`/`Web`/`GitHub Reviewer` → `SonarQube`. Somente a conclusão bem-sucedida do workflow completo aciona os agentes.
+O workflow `.github/workflows/ci.yml` valida metadados do PR, API, Web, ferramentas de automação e SonarQube em Pull Requests para `master` e em pushes para `master`. A ordem é determinística: `PR title` → `API`/`Web`/`GitHub Reviewer` → `SonarQube`. Somente a conclusão bem-sucedida do workflow completo aciona os agentes.
+
+Edições de título ou corpo não reiniciam o CI completo. O workflow leve `.github/workflows/pr-title.yml` revalida o título nesses eventos, e apenas o Merge Readiness acompanha sua conclusão. Assim, a atualização dos checkboxes pelo GitHub App não cria checks de API/Web pulados nem cancela uma orquestração ativa.
 
 | Job | Diretório | Passos (comandos já existentes no projeto) |
 | --- | --- | --- |

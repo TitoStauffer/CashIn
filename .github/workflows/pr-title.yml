@@ -1,0 +1,52 @@
+name: PR title
+
+on:
+  pull_request:
+    branches: [master]
+    # Full CI validates the title for code changes. This workflow handles only
+    # metadata edits, including the App's approval-checkbox synchronization.
+    types: [edited]
+
+# The check only reads event data; the token needs no permissions.
+permissions: {}
+
+concurrency:
+  group: pr-title-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  pr-title:
+    name: PR title
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+
+    steps:
+      - name: Validate PR title (AGENTS.md)
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+        shell: bash
+        run: |
+          expected='[DEV-123] - título objetivo do ticket'
+          pattern='^\[(DEV-[0-9]+)\] - [^[:space:]](.*[^[:space:]])?$'
+
+          if [[ ! "${PR_TITLE}" =~ ${pattern} ]]; then
+            echo "::error title=Título fora do padrão::O título deve seguir o padrão do AGENTS.md: ${expected}"
+            echo "Título recebido: ${PR_TITLE}"
+            exit 1
+          fi
+          title_key="${BASH_REMATCH[1]}"
+
+          branch_pattern='(^|/)(DEV-[0-9]+)(-|$)'
+          if [[ ! "${HEAD_REF}" =~ ${branch_pattern} ]]; then
+            echo "::error title=Branch sem chave do Jira::A branch '${HEAD_REF}' não contém a chave da issue (ex.: feature/DEV-123-descricao), como exige o AGENTS.md."
+            exit 1
+          fi
+          branch_key="${BASH_REMATCH[2]}"
+
+          if [[ "${title_key}" != "${branch_key}" ]]; then
+            echo "::error title=Chave divergente::A chave do título (${title_key}) é diferente da chave da branch (${branch_key})."
+            exit 1
+          fi
+
+          echo "Título válido para ${title_key}."

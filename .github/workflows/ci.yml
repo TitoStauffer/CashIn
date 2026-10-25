@@ -3,7 +3,9 @@ name: CI
 on:
   pull_request:
     branches: [master]
-    types: [opened, edited, reopened, synchronize, ready_for_review]
+    # Body/title edits are handled by the lightweight PR title workflow. This
+    # prevents checklist maintenance from creating skipped CI check runs.
+    types: [opened, reopened, synchronize, ready_for_review]
   push:
     branches: [master]
 
@@ -71,7 +73,6 @@ jobs:
     # workflow_run jobs execute the trusted version from master.
     name: GitHub Reviewer
     needs: pr-title
-    if: github.event_name != 'pull_request' || github.event.action != 'edited' || github.actor != vars.CASHIN_APP_BOT_LOGIN
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     defaults:
@@ -100,7 +101,6 @@ jobs:
   api:
     name: API
     needs: pr-title
-    if: github.event_name != 'pull_request' || github.event.action != 'edited' || github.actor != vars.CASHIN_APP_BOT_LOGIN
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     defaults:
@@ -206,7 +206,6 @@ jobs:
   web:
     name: Web
     needs: pr-title
-    if: github.event_name != 'pull_request' || github.event.action != 'edited' || github.actor != vars.CASHIN_APP_BOT_LOGIN
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     defaults:
