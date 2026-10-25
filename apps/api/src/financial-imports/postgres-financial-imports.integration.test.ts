@@ -807,6 +807,22 @@ test("PostgreSQL financial import confirms exact amounts, isolates wallets, and 
             errorMessage: "A origem não permite importar esta movimentação.",
             isRepairable: false,
           },
+          {
+            sequence: 5,
+            date: "0000-01-01",
+            description: "Ano incompatível com PostgreSQL",
+            signedAmount: "54.00",
+            type: "income",
+            categoryId: incomeCategoryId,
+          },
+          {
+            sequence: 6,
+            date: "2026-10-25",
+            description: "Descrição\u0000incompatível",
+            signedAmount: "55.00",
+            type: "income",
+            categoryId: incomeCategoryId,
+          },
         ],
       },
     });
@@ -824,10 +840,10 @@ test("PostgreSQL financial import confirms exact amounts, isolates wallets, and 
     });
     assert.equal(duplicatePreview.statusCode, 201);
     assert.deepEqual(duplicatePreview.json().summary, {
-      total: 4,
+      total: 6,
       valid: 1,
       duplicate: 2,
-      invalid: 1,
+      invalid: 3,
       uncategorized: 0,
       imported: 0,
     });
@@ -874,6 +890,50 @@ test("PostgreSQL financial import confirms exact amounts, isolates wallets, and 
       },
     })).statusCode;
     assert.equal(patchParserInvalidStatus, 409);
+    const postgresInvalidDateItem = duplicatePreview.json().items.find(
+      (item: { description: string }) => item.description === "Ano incompatível com PostgreSQL",
+    );
+    assert.ok(postgresInvalidDateItem);
+    assert.equal(postgresInvalidDateItem.date, "");
+    assert.equal(postgresInvalidDateItem.validationStatus, "invalid");
+    assert.equal(postgresInvalidDateItem.canEdit, true);
+    assert.match(postgresInvalidDateItem.errorMessage, /data da movimentação é inválida/i);
+    const patchPostgresInvalidDateStatus: number = (await app.inject({
+      method: "PATCH",
+      url: `/financial-imports/${duplicatePreview.json().id}/items/${postgresInvalidDateItem.id}`,
+      headers: authenticatedHeaders,
+      payload: {
+        date: "0000-01-01",
+        description: postgresInvalidDateItem.description,
+        type: "income",
+        categoryId: incomeCategoryId,
+        subcategoryId: null,
+      },
+    })).statusCode;
+    assert.equal(patchPostgresInvalidDateStatus, 400);
+
+    const postgresInvalidDescriptionItem = duplicatePreview.json().items.find(
+      (item: { amount: string }) => item.amount === "55.00",
+    );
+    assert.ok(postgresInvalidDescriptionItem);
+    assert.equal(postgresInvalidDescriptionItem.description, "Descriçãoincompatível");
+    assert.equal(postgresInvalidDescriptionItem.validationStatus, "invalid");
+    assert.equal(postgresInvalidDescriptionItem.canEdit, true);
+    assert.match(postgresInvalidDescriptionItem.errorMessage, /não pode conter caractere nulo/i);
+    const patchPostgresInvalidDescription = await app.inject({
+      method: "PATCH",
+      url: `/financial-imports/${duplicatePreview.json().id}/items/${postgresInvalidDescriptionItem.id}`,
+      headers: authenticatedHeaders,
+      payload: {
+        date: "2026-10-25",
+        description: "Descrição\u0000incompatível",
+        type: "income",
+        categoryId: incomeCategoryId,
+        subcategoryId: null,
+      },
+    });
+    assert.equal(patchPostgresInvalidDescription.statusCode, 400);
+    assert.match(patchPostgresInvalidDescription.json().message, /não pode conter caractere nulo/i);
 
     const confirmedDuplicatePreview = await app.inject({
       method: "POST",
@@ -883,7 +943,7 @@ test("PostgreSQL financial import confirms exact amounts, isolates wallets, and 
     assert.equal(confirmedDuplicatePreview.statusCode, 200);
     assert.equal(confirmedDuplicatePreview.json().summary.imported, 1);
     assert.equal(confirmedDuplicatePreview.json().summary.duplicate, 2);
-    assert.equal(confirmedDuplicatePreview.json().summary.invalid, 1);
+    assert.equal(confirmedDuplicatePreview.json().summary.invalid, 3);
     assert.equal(
       (await database.query(
         "SELECT count(*)::integer AS count FROM incomes WHERE wallet_id = $1 AND description LIKE 'Duplicidade %'",

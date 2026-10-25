@@ -24,8 +24,13 @@ const ZERO_MONEY_PATTERN = /^-?0(?:\.0{1,2})?$/;
 
 function validateDate(value: string): boolean {
   if (!DATE_PATTERN.test(value)) return false;
+  if (value.startsWith("0000-")) return false;
   const date = new Date(`${value}T00:00:00.000Z`);
   return Number.isFinite(date.getTime()) && date.toISOString().slice(0, 10) === value;
+}
+
+function sanitizePostgresText(value: string): string {
+  return value.replaceAll("\u0000", "");
 }
 
 function normalizeFileName(value: string): string {
@@ -63,11 +68,15 @@ function normalizeParsedItem(item: ParsedFinancialImportItem, fallbackSequence: 
     && !ZERO_MONEY_PATTERN.test(item.signedAmount);
   const hasValidType = FINANCIAL_IMPORT_ITEM_TYPES.includes(item.type);
   const rawDescription = item.description?.trim() || null;
-  const hasValidDescription = rawDescription === null
+  const hasPostgresSafeDescription = rawDescription === null || !rawDescription.includes("\u0000");
+  const hasValidDescriptionLength = rawDescription === null
     || Buffer.byteLength(rawDescription, "utf8") <= MAX_FINANCIAL_IMPORT_DESCRIPTION_BYTES;
-  const description = rawDescription === null
+  const safeDescription = rawDescription === null
     ? null
-    : truncateUtf8(rawDescription, MAX_FINANCIAL_IMPORT_DESCRIPTION_BYTES);
+    : sanitizePostgresText(rawDescription).trim() || null;
+  const description = safeDescription === null
+    ? null
+    : truncateUtf8(safeDescription, MAX_FINANCIAL_IMPORT_DESCRIPTION_BYTES);
   const rawCategoryId = item.categoryId ?? null;
   const rawSubcategoryId = item.subcategoryId ?? null;
   const hasValidCategory = rawCategoryId === null || UUID_PATTERN.test(rawCategoryId);
@@ -92,14 +101,15 @@ function normalizeParsedItem(item: ParsedFinancialImportItem, fallbackSequence: 
   if (!hasValidCategory || !hasValidSubcategory || !hasCompatibleReferences) {
     repairableReasons.push("A categoria ou subcategoria da movimentação é inválida.");
   }
-  if (!hasValidDescription) repairableReasons.push("A descrição da movimentação deve ter no máximo 4.000 bytes.");
+  if (!hasPostgresSafeDescription) repairableReasons.push("A descrição da movimentação não pode conter caractere nulo.");
+  if (!hasValidDescriptionLength) repairableReasons.push("A descrição da movimentação deve ter no máximo 4.000 bytes.");
   invalidReasons.push(...nonRepairableReasons, ...repairableReasons);
 
   const isDuplicate = item.validationStatus === "duplicate";
   const parserMarkedInvalid = item.validationStatus === "invalid";
   const parserAllowsRepair = !parserMarkedInvalid || item.isRepairable === true;
   let validationStatus = item.validationStatus ?? "valid";
-  let errorMessage = item.errorMessage?.trim() || null;
+  let errorMessage = item.errorMessage ? sanitizePostgresText(item.errorMessage).trim() || null : null;
   if (isDuplicate) {
     validationStatus = "duplicate";
     if (invalidReasons.length > 0) {
@@ -158,6 +168,9 @@ function normalizeUpdateInput(input: UpdateFinancialImportItemInput): Required<U
     throw new FinancialImportError("Selecione uma categoria para usar a subcategoria.", 400);
   }
   const description = input.description?.trim() || null;
+  if (description?.includes("\u0000")) {
+    throw new FinancialImportError("A descrição da movimentação não pode conter caractere nulo.", 400);
+  }
   if (description !== null && Buffer.byteLength(description, "utf8") > MAX_FINANCIAL_IMPORT_DESCRIPTION_BYTES) {
     throw new FinancialImportError("A descrição da movimentação deve ter no máximo 4.000 bytes.", 400);
   }
