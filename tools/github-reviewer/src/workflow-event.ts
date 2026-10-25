@@ -66,9 +66,8 @@ export async function resolveWorkflowEvent(options: WorkflowEventOptions): Promi
     const workflowName = stringValue(workflow?.name) ?? stringValue(run?.name);
     const runEvent = stringValue(run?.event);
     const isCiRun = workflowName === 'CI' && runEvent === 'pull_request';
-    const isTitleRun = workflowName === 'PR title' && runEvent === 'pull_request';
     const isReviewSignalRun = workflowName === 'PR Review Signal' && runEvent === 'pull_request_review';
-    if (!isCiRun && !isTitleRun && !isReviewSignalRun) return skip('A execução concluída não corresponde ao CI, à validação de título ou ao sinal de revisão de um Pull Request.');
+    if (!isCiRun && !isReviewSignalRun) return skip('A execução concluída não corresponde ao CI ou ao sinal de revisão de um Pull Request.');
 
     const associatedPullRequests = run?.pull_requests;
     if (!Array.isArray(associatedPullRequests) || associatedPullRequests.length !== 1) {

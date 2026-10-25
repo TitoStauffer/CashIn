@@ -15,7 +15,9 @@ on:
 permissions: {}
 
 concurrency:
-  group: codex-agent-orchestration-${{ github.event.workflow_run.pull_requests[0].number || inputs.pr_number || github.event.workflow_run.head_branch || github.run_id }}
+  # App-authored checklist edits complete a maintenance-only CI run. Give those
+  # discarded signals a unique group so they cannot cancel the delivery run.
+  group: codex-agent-orchestration-${{ github.event_name == 'workflow_run' && github.event.workflow_run.actor.login == vars.CASHIN_APP_BOT_LOGIN && github.run_id || github.event.workflow_run.pull_requests[0].number || inputs.pr_number || github.event.workflow_run.head_branch || github.run_id }}
   cancel-in-progress: true
 
 jobs:

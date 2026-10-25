@@ -4,7 +4,6 @@ import test from 'node:test';
 
 const mergeReadinessWorkflow = await readFile(new URL('../../../.github/workflows/merge-readiness.yml', import.meta.url), 'utf8');
 const reviewSignalWorkflow = await readFile(new URL('../../../.github/workflows/pr-review-signal.yml', import.meta.url), 'utf8');
-const titleWorkflow = await readFile(new URL('../../../.github/workflows/pr-title.yml', import.meta.url), 'utf8');
 const ciWorkflow = await readFile(new URL('../../../.github/workflows/ci.yml', import.meta.url), 'utf8');
 const orchestrationWorkflow = await readFile(new URL('../../../.github/workflows/agent-orchestration.yml', import.meta.url), 'utf8');
 
@@ -20,17 +19,19 @@ test('serializes merge-readiness publications for the same pull request', () => 
 
 test('sequences PR metadata, implementation checks, SonarQube and agent orchestration', () => {
   assert.match(ciWorkflow, /^  pr-title:\s*$/m);
-  assert.match(ciWorkflow, /^  automation-tools:\s*\r?\n(?:\s+#.*\r?\n)*\s+name: GitHub Reviewer\s*\r?\n\s+needs: pr-title/m);
-  assert.match(ciWorkflow, /^  api:\s*\n\s+name: API\s*\n\s+needs: pr-title/m);
-  assert.match(ciWorkflow, /^  web:\s*\n\s+name: Web\s*\n\s+needs: pr-title/m);
+  assert.match(ciWorkflow, /^  automation-tools:\s*\r?\n(?:\s+#.*\r?\n)*\s+name: .*Checklist maintenance \/ GitHub Reviewer.*GitHub Reviewer.*\r?\n\s+needs: pr-title/m);
+  assert.match(ciWorkflow, /^  api:\s*\r?\n\s+name: .*Checklist maintenance \/ API.*'API'.*\r?\n\s+needs: pr-title/m);
+  assert.match(ciWorkflow, /^  web:\s*\r?\n\s+name: .*Checklist maintenance \/ Web.*'Web'.*\r?\n\s+needs: pr-title/m);
   assert.match(ciWorkflow, /^  sonarqube:[\s\S]*?^\s+needs: \[api, web, automation-tools\]\s*$/m);
   assert.match(orchestrationWorkflow, /^\s+workflows: \[CI\]\s*$/m);
   assert.doesNotMatch(orchestrationWorkflow, /workflows: \[[^\]]*PR title/);
   assert.match(orchestrationWorkflow, /^\s+cancel-in-progress:\s*true\s*$/m);
-  assert.match(ciWorkflow, /types:\s*\[opened, reopened, synchronize, ready_for_review\]/);
-  assert.doesNotMatch(ciWorkflow, /types:\s*\[[^\]]*edited/);
-  assert.match(titleWorkflow, /types:\s*\[edited\]/);
-  assert.match(mergeReadinessWorkflow, /workflows:\s*\[CI, PR title, PR Review Signal\]/);
+  assert.match(ciWorkflow, /types:\s*\[opened, edited, reopened, synchronize, ready_for_review\]/);
+  assert.match(ciWorkflow, /Checklist maintenance \/ API/);
+  assert.match(ciWorkflow, /Checklist maintenance \/ Web/);
+  assert.match(ciWorkflow, /Checklist maintenance \/ SonarQube/);
+  assert.match(orchestrationWorkflow, /workflow_run\.actor\.login == vars\.CASHIN_APP_BOT_LOGIN && github\.run_id/);
+  assert.match(mergeReadinessWorkflow, /workflows:\s*\[CI, PR Review Signal\]/);
 });
 
 test('formal review relay listens to review changes and has no permissions or privileged steps', () => {
