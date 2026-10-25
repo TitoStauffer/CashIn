@@ -154,8 +154,19 @@ test('fails closed when changed source context exceeds the supported byte limit'
   );
 });
 
+test('fails closed when cumulative changed source context exceeds the supported byte limit', async () => {
+  await assert.rejects(
+    loadAgentReviewInputs(createFetch({
+      files: [{ filename: 'src/example.ts', status: 'modified' }, { filename: 'src/removed.ts', status: 'removed' }],
+      source: 'x'.repeat(300_000),
+      sources: { [`${baseSha}:src/removed.ts`]: 'x'.repeat(200_001) },
+    }), 'owner/repo', 7, { head: { sha: headSha }, base: { sha: baseSha } }, 'token'),
+    /supported review context size/,
+  );
+});
+
 for (const totalBytes of [499_999, 500_000, 500_001]) {
-  test(`enforces the cumulative UTF-8 source boundary at ${totalBytes} bytes across changed, removed and dependency files`, async () => {
+  test(`enforces the UTF-8 source boundary at ${totalBytes} bytes while preserving every changed file`, async () => {
     const source = "import { value } from './helper.js';\n";
     const removed = 'á'.repeat(100_000);
     const dependency = 'x'.repeat(totalBytes - Buffer.byteLength(source, 'utf8') - Buffer.byteLength(removed, 'utf8'));
@@ -170,13 +181,13 @@ for (const totalBytes of [499_999, 500_000, 500_001]) {
       sources: { [`${baseSha}:src/removed.ts`]: removed, 'src/helper.ts': dependency },
     }), 'owner/repo', 7, { head: { sha: headSha }, base: { sha: baseSha } }, 'token');
 
-    if (totalBytes > 500_000) {
-      await assert.rejects(pending, /supported review context size/);
-    } else {
-      const inputs = await pending;
-      assert.deepEqual(inputs.sourceFiles, expected);
-      assert.equal(inputs.sourceFiles.reduce((size, file) => size + Buffer.byteLength(file.content, 'utf8'), 0), totalBytes);
-    }
+    const inputs = await pending;
+    const expectedFiles = totalBytes > 500_000 ? expected.slice(0, 2) : expected;
+    assert.deepEqual(inputs.sourceFiles, expectedFiles);
+    assert.equal(
+      inputs.sourceFiles.reduce((size, file) => size + Buffer.byteLength(file.content, 'utf8'), 0),
+      totalBytes > 500_000 ? Buffer.byteLength(source, 'utf8') + Buffer.byteLength(removed, 'utf8') : totalBytes,
+    );
   });
 }
 
