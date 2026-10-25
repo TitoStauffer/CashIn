@@ -67,7 +67,9 @@ jobs:
         run: echo "PR metadata validation is not applicable to a master push."
 
   automation-tools:
-    name: Automation Tools
+    # Keep the historical check context during rollout because privileged
+    # workflow_run jobs execute the trusted version from master.
+    name: GitHub Reviewer
     needs: pr-title
     if: github.event_name != 'pull_request' || github.event.action != 'edited' || github.actor != vars.CASHIN_APP_BOT_LOGIN
     runs-on: ubuntu-24.04

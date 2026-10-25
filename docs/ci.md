@@ -1,14 +1,14 @@
 # Integração contínua (GitHub Actions)
 
-O workflow `.github/workflows/ci.yml` valida metadados do PR, API, Web, ferramentas de automação e SonarQube em todo Pull Request para `master` e em todo push para `master`. A ordem é determinística: `PR title` → `API`/`Web`/`Automation Tools` → `SonarQube`. Somente a conclusão bem-sucedida do workflow completo aciona os agentes.
+O workflow `.github/workflows/ci.yml` valida metadados do PR, API, Web, ferramentas de automação e SonarQube em todo Pull Request para `master` e em todo push para `master`. A ordem é determinística: `PR title` → `API`/`Web`/`GitHub Reviewer` → `SonarQube`. Somente a conclusão bem-sucedida do workflow completo aciona os agentes.
 
 | Job | Diretório | Passos (comandos já existentes no projeto) |
 | --- | --- | --- |
 | `PR title` | evento do GitHub | Valida o padrão `[DEV-123] - título`, a chave da branch e a correspondência entre as duas chaves |
-| `Automation Tools` | `tools/github-reviewer` | Depende de `PR title`; instala, compila e executa os testes da infraestrutura de publicação, agentes e Merge Readiness |
+| `GitHub Reviewer` | `tools/github-reviewer` | Depende de `PR title`; instala, compila e executa os testes da infraestrutura de publicação, agentes e Merge Readiness. O nome histórico é preservado durante o rollout dos consumidores privilegiados. |
 | `API` | `apps/api` | Depende de `PR title`; `npm ci` → `npm run typecheck` → espera do PostgreSQL → `npm run test:coverage` (unitários + integração, uma vez) → checagem de testes pulados → reescrita dos caminhos LCOV → upload do artefato `api-coverage` (7 dias) → `npm run build` |
 | `Web` | `apps/web` | Depende de `PR title`; `npm ci` → `npm run lint` → `npm run test:coverage` → reescrita dos caminhos LCOV → upload do artefato `web-coverage` (7 dias) → `npm run build` (o script roda `tsc -b` e depois `vite build`) |
-| `SonarQube` | raiz do repositório | Depende de `API`, `Web` e `Automation Tools`; baixa os dois LCOV; analisa PRs do próprio repositório e pushes em `master`; aguarda o Quality Gate e falha se ele reprovar |
+| `SonarQube` | raiz do repositório | Depende de `API`, `Web` e `GitHub Reviewer`; baixa os dois LCOV; analisa PRs do próprio repositório e pushes em `master`; aguarda o Quality Gate e falha se ele reprovar |
 
 ## Decisões
 
@@ -38,7 +38,7 @@ O workflow `.github/workflows/ci.yml` valida metadados do PR, API, Web, ferramen
 Em *Settings → Rules → Rulesets* (ou *Branches → Branch protection rules*), para a branch `master`:
 
 1. Exigir Pull Request antes do merge.
-2. Exigir os status checks **`PR title`**, **`API`**, **`Web`**, **`Automation Tools`**, **`SonarQube`**, **`SonarCloud Code Analysis`** e **`Merge Readiness`**. Eles só aparecem para seleção depois da primeira execução do workflow no repositório.
+2. Exigir os status checks **`PR title`**, **`API`**, **`Web`**, **`GitHub Reviewer`**, **`SonarQube`**, **`SonarCloud Code Analysis`** e **`Merge Readiness`**. Eles só aparecem para seleção depois da primeira execução do workflow no repositório.
 3. Marcar "Require branches to be up to date before merging" (recomendado).
 4. Bloquear force push e exclusão da branch (recomendado).
 

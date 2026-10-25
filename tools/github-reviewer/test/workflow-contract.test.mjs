@@ -19,7 +19,7 @@ test('supersedes obsolete merge-readiness evaluations for the same pull request'
 
 test('sequences PR metadata, implementation checks, SonarQube and agent orchestration', () => {
   assert.match(ciWorkflow, /^  pr-title:\s*$/m);
-  assert.match(ciWorkflow, /^  automation-tools:\s*\n\s+name: Automation Tools\s*\n\s+needs: pr-title/m);
+  assert.match(ciWorkflow, /^  automation-tools:\s*\r?\n(?:\s+#.*\r?\n)*\s+name: GitHub Reviewer\s*\r?\n\s+needs: pr-title/m);
   assert.match(ciWorkflow, /^  api:\s*\n\s+name: API\s*\n\s+needs: pr-title/m);
   assert.match(ciWorkflow, /^  web:\s*\n\s+name: Web\s*\n\s+needs: pr-title/m);
   assert.match(ciWorkflow, /^  sonarqube:[\s\S]*?^\s+needs: \[api, web, automation-tools\]\s*$/m);

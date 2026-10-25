@@ -119,9 +119,19 @@ for (const [scenario, reviewerChecks] of [
   test(`blocks readiness when Automation Tools is ${scenario}`, async () => {
     const result = await fixture({ checks: [...checks.filter(({ name }) => name !== 'Automation Tools'), ...reviewerChecks] }).evaluate();
     assert.equal(result.status, 'BLOCKED');
-    assert.ok(result.reasons.some((reason) => reason.startsWith('Check obrigatório Automation Tools:')));
+    assert.ok(result.reasons.some((reason) => /^Check obrigatório (?:Automation Tools|GitHub Reviewer):/.test(reason)));
   });
 }
+
+test('accepts the legacy GitHub Reviewer context during the trusted-workflow rollout', async () => {
+  const legacyChecks = checks.map((check) => check.name === 'Automation Tools'
+    ? { ...check, name: 'GitHub Reviewer' }
+    : check);
+  const result = await fixture({ checks: legacyChecks }).evaluate();
+
+  assert.deepEqual(result.evidence.requiredCheckResults.find(({ name }) => name === 'GitHub Reviewer')?.state, 'SUCCESS');
+  assert.ok(!result.reasons.some((reason) => reason.startsWith('Check obrigatório GitHub Reviewer:')));
+});
 
 test('returns READY_TO_MERGE only when protections, checks, formal review and structured reports are current', async () => {
   const subject = fixture();
