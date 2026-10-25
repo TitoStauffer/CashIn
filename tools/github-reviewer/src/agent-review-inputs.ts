@@ -83,9 +83,12 @@ async function loadChangedSourceFiles(
 
   const sourceFiles: AgentReviewInputs['sourceFiles'] = [];
   let totalBytes = 0;
+  const changedFileCount = files.length;
   const pendingFiles = files.map((file) => ({ ...file, filename: stringValue(file.filename), status: stringValue(file.status) }));
   const seen = new Set(pendingFiles.map((file) => `${file.status === 'removed' ? 'base' : 'head'}:${file.filename}`));
-  for (const file of pendingFiles) {
+  for (let index = 0; index < pendingFiles.length; index += 1) {
+    const file = pendingFiles[index];
+    const isChangedFile = index < changedFileCount;
     const path = stringValue(file.filename);
     const status = stringValue(file.status);
     if (!path || !status) throw new Error('GitHub returned incomplete changed-file metadata.');
@@ -102,10 +105,14 @@ async function loadChangedSourceFiles(
     }
     const content = Buffer.from(payload.content.replace(/\s/g, ''), 'base64').toString('utf8');
     if (content.includes('\0')) throw new Error(`Pull Request includes a binary file that cannot be reviewed as source: ${path}.`);
-    totalBytes += Buffer.byteLength(content, 'utf8');
-    if (totalBytes > MAX_SOURCE_BYTES) throw new Error('Pull Request source files exceed the supported review context size.');
+    const contentBytes = Buffer.byteLength(content, 'utf8');
+    if (totalBytes + contentBytes > MAX_SOURCE_BYTES) {
+      if (isChangedFile) throw new Error('Pull Request source files exceed the supported review context size.');
+      continue;
+    }
+    totalBytes += contentBytes;
     sourceFiles.push({ path, revision, content });
-    if (sourceFiles.length <= files.length && /\.[cm]?tsx?$/.test(path)) {
+    if (isChangedFile && /\.[cm]?tsx?$/.test(path)) {
       for (const match of content.matchAll(/\bfrom\s+['"](\.[^'"]+\.js)['"]/g)) {
         const dependency = posix.normalize(posix.join(posix.dirname(path), match[1].replace(/\.js$/, '.ts')));
         const key = `${revision}:${dependency}`;
