@@ -24,8 +24,7 @@ jobs:
     if: >-
       (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/master') ||
       (github.event_name == 'workflow_run' && github.event.workflow_run.name == 'CI' &&
-      github.event.workflow_run.event == 'pull_request' && github.event.workflow_run.conclusion == 'success' &&
-      github.event.workflow_run.actor.login != vars.CASHIN_APP_BOT_LOGIN)
+      github.event.workflow_run.event == 'pull_request' && github.event.workflow_run.conclusion == 'success')
     runs-on: [self-hosted, Windows, X64, codex-plus]
     defaults:
       run:

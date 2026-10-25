@@ -26,6 +26,7 @@ test('sequences PR metadata, implementation checks, SonarQube and agent orchestr
   assert.match(ciWorkflow, /^  sonarqube:[\s\S]*?^\s+needs: \[api, web, automation-tools\]\s*$/m);
   assert.match(orchestrationWorkflow, /^\s+workflows: \[CI\]\s*$/m);
   assert.doesNotMatch(orchestrationWorkflow, /workflows: \[[^\]]*PR title/);
+  assert.doesNotMatch(orchestrationWorkflow, /workflow_run\.actor\.login != vars\.CASHIN_APP_BOT_LOGIN/);
   assert.match(orchestrationWorkflow, /^\s+cancel-in-progress:\s*true\s*$/m);
   assert.match(ciWorkflow, /types:\s*\[opened, reopened, synchronize, ready_for_review\]/);
   assert.doesNotMatch(ciWorkflow, /types:\s*\[[^\]]*edited/);
@@ -36,8 +37,9 @@ test('sequences PR metadata, implementation checks, SonarQube and agent orchestr
   assert.match(titleWorkflow, /statuses:\s*write/);
   assert.match(titleWorkflow, /statuses\/\$\{HEAD_SHA\}/);
   assert.match(titleWorkflow, /context='PR title'/);
-  assert.match(titleWorkflow, /actions\/runs\/\$\{run_id\}\/rerun/);
-  assert.doesNotMatch(titleWorkflow, /actions\/checkout/);
+  assert.match(titleWorkflow, /node dist\/ci-recovery-cli\.js/);
+  assert.match(titleWorkflow, /ref:\s*master/);
+  assert.match(titleWorkflow, /persist-credentials:\s*false/);
   assert.match(ciWorkflow, /gh api "repos\/\$\{GITHUB_REPOSITORY\}\/pulls\/\$\{PR_NUMBER\}"/);
   assert.match(mergeReadinessWorkflow, /workflows:\s*\[CI, PR title, PR Review Signal\]/);
 });
