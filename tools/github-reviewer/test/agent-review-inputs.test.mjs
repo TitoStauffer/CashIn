@@ -118,6 +118,29 @@ test('loads all 32 changed files at the supported boundary without omitting sour
   assert.deepEqual(inputs.sourceFiles.map(({ path }) => path), files.map(({ filename }) => filename));
 });
 
+test('keeps all 23 changed files when auxiliary dependencies exceed the byte budget', async () => {
+  const files = Array.from({ length: 23 }, (_, index) => ({ filename: `src/changed-${index}.ts`, status: 'modified' }));
+  const sources = Object.fromEntries(files.flatMap(({ filename }, index) => [
+    [filename, `import { dependency } from './dependency-${index}.js';\n${'x'.repeat(12_900)}`],
+    [`src/dependency-${index}.ts`, `export const dependency = '${'y'.repeat(9_960)}';`],
+  ]));
+
+  const inputs = await loadAgentReviewInputs(
+    createFetch({ files, sources }),
+    'owner/repo',
+    7,
+    { head: { sha: headSha }, base: { sha: baseSha } },
+    'token',
+  );
+  const changedPaths = new Set(files.map(({ filename }) => filename));
+  const includedChangedPaths = inputs.sourceFiles.filter(({ path }) => changedPaths.has(path)).map(({ path }) => path);
+  const dependencyCount = inputs.sourceFiles.length - includedChangedPaths.length;
+
+  assert.deepEqual(includedChangedPaths, files.map(({ filename }) => filename));
+  assert.equal(dependencyCount > 0 && dependencyCount < files.length, true);
+  assert.equal(inputs.sourceFiles.reduce((total, file) => total + Buffer.byteLength(file.content, 'utf8'), 0) <= 500_000, true);
+});
+
 test('fails closed when changed source context exceeds the supported file limit', async () => {
   const files = Array.from({ length: 33 }, (_, index) => ({ filename: `src/file-${index}.ts`, status: 'modified' }));
   await assert.rejects(
