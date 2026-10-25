@@ -2,7 +2,7 @@
 
 O workflow `.github/workflows/ci.yml` valida metadados do PR, API, Web, ferramentas de automação e SonarQube em Pull Requests para `master` e em pushes para `master`. A ordem é determinística: `PR title` → `API`/`Web`/`GitHub Reviewer` → `SonarQube`. Somente a conclusão bem-sucedida do workflow completo aciona os agentes.
 
-Edições humanas de título ou corpo reiniciam o CI completo. Isso permite que a correção de um título inválido recupere o fluxo sem exigir um novo commit. Edições de checklist feitas pelo GitHub App executam somente `PR title`; os demais jobs usam contextos separados com o prefixo `Checklist maintenance /`, ficam pulados e não substituem os checks obrigatórios. A conclusão desse CI de manutenção também recebe um grupo de concorrência isolado e não cancela uma orquestração ativa.
+Edições de título ou corpo executam o workflow confiável e leve `.github/workflows/pr-title.yml`. Ele revalida os metadados sem checkout do código do PR. Quando a edição é humana, solicita a repetição da execução de CI associada ao mesmo HEAD; o job de título do CI consulta os metadados atuais, permitindo recuperar um PR cujo título inicial era inválido. Edições de checklist feitas pelo GitHub App não repetem o CI, não criam checks de API/Web pulados e não cancelam a orquestração ativa.
 
 | Job | Diretório | Passos (comandos já existentes no projeto) |
 | --- | --- | --- |
@@ -18,7 +18,7 @@ Edições humanas de título ou corpo reiniciam o CI completo. Isso permite que 
 - **Actions fixadas por SHA de commit**, com a versão em comentário: `actions/checkout` v7.0.1 e `actions/setup-node` v7.0.0. Os SHAs foram conferidos com `git ls-remote` nas tags oficiais.
 - **Cache do npm** pelo `actions/setup-node`, com chave baseada no `package-lock.json` de cada app.
 - **`GITHUB_TOKEN` só com `contents: read`.** O checkout usa `persist-credentials: false`, então o token não fica salvo no repositório clonado.
-- **Sem execuções obsoletas:** um novo push ou uma edição humana no mesmo PR cancela a execução anterior. Edições do checklist feitas pelo GitHub App executam apenas a validação de metadados, usam contextos de manutenção que não substituem os checks obrigatórios e não cancelam nem reiniciam os agentes. O push em `master` roda novamente para validar o resultado do merge.
+- **Sem execuções obsoletas:** um novo push no mesmo PR cancela a execução anterior. Edições humanas repetem o CI do HEAD atual; se já houver uma execução ativa, sua conclusão fornece o sinal atualizado. Edições do checklist feitas pelo GitHub App executam apenas a validação de metadados e não reiniciam os agentes. O push em `master` roda novamente para validar o resultado do merge.
 - **Segredo limitado ao scanner.** `SONAR_TOKEN` só é exposto ao passo que envia a análise ao SonarQube Cloud; os demais jobs não recebem secrets.
 
 ## PostgreSQL e testes de integração

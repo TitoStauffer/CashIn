@@ -84,25 +84,6 @@ test('uses latest rerun results for summaries and exposes only current-SHA requi
   assert.deepEqual(summarizeCheckRunEvidence(runs, headSha).map(({ name, conclusion }) => ({ name, conclusion })), [{ name: 'API', conclusion: 'success' }]);
 });
 
-test('ignores checklist maintenance contexts in agent evidence', () => {
-  const runs = [
-    { name: 'API', head_sha: headSha, status: 'completed', conclusion: 'success', started_at: '2026-10-21T10:00:00Z' },
-    { name: 'Web', head_sha: headSha, status: 'completed', conclusion: 'success', started_at: '2026-10-21T10:00:00Z' },
-    { name: 'GitHub Reviewer', app: { id: 15368 }, head_sha: headSha, status: 'completed', conclusion: 'success', started_at: '2026-10-21T10:00:00Z' },
-    { name: 'SonarQube', head_sha: headSha, status: 'completed', conclusion: 'success', started_at: '2026-10-21T10:00:00Z' },
-    { name: 'SonarCloud Code Analysis', head_sha: headSha, status: 'completed', conclusion: 'success', started_at: '2026-10-21T10:00:00Z' },
-    { name: 'Checklist maintenance / API', head_sha: headSha, status: 'completed', conclusion: 'skipped', started_at: '2026-10-21T11:00:00Z' },
-    { name: 'Checklist maintenance / Web', head_sha: headSha, status: 'completed', conclusion: 'skipped', started_at: '2026-10-21T11:00:00Z' },
-    { name: 'Checklist maintenance / GitHub Reviewer', app: { id: 15368 }, head_sha: headSha, status: 'completed', conclusion: 'skipped', started_at: '2026-10-21T11:00:00Z' },
-    { name: 'Checklist maintenance / SonarQube', head_sha: headSha, status: 'completed', conclusion: 'skipped', started_at: '2026-10-21T11:00:00Z' },
-  ];
-
-  assert.deepEqual(summarizeAgentChecks(runs, headSha), {
-    api: 'PASSED', web: 'PASSED', githubReviewer: 'PASSED', sonarQube: 'PASSED', sonarCloud: 'PASSED',
-  });
-  assert.equal(summarizeCheckRunEvidence(runs, headSha).some(({ name }) => name.startsWith('Checklist maintenance /')), false);
-});
-
 test('requires a current successful Automation Tools check in the prerequisite summary', () => {
   const reviewer = { name: 'Automation Tools', app: { id: 15368 }, head_sha: headSha, status: 'completed', conclusion: 'success' };
   for (const [runs, expected] of [

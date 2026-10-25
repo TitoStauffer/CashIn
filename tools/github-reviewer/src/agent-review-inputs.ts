@@ -3,14 +3,12 @@ import { posix } from 'node:path';
 import { requestGitHubApi, requestGitHubApiPages, requestGitHubText } from './github-api-client.js';
 import { ACTIONS_APP_ID, loadActionsEvidence, loadCiSnapshots, unavailableActionsEvidence, type AgentActionsEvidence, type AgentCiSnapshot } from './agent-ci-evidence.js';
 
-const isChecklistMaintenanceCheck = (name: string): boolean => /^Checklist maintenance\s*\//i.test(name);
-
 const REQUIRED_AGENT_CHECKS = {
-  api: (name: string) => !isChecklistMaintenanceCheck(name) && /(^|\/\s*)api(\s|$)/i.test(name),
-  web: (name: string) => !isChecklistMaintenanceCheck(name) && /(^|\/\s*)web(\s|$)/i.test(name),
-  githubReviewer: (name: string) => !isChecklistMaintenanceCheck(name) && /(^|\/\s*)(?:automation tools|github reviewer)$/i.test(name),
-  sonarQube: (name: string) => !isChecklistMaintenanceCheck(name) && /sonarqube/i.test(name),
-  sonarCloud: (name: string) => !isChecklistMaintenanceCheck(name) && /sonarcloud code analysis/i.test(name),
+  api: (name: string) => /(^|\/\s*)api(\s|$)/i.test(name),
+  web: (name: string) => /(^|\/\s*)web(\s|$)/i.test(name),
+  githubReviewer: (name: string) => /(^|\/\s*)(?:automation tools|github reviewer)$/i.test(name),
+  sonarQube: (name: string) => /sonarqube/i.test(name),
+  sonarCloud: (name: string) => /sonarcloud code analysis/i.test(name),
 } as const;
 
 export interface AgentReviewInputs {

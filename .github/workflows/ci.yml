@@ -3,15 +3,16 @@ name: CI
 on:
   pull_request:
     branches: [master]
-    # Human metadata edits rerun the complete CI so a corrected title recovers
-    # a blocked PR. App checklist edits use maintenance-only check contexts.
-    types: [opened, edited, reopened, synchronize, ready_for_review]
+    # Body/title edits are handled by the lightweight PR title workflow. This
+    # prevents checklist maintenance from creating skipped CI check runs.
+    types: [opened, reopened, synchronize, ready_for_review]
   push:
     branches: [master]
 
 # Least privilege for GITHUB_TOKEN: the jobs only read the repository.
 permissions:
   contents: read
+  pull-requests: read
 
 # A new push to the same PR cancels the previous run; pushes to master always finish.
 concurrency:
@@ -37,9 +38,12 @@ jobs:
       - name: Validate PR title and branch key
         if: github.event_name == 'pull_request'
         env:
-          PR_TITLE: ${{ github.event.pull_request.title }}
-          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
+          metadata=$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}")
+          PR_TITLE=$(jq -r '.title' <<<"${metadata}")
+          HEAD_REF=$(jq -r '.head.ref' <<<"${metadata}")
           expected='[DEV-123] - título objetivo do ticket'
           pattern='^\[(DEV-[0-9]+)\] - [^[:space:]](.*[^[:space:]])?$'
 
@@ -71,9 +75,8 @@ jobs:
   automation-tools:
     # Keep the historical check context during rollout because privileged
     # workflow_run jobs execute the trusted version from master.
-    name: ${{ github.event_name == 'pull_request' && github.event.action == 'edited' && github.actor == vars.CASHIN_APP_BOT_LOGIN && 'Checklist maintenance / GitHub Reviewer' || 'GitHub Reviewer' }}
+    name: GitHub Reviewer
     needs: pr-title
-    if: github.event_name != 'pull_request' || github.event.action != 'edited' || github.actor != vars.CASHIN_APP_BOT_LOGIN
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     defaults:
@@ -100,9 +103,8 @@ jobs:
         run: npm test
 
   api:
-    name: ${{ github.event_name == 'pull_request' && github.event.action == 'edited' && github.actor == vars.CASHIN_APP_BOT_LOGIN && 'Checklist maintenance / API' || 'API' }}
+    name: API
     needs: pr-title
-    if: github.event_name != 'pull_request' || github.event.action != 'edited' || github.actor != vars.CASHIN_APP_BOT_LOGIN
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     defaults:
@@ -206,9 +208,8 @@ jobs:
         run: npm run build
 
   web:
-    name: ${{ github.event_name == 'pull_request' && github.event.action == 'edited' && github.actor == vars.CASHIN_APP_BOT_LOGIN && 'Checklist maintenance / Web' || 'Web' }}
+    name: Web
     needs: pr-title
-    if: github.event_name != 'pull_request' || github.event.action != 'edited' || github.actor != vars.CASHIN_APP_BOT_LOGIN
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     defaults:
@@ -256,7 +257,7 @@ jobs:
         run: npm run build
 
   sonarqube:
-    name: ${{ github.event_name == 'pull_request' && github.event.action == 'edited' && github.actor == vars.CASHIN_APP_BOT_LOGIN && 'Checklist maintenance / SonarQube' || 'SonarQube' }}
+    name: SonarQube
     needs: [api, web, automation-tools]
     # Secrets are not available to PRs from forks; skip instead of failing.
     if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
