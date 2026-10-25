@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
+import { gunzipSync } from 'node:zlib';
 import { loadAgentReviewInputs, summarizeAgentChecks, summarizeCheckRunEvidence } from '../dist/agent-review-inputs.js';
 import { requestGitHubApiPages } from '../dist/github-api-client.js';
 
@@ -142,28 +144,63 @@ test('keeps all 23 changed files when auxiliary dependencies exceed the byte bud
   assert.equal(inputs.sourceFiles.reduce((total, file) => total + Buffer.byteLength(file.content, 'utf8'), 0) <= 500_000, true);
 });
 
-test('keeps a verifiable snapshot proving that every DEV-51 PR file was included', async () => {
-  const evidence = JSON.parse(await readFile(new URL('./fixtures/pr-39-context-evidence.json', import.meta.url), 'utf8'));
-  const includedByPath = new Map(evidence.includedSourceFiles.map((file) => [file.path, file]));
-  const expectedPaths = evidence.changedFiles.map((file) => file.path);
-  const includedChangedPaths = expectedPaths.filter((path) => includedByPath.has(path));
-  const includedBytes = evidence.includedSourceFiles.reduce((total, file) => total + file.bytes, 0);
+test('replays the authenticated DEV-51 snapshot and includes every changed PR file', async () => {
+  const packed = await readFile(new URL('./fixtures/pr-39-source-snapshot.json.gz.base64', import.meta.url), 'utf8');
+  const snapshot = JSON.parse(gunzipSync(Buffer.from(packed.trim(), 'base64')).toString('utf8'));
+  const decodedSources = new Map();
+  for (const source of [...snapshot.sourceFiles, snapshot.repositoryInstructions]) {
+    const content = Buffer.from(source.contentBase64, 'base64');
+    const gitBlobSha = createHash('sha1').update(`blob ${content.length}\0`).update(content).digest('hex');
+    assert.equal(gitBlobSha, source.gitBlobSha, `Git blob identity mismatch for ${source.path}`);
+    assert.equal(createHash('sha256').update(content).digest('hex'), source.sha256, `Content hash mismatch for ${source.path}`);
+    assert.equal(content.length, source.bytes, `Byte size mismatch for ${source.path}`);
+    decodedSources.set(`${source.revision === 'base' ? snapshot.baseSha : snapshot.headSha}:${source.path}`, content.toString('utf8'));
+  }
 
-  assert.equal(evidence.repository, 'TitoStauffer/CashIn');
-  assert.equal(evidence.pullRequestNumber, 39);
-  assert.match(evidence.baseSha, /^[a-f0-9]{40}$/);
-  assert.match(evidence.headSha, /^[a-f0-9]{40}$/);
-  assert.equal(new Set(expectedPaths).size, 23);
-  assert.deepEqual(includedChangedPaths, expectedPaths);
-  assert.deepEqual(evidence.summary, {
-    expectedChangedFiles: 23,
-    includedChangedFiles: 23,
-    includedSourceFiles: evidence.includedSourceFiles.length,
-    includedSourceBytes: includedBytes,
-    omittedChangedFiles: 0,
-  });
-  assert.equal(includedBytes <= evidence.limits.maximumSourceBytes, true);
-  assert.equal(evidence.includedSourceFiles.every((file) => /^[a-f0-9]{64}$/.test(file.sha256)), true);
+  const fetchImpl = async (url, options = {}) => {
+    const parsed = new URL(url);
+    const path = parsed.pathname;
+    let payload;
+    let text = false;
+    if (path.endsWith(`/pulls/${snapshot.pullRequestNumber}`) && options.headers?.Accept === 'application/vnd.github.v3.diff') {
+      payload = 'authenticated DEV-51 snapshot replay';
+      text = true;
+    } else if (path.endsWith(`/commits/${snapshot.headSha}/check-runs`)) {
+      payload = { check_runs: [] };
+    } else if (path.endsWith('/contents/AGENTS.md')) {
+      payload = { encoding: 'base64', content: snapshot.repositoryInstructions.contentBase64 };
+    } else if (path.endsWith(`/pulls/${snapshot.pullRequestNumber}/files`)) {
+      payload = snapshot.changedFiles.map(({ path: filename, status }) => ({ filename, status }));
+    } else if (path.includes('/contents/')) {
+      const sourcePath = decodeURIComponent(path.split('/contents/')[1]);
+      const content = decodedSources.get(`${parsed.searchParams.get('ref')}:${sourcePath}`);
+      if (content === undefined) return new Response('{}', { status: 404 });
+      payload = { encoding: 'base64', content: encoded(content) };
+    } else {
+      return new Response('{}', { status: 404 });
+    }
+    return new Response(text ? payload : JSON.stringify(payload), { status: 200 });
+  };
+
+  const inputs = await loadAgentReviewInputs(fetchImpl, snapshot.repository, snapshot.pullRequestNumber, {
+    head: { sha: snapshot.headSha },
+    base: { sha: snapshot.baseSha },
+  }, 'token');
+  const actual = inputs.sourceFiles.map(({ path, revision, content }) => ({
+    path,
+    revision,
+    bytes: Buffer.byteLength(content, 'utf8'),
+    sha256: createHash('sha256').update(content).digest('hex'),
+  }));
+
+  assert.equal(snapshot.repository, 'TitoStauffer/CashIn');
+  assert.equal(snapshot.pullRequestNumber, 39);
+  assert.equal(new Set(snapshot.changedFiles.map(({ path }) => path)).size, 23);
+  assert.deepEqual(actual, snapshot.expectedIncludedSourceFiles);
+  assert.deepEqual(
+    actual.slice(0, snapshot.changedFiles.length).map(({ path }) => path),
+    snapshot.changedFiles.map(({ path }) => path),
+  );
 });
 
 test('fails closed when changed source context exceeds the supported file limit', async () => {
