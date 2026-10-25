@@ -1,12 +1,13 @@
 name: PR title
 
 on:
-  pull_request:
+  pull_request_target: # zizmor: ignore[dangerous-triggers] — trusted default-branch workflow; it never checks out or executes PR code.
     branches: [master]
-    # "edited" re-runs the check when only the title changes.
-    types: [opened, edited, reopened, synchronize, ready_for_review]
+    # Full CI validates the title for code changes. This workflow handles only
+    # metadata edits, including the App's approval-checkbox synchronization.
+    types: [edited]
 
-# The check only reads event data; the token needs no permissions.
+# Permissions are assigned per job. PR-controlled source is never checked out.
 permissions: {}
 
 concurrency:
@@ -15,14 +16,15 @@ concurrency:
 
 jobs:
   pr-title:
-    name: PR title
+    name: Validate PR metadata
     runs-on: ubuntu-24.04
     timeout-minutes: 5
+    permissions:
+      statuses: write
 
     steps:
       - name: Validate PR title (AGENTS.md)
-        # Title and branch go through env vars, never interpolated into the script,
-        # so a crafted title cannot inject shell commands.
+        id: validate
         env:
           PR_TITLE: ${{ github.event.pull_request.title }}
           HEAD_REF: ${{ github.event.pull_request.head.ref }}
@@ -32,6 +34,7 @@ jobs:
           pattern='^\[(DEV-[0-9]+)\] - [^[:space:]](.*[^[:space:]])?$'
 
           if [[ ! "${PR_TITLE}" =~ ${pattern} ]]; then
+            echo "description=Título fora do padrão do AGENTS.md." >> "${GITHUB_OUTPUT}"
             echo "::error title=Título fora do padrão::O título deve seguir o padrão do AGENTS.md: ${expected}"
             echo "Título recebido: ${PR_TITLE}"
             exit 1
@@ -40,14 +43,71 @@ jobs:
 
           branch_pattern='(^|/)(DEV-[0-9]+)(-|$)'
           if [[ ! "${HEAD_REF}" =~ ${branch_pattern} ]]; then
+            echo "description=Branch sem chave Jira compatível." >> "${GITHUB_OUTPUT}"
             echo "::error title=Branch sem chave do Jira::A branch '${HEAD_REF}' não contém a chave da issue (ex.: feature/DEV-123-descricao), como exige o AGENTS.md."
             exit 1
           fi
           branch_key="${BASH_REMATCH[2]}"
 
           if [[ "${title_key}" != "${branch_key}" ]]; then
+            echo "description=Chaves Jira divergentes no título e na branch." >> "${GITHUB_OUTPUT}"
             echo "::error title=Chave divergente::A chave do título (${title_key}) é diferente da chave da branch (${branch_key})."
             exit 1
           fi
 
+          echo "description=Título e branch válidos para ${title_key}." >> "${GITHUB_OUTPUT}"
           echo "Título válido para ${title_key}."
+
+      - name: Publish PR title status on the current HEAD
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          STATUS_STATE: ${{ steps.validate.outcome == 'success' && 'success' || 'failure' }}
+          STATUS_DESCRIPTION: ${{ steps.validate.outputs.description || 'Não foi possível validar o título do PR.' }}
+        shell: bash
+        run: |
+          gh api --method POST "repos/${GITHUB_REPOSITORY}/statuses/${HEAD_SHA}" \
+            -f state="${STATUS_STATE}" \
+            -f context='PR title' \
+            -f description="${STATUS_DESCRIPTION}" \
+            -f target_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+
+  recover-ci:
+    name: Recover CI after metadata edit
+    needs: pr-title
+    if: github.actor != vars.CASHIN_APP_BOT_LOGIN
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
+    permissions:
+      actions: write
+      contents: read
+
+    steps:
+      - name: Checkout trusted default branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: master
+          token: ${{ github.token }}
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "24.22.0"
+
+      - name: Install trusted recovery dependencies
+        working-directory: tools/github-reviewer
+        run: npm ci --fetch-timeout=15000 --fetch-retries=1
+
+      - name: Build trusted recovery tool
+        working-directory: tools/github-reviewer
+        run: npm run build
+
+      - name: Recover CI for current PR head
+        working-directory: tools/github-reviewer
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: node dist/ci-recovery-cli.js

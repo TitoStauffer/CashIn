@@ -5,7 +5,7 @@ on:
     branches: [master]
     types: [opened, edited, reopened, synchronize, ready_for_review]
   workflow_run:
-    workflows: [CI, PR Review Signal]
+    workflows: [CI, PR title, PR Review Signal]
     types: [completed]
   issue_comment:
     types: [created, edited]
@@ -20,6 +20,8 @@ permissions: {}
 
 concurrency:
   group: merge-readiness-${{ github.event.pull_request.number || github.event.issue.number || github.event.workflow_run.pull_requests[0].number || inputs.pr_number || github.event.workflow_run.head_sha || github.run_id }}
+  # Serialize writes to the canonical commit status. Cancelling a runner cannot
+  # revoke an HTTP status publication that is already in flight.
   cancel-in-progress: false
 
 jobs:

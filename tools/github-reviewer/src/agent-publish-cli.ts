@@ -4,6 +4,7 @@ import { GitHubReportPublisher } from './github-report-publisher.js';
 import type { AgentStageResult } from './agent-orchestrator.js';
 import { computeAgentContextHash, formatFormalReviewEvidence, latestCurrentFormalReview } from './agent-evidence.js';
 import { loadAgentReviewInputs } from './agent-review-inputs.js';
+import { syncApprovalCheckbox } from './approval-checklist.js';
 
 try {
   await main();
@@ -62,6 +63,7 @@ async function main(): Promise<void> {
       });
       await writeOutput('decision', result.decision);
       await writeOutput('commit_sha', result.commitSha);
+      await syncChecklist(credentials, repository, result, 'codeReview');
       process.stdout.write(`Published an inconclusive Code Review report for PR #${positivePrNumber()}; no formal review was submitted.\n`);
       return;
     }
@@ -93,6 +95,7 @@ async function main(): Promise<void> {
     });
     if (review.commit_id !== result.commitSha || review.state !== result.decision) throw new Error('GitHub returned a formal review for an unexpected SHA or decision.');
     }
+    await syncChecklist(credentials, repository, result, 'codeReview');
   } else if (mode === 'report') {
     const agentName = result.stage === 'qa' ? 'qa' : result.stage === 'qualityGate' ? 'qualityGate' : undefined;
     if (!agentName) throw new Error('Only QA and Quality Gate Coordinator publish reports through this step.');
@@ -105,6 +108,7 @@ async function main(): Promise<void> {
       reportMarkdown: result.reportMarkdown,
       contextHash: result.contextHash,
     });
+    if (agentName === 'qa') await syncChecklist(credentials, repository, result, 'qa');
   } else {
     throw new Error('AGENT_PUBLISH_MODE must be formalReview or report.');
   }
@@ -112,6 +116,25 @@ async function main(): Promise<void> {
   await writeOutput('decision', result.decision);
   await writeOutput('commit_sha', result.commitSha);
   process.stdout.write(`Published ${mode} for PR #${positivePrNumber()} at the expected SHA.\n`);
+}
+
+async function syncChecklist(
+  credentials: { appId: string; privateKey: string; owner: string; repository: string; installationId?: string; contextToken?: string },
+  repository: string,
+  result: AgentStageResult,
+  stage: 'codeReview' | 'qa',
+): Promise<void> {
+  if (!result.contextHash) throw new Error('Agent result context hash is unavailable.');
+  const changed = await syncApprovalCheckbox({
+    credentials,
+    repository,
+    pullRequestNumber: positivePrNumber(),
+    commitSha: result.commitSha,
+    contextHash: result.contextHash,
+    stage,
+    approved: result.decision === 'APPROVED',
+  });
+  process.stdout.write(`${stage} approval checkbox ${changed ? 'synchronized' : 'already synchronized'}.\n`);
 }
 
 function positivePrNumber(): number {

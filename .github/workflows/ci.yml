@@ -3,12 +3,16 @@ name: CI
 on:
   pull_request:
     branches: [master]
+    # Body/title edits are handled by the lightweight PR title workflow. This
+    # prevents checklist maintenance from creating skipped CI check runs.
+    types: [opened, reopened, synchronize, ready_for_review]
   push:
     branches: [master]
 
 # Least privilege for GITHUB_TOKEN: the jobs only read the repository.
 permissions:
   contents: read
+  pull-requests: read
 
 # A new push to the same PR cancels the previous run; pushes to master always finish.
 concurrency:
@@ -25,8 +29,54 @@ defaults:
     shell: bash
 
 jobs:
-  github-reviewer:
+  pr-title:
+    name: PR title
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+
+    steps:
+      - name: Validate PR title and branch key
+        if: github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          metadata=$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}")
+          PR_TITLE=$(jq -r '.title' <<<"${metadata}")
+          HEAD_REF=$(jq -r '.head.ref' <<<"${metadata}")
+          expected='[DEV-123] - título objetivo do ticket'
+          pattern='^\[(DEV-[0-9]+)\] - [^[:space:]](.*[^[:space:]])?$'
+
+          if [[ ! "${PR_TITLE}" =~ ${pattern} ]]; then
+            echo "::error title=Título fora do padrão::O título deve seguir o padrão do AGENTS.md: ${expected}"
+            echo "Título recebido: ${PR_TITLE}"
+            exit 1
+          fi
+          title_key="${BASH_REMATCH[1]}"
+
+          branch_pattern='(^|/)(DEV-[0-9]+)(-|$)'
+          if [[ ! "${HEAD_REF}" =~ ${branch_pattern} ]]; then
+            echo "::error title=Branch sem chave do Jira::A branch '${HEAD_REF}' não contém a chave da issue (ex.: feature/DEV-123-descricao), como exige o AGENTS.md."
+            exit 1
+          fi
+          branch_key="${BASH_REMATCH[2]}"
+
+          if [[ "${title_key}" != "${branch_key}" ]]; then
+            echo "::error title=Chave divergente::A chave do título (${title_key}) é diferente da chave da branch (${branch_key})."
+            exit 1
+          fi
+
+          echo "Título válido para ${title_key}."
+
+      - name: Skip PR metadata validation on master push
+        if: github.event_name == 'push'
+        run: echo "PR metadata validation is not applicable to a master push."
+
+  automation-tools:
+    # Keep the historical check context during rollout because privileged
+    # workflow_run jobs execute the trusted version from master.
     name: GitHub Reviewer
+    needs: pr-title
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     defaults:
@@ -54,6 +104,7 @@ jobs:
 
   api:
     name: API
+    needs: pr-title
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     defaults:
@@ -158,6 +209,7 @@ jobs:
 
   web:
     name: Web
+    needs: pr-title
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     defaults:
@@ -206,7 +258,7 @@ jobs:
 
   sonarqube:
     name: SonarQube
-    needs: [api, web]
+    needs: [api, web, automation-tools]
     # Secrets are not available to PRs from forks; skip instead of failing.
     if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-24.04

@@ -1,12 +1,16 @@
 # Integração contínua (GitHub Actions)
 
-O workflow `.github/workflows/ci.yml` valida a API e a Web em jobs independentes, em todo Pull Request para `master` e em todo push para `master`.
+O workflow `.github/workflows/ci.yml` valida metadados do PR, API, Web, ferramentas de automação e SonarQube em Pull Requests para `master` e em pushes para `master`. A ordem é determinística: `PR title` → `API`/`Web`/`GitHub Reviewer` → `SonarQube`. Somente a conclusão bem-sucedida do workflow completo aciona os agentes.
+
+Edições de título ou corpo executam o workflow confiável e leve `.github/workflows/pr-title.yml`. Ele revalida os metadados sem checkout do código do PR. Quando a edição é humana, solicita a repetição da execução de CI associada ao mesmo HEAD; o job de título do CI consulta os metadados atuais, permitindo recuperar um PR cujo título inicial era inválido. Edições de checklist feitas pelo GitHub App não repetem o CI, não criam checks de API/Web pulados e não cancelam a orquestração ativa.
 
 | Job | Diretório | Passos (comandos já existentes no projeto) |
 | --- | --- | --- |
-| `API` | `apps/api` | `npm ci` → `npm run typecheck` → espera do PostgreSQL → `npm run test:coverage` (unitários + integração, uma vez) → checagem de testes pulados → reescrita dos caminhos LCOV → upload do artefato `api-coverage` (7 dias) → `npm run build` |
-| `Web` | `apps/web` | `npm ci` → `npm run lint` → `npm run test:coverage` → reescrita dos caminhos LCOV → upload do artefato `web-coverage` (7 dias) → `npm run build` (o script roda `tsc -b` e depois `vite build`) |
-| `SonarQube` | raiz do repositório | Depende de `API` e `Web`; baixa os dois LCOV; analisa PRs do próprio repositório e pushes em `master`; aguarda o Quality Gate e falha se ele reprovar |
+| `PR title` | evento do GitHub | Valida o padrão `[DEV-123] - título`, a chave da branch e a correspondência entre as duas chaves |
+| `GitHub Reviewer` | `tools/github-reviewer` | Depende de `PR title`; instala, compila e executa os testes da infraestrutura de publicação, agentes e Merge Readiness. O nome histórico é preservado durante o rollout dos consumidores privilegiados. |
+| `API` | `apps/api` | Depende de `PR title`; `npm ci` → `npm run typecheck` → espera do PostgreSQL → `npm run test:coverage` (unitários + integração, uma vez) → checagem de testes pulados → reescrita dos caminhos LCOV → upload do artefato `api-coverage` (7 dias) → `npm run build` |
+| `Web` | `apps/web` | Depende de `PR title`; `npm ci` → `npm run lint` → `npm run test:coverage` → reescrita dos caminhos LCOV → upload do artefato `web-coverage` (7 dias) → `npm run build` (o script roda `tsc -b` e depois `vite build`) |
+| `SonarQube` | raiz do repositório | Depende de `API`, `Web` e `GitHub Reviewer`; baixa os dois LCOV; analisa PRs do próprio repositório e pushes em `master`; aguarda o Quality Gate e falha se ele reprovar |
 
 ## Decisões
 
@@ -14,7 +18,7 @@ O workflow `.github/workflows/ci.yml` valida a API e a Web em jobs independentes
 - **Actions fixadas por SHA de commit**, com a versão em comentário: `actions/checkout` v7.0.1 e `actions/setup-node` v7.0.0. Os SHAs foram conferidos com `git ls-remote` nas tags oficiais.
 - **Cache do npm** pelo `actions/setup-node`, com chave baseada no `package-lock.json` de cada app.
 - **`GITHUB_TOKEN` só com `contents: read`.** O checkout usa `persist-credentials: false`, então o token não fica salvo no repositório clonado.
-- **Sem execuções repetidas:** os testes rodam uma única vez, com o banco. Um novo push no mesmo PR cancela a execução anterior. O push em `master` roda novamente para validar o resultado do merge.
+- **Sem execuções obsoletas:** um novo push no mesmo PR cancela a execução anterior. Edições humanas repetem o CI do HEAD atual; se já houver uma execução ativa, sua conclusão fornece o sinal atualizado. Edições do checklist feitas pelo GitHub App executam apenas a validação de metadados e não reiniciam os agentes. O push em `master` roda novamente para validar o resultado do merge.
 - **Segredo limitado ao scanner.** `SONAR_TOKEN` só é exposto ao passo que envia a análise ao SonarQube Cloud; os demais jobs não recebem secrets.
 
 ## PostgreSQL e testes de integração
@@ -36,11 +40,11 @@ O workflow `.github/workflows/ci.yml` valida a API e a Web em jobs independentes
 Em *Settings → Rules → Rulesets* (ou *Branches → Branch protection rules*), para a branch `master`:
 
 1. Exigir Pull Request antes do merge.
-2. Exigir os status checks **`API`**, **`Web`** e, quando quiser aplicar o Quality Gate, **`SonarQube`**. Eles só aparecem para seleção depois da primeira execução do workflow no repositório.
+2. Exigir os status checks **`PR title`**, **`API`**, **`Web`**, **`GitHub Reviewer`**, **`SonarQube`**, **`SonarCloud Code Analysis`** e **`Merge Readiness`**. Eles só aparecem para seleção depois da primeira execução do workflow no repositório.
 3. Marcar "Require branches to be up to date before merging" (recomendado).
 4. Bloquear force push e exclusão da branch (recomendado).
 
-O repositório privado está em uma conta GitHub Free, cujo ruleset de branch não está aplicado atualmente. O check `SonarQube` pode ser marcado como obrigatório quando houver proteção de branch disponível.
+O repositório público usa um ruleset ativo para `master`, sem atores de bypass. O contexto estável `Merge Readiness` é a decisão final; o job `Evaluate Merge Readiness` apenas registra que a avaliação e a publicação do contexto foram executadas.
 
 ## Validar localmente
 

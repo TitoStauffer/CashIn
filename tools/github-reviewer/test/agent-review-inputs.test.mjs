@@ -32,7 +32,7 @@ function createFetch({
       payload = { check_runs: [
         { name: 'API', head_sha: headSha, status: 'completed', conclusion: 'success', details_url: 'https://example.test/api', completed_at: '2026-10-21T10:00:00Z' },
         { name: 'Web', head_sha: headSha, status: 'completed', conclusion: 'success' },
-        { name: 'GitHub Reviewer', app: { id: 15368 }, head_sha: headSha, status: 'completed', conclusion: 'success' },
+        { name: 'Automation Tools', app: { id: 15368 }, head_sha: headSha, status: 'completed', conclusion: 'success' },
         { name: 'SonarQube', head_sha: headSha, status: 'completed', conclusion: 'success' },
         { name: 'SonarCloud Code Analysis', head_sha: headSha, status: 'completed', conclusion: 'success' },
       ] };
@@ -84,8 +84,8 @@ test('uses latest rerun results for summaries and exposes only current-SHA requi
   assert.deepEqual(summarizeCheckRunEvidence(runs, headSha).map(({ name, conclusion }) => ({ name, conclusion })), [{ name: 'API', conclusion: 'success' }]);
 });
 
-test('requires a current successful GitHub Actions Reviewer check in the prerequisite summary', () => {
-  const reviewer = { name: 'GitHub Reviewer', app: { id: 15368 }, head_sha: headSha, status: 'completed', conclusion: 'success' };
+test('requires a current successful Automation Tools check in the prerequisite summary', () => {
+  const reviewer = { name: 'Automation Tools', app: { id: 15368 }, head_sha: headSha, status: 'completed', conclusion: 'success' };
   for (const [runs, expected] of [
     [[], 'MISSING'], [[reviewer], 'PASSED'], [[{ ...reviewer, head_sha: baseSha }], 'MISSING'],
     [[{ ...reviewer, app: { id: 999 } }], 'MISSING'], [[{ ...reviewer, app: undefined }], 'MISSING'],

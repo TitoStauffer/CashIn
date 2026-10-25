@@ -87,26 +87,26 @@ test('also attaches verified job evidence to Web checks', async () => {
   assert.equal(inputs.checkRuns[0].actions.availability, 'available');
 });
 
-test('verifies all three CI jobs and supplies GitHub Reviewer test steps and four snapshots', async () => {
-  const checkValues = ['API', 'Web', 'GitHub Reviewer'].map((name, index) => ({ ...check, name, id: 20 + index, details_url: `https://github.com/owner/repo/actions/runs/10/job/${20 + index}` }));
+test('verifies all three CI jobs and supplies Automation Tools test steps and four snapshots', async () => {
+  const checkValues = ['API', 'Web', 'Automation Tools'].map((name, index) => ({ ...check, name, id: 20 + index, details_url: `https://github.com/owner/repo/actions/runs/10/job/${20 + index}` }));
   const jobValues = checkValues.map((entry) => ({ ...job, id: entry.id, name: entry.name, html_url: entry.details_url, check_run_url: `https://api.github.com/repos/owner/repo/check-runs/${entry.id}`,
-    ...(entry.name === 'GitHub Reviewer' ? { steps: [{ number: 1, name: 'Build and test GitHub integration tools', status: 'completed', conclusion: 'success' }] } : {}),
+    ...(entry.name === 'Automation Tools' ? { steps: [{ number: 1, name: 'Build and test GitHub integration tools', status: 'completed', conclusion: 'success' }] } : {}),
   }));
   const inputs = await loadAgentReviewInputs(fakeFetch({ checkValues, jobValues }), 'owner/repo', 7, { head: { sha }, base: { sha: baseSha } }, 'not-a-real-token');
   assert.equal(inputs.checks.githubReviewer, 'PASSED');
   assert.equal(inputs.checkRuns.filter(({ actions }) => actions?.availability === 'available').length, 3);
-  assert.deepEqual(inputs.checkRuns.find(({ name }) => name === 'GitHub Reviewer').actions.steps, jobValues[2].steps);
+  assert.deepEqual(inputs.checkRuns.find(({ name }) => name === 'Automation Tools').actions.steps, jobValues[2].steps);
   assert.equal(inputs.ciConfiguration.length, 4);
   const originalFingerprint = JSON.stringify(fingerprintAgentReviewInputs(inputs));
-  inputs.checkRuns.find(({ name }) => name === 'GitHub Reviewer').actions.steps[0].conclusion = 'failure';
+  inputs.checkRuns.find(({ name }) => name === 'Automation Tools').actions.steps[0].conclusion = 'failure';
   assert.notEqual(JSON.stringify(fingerprintAgentReviewInputs(inputs)), originalFingerprint);
-  inputs.checkRuns.find(({ name }) => name === 'GitHub Reviewer').actions.steps[0].conclusion = 'success';
+  inputs.checkRuns.find(({ name }) => name === 'Automation Tools').actions.steps[0].conclusion = 'success';
   inputs.ciConfiguration.find(({ path }) => path === 'tools/github-reviewer/package.json').originalSha256 = 'c'.repeat(64);
   assert.notEqual(JSON.stringify(fingerprintAgentReviewInputs(inputs)), originalFingerprint);
 });
 
 test('limits the context to three CI jobs', async () => {
-  const checkValues = ['API', 'Web', 'GitHub Reviewer', 'CI / API'].map((name) => ({ ...check, name }));
+  const checkValues = ['API', 'Web', 'Automation Tools', 'CI / API'].map((name) => ({ ...check, name }));
   await assert.rejects(loadAgentReviewInputs(fakeFetch({ checkValues }), 'owner/repo', 7, { head: { sha }, base: { sha: baseSha } }, 'not-a-real-token'), /Too many CI checks/);
 });
 

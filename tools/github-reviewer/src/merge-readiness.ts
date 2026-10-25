@@ -4,6 +4,7 @@ import { loadAgentReviewInputs } from './agent-review-inputs.js';
 import { ACTIONS_APP_ID } from './agent-ci-evidence.js';
 
 const REQUIRED_QUALITY_CHECKS = ['API', 'Web', 'SonarQube', 'SonarCloud Code Analysis'];
+const AUTOMATION_CHECK_CONTEXTS = ['Automation Tools', 'GitHub Reviewer'] as const;
 const GRAPHQL_REVIEW_THREADS_QUERY = `query($owner: String!, $name: String!, $number: Int!, $after: String) {
   repository(owner: $owner, name: $name) {
     pullRequest(number: $number) {
@@ -197,9 +198,11 @@ export async function evaluateMergeReadiness(options: MergeReadinessOptions): Pr
   if (!hasConfiguredReviewProtection(branchRules, applicableRulesets, baseBranch, defaultBranch)) reasons.push('Não foi confirmada uma regra de proteção que exija aprovação formal de Pull Request.');
   if (!hasConfiguredCheckProtection(branchRules, applicableRulesets, baseBranch, defaultBranch)) reasons.push('Não foi confirmada uma regra de proteção para checks obrigatórios.');
 
+  const automationCheckContext = AUTOMATION_CHECK_CONTEXTS.find((context) => runs.some((run) => run.name === context
+    && run.head_sha === headSha && run.app?.id === ACTIONS_APP_ID)) ?? 'GitHub Reviewer';
   const requiredCheckCandidates: RequiredCheck[] = [
     ...REQUIRED_QUALITY_CHECKS.map((context) => ({ context })),
-    { context: 'GitHub Reviewer', appId: ACTIONS_APP_ID },
+    { context: automationCheckContext, appId: ACTIONS_APP_ID },
     ...requiredContexts,
   ];
   const requiredChecks = [...new Map(requiredCheckCandidates.map((requirement) => [`${requirement.context}:${requirement.appId ?? ''}`, requirement])).values()];

@@ -1,7 +1,7 @@
 import { appendFile, readFile } from 'node:fs/promises';
 import { evaluateMergeReadiness, type MergeReadinessResult } from './merge-readiness.js';
 import { resolveWorkflowEvent } from './workflow-event.js';
-import { formatReadinessSummary, publishCommitStatus } from './workflow-status.js';
+import { formatReadinessSummary, publishCommitStatus, workflowExecutionExitCode } from './workflow-status.js';
 
 const INCONCLUSIVE_STATUS: MergeReadinessResult['status'] = 'INCONCLUSIVE';
 
@@ -97,7 +97,13 @@ async function run(): Promise<void> {
 
   await appendSummary(formatReadinessSummary(result, statusPublicationError));
   process.stdout.write(`Merge Readiness: ${result.status} para o PR #${result.pullRequest.number ?? 'desconhecido'}.\n`);
-  process.exitCode = result.status === 'READY_TO_MERGE' ? 0 : result.status === 'BLOCKED' ? 1 : 2;
+  await writeOutput('readiness_status', result.status);
+  await writeOutput('status_published', statusPublicationError ? 'false' : 'true');
+  // The stable `Merge Readiness` commit status is the merge gate. A successful
+  // workflow job means the evaluator ran and published that status; BLOCKED and
+  // INCONCLUSIVE remain fail-closed through the commit status without leaving a
+  // stale failed Actions job after newer evidence re-evaluates the same HEAD.
+  process.exitCode = workflowExecutionExitCode(!statusPublicationError);
 }
 
 async function loadPrivateKey(): Promise<string> {
@@ -128,4 +134,9 @@ function required(name: string): string {
 async function appendSummary(summary: string): Promise<void> {
   const path = process.env.GITHUB_STEP_SUMMARY;
   if (path) await appendFile(path, `${summary}\n`, 'utf8');
+}
+
+async function writeOutput(name: string, value: string): Promise<void> {
+  const path = process.env.GITHUB_OUTPUT;
+  if (path) await appendFile(path, `${name}=${value}\n`, 'utf8');
 }

@@ -1,9 +1,9 @@
 name: Codex Agent Orchestration
 
 on:
-  # Either completion triggers evaluation; agent-stage-cli verifies all CI/Sonar prerequisites before a model call.
+  # CI already sequences PR metadata, tests, automation tools and SonarQube.
   workflow_run: # zizmor: ignore[dangerous-triggers] — jobs check PR source/base and run only trusted master code; CI artifacts are never consumed.
-    workflows: [CI, PR title]
+    workflows: [CI]
     types: [completed]
   workflow_dispatch:
     inputs:
@@ -16,14 +16,14 @@ permissions: {}
 
 concurrency:
   group: codex-agent-orchestration-${{ github.event.workflow_run.pull_requests[0].number || inputs.pr_number || github.event.workflow_run.head_branch || github.run_id }}
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   code-review:
     name: Codex Code Review
     if: >-
       (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/master') ||
-      (github.event_name == 'workflow_run' && (github.event.workflow_run.name == 'CI' || github.event.workflow_run.name == 'PR title') &&
+      (github.event_name == 'workflow_run' && github.event.workflow_run.name == 'CI' &&
       github.event.workflow_run.event == 'pull_request' && github.event.workflow_run.conclusion == 'success')
     runs-on: [self-hosted, Windows, X64, codex-plus]
     defaults:
@@ -51,8 +51,6 @@ jobs:
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: "24.22.0"
-          cache: npm
-          cache-dependency-path: tools/github-reviewer/package-lock.json
 
       - name: Install trusted orchestration dependencies
         working-directory: tools/github-reviewer
@@ -169,8 +167,6 @@ jobs:
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: "24.22.0"
-          cache: npm
-          cache-dependency-path: tools/github-reviewer/package-lock.json
 
       - name: Install trusted orchestration dependencies
         working-directory: tools/github-reviewer
@@ -290,8 +286,6 @@ jobs:
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: "24.22.0"
-          cache: npm
-          cache-dependency-path: tools/github-reviewer/package-lock.json
 
       - name: Install trusted orchestration dependencies
         working-directory: tools/github-reviewer
