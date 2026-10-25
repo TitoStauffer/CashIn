@@ -46,6 +46,14 @@ import { CreditCardsService } from "./credit-cards/credit-cards.service.js";
 import { PostgresCreditCardsRepository } from "./credit-cards/postgres-credit-cards.repository.js";
 import { registerCreditCardRoutes } from "./credit-cards/credit-cards.routes.js";
 import type { CreditCardRepository } from "./credit-cards/credit-cards.types.js";
+import {
+  FinancialImportsService,
+  MAX_FINANCIAL_IMPORT_FILE_SIZE,
+} from "./financial-imports/financial-imports.service.js";
+import { PostgresFinancialImportsRepository } from "./financial-imports/postgres-financial-imports.repository.js";
+import { UnsupportedFinancialImportParser } from "./financial-imports/financial-imports.parser.js";
+import { registerFinancialImportRoutes } from "./financial-imports/financial-imports.routes.js";
+import type { FinancialImportParser, FinancialImportRepository } from "./financial-imports/financial-imports.types.js";
 
 export interface AppOptions {
   logger?: boolean;
@@ -61,6 +69,8 @@ export interface AppOptions {
   walletAccessRequestRepository?: WalletAccessRequestRepository;
   paymentMethodRepository?: PaymentMethodRepository;
   creditCardRepository?: CreditCardRepository;
+  financialImportRepository?: FinancialImportRepository;
+  financialImportParser?: FinancialImportParser;
   authConfiguration?: Partial<AuthConfiguration>;
   walletInvitationTokenTtlHours?: number;
   walletAccessLinkTtlHours?: number;
@@ -98,6 +108,13 @@ export function createApp(
   );
 
   app.setErrorHandler((error: FastifyError, request, reply) => {
+    if (
+      error.code === "FST_ERR_CTP_BODY_TOO_LARGE"
+      && request.routeOptions.url === "/financial-imports"
+      && request.routeOptions.bodyLimit === MAX_FINANCIAL_IMPORT_FILE_SIZE
+    ) {
+      return reply.code(413).send({ message: "O arquivo deve ter no máximo 10 MB." });
+    }
     if (error.validation) {
       return reply.code(400).send({ message: "Os dados enviados são inválidos." });
     }
@@ -229,6 +246,13 @@ export function createApp(
   registerFinancialSummaryRoutes(app, {
     financialSummaryService: new FinancialSummaryService(
       options.financialSummaryRepository ?? new PostgresFinancialSummaryRepository(database),
+    ),
+  });
+
+  registerFinancialImportRoutes(app, {
+    financialImportsService: new FinancialImportsService(
+      options.financialImportRepository ?? new PostgresFinancialImportsRepository(database),
+      options.financialImportParser ?? new UnsupportedFinancialImportParser(),
     ),
   });
 
