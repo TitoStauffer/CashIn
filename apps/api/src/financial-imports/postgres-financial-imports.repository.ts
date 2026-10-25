@@ -78,13 +78,14 @@ function invalidateReference(
   categoryId: string | null,
 ): ParsedFinancialImportItem {
   const currentMessage = item.errorMessage?.trim();
+  const isDuplicate = item.validationStatus === "duplicate";
   return {
     ...item,
     categoryId,
     subcategoryId: null,
-    validationStatus: "invalid",
+    validationStatus: isDuplicate ? "duplicate" : "invalid",
     errorMessage: currentMessage ? `${currentMessage} ${message}` : message,
-    isRepairable: item.validationStatus === "invalid" ? item.isRepairable === true : true,
+    isRepairable: isDuplicate ? false : item.validationStatus === "invalid" ? item.isRepairable === true : true,
   };
 }
 

@@ -140,7 +140,7 @@ CREATE TABLE import_items (
     ),
   CONSTRAINT import_items_required_values_check
     CHECK (
-      validation_status = 'invalid'
+      validation_status IN ('invalid', 'duplicate')
       OR (transaction_date IS NOT NULL AND signed_amount IS NOT NULL)
     ),
   CONSTRAINT import_items_category_shape_check

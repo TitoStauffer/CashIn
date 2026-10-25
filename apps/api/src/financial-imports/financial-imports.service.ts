@@ -95,9 +95,15 @@ function normalizeParsedItem(item: ParsedFinancialImportItem, fallbackSequence: 
   if (!hasValidDescription) repairableReasons.push("A descrição da movimentação deve ter no máximo 4.000 bytes.");
   invalidReasons.push(...nonRepairableReasons, ...repairableReasons);
 
+  const isDuplicate = item.validationStatus === "duplicate";
   let validationStatus = item.validationStatus ?? "valid";
   let errorMessage = item.errorMessage?.trim() || null;
-  if (invalidReasons.length > 0) {
+  if (isDuplicate) {
+    validationStatus = "duplicate";
+    if (invalidReasons.length > 0) {
+      errorMessage = [errorMessage, ...invalidReasons].filter(Boolean).join(" ");
+    }
+  } else if (invalidReasons.length > 0) {
     validationStatus = "invalid";
     errorMessage = [errorMessage, ...invalidReasons].filter(Boolean).join(" ");
   } else if (validationStatus === "invalid") {
@@ -125,7 +131,7 @@ function normalizeParsedItem(item: ParsedFinancialImportItem, fallbackSequence: 
     subcategoryId,
     validationStatus,
     errorMessage,
-    isRepairable: validationStatus === "invalid"
+    isRepairable: !isDuplicate && validationStatus === "invalid"
       && nonRepairableReasons.length === 0
       && repairableReasons.length > 0,
   };

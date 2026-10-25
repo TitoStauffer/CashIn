@@ -395,7 +395,10 @@ function FinancialImportsWalletPage({ userEmail, isLoggingOut, onLogout }: Finan
       const undone = await importsApi.undo(session.id)
       if (!isCurrentWalletOperation(operation)) return
       setHistory((current) => current.map((item) => item.id === undone.id ? undone : item))
-      if (selectedImport?.id === undone.id) setSelectedImport(undone)
+      if (selectedImport?.id === undone.id) {
+        setSelectedImport(undone)
+        setDrafts(Object.fromEntries((undone.items ?? []).map((item) => [item.id, createDraft(item)])))
+      }
       setSuccessMessage('Importação desfeita. As movimentações criadas por ela foram removidas.')
     } catch (error) {
       if (!isCurrentWalletOperation(operation)) return
@@ -415,6 +418,7 @@ function FinancialImportsWalletPage({ userEmail, isLoggingOut, onLogout }: Finan
       const discarded = await importsApi.discard(session.id)
       if (!isCurrentWalletOperation(operation)) return
       setSelectedImport(discarded)
+      setDrafts(Object.fromEntries((discarded.items ?? []).map((item) => [item.id, createDraft(item)])))
       setHistory((current) => current.map((item) => item.id === discarded.id ? discarded : item))
       setSuccessMessage('Prévia descartada. Nenhuma movimentação foi criada.')
     } catch (error) {

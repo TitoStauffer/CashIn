@@ -763,6 +763,100 @@ test("PostgreSQL financial import confirms exact amounts, isolates wallets, and 
       1,
     );
 
+    await app.close();
+    app = createApp(database, {
+      financialImportRepository: repository,
+      financialImportParser: {
+        parse: async () => [
+          {
+            sequence: 1,
+            date: "2026-10-25",
+            description: "Linha permitida da regressão",
+            signedAmount: "50.00",
+            type: "income",
+            categoryId: incomeCategoryId,
+          },
+          {
+            sequence: 2,
+            date: "2026-02-30",
+            description: "Duplicidade com data inválida",
+            signedAmount: "51.00",
+            type: "income",
+            categoryId: incomeCategoryId,
+            validationStatus: "duplicate",
+            errorMessage: "A movimentação já existe.",
+          },
+          {
+            sequence: 3,
+            date: "2026-10-25",
+            description: "Duplicidade com categoria inexistente",
+            signedAmount: "52.00",
+            type: "income",
+            categoryId: "44444444-4444-4444-8444-444444444444",
+            validationStatus: "duplicate",
+            errorMessage: "A movimentação já existe.",
+          },
+        ],
+      },
+    });
+    await app.ready();
+    const duplicatePreview = await app.inject({
+      method: "POST",
+      url: "/financial-imports",
+      headers: {
+        ...authenticatedHeaders,
+        "content-type": "application/octet-stream",
+        "x-file-name": "duplicates.csv",
+        "x-file-format": "csv",
+      },
+      payload: Buffer.from("duplicate-regression"),
+    });
+    assert.equal(duplicatePreview.statusCode, 201);
+    assert.deepEqual(duplicatePreview.json().summary, {
+      total: 3,
+      valid: 1,
+      duplicate: 2,
+      invalid: 0,
+      uncategorized: 0,
+      imported: 0,
+    });
+    const duplicateItems = duplicatePreview.json().items.slice(1);
+    for (const duplicateItem of duplicateItems) {
+      assert.equal(duplicateItem.validationStatus, "duplicate");
+      assert.equal(duplicateItem.canEdit, false);
+      const patchDuplicateStatus: number = (await app.inject({
+        method: "PATCH",
+        url: `/financial-imports/${duplicatePreview.json().id}/items/${duplicateItem.id}`,
+        headers: authenticatedHeaders,
+        payload: {
+          date: "2026-10-25",
+          description: duplicateItem.description,
+          type: "income",
+          categoryId: incomeCategoryId,
+          subcategoryId: null,
+        },
+      })).statusCode;
+      assert.equal(patchDuplicateStatus, 409);
+    }
+    assert.match(duplicateItems[0].errorMessage, /data da movimentação é inválida/i);
+    assert.match(duplicateItems[1].errorMessage, /categoria informada não existe nesta carteira/i);
+
+    const confirmedDuplicatePreview = await app.inject({
+      method: "POST",
+      url: `/financial-imports/${duplicatePreview.json().id}/confirm`,
+      headers: authenticatedHeaders,
+    });
+    assert.equal(confirmedDuplicatePreview.statusCode, 200);
+    assert.equal(confirmedDuplicatePreview.json().summary.imported, 1);
+    assert.equal(confirmedDuplicatePreview.json().summary.duplicate, 2);
+    assert.equal(
+      (await database.query(
+        "SELECT count(*)::integer AS count FROM incomes WHERE wallet_id = $1 AND description LIKE 'Duplicidade %'",
+        [walletId],
+      )).rows[0]!.count,
+      0,
+    );
+
     const batchSession = await repository.createImport(userId, walletId, {
       format: "csv",
       fileName: "limite-10000.csv",

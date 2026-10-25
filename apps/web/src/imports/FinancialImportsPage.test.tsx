@@ -293,8 +293,9 @@ describe('FinancialImportsPage', () => {
       ...confirmed,
       status: 'undone' as const,
       canUndo: false,
+      summary: { ...confirmed.summary, imported: 0, uncategorized: confirmed.summary.uncategorized + 1 },
       items: confirmed.items.map((item) => item.id === 'item-2'
-        ? { ...item, validationStatus: 'valid' as const, canEdit: false }
+        ? { ...item, categoryId: null, subcategoryId: null, validationStatus: 'uncategorized' as const, canEdit: false }
         : item),
     }
     vi.mocked(importsApi.list).mockResolvedValueOnce({ items: [{ ...previewSession, items: undefined }] })
@@ -310,8 +311,9 @@ describe('FinancialImportsPage', () => {
     expect(within(preview).getByText('Movimentação 2')).toBeVisible()
     expect(within(preview).getByText('Importada')).toBeVisible()
     await user.click(within(preview).getByRole('button', { name: 'Desfazer importação' }))
-    expect(await within(preview).findByText('Pronta para importar')).toBeVisible()
-    expect(within(preview).getByText('Movimentação 2')).toBeVisible()
+    const undoneItem = (await within(preview).findByText('Movimentação 2')).closest('li') as HTMLElement
+    expect(within(undoneItem).getAllByText('Não categorizada')[0]).toBeVisible()
+    expect(within(undoneItem).getByLabelText('Categoria')).toHaveValue('')
   })
 
   it('discards a preview only after confirmation and preserves the returned history', async () => {
@@ -328,6 +330,8 @@ describe('FinancialImportsPage', () => {
     expect(await screen.findByText('Prévia descartada. Nenhuma movimentação foi criada.')).toBeVisible()
     expect(screen.getAllByText('Importação descartada pelo usuário.')).toHaveLength(2)
     expect(screen.getAllByText('Descartada').length).toBeGreaterThan(0)
+    const discardedItem = screen.getByText('Movimentação 2').closest('li') as HTMLElement
+    expect(within(discardedItem).getByLabelText('Categoria')).toHaveValue('')
     expect(screen.queryByRole('button', { name: 'Descartar prévia' })).not.toBeInTheDocument()
   })
 
