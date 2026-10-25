@@ -1,0 +1,604 @@
+{
+  "schemaVersion": 1,
+  "repository": "TitoStauffer/CashIn",
+  "pullRequestNumber": 39,
+  "baseSha": "6d0150744067bfbb9a39f8e4f7df1f636cafc6ab",
+  "headSha": "39159c54a7da4ca9b813e4910975d6d9d7ee7d9c",
+  "collectedAt": "2026-10-25T18:10:23.293Z",
+  "limits": {
+    "maximumChangedFiles": 32,
+    "maximumSourceBytes": 500000
+  },
+  "summary": {
+    "expectedChangedFiles": 23,
+    "includedChangedFiles": 23,
+    "includedSourceFiles": 70,
+    "includedSourceBytes": 498798,
+    "omittedChangedFiles": 0
+  },
+  "changedFiles": [
+    {
+      "path": "README.md",
+      "status": "modified",
+      "revision": "head",
+      "bytes": 16384,
+      "sha256": "b2007c70ced23ad93dbe7b7f2dd3effe237d8c030a62a23acc763e1cf2e6d1db"
+    },
+    {
+      "path": "apps/api/migrations/014_import_sessions.sql",
+      "status": "added",
+      "revision": "head",
+      "bytes": 8455,
+      "sha256": "43d8b891b9826c4b007c8d3c0537762e35fb4730df2204f9e132bb0368c83953"
+    },
+    {
+      "path": "apps/api/package.json",
+      "status": "modified",
+      "revision": "head",
+      "bytes": 2406,
+      "sha256": "ba0bcf2df763f3464344b8f21627a6b27c26d5bbee0be55c457e1816251fe606"
+    },
+    {
+      "path": "apps/api/src/app.ts",
+      "status": "modified",
+      "revision": "head",
+      "bytes": 12400,
+      "sha256": "79fb4f1ab1edbd84b133b57f57296f50db1ef9de8038c0466593ff4f2b72d216"
+    },
+    {
+      "path": "apps/api/src/financial-imports/financial-imports.errors.ts",
+      "status": "added",
+      "revision": "head",
+      "bytes": 151,
+      "sha256": "7579eb193771f1a30070c1572d4f9c224c0bbe69f364a39ce93ea3a9d7d95dd4"
+    },
+    {
+      "path": "apps/api/src/financial-imports/financial-imports.parser.ts",
+      "status": "added",
+      "revision": "head",
+      "bytes": 492,
+      "sha256": "61b9142c194661f07289624ac57516a16db585c116b37d318d82d2b63a2e865a"
+    },
+    {
+      "path": "apps/api/src/financial-imports/financial-imports.routes.test.ts",
+      "status": "added",
+      "revision": "head",
+      "bytes": 25209,
+      "sha256": "112f6901828131e081b8358e59f8fc54db747945b6ea0d68aa3a36d542338422"
+    },
+    {
+      "path": "apps/api/src/financial-imports/financial-imports.routes.ts",
+      "status": "added",
+      "revision": "head",
+      "bytes": 7972,
+      "sha256": "5649b44c0340eb2a34bc3b07a385b6d399bead8b2dd420803847b3d9fd9dc207"
+    },
+    {
+      "path": "apps/api/src/financial-imports/financial-imports.service.ts",
+      "status": "added",
+      "revision": "head",
+      "bytes": 12806,
+      "sha256": "94de5039ac18946f87a48a3212daf82ed7932ff193d36ca212102333032369c2"
+    },
+    {
+      "path": "apps/api/src/financial-imports/financial-imports.types.ts",
+      "status": "added",
+      "revision": "head",
+      "bytes": 3865,
+      "sha256": "7f5f5e8f81af7e4ba739381b97602d394869c32dbfa04dc97840491f24687bb5"
+    },
+    {
+      "path": "apps/api/src/financial-imports/postgres-financial-imports.integration.test.ts",
+      "status": "added",
+      "revision": "head",
+      "bytes": 30786,
+      "sha256": "2f87ca1a8aeebeb8c56d40fbf09b40e57b04865e9d631ad5a5e7caef1d1e30dc"
+    },
+    {
+      "path": "apps/api/src/financial-imports/postgres-financial-imports.repository.ts",
+      "status": "added",
+      "revision": "head",
+      "bytes": 30539,
+      "sha256": "b365d64a34d2e9b4e33dbbfa06d658b5d3acede31d2c25a200d292307dddbabe"
+    },
+    {
+      "path": "apps/web/src/App.test.tsx",
+      "status": "modified",
+      "revision": "head",
+      "bytes": 13391,
+      "sha256": "8b5b12e1c1a07c5dd2d9c2fa94c0d90e0b0c689cb483fe1e801140277887f1c5"
+    },
+    {
+      "path": "apps/web/src/App.tsx",
+      "status": "modified",
+      "revision": "head",
+      "bytes": 22724,
+      "sha256": "704ae937feed1bcd087666646e5e96744dcbc2552f3ce718079324f1ca950245"
+    },
+    {
+      "path": "apps/web/src/imports/FinancialImportsPage.css",
+      "status": "added",
+      "revision": "head",
+      "bytes": 9673,
+      "sha256": "078188f560c765f9cea65b3fc12b9af91802e885ee9811597fcc52579babb851"
+    },
+    {
+      "path": "apps/web/src/imports/FinancialImportsPage.test.tsx",
+      "status": "added",
+      "revision": "head",
+      "bytes": 30349,
+      "sha256": "8cfb7055eb6bf403182a072fe6375ad6ebfb3c7e7210c0bc8538394917034d2d"
+    },
+    {
+      "path": "apps/web/src/imports/FinancialImportsPage.tsx",
+      "status": "added",
+      "revision": "head",
+      "bytes": 36538,
+      "sha256": "36a9e8de5fa176a13d54ca493487e402b2b84c0e22c92540ee05eb563ab89a23"
+    },
+    {
+      "path": "apps/web/src/imports/importsApi.test.ts",
+      "status": "added",
+      "revision": "head",
+      "bytes": 3985,
+      "sha256": "9a630d4eab9cca0d937af877b1f4d6f07697aca503600352778efc0a386b3bbc"
+    },
+    {
+      "path": "apps/web/src/imports/importsApi.ts",
+      "status": "added",
+      "revision": "head",
+      "bytes": 3763,
+      "sha256": "fe3e563c636cf6f0fc62fe411c734bef1dce131f13c7e56288b2743d5606291f"
+    },
+    {
+      "path": "apps/web/src/layout/FinancialSidebar.test.tsx",
+      "status": "modified",
+      "revision": "head",
+      "bytes": 13070,
+      "sha256": "2eb3fd7011782a9cf0afff4e0c7cfa6f2d561c8f175466d6aabe19299dc8b89a"
+    },
+    {
+      "path": "apps/web/src/layout/FinancialSidebar.tsx",
+      "status": "modified",
+      "revision": "head",
+      "bytes": 10131,
+      "sha256": "1b8ef44eb3fd62a5814caa21cc7c44422483dc4aff9a9d277994ad9577c4af37"
+    },
+    {
+      "path": "apps/web/vite.config.ts",
+      "status": "modified",
+      "revision": "head",
+      "bytes": 2763,
+      "sha256": "9afd0f6e5123de202b566ca581ff7313b50e334b5d1e660753ac7a8d25db988b"
+    },
+    {
+      "path": "docs/financial-imports-contract.md",
+      "status": "added",
+      "revision": "head",
+      "bytes": 3340,
+      "sha256": "b71a56cfdcdf9d58ecff656f580ae4f0044c636ced678b174b7ca8e74fe16ee8"
+    }
+  ],
+  "includedSourceFiles": [
+    {
+      "path": "README.md",
+      "revision": "head",
+      "bytes": 16384,
+      "sha256": "b2007c70ced23ad93dbe7b7f2dd3effe237d8c030a62a23acc763e1cf2e6d1db"
+    },
+    {
+      "path": "apps/api/migrations/014_import_sessions.sql",
+      "revision": "head",
+      "bytes": 8455,
+      "sha256": "43d8b891b9826c4b007c8d3c0537762e35fb4730df2204f9e132bb0368c83953"
+    },
+    {
+      "path": "apps/api/package.json",
+      "revision": "head",
+      "bytes": 2406,
+      "sha256": "ba0bcf2df763f3464344b8f21627a6b27c26d5bbee0be55c457e1816251fe606"
+    },
+    {
+      "path": "apps/api/src/app.ts",
+      "revision": "head",
+      "bytes": 12400,
+      "sha256": "79fb4f1ab1edbd84b133b57f57296f50db1ef9de8038c0466593ff4f2b72d216"
+    },
+    {
+      "path": "apps/api/src/financial-imports/financial-imports.errors.ts",
+      "revision": "head",
+      "bytes": 151,
+      "sha256": "7579eb193771f1a30070c1572d4f9c224c0bbe69f364a39ce93ea3a9d7d95dd4"
+    },
+    {
+      "path": "apps/api/src/financial-imports/financial-imports.parser.ts",
+      "revision": "head",
+      "bytes": 492,
+      "sha256": "61b9142c194661f07289624ac57516a16db585c116b37d318d82d2b63a2e865a"
+    },
+    {
+      "path": "apps/api/src/financial-imports/financial-imports.routes.test.ts",
+      "revision": "head",
+      "bytes": 25209,
+      "sha256": "112f6901828131e081b8358e59f8fc54db747945b6ea0d68aa3a36d542338422"
+    },
+    {
+      "path": "apps/api/src/financial-imports/financial-imports.routes.ts",
+      "revision": "head",
+      "bytes": 7972,
+      "sha256": "5649b44c0340eb2a34bc3b07a385b6d399bead8b2dd420803847b3d9fd9dc207"
+    },
+    {
+      "path": "apps/api/src/financial-imports/financial-imports.service.ts",
+      "revision": "head",
+      "bytes": 12806,
+      "sha256": "94de5039ac18946f87a48a3212daf82ed7932ff193d36ca212102333032369c2"
+    },
+    {
+      "path": "apps/api/src/financial-imports/financial-imports.types.ts",
+      "revision": "head",
+      "bytes": 3865,
+      "sha256": "7f5f5e8f81af7e4ba739381b97602d394869c32dbfa04dc97840491f24687bb5"
+    },
+    {
+      "path": "apps/api/src/financial-imports/postgres-financial-imports.integration.test.ts",
+      "revision": "head",
+      "bytes": 30786,
+      "sha256": "2f87ca1a8aeebeb8c56d40fbf09b40e57b04865e9d631ad5a5e7caef1d1e30dc"
+    },
+    {
+      "path": "apps/api/src/financial-imports/postgres-financial-imports.repository.ts",
+      "revision": "head",
+      "bytes": 30539,
+      "sha256": "b365d64a34d2e9b4e33dbbfa06d658b5d3acede31d2c25a200d292307dddbabe"
+    },
+    {
+      "path": "apps/web/src/App.test.tsx",
+      "revision": "head",
+      "bytes": 13391,
+      "sha256": "8b5b12e1c1a07c5dd2d9c2fa94c0d90e0b0c689cb483fe1e801140277887f1c5"
+    },
+    {
+      "path": "apps/web/src/App.tsx",
+      "revision": "head",
+      "bytes": 22724,
+      "sha256": "704ae937feed1bcd087666646e5e96744dcbc2552f3ce718079324f1ca950245"
+    },
+    {
+      "path": "apps/web/src/imports/FinancialImportsPage.css",
+      "revision": "head",
+      "bytes": 9673,
+      "sha256": "078188f560c765f9cea65b3fc12b9af91802e885ee9811597fcc52579babb851"
+    },
+    {
+      "path": "apps/web/src/imports/FinancialImportsPage.test.tsx",
+      "revision": "head",
+      "bytes": 30349,
+      "sha256": "8cfb7055eb6bf403182a072fe6375ad6ebfb3c7e7210c0bc8538394917034d2d"
+    },
+    {
+      "path": "apps/web/src/imports/FinancialImportsPage.tsx",
+      "revision": "head",
+      "bytes": 36538,
+      "sha256": "36a9e8de5fa176a13d54ca493487e402b2b84c0e22c92540ee05eb563ab89a23"
+    },
+    {
+      "path": "apps/web/src/imports/importsApi.test.ts",
+      "revision": "head",
+      "bytes": 3985,
+      "sha256": "9a630d4eab9cca0d937af877b1f4d6f07697aca503600352778efc0a386b3bbc"
+    },
+    {
+      "path": "apps/web/src/imports/importsApi.ts",
+      "revision": "head",
+      "bytes": 3763,
+      "sha256": "fe3e563c636cf6f0fc62fe411c734bef1dce131f13c7e56288b2743d5606291f"
+    },
+    {
+      "path": "apps/web/src/layout/FinancialSidebar.test.tsx",
+      "revision": "head",
+      "bytes": 13070,
+      "sha256": "2eb3fd7011782a9cf0afff4e0c7cfa6f2d561c8f175466d6aabe19299dc8b89a"
+    },
+    {
+      "path": "apps/web/src/layout/FinancialSidebar.tsx",
+      "revision": "head",
+      "bytes": 10131,
+      "sha256": "1b8ef44eb3fd62a5814caa21cc7c44422483dc4aff9a9d277994ad9577c4af37"
+    },
+    {
+      "path": "apps/web/vite.config.ts",
+      "revision": "head",
+      "bytes": 2763,
+      "sha256": "9afd0f6e5123de202b566ca581ff7313b50e334b5d1e660753ac7a8d25db988b"
+    },
+    {
+      "path": "docs/financial-imports-contract.md",
+      "revision": "head",
+      "bytes": 3340,
+      "sha256": "b71a56cfdcdf9d58ecff656f580ae4f0044c636ced678b174b7ca8e74fe16ee8"
+    },
+    {
+      "path": "apps/api/src/database.ts",
+      "revision": "head",
+      "bytes": 2872,
+      "sha256": "7017338e3e4e1ddfc93ed9027e76eada7f23d07128380fdb1e1a6627a5aba392"
+    },
+    {
+      "path": "apps/api/src/auth/auth.service.ts",
+      "revision": "head",
+      "bytes": 3860,
+      "sha256": "f3bd619dfda925770778b9d80781f6274dfdb2cea05255aea313da2fb867a2e8"
+    },
+    {
+      "path": "apps/api/src/auth/email-sender.ts",
+      "revision": "head",
+      "bytes": 6312,
+      "sha256": "e5aef34bd2c6f2673402510aef37943a3f4ce980a540a0d4fc7e6483b02abf59"
+    },
+    {
+      "path": "apps/api/src/auth/postgres-auth.repository.ts",
+      "revision": "head",
+      "bytes": 3971,
+      "sha256": "353fa574a1259f606fd2a1d327edda8b8cf9e2de2b2313791e980b5de0e0f6b8"
+    },
+    {
+      "path": "apps/api/src/auth/auth.routes.ts",
+      "revision": "head",
+      "bytes": 6430,
+      "sha256": "9e2307df5673c0cba918d45c7e9f502808076d8ea6a8701f1e56bc05de54e093"
+    },
+    {
+      "path": "apps/api/src/auth/auth.types.ts",
+      "revision": "head",
+      "bytes": 1369,
+      "sha256": "7c2f609e191dd9bea07bfa49e92eaffa6961e234dafe0678d20b7563e31730d2"
+    },
+    {
+      "path": "apps/api/src/categories/categories.service.ts",
+      "revision": "head",
+      "bytes": 3809,
+      "sha256": "99ee8322084a10929bcd54d824b2bedd7e832dfc20e83b7eca02140b3311af10"
+    },
+    {
+      "path": "apps/api/src/categories/postgres-categories.repository.ts",
+      "revision": "head",
+      "bytes": 5147,
+      "sha256": "208420a32e9e009e573bf947a8781b13677e4782a8e4280025600c2049120240"
+    },
+    {
+      "path": "apps/api/src/categories/categories.routes.ts",
+      "revision": "head",
+      "bytes": 8091,
+      "sha256": "b395dfc3d9e4d1e031574928a5679568876621150b55909306ba9e0dc219c410"
+    },
+    {
+      "path": "apps/api/src/categories/categories.types.ts",
+      "revision": "head",
+      "bytes": 1257,
+      "sha256": "715050f7aad36591a2771e349cda7ffce22e58a14fad7ed58223053746c0463a"
+    },
+    {
+      "path": "apps/api/src/incomes/incomes.service.ts",
+      "revision": "head",
+      "bytes": 3970,
+      "sha256": "5e4919f0feeff15f077a42571d7b1dad428b22db95f8c3094090a1d1fe76cc02"
+    },
+    {
+      "path": "apps/api/src/incomes/postgres-incomes.repository.ts",
+      "revision": "head",
+      "bytes": 6335,
+      "sha256": "298cf29e6224d0e5e45cf9623354a125f305bd64ad7dcfcb762cf54a69a9d28e"
+    },
+    {
+      "path": "apps/api/src/incomes/incomes.routes.ts",
+      "revision": "head",
+      "bytes": 5203,
+      "sha256": "56fc6b5b58ba1a08dc0038bc3f54b7ec5cb17ba51a07bce9c3c9fb74736682a6"
+    },
+    {
+      "path": "apps/api/src/incomes/incomes.types.ts",
+      "revision": "head",
+      "bytes": 1217,
+      "sha256": "fe1b9c1b35dbc2fcefa357f2cab0b557b406d3c256185cad2b19eef76d2b3e42"
+    },
+    {
+      "path": "apps/api/src/expenses/expenses.service.ts",
+      "revision": "head",
+      "bytes": 4074,
+      "sha256": "be31d6785e61cf8835154bf4177dee57b80c61368a5e4b80d8044f8c9d3d871d"
+    },
+    {
+      "path": "apps/api/src/expenses/postgres-expenses.repository.ts",
+      "revision": "head",
+      "bytes": 16484,
+      "sha256": "6c0ecf14a7a125dacfe3fa842896a9806a04ce2b6c4a2b0d6fae9dfb7d17aade"
+    },
+    {
+      "path": "apps/api/src/expenses/expenses.routes.ts",
+      "revision": "head",
+      "bytes": 5322,
+      "sha256": "0993591eca55969651ea251bad863ad56c39e7e1d81d7cc5380040163226e642"
+    },
+    {
+      "path": "apps/api/src/expenses/expenses.types.ts",
+      "revision": "head",
+      "bytes": 1306,
+      "sha256": "f6b9a8382262e02ff37faf28d49c55b4b05429cf930d71e9c3f476bf9be87334"
+    },
+    {
+      "path": "apps/api/src/investment-goals/investment-goals.service.ts",
+      "revision": "head",
+      "bytes": 8386,
+      "sha256": "39b3b160c94f5c2aa42ef0270ffe70be57c33e023f1710e2dcea59f0b6fab248"
+    },
+    {
+      "path": "apps/api/src/investment-goals/postgres-investment-goals.repository.ts",
+      "revision": "head",
+      "bytes": 12960,
+      "sha256": "a6cd29bdcafa697ab81b35adf823d74a06881df47f7e42d54cef55f1b0a04cc9"
+    },
+    {
+      "path": "apps/api/src/investment-goals/investment-goals.routes.ts",
+      "revision": "head",
+      "bytes": 8343,
+      "sha256": "580bfa325bed6f4992af1d0bbfc588ed6d6ecc3c730ca38af7e9feb0e74f53e2"
+    },
+    {
+      "path": "apps/api/src/investment-goals/investment-goals.types.ts",
+      "revision": "head",
+      "bytes": 2232,
+      "sha256": "071d9b1397fb79d4c0dd31d69aee1feb9582c9d32d10ef064ae7cfdafd9617d0"
+    },
+    {
+      "path": "apps/api/src/financial-summary/financial-summary.service.ts",
+      "revision": "head",
+      "bytes": 1124,
+      "sha256": "3882268a77d205b86c18e4ef0218c2693970d54f817587e0bd9f7fb8659dfae1"
+    },
+    {
+      "path": "apps/api/src/financial-summary/postgres-financial-summary.repository.ts",
+      "revision": "head",
+      "bytes": 8979,
+      "sha256": "9af49a210b031d7b2976d317478706e161d6fd0bcc83f50e055682df445b1afa"
+    },
+    {
+      "path": "apps/api/src/financial-summary/financial-summary.routes.ts",
+      "revision": "head",
+      "bytes": 1931,
+      "sha256": "88b285be286a9b3f77cfee0f5eb06fc6f02a115624ab2d781a8195d9d6808810"
+    },
+    {
+      "path": "apps/api/src/financial-summary/financial-summary.types.ts",
+      "revision": "head",
+      "bytes": 1005,
+      "sha256": "c15657b233df10229554f28e978ff0bc210c044c9e9ead89167f60c84908db61"
+    },
+    {
+      "path": "apps/api/src/wallets/wallets.service.ts",
+      "revision": "head",
+      "bytes": 1727,
+      "sha256": "821c1d06c7242ffd702c37c51d58d54b7e05f9cf1f097d741fbba648d4d8be51"
+    },
+    {
+      "path": "apps/api/src/wallets/postgres-wallets.repository.ts",
+      "revision": "head",
+      "bytes": 2371,
+      "sha256": "521add5806adcf9362e99125a57901ad22895ddb6d440100b80ea302773f8090"
+    },
+    {
+      "path": "apps/api/src/wallets/wallets.routes.ts",
+      "revision": "head",
+      "bytes": 2021,
+      "sha256": "365d56fc59a144382671d99c8b029493d22751ce7ddf3f1d26c041a159e36355"
+    },
+    {
+      "path": "apps/api/src/wallets/wallets.types.ts",
+      "revision": "head",
+      "bytes": 445,
+      "sha256": "d9e7c223ecb04a21ed665065b4ccc12f12e2c7e1ed8b1740380b9aa285aa65bb"
+    },
+    {
+      "path": "apps/api/src/wallets/wallets.errors.ts",
+      "revision": "head",
+      "bytes": 160,
+      "sha256": "b33d2632f70e4312ae2af624f03820fd5a168041cdb14dbfcdf1311106718823"
+    },
+    {
+      "path": "apps/api/src/wallet-invitations/wallet-invitations.service.ts",
+      "revision": "head",
+      "bytes": 4628,
+      "sha256": "2d21672a56f43a85ad5358818412a4db276c99dc287f6a3620de1514409e65ca"
+    },
+    {
+      "path": "apps/api/src/wallet-invitations/postgres-wallet-invitation.repository.ts",
+      "revision": "head",
+      "bytes": 9243,
+      "sha256": "0a1d50a49d260c569822d77247e7ed3779ec6783c7d1e8ffe861346088b31568"
+    },
+    {
+      "path": "apps/api/src/wallet-invitations/wallet-invitations.routes.ts",
+      "revision": "head",
+      "bytes": 5391,
+      "sha256": "7e04097edaa1140a5527c5124bef1fe52fec79317e82c74ae4b813af2df128d1"
+    },
+    {
+      "path": "apps/api/src/wallet-invitations/wallet-invitations.types.ts",
+      "revision": "head",
+      "bytes": 1450,
+      "sha256": "3ddd379a5b0a59a314e41781f119b3c3f1885494cd42afc5bc1df4a3013cf7f3"
+    },
+    {
+      "path": "apps/api/src/wallet-access-requests/wallet-access-requests.service.ts",
+      "revision": "head",
+      "bytes": 4711,
+      "sha256": "e7e1699fe2e02cac13d725764972179620f5e2e386e897e4f9c2b05ecdc19bd8"
+    },
+    {
+      "path": "apps/api/src/wallet-access-requests/postgres-wallet-access-request.repository.ts",
+      "revision": "head",
+      "bytes": 10450,
+      "sha256": "f5929a9dbe9ffd23d82340f1040131a7999eafb2f27b125fce50fce8019c02af"
+    },
+    {
+      "path": "apps/api/src/wallet-access-requests/wallet-access-requests.routes.ts",
+      "revision": "head",
+      "bytes": 5379,
+      "sha256": "b565836fc6aa32971afb1d3cb2104fbb258171afe1ce97207fabcd7d2ebabf86"
+    },
+    {
+      "path": "apps/api/src/wallet-access-requests/wallet-access-requests.types.ts",
+      "revision": "head",
+      "bytes": 1842,
+      "sha256": "0ba666a2a738c393fbc9bac7127c7dd9871a66ecce2dc13e57524f4bc83979b1"
+    },
+    {
+      "path": "apps/api/src/payment-methods/payment-methods.service.ts",
+      "revision": "head",
+      "bytes": 2808,
+      "sha256": "c92049f1330a3de2b6da743d54cadda140aece439039ad977d1b13059b916b25"
+    },
+    {
+      "path": "apps/api/src/payment-methods/postgres-payment-methods.repository.ts",
+      "revision": "head",
+      "bytes": 2177,
+      "sha256": "cfb0f46821e7146938125ae2f6ef8dca76208ffb49cbf5e86f118eab12b70f4f"
+    },
+    {
+      "path": "apps/api/src/payment-methods/payment-methods.routes.ts",
+      "revision": "head",
+      "bytes": 3568,
+      "sha256": "bc069cc1e47f607fbf94cd408d8add40abcb2346920f9165e71778c6774d0b7c"
+    },
+    {
+      "path": "apps/api/src/payment-methods/payment-methods.types.ts",
+      "revision": "head",
+      "bytes": 786,
+      "sha256": "8d4d27d25726571c49d42fc291a96162a1cd0c5b50c790277ddb0ea89f0ac9b6"
+    },
+    {
+      "path": "apps/api/src/credit-cards/credit-cards.service.ts",
+      "revision": "head",
+      "bytes": 4276,
+      "sha256": "5eb9a1b4bfadc814a649cf29fabed0d01dc48a4ff2f5ab863f8c043f99dd94ed"
+    },
+    {
+      "path": "apps/api/src/credit-cards/credit-cards.types.ts",
+      "revision": "head",
+      "bytes": 1193,
+      "sha256": "35137215299edd629af802730fbe08aa16905adeb0715e470e5430aa2e5d9b7f"
+    },
+    {
+      "path": "apps/api/src/auth/token.ts",
+      "revision": "head",
+      "bytes": 265,
+      "sha256": "16864c1e0ef1b163003e6ea3319dc149f071b588d4c9eb79e99efda9d40241be"
+    },
+    {
+      "path": "apps/api/src/wallets/wallets-test-fixture.ts",
+      "revision": "head",
+      "bytes": 726,
+      "sha256": "b104a49d7d3cbb29493f42f87c58ceeda963467a64880d03d9ff9e8a5a60b2ff"
+    }
+  ]
+}

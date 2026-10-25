@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 import { loadAgentReviewInputs, summarizeAgentChecks, summarizeCheckRunEvidence } from '../dist/agent-review-inputs.js';
 import { requestGitHubApiPages } from '../dist/github-api-client.js';
@@ -139,6 +140,30 @@ test('keeps all 23 changed files when auxiliary dependencies exceed the byte bud
   assert.deepEqual(includedChangedPaths, files.map(({ filename }) => filename));
   assert.equal(dependencyCount > 0 && dependencyCount < files.length, true);
   assert.equal(inputs.sourceFiles.reduce((total, file) => total + Buffer.byteLength(file.content, 'utf8'), 0) <= 500_000, true);
+});
+
+test('keeps a verifiable snapshot proving that every DEV-51 PR file was included', async () => {
+  const evidence = JSON.parse(await readFile(new URL('./fixtures/pr-39-context-evidence.json', import.meta.url), 'utf8'));
+  const includedByPath = new Map(evidence.includedSourceFiles.map((file) => [file.path, file]));
+  const expectedPaths = evidence.changedFiles.map((file) => file.path);
+  const includedChangedPaths = expectedPaths.filter((path) => includedByPath.has(path));
+  const includedBytes = evidence.includedSourceFiles.reduce((total, file) => total + file.bytes, 0);
+
+  assert.equal(evidence.repository, 'TitoStauffer/CashIn');
+  assert.equal(evidence.pullRequestNumber, 39);
+  assert.match(evidence.baseSha, /^[a-f0-9]{40}$/);
+  assert.match(evidence.headSha, /^[a-f0-9]{40}$/);
+  assert.equal(new Set(expectedPaths).size, 23);
+  assert.deepEqual(includedChangedPaths, expectedPaths);
+  assert.deepEqual(evidence.summary, {
+    expectedChangedFiles: 23,
+    includedChangedFiles: 23,
+    includedSourceFiles: evidence.includedSourceFiles.length,
+    includedSourceBytes: includedBytes,
+    omittedChangedFiles: 0,
+  });
+  assert.equal(includedBytes <= evidence.limits.maximumSourceBytes, true);
+  assert.equal(evidence.includedSourceFiles.every((file) => /^[a-f0-9]{64}$/.test(file.sha256)), true);
 });
 
 test('fails closed when changed source context exceeds the supported file limit', async () => {
