@@ -796,6 +796,17 @@ test("PostgreSQL financial import confirms exact amounts, isolates wallets, and 
             validationStatus: "duplicate",
             errorMessage: "A movimentação já existe.",
           },
+          {
+            sequence: 4,
+            date: "2026-02-30",
+            description: "Invalidação permanente do parser",
+            signedAmount: "53.00",
+            type: "income",
+            categoryId: incomeCategoryId,
+            validationStatus: "invalid",
+            errorMessage: "A origem não permite importar esta movimentação.",
+            isRepairable: false,
+          },
         ],
       },
     });
@@ -813,14 +824,16 @@ test("PostgreSQL financial import confirms exact amounts, isolates wallets, and 
     });
     assert.equal(duplicatePreview.statusCode, 201);
     assert.deepEqual(duplicatePreview.json().summary, {
-      total: 3,
+      total: 4,
       valid: 1,
       duplicate: 2,
-      invalid: 0,
+      invalid: 1,
       uncategorized: 0,
       imported: 0,
     });
-    const duplicateItems = duplicatePreview.json().items.slice(1);
+    const duplicateItems = duplicatePreview.json().items.filter(
+      (item: { validationStatus: string }) => item.validationStatus === "duplicate",
+    );
     for (const duplicateItem of duplicateItems) {
       assert.equal(duplicateItem.validationStatus, "duplicate");
       assert.equal(duplicateItem.canEdit, false);
@@ -840,6 +853,27 @@ test("PostgreSQL financial import confirms exact amounts, isolates wallets, and 
     }
     assert.match(duplicateItems[0].errorMessage, /data da movimentação é inválida/i);
     assert.match(duplicateItems[1].errorMessage, /categoria informada não existe nesta carteira/i);
+    const parserInvalidItem = duplicatePreview.json().items.find(
+      (item: { description: string }) => item.description === "Invalidação permanente do parser",
+    );
+    assert.ok(parserInvalidItem);
+    assert.equal(parserInvalidItem.validationStatus, "invalid");
+    assert.equal(parserInvalidItem.canEdit, false);
+    assert.match(parserInvalidItem.errorMessage, /origem não permite importar/i);
+    assert.match(parserInvalidItem.errorMessage, /data da movimentação é inválida/i);
+    const patchParserInvalidStatus: number = (await app.inject({
+      method: "PATCH",
+      url: `/financial-imports/${duplicatePreview.json().id}/items/${parserInvalidItem.id}`,
+      headers: authenticatedHeaders,
+      payload: {
+        date: "2026-10-25",
+        description: parserInvalidItem.description,
+        type: "income",
+        categoryId: incomeCategoryId,
+        subcategoryId: null,
+      },
+    })).statusCode;
+    assert.equal(patchParserInvalidStatus, 409);
 
     const confirmedDuplicatePreview = await app.inject({
       method: "POST",
@@ -849,6 +883,7 @@ test("PostgreSQL financial import confirms exact amounts, isolates wallets, and 
     assert.equal(confirmedDuplicatePreview.statusCode, 200);
     assert.equal(confirmedDuplicatePreview.json().summary.imported, 1);
     assert.equal(confirmedDuplicatePreview.json().summary.duplicate, 2);
+    assert.equal(confirmedDuplicatePreview.json().summary.invalid, 1);
     assert.equal(
       (await database.query(
         "SELECT count(*)::integer AS count FROM incomes WHERE wallet_id = $1 AND description LIKE 'Duplicidade %'",

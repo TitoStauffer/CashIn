@@ -96,6 +96,8 @@ function normalizeParsedItem(item: ParsedFinancialImportItem, fallbackSequence: 
   invalidReasons.push(...nonRepairableReasons, ...repairableReasons);
 
   const isDuplicate = item.validationStatus === "duplicate";
+  const parserMarkedInvalid = item.validationStatus === "invalid";
+  const parserAllowsRepair = !parserMarkedInvalid || item.isRepairable === true;
   let validationStatus = item.validationStatus ?? "valid";
   let errorMessage = item.errorMessage?.trim() || null;
   if (isDuplicate) {
@@ -131,9 +133,9 @@ function normalizeParsedItem(item: ParsedFinancialImportItem, fallbackSequence: 
     subcategoryId,
     validationStatus,
     errorMessage,
-    isRepairable: !isDuplicate && validationStatus === "invalid"
+    isRepairable: !isDuplicate && parserAllowsRepair && validationStatus === "invalid"
       && nonRepairableReasons.length === 0
-      && repairableReasons.length > 0,
+      && (repairableReasons.length > 0 || parserMarkedInvalid),
   };
 }
 
