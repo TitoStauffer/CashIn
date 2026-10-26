@@ -54,6 +54,7 @@ Atualize o vault quando uma entrega mudar contrato público, regra de negócio, 
 Valide a estrutura e os links locais antes de publicar mudanças:
 
 ```powershell
+pwsh -File tools/knowledge/test-validate-vault.ps1
 pwsh -File tools/knowledge/validate-vault.ps1
 ```
 

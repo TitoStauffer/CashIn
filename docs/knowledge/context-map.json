@@ -32,7 +32,7 @@
       "documents": ["docs/knowledge/architecture/web.md"]
     },
     {
-      "paths": ["apps/api/migrations/**", "docker-compose.yml"],
+      "paths": ["apps/api/migrations/**", "compose.yaml"],
       "documents": ["docs/knowledge/architecture/database.md"]
     },
     {

@@ -14,9 +14,9 @@
 
 ## Idempotência e duplicidade
 
-- O arquivo possui uma impressão digital para evitar reprocessamento acidental.
+- O arquivo possui uma impressão digital que identifica seu conteúdo, mas ainda não há consulta nem restrição de unicidade que impeça o mesmo arquivo de iniciar sessões diferentes.
 - Itens importados mantêm referência à origem.
-- A confirmação repetida não deve criar novas movimentações.
+- A confirmação repetida da mesma sessão não deve criar novas movimentações; a prevenção entre sessões permanece pendente.
 - Suspeitas de duplicidade precisam ficar visíveis na prévia, sem descarte silencioso.
 
 ## Estado atual

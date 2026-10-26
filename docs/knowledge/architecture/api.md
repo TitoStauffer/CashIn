@@ -14,7 +14,7 @@ A API usa módulos por domínio. O padrão predominante é:
 - `*.test.ts`: testes de rota/unidade.
 - `*.integration.test.ts`: persistência real quando `TEST_DATABASE_URL` está definida.
 
-`buildApp` em `src/app.ts` aceita repositórios e serviços substituíveis, permitindo testes sem acoplar as regras ao Fastify. `server.ts` cria o banco, aplica migrations e inicia o servidor.
+`createApp` em `src/app.ts` aceita repositórios e serviços substituíveis, permitindo testes sem acoplar as regras ao Fastify. `server.ts` cria o banco, aplica migrations e inicia o servidor.
 
 ## Módulos registrados
 

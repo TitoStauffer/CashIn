@@ -14,6 +14,7 @@
 ## Comandos reproduzíveis
 
 ```powershell
+pwsh -NoProfile -File tools/knowledge/test-validate-vault.ps1
 pwsh -NoProfile -File tools/knowledge/validate-vault.ps1
 git diff --check
 git diff --cached --check
@@ -22,7 +23,8 @@ git diff --cached --check
 
 ## Resultado
 
-- Validador do vault: aprovado; 28 arquivos Markdown e 119 links locais verificados.
+- Regressões do validador: aprovadas para links inline com títulos, sinais angulares e parênteses balanceados, referências completas, colapsadas e abreviadas, além de falha fechada para referência ou destino ausente.
+- Validador do vault: aprovado; 28 arquivos Markdown e 113 destinos locais únicos verificados.
 - Snapshot histórico: 77 revisões formais indexadas, com link para cada registro original.
 - Integridade do diff: aprovada, sem erros de whitespace.
 - Credenciais: nenhum padrão de chave privada ou token GitHub foi encontrado.
