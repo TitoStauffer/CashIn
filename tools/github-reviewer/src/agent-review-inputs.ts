@@ -88,7 +88,10 @@ async function loadChangedSourceFiles(
   for (const file of changedFiles) {
     if (!file.filename || !file.status) throw new Error('GitHub returned incomplete changed-file metadata.');
   }
-  const sourceCandidates = changedFiles.filter(({ filename }) => !alreadyLoadedPaths.has(filename as string));
+  const sourceCandidates = changedFiles.filter(({ filename }) => {
+    const path = filename as string;
+    return !alreadyLoadedPaths.has(path) || !isVaultManagedDocument(path);
+  });
   if (sourceCandidates.length > MAX_SOURCE_FILES) throw new Error('Pull Request changes too many files for a complete agent review context.');
 
   const sourceFiles: AgentReviewInputs['sourceFiles'] = [];
@@ -134,6 +137,11 @@ async function loadChangedSourceFiles(
     }
   }
   return sourceFiles;
+}
+
+function isVaultManagedDocument(path: string): boolean {
+  return path === 'docs/knowledge/context-map.json'
+    || (path.startsWith('docs/knowledge/') && path.endsWith('.md'));
 }
 
 export function summarizeAgentChecks(runs: Array<Record<string, unknown>>, expectedHeadSha?: string): AgentReviewInputs['checks'] {
