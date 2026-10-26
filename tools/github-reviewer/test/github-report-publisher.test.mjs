@@ -48,6 +48,7 @@ function fakeGitHub(requests, { pr = currentPr, comments = [], apiFailure = fals
       return response({ check_runs: checkRuns });
     }
     if (parsed.pathname.endsWith('/contents/AGENTS.md')) return response({ encoding: 'base64', content: Buffer.from('trusted instructions').toString('base64') });
+    if (parsed.pathname.endsWith('/contents/docs/knowledge/README.md')) return response({}, 404);
     if (parsed.pathname.endsWith('/issues/42/comments') && (options.method ?? 'GET') === 'GET') return response(comments);
     if (parsed.pathname.endsWith('/issues/42/comments') && options.method === 'POST') return response({ id: 9876, html_url: 'https://github.com/TitoStauffer/CashIn/pull/42#issuecomment-9876' });
     if (parsed.pathname.endsWith('/issues/comments/81') && options.method === 'PATCH') return response({ id: 81, html_url: 'https://example.test/comment/81' });

@@ -70,6 +70,7 @@ function fixture(overrides = {}) {
       return response({ check_runs: data.checks });
     }
     if (parsed.pathname === '/repos/owner/repo/contents/AGENTS.md') return response({ encoding: 'base64', content: Buffer.from(data.instructions).toString('base64') });
+    if (parsed.pathname === '/repos/owner/repo/contents/docs/knowledge/README.md') return response({}, 404);
     if (parsed.pathname.endsWith(`/commits/${sha}/status`)) return response({ statuses: [] });
     if (parsed.pathname === '/repos/owner/repo/pulls/7/reviews') return response(data.reviews);
     if (parsed.pathname.startsWith('/repos/owner/repo/compare/')) return response({ status: data.compareStatus ?? 'ahead', merge_base_commit: { sha: data.compareStatus === 'diverged' ? oldSha : data.baseSha } }, data.compareApiStatus ?? 200);

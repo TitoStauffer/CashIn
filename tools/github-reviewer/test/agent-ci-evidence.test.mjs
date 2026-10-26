@@ -41,6 +41,7 @@ function fakeFetch({ checkValue = check, jobValue = job, checkValues, jobValues,
     if (parsed.pathname.endsWith('/pulls/7/files')) return Response.json([]);
     if (parsed.pathname.endsWith('/pulls/7')) return new Response('diff');
     const path = parsed.pathname.split('/contents/')[1];
+    if (path?.startsWith('docs/knowledge/')) return new Response('', { status: 404 });
     let content;
     if (path === 'AGENTS.md') content = 'Project policy';
     else {

@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { posix } from 'node:path';
 import { requestGitHubApi, requestGitHubApiPages, requestGitHubText } from './github-api-client.js';
 import { ACTIONS_APP_ID, loadActionsEvidence, loadCiSnapshots, unavailableActionsEvidence, type AgentActionsEvidence, type AgentCiSnapshot } from './agent-ci-evidence.js';
+import { loadVaultContext, type VaultContextSnapshot } from './vault-context.js';
 
 const REQUIRED_AGENT_CHECKS = {
   api: (name: string) => /(^|\/\s*)api(\s|$)/i.test(name),
@@ -17,6 +18,7 @@ export interface AgentReviewInputs {
   checkRuns: AgentCheckEvidence[];
   repositoryInstructions: string;
   sourceFiles: Array<{ path: string; revision: 'head' | 'base'; content: string }>;
+  vaultContext: VaultContextSnapshot[];
   ciConfiguration?: AgentCiSnapshot[];
 }
 
@@ -59,6 +61,7 @@ export async function loadAgentReviewInputs(
   if (encoding !== 'base64' || !encodedInstructions) throw new Error('Could not read AGENTS.md from the Pull Request base commit.');
   const repositoryInstructions = Buffer.from(encodedInstructions.replace(/\s/g, ''), 'base64').toString('utf8');
   const sourceFiles = await loadChangedSourceFiles(fetchImpl, repository, filesPayload, headSha, baseSha, token);
+  const vaultContext = await loadVaultContext(fetchImpl, repository, filesPayload, headSha, baseSha, token, sourceFiles);
   const checkRuns = summarizeCheckRunEvidence(runs, headSha);
   const ciChecks = latestRunsByName(runs.filter((run) => run.head_sha === headSha && isTestCheck(String(run.name ?? ''))));
   if (ciChecks.length > 3) throw new Error('Too many CI checks for the supported agent evidence context.');
@@ -68,7 +71,7 @@ export async function loadAgentReviewInputs(
   }
   const ciConfiguration = checkRuns.some((check) => check.actions?.availability === 'available')
     ? await loadCiSnapshots(fetchImpl, repository, headSha, token) : [];
-  return { diff, checks: summarizeAgentChecks(runs, headSha), checkRuns, repositoryInstructions, sourceFiles, ciConfiguration };
+  return { diff, checks: summarizeAgentChecks(runs, headSha), checkRuns, repositoryInstructions, sourceFiles, vaultContext, ciConfiguration };
 }
 
 async function loadChangedSourceFiles(
@@ -156,6 +159,7 @@ export function fingerprintAgentReviewInputs(inputs: AgentReviewInputs): Record<
         : actions,
     })),
     repositoryInstructionsSha256: hash(inputs.repositoryInstructions),
+    vaultContext: (inputs.vaultContext ?? []).map(({ path, revision, content }) => ({ path, revision, sha256: hash(content) })),
     sourceFiles: inputs.sourceFiles.map(({ path, revision, content }) => ({ path, revision, sha256: hash(content) })),
     ciConfiguration: (inputs.ciConfiguration ?? []).map(({ path, headSha, originalSha256, content }) => ({ path, headSha, originalSha256, sha256: hash(content) })),
   };
