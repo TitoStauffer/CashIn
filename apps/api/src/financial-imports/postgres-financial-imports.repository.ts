@@ -257,6 +257,7 @@ export class PostgresFinancialImportsRepository implements FinancialImportReposi
     walletId: string,
     importId: string,
     items: ParsedFinancialImportItem[],
+    sourceMetadata: Record<string, string> = {},
   ): Promise<FinancialImportSession | null> {
     return this.database.transaction(async (transaction) => {
       const locked = await transaction.query<{ id: string }>(
@@ -327,17 +328,20 @@ export class PostgresFinancialImportsRepository implements FinancialImportReposi
           validation_status: item.validationStatus ?? "valid",
           error_message: item.errorMessage ?? null,
           is_repairable: item.isRepairable ?? false,
+          external_id: item.externalId ?? null,
+          record_hash: item.recordHash ?? null,
         }));
         await transaction.query(
           `INSERT INTO import_items (
              import_session_id, wallet_id, sequence, transaction_date, description,
              signed_amount, type, category_id, subcategory_id, category_nature,
-             validation_status, error_message, is_repairable
+             validation_status, error_message, is_repairable, external_id, record_hash
            )
            SELECT $1, $2, item.sequence, item.transaction_date::date, item.description,
                   item.signed_amount::numeric, item.type, item.category_id::uuid,
                   item.subcategory_id::uuid, item.category_nature,
-                  item.validation_status, item.error_message, item.is_repairable
+                  item.validation_status, item.error_message, item.is_repairable,
+                  item.external_id, item.record_hash
            FROM jsonb_to_recordset($3::jsonb) AS item(
              sequence integer,
              transaction_date text,
@@ -349,11 +353,19 @@ export class PostgresFinancialImportsRepository implements FinancialImportReposi
              category_nature text,
              validation_status text,
              error_message text,
-             is_repairable boolean
+             is_repairable boolean,
+             external_id text,
+             record_hash text
            )`,
           [importId, walletId, JSON.stringify(payload)],
         );
       }
+      await transaction.query(
+        `UPDATE import_sessions
+         SET source_metadata = $3::jsonb, updated_at = now()
+         WHERE id = $1 AND wallet_id = $2 AND status = 'processing'`,
+        [importId, walletId, JSON.stringify(sourceMetadata)],
+      );
       await this.refreshCounters(transaction, walletId, importId, "preview");
       return this.getSessionWithItems(transaction, walletId, importId);
     });

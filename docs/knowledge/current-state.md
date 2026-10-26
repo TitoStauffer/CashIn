@@ -1,7 +1,7 @@
 # Estado atual do projeto
 
-**Status:** confirmado na `master` em `e18912d`
-**Última revisão:** 25/10/2026
+**Status:** atualizado pela DEV-52
+**Última revisão:** 26/10/2026
 **Ticket de criação:** [DEV-64](https://titostauffer.atlassian.net/browse/DEV-64)
 
 ## Produto disponível
@@ -19,7 +19,7 @@
 
 ## Estado da importação
 
-A infraestrutura e a tela existem, mas o parser padrão da API ainda é `UnsupportedFinancialImportParser`. A interpretação real de OFX e CSV permanece entrega separada. Consulte [`domain/imports.md`](domain/imports.md).
+A infraestrutura e a tela existem. O parser padrão da API interpreta extratos bancários OFX 1.x e 2.x e mantém CSV como entrega separada. Consulte [`domain/imports.md`](domain/imports.md).
 
 ## Automação de entrega
 
@@ -30,7 +30,7 @@ O fluxo ativo executa validação de título, API, Web, ferramentas de automaç�
 - A API não possui lint configurado.
 - O envio de e-mail e os rate limiters usam mecanismos adequados ao MVP local; filas e estado compartilhado são necessários para múltiplas instâncias.
 - O runner de agentes é Windows self-hosted e depende de máquina ligada, usuário autenticado e Codex CLI disponível.
-- O parser OFX/CSV ainda não está implementado.
+- CSV, faturas de cartão em OFX e detecção de duplicidade entre sessões ainda não estão implementados.
 - Mobile e deploy em nuvem estão fora do estado atual.
 
 ## Fontes verificáveis

@@ -1,6 +1,6 @@
 # Contrato de importação financeira
 
-A API mantém sessões de importação por carteira para que o cliente possa enviar um arquivo, revisar a prévia e confirmar os lançamentos em uma única transação. A fundação não interpreta OFX ou CSV diretamente; os parsers desses formatos são entregas separadas.
+A API mantém sessões de importação por carteira para que o cliente possa enviar um arquivo, revisar a prévia e confirmar os lançamentos em uma única transação. Extratos bancários OFX 1.x e 2.x são interpretados diretamente; CSV e faturas de cartão permanecem entregas separadas.
 
 ## Limites e segurança
 
@@ -9,6 +9,16 @@ A API mantém sessões de importação por carteira para que o cliente possa env
 - `x-file-name` contém o nome codificado com `encodeURIComponent` e `x-file-format` aceita `ofx` ou `csv`.
 - Todas as operações exigem sessão autenticada e respeitam a carteira selecionada por `x-wallet-id`.
 - Valores monetários permanecem como strings decimais com duas casas no contrato e como `numeric(14,2)` no PostgreSQL.
+
+## Extratos OFX
+
+- São aceitas as variantes bancárias OFX 1.x (SGML) e OFX 2.x (XML), em UTF-8, UTF-16, Windows-1252 ou ISO-8859-1.
+- A conta de origem e a moeda são validadas; nesta etapa, somente `BRL` é aceito.
+- Valores positivos geram sugestão de entrada, valores negativos geram sugestão de saída e `TRNTYPE=XFER` gera transferência pendente de conciliação.
+- `FITID` é preservado em `external_id`; uma identidade normalizada também é armazenada em `record_hash` para a futura detecção de duplicidades.
+- O identificador bruto da conta não é exposto nem persistido como metadado. A sessão armazena somente sua impressão SHA-256, banco, tipo de conta e moeda.
+- Registros malformados permanecem na prévia com motivo explícito quando isso é seguro. Data inválida pode ser corrigida; valor ou `FITID` inválido bloqueiam a linha.
+- Faturas de cartão em OFX não fazem parte deste fluxo e são recusadas com mensagem específica.
 
 ## Endpoints
 

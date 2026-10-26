@@ -16,11 +16,15 @@ export const MAX_FINANCIAL_IMPORT_ITEMS = 10_000;
 const MAX_FINANCIAL_IMPORT_FILE_NAME_BYTES = 512;
 const MAX_FINANCIAL_IMPORT_DESCRIPTION_BYTES = 4_000;
 const MAX_FINANCIAL_IMPORT_FAILURE_MESSAGE_BYTES = 1_000;
+const MAX_FINANCIAL_IMPORT_EXTERNAL_ID_BYTES = 512;
+const MAX_FINANCIAL_IMPORT_METADATA_VALUE_BYTES = 512;
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 const SIGNED_MONEY_PATTERN = /^-?(?:0|[1-9]\d{0,11})(?:\.\d{1,2})?$/;
 const ZERO_MONEY_PATTERN = /^-?0(?:\.0{1,2})?$/;
+const HASH_PATTERN = /^[0-9a-f]{64}$/;
+const METADATA_KEY_PATTERN = /^[a-z][a-zA-Z0-9]{0,63}$/;
 
 function validateDate(value: string): boolean {
   if (!DATE_PATTERN.test(value)) return false;
@@ -83,6 +87,11 @@ function normalizeParsedItem(item: ParsedFinancialImportItem, fallbackSequence: 
   const hasValidSubcategory = rawSubcategoryId === null || UUID_PATTERN.test(rawSubcategoryId);
   const hasCompatibleReferences = rawSubcategoryId === null
     || (rawCategoryId !== null && hasValidCategory && hasValidSubcategory);
+  const rawExternalId = item.externalId?.trim() || null;
+  const hasValidExternalId = rawExternalId === null
+    || (!rawExternalId.includes("\u0000") && Buffer.byteLength(rawExternalId, "utf8") <= MAX_FINANCIAL_IMPORT_EXTERNAL_ID_BYTES);
+  const rawRecordHash = item.recordHash?.trim() || null;
+  const hasValidRecordHash = rawRecordHash === null || HASH_PATTERN.test(rawRecordHash);
   const type = hasValidType ? item.type : "transfer";
   const categoryId = type === "transfer" || !hasValidCategory ? null : rawCategoryId;
   const subcategoryId = type === "transfer"
@@ -103,6 +112,8 @@ function normalizeParsedItem(item: ParsedFinancialImportItem, fallbackSequence: 
   }
   if (!hasPostgresSafeDescription) repairableReasons.push("A descrição da movimentação não pode conter caractere nulo.");
   if (!hasValidDescriptionLength) repairableReasons.push("A descrição da movimentação deve ter no máximo 4.000 bytes.");
+  if (!hasValidExternalId) nonRepairableReasons.push("O identificador externo da movimentação é inválido.");
+  if (!hasValidRecordHash) nonRepairableReasons.push("A identidade normalizada da movimentação é inválida.");
   invalidReasons.push(...nonRepairableReasons, ...repairableReasons);
 
   const isDuplicate = item.validationStatus === "duplicate";
@@ -146,7 +157,29 @@ function normalizeParsedItem(item: ParsedFinancialImportItem, fallbackSequence: 
     isRepairable: !isDuplicate && parserAllowsRepair && validationStatus === "invalid"
       && nonRepairableReasons.length === 0
       && (repairableReasons.length > 0 || parserMarkedInvalid),
+    externalId: hasValidExternalId ? rawExternalId : null,
+    recordHash: hasValidRecordHash ? rawRecordHash : null,
   };
+}
+
+function normalizeSourceMetadata(metadata: Record<string, string> | undefined): Record<string, string> {
+  if (!metadata) return {};
+  const entries = Object.entries(metadata);
+  if (entries.length > 20) throw new FinancialImportError("Os metadados do arquivo OFX são inválidos.", 422);
+  const normalized: Record<string, string> = {};
+  for (const [key, rawValue] of entries) {
+    const value = rawValue.trim();
+    if (
+      !METADATA_KEY_PATTERN.test(key)
+      || !value
+      || value.includes("\u0000")
+      || Buffer.byteLength(value, "utf8") > MAX_FINANCIAL_IMPORT_METADATA_VALUE_BYTES
+    ) {
+      throw new FinancialImportError("Os metadados do arquivo OFX são inválidos.", 422);
+    }
+    normalized[key] = value;
+  }
+  return normalized;
 }
 
 function normalizeUpdateInput(input: UpdateFinancialImportItemInput): Required<UpdateFinancialImportItemInput> {
@@ -217,7 +250,9 @@ export class FinancialImportsService {
     });
 
     try {
-      const parsedItems = await this.parser.parse({ format, fileName, content });
+      const parserOutput = await this.parser.parse({ format, fileName, content });
+      const parsed = Array.isArray(parserOutput) ? { items: parserOutput } : parserOutput;
+      const parsedItems = parsed.items;
       if (parsedItems.length > MAX_FINANCIAL_IMPORT_ITEMS) {
         throw new FinancialImportError("O arquivo deve ter no máximo 10.000 movimentações.", 413);
       }
@@ -242,7 +277,13 @@ export class FinancialImportsService {
         }
         return normalized;
       });
-      const preview = await this.repository.savePreview(userId, walletId, session.id, items);
+      const preview = await this.repository.savePreview(
+        userId,
+        walletId,
+        session.id,
+        items,
+        normalizeSourceMetadata(parsed.sourceMetadata),
+      );
       if (!preview) throw new FinancialImportError("A importação não foi encontrada.", 404);
       return preview;
     } catch (error) {

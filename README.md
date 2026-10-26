@@ -152,7 +152,7 @@ O total aportado e o percentual são derivados na consulta, portanto criação, 
 
 O MVP 1 será validado com API e Web. A API é independente do cliente e poderá ser consumida pelo aplicativo Mobile quando essa etapa entrar no escopo.
 
-O contrato da fundação para importação financeira, incluindo limites, estados, prévia, confirmação atômica e desfazer, está em [docs/financial-imports-contract.md](docs/financial-imports-contract.md). Os parsers específicos de OFX e CSV são entregas separadas.
+O contrato da importação financeira, incluindo suporte a extratos bancários OFX, limites, estados, prévia, confirmação atômica e desfazer, está em [docs/financial-imports-contract.md](docs/financial-imports-contract.md). O parser CSV permanece uma entrega separada.
 
 ## Integração contínua
 
