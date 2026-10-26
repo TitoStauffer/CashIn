@@ -1,6 +1,6 @@
 # Aprendizados de Code Review
 
-**Status:** auditado até o PR #45
+**Status:** auditado até o PR #46
 **Última revisão:** 26/10/2026
 
 Esta nota converte os achados históricos do Agent de Code Review em regras preventivas. O inventário e os links das revisões estão em [`code-review-audit.md`](code-review-audit.md).
@@ -101,3 +101,5 @@ Esta nota converte os achados históricos do Agent de Code Review em regras prev
 - **Regra preventiva:** cada regressão deve falhar na versão defeituosa e atravessar a fronteira onde ocorreu o problema.
 - **Detecção:** tabela de riscos no planejamento do teste: contrato, persistência, concorrência, contexto assíncrono, limite e falha parcial.
 - **Ocorrência no PR #45 (`7f2aaaa471eadacecc97fbb2f6fecc3a4e964278`):** a pré-validação do limite somava referências locais já presentes nos snapshots e podia rejeitar um contexto com menos de 160 itens únicos. A correção calcula a união das identidades e reutiliza snapshots locais. A prevenção é testar o valor de fronteira com os mesmos documentos simultaneamente roteados e vinculados.
+- **Ocorrência no PR #46 (`25427340afb0d8a0f356c2ebcb081a6f96c3742c`):** a deduplicação retirava da contagem qualquer arquivo já carregado pelo vault, inclusive código TypeScript. O impacto era permitir que referências do vault contornassem o limite fechado de 32 fontes alteradas. A correção restringe a deduplicação ao Markdown gerenciado pelo vault e ao mapa de contexto; código continua sujeito ao limite próprio. A prevenção testa 33 fontes alteradas também referenciadas pelo vault e exige bloqueio. [Revisão](https://github.com/TitoStauffer/CashIn/pull/46#pullrequestreview-5658565787).
+- **Ocorrência no PR #46 (`25427340afb0d8a0f356c2ebcb081a6f96c3742c`):** um TypeScript alterado já presente no vault deixava de passar pelo carregador que descobre imports locais diretos. O impacto era omitir dependências relevantes e tornar incorreta a garantia de contexto completo. A correção mantém fontes de código no carregador genérico mesmo quando também são evidência do vault. A prevenção testa uma fonte citada pelo vault que importa uma dependência local inalterada e exige os dois snapshots. [Revisão](https://github.com/TitoStauffer/CashIn/pull/46#pullrequestreview-5658565787).
