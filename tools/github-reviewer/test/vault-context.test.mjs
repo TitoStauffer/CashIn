@@ -79,7 +79,7 @@ test('walks referenced vault notes and loads their local and review evidence', a
   const reviewPath = '/repos/owner/repo/pulls/44/reviews/123';
   const files = baseVault({
     'docs/knowledge/README.md': { value: '# Index\n[Learning](learnings/example.md)\n' },
-    'docs/knowledge/learnings/example.md': { value: '# Learning\n[Source](../../../apps/api/src/service.ts)\n[Review](https://github.com/owner/repo/pull/44#pullrequestreview-123)\n' },
+    'docs/knowledge/learnings/example.md': { value: '# Learning\n[Index](../README.md)\n[Source](../../../apps/api/src/service.ts)\n[Review](https://github.com/owner/repo/pull/44#pullrequestreview-123)\n' },
     'apps/api/src/service.ts': { value: 'export const value = 1;\n' },
   });
   const review = { id: 123, state: 'CHANGES_REQUESTED', body: 'First evidence', html_url: 'https://github.com/owner/repo/pull/44#pullrequestreview-123' };
