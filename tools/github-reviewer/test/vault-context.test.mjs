@@ -133,6 +133,33 @@ test('ignores link-shaped examples inside inline and fenced Markdown code', asyn
   ]);
 });
 
+test('preserves link destinations when their labels contain inline code', async () => {
+  const reviewPath = '/repos/owner/repo/pulls/44/reviews/123';
+  const files = baseVault({
+    'docs/knowledge/README.md': {
+      value: '# Index\n[`service.ts`](../../apps/api/src/service.ts)\n[`Review`](https://github.com/owner/repo/pull/44#pullrequestreview-123)\n',
+    },
+    'apps/api/src/service.ts': { value: 'export const value = 1;\n' },
+  });
+  const review = { id: 123, state: 'CHANGES_REQUESTED', body: 'Confirmed issue', html_url: 'https://github.com/owner/repo/pull/44#pullrequestreview-123' };
+
+  const result = await loadVaultContext(fakeFetch(files, { [reviewPath]: review }), repository, [], headSha, baseSha, 'token');
+
+  assert.equal(result.some(({ path }) => path === 'apps/api/src/service.ts'), true);
+  assert.equal(result.some(({ path, content }) => path === `github-evidence://${reviewPath.slice(1)}` && content.includes('Confirmed issue')), true);
+});
+
+test('fails closed for a missing source whose link label contains inline code', async () => {
+  const files = baseVault({
+    'docs/knowledge/README.md': { value: '# Index\n[`missing.ts`](../../apps/api/src/missing.ts)\n' },
+  });
+
+  await assert.rejects(
+    loadVaultContext(fakeFetch(files), repository, [], headSha, baseSha, 'token'),
+    /GitHub API request failed \(404\)/,
+  );
+});
+
 test('fails closed when a referenced vault note cites a missing source', async () => {
   const files = baseVault({
     'docs/knowledge/README.md': { value: '# Index\n[Learning](learnings/example.md)\n' },

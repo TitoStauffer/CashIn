@@ -269,7 +269,7 @@ function withoutMarkdownCode(content: string): string {
       if (delimiter) fence = { marker: delimiter[0] as '`' | '~', length: delimiter.length };
       return '';
     }
-    return line.replace(/(`+)([^`\r\n]*?)\1/g, '');
+    return line.replace(/(`+)([^`\r\n]*?)\1/g, 'CODE');
   }).join('\n');
 }
 
