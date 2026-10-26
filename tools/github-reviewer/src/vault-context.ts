@@ -20,6 +20,7 @@ interface ContextRoute {
 interface ContextMap {
   version: 1;
   routes: ContextRoute[];
+  catalogs: string[];
 }
 
 interface GitHubEvidenceReference {
@@ -120,6 +121,7 @@ export async function loadVaultContext(
   if (!currentState) throw new Error('Vault current state is unavailable.');
   const contextMapSnapshot = await loadLocal(VAULT_CONTEXT_MAP, true);
   const contextMap = contextMapSnapshot ? parseContextMap(contextMapSnapshot.content) : undefined;
+  const catalogDocuments = new Set(contextMap?.catalogs ?? []);
 
   const selectedDocuments = new Set<string>();
   for (const path of changed.keys()) {
@@ -146,9 +148,12 @@ export async function loadVaultContext(
   for (let documentIndex = 0; documentIndex < documentsToInspect.length; documentIndex += 1) {
     const document = documentsToInspect[documentIndex];
     if (!document) continue;
+    if (catalogDocuments.has(document.path)) continue;
+    const isNavigationRoot = document.path === VAULT_INDEX || document.path === VAULT_CURRENT_STATE;
     for (const target of markdownLinks(document.content)) {
       const local = resolveLocalReference(document.path, target);
       if (local) {
+        if (isNavigationRoot && isKnowledgeDocument(local)) continue;
         const loaded = await loadLocal(local);
         if (loaded && isKnowledgeDocument(loaded.path) && !queuedDocuments.has(loaded.path)) {
           documentsToInspect.push(loaded);
@@ -214,7 +219,10 @@ function parseContextMap(content: string): ContextMap {
     });
     return { paths: route.paths, documents: route.documents };
   });
-  return { version: 1, routes };
+  const catalogs = parsed.catalogs === undefined ? [] : parsed.catalogs;
+  if (!isStringArray(catalogs)) throw new Error('Vault context map catalogs must be an array of documents.');
+  catalogs.forEach(assertKnowledgeDocument);
+  return { version: 1, routes, catalogs };
 }
 
 function markdownLinks(content: string): string[] {

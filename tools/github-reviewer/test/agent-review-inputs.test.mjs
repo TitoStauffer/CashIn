@@ -121,6 +121,32 @@ test('loads all 32 changed files at the supported boundary without omitting sour
   assert.deepEqual(inputs.sourceFiles.map(({ path }) => path), files.map(({ filename }) => filename));
 });
 
+test('counts changed files already supplied by the vault only once', async () => {
+  const vaultFiles = Array.from({ length: 35 }, (_, index) => ({ filename: `docs/knowledge/generated/note-${index}.md`, status: 'added' }));
+  const files = [
+    { filename: 'docs/knowledge/README.md', status: 'added' },
+    { filename: 'docs/knowledge/current-state.md', status: 'added' },
+    ...vaultFiles,
+    { filename: 'src/example.ts', status: 'modified' },
+  ];
+  const sources = {
+    'docs/knowledge/README.md': '# Index\n',
+    'docs/knowledge/current-state.md': '# Current state\n',
+    ...Object.fromEntries(vaultFiles.map(({ filename }, index) => [filename, `# Note ${index}\n`])),
+  };
+
+  const inputs = await loadAgentReviewInputs(
+    createFetch({ files, sources }),
+    'owner/repo',
+    7,
+    { head: { sha: headSha }, base: { sha: baseSha } },
+    'token',
+  );
+
+  assert.deepEqual(inputs.sourceFiles.map(({ path }) => path), ['src/example.ts']);
+  assert.equal(inputs.vaultContext.filter(({ path }) => path.startsWith('docs/knowledge/')).length, 37);
+});
+
 test('keeps all 23 changed files when auxiliary dependencies exceed the byte budget', async () => {
   const files = Array.from({ length: 23 }, (_, index) => ({ filename: `src/changed-${index}.ts`, status: 'modified' }));
   const sources = Object.fromEntries(files.flatMap(({ filename }, index) => [

@@ -60,8 +60,9 @@ export async function loadAgentReviewInputs(
   const encodedInstructions = stringValue(instructionsPayload.content);
   if (encoding !== 'base64' || !encodedInstructions) throw new Error('Could not read AGENTS.md from the Pull Request base commit.');
   const repositoryInstructions = Buffer.from(encodedInstructions.replace(/\s/g, ''), 'base64').toString('utf8');
-  const sourceFiles = await loadChangedSourceFiles(fetchImpl, repository, filesPayload, headSha, baseSha, token);
-  const vaultContext = await loadVaultContext(fetchImpl, repository, filesPayload, headSha, baseSha, token, sourceFiles);
+  const vaultContext = await loadVaultContext(fetchImpl, repository, filesPayload, headSha, baseSha, token);
+  const vaultPaths = new Set(vaultContext.filter(({ path }) => !path.startsWith('github-evidence://')).map(({ path }) => path));
+  const sourceFiles = await loadChangedSourceFiles(fetchImpl, repository, filesPayload, headSha, baseSha, token, vaultPaths);
   const checkRuns = summarizeCheckRunEvidence(runs, headSha);
   const ciChecks = latestRunsByName(runs.filter((run) => run.head_sha === headSha && isTestCheck(String(run.name ?? ''))));
   if (ciChecks.length > 3) throw new Error('Too many CI checks for the supported agent evidence context.');
@@ -81,13 +82,19 @@ async function loadChangedSourceFiles(
   headSha: string,
   baseSha: string,
   token: string,
+  alreadyLoadedPaths: ReadonlySet<string> = new Set(),
 ): Promise<AgentReviewInputs['sourceFiles']> {
-  if (files.length > MAX_SOURCE_FILES) throw new Error('Pull Request changes too many files for a complete agent review context.');
+  const changedFiles = files.map((file) => ({ ...file, filename: stringValue(file.filename), status: stringValue(file.status) }));
+  for (const file of changedFiles) {
+    if (!file.filename || !file.status) throw new Error('GitHub returned incomplete changed-file metadata.');
+  }
+  const sourceCandidates = changedFiles.filter(({ filename }) => !alreadyLoadedPaths.has(filename as string));
+  if (sourceCandidates.length > MAX_SOURCE_FILES) throw new Error('Pull Request changes too many files for a complete agent review context.');
 
   const sourceFiles: AgentReviewInputs['sourceFiles'] = [];
   let totalBytes = 0;
-  const changedFileCount = files.length;
-  const pendingFiles = files.map((file) => ({ ...file, filename: stringValue(file.filename), status: stringValue(file.status) }));
+  const changedFileCount = sourceCandidates.length;
+  const pendingFiles = [...sourceCandidates];
   const seen = new Set(pendingFiles.map((file) => `${file.status === 'removed' ? 'base' : 'head'}:${file.filename}`));
   for (let index = 0; index < pendingFiles.length; index += 1) {
     const file = pendingFiles[index];
@@ -120,7 +127,7 @@ async function loadChangedSourceFiles(
         const dependency = posix.normalize(posix.join(posix.dirname(path), match[1].replace(/\.js$/, '.ts')));
         const key = `${revision}:${dependency}`;
         if (dependency.startsWith('../') || seen.has(key)) continue;
-        if (pendingFiles.length >= files.length + MAX_DEPENDENCY_FILES) throw new Error('Pull Request dependencies exceed the supported source file limit.');
+        if (pendingFiles.length >= changedFileCount + MAX_DEPENDENCY_FILES) throw new Error('Pull Request dependencies exceed the supported source file limit.');
         seen.add(key);
         pendingFiles.push({ filename: dependency, status: revision === 'base' ? 'removed' : 'modified' });
       }

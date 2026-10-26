@@ -19,6 +19,7 @@ When `docs/knowledge/README.md` exists, the hosted Agents use the vault as their
 ```json
 {
   "version": 1,
+  "catalogs": ["docs/knowledge/evidence/source-index.md"],
   "routes": [
     {
       "paths": ["apps/api/src/**"],
@@ -28,7 +29,7 @@ When `docs/knowledge/README.md` exists, the hosted Agents use the vault as their
 }
 ```
 
-Route patterns support `*` inside one path segment and `**` across segments. Documents selected by changed paths must remain under `docs/knowledge/` and use Markdown. The index and current-state references are always inspected, including on code-only PRs; referenced Markdown notes inside the vault are traversed as a bounded, deduplicated graph so their evidence is also verified. Single-line inline links (including angle-bracket destinations, balanced parentheses, optional titles and labels formatted as inline code) and links by reference may cite exact repository files or a same-repository GitHub review, inline review comment, or PR conversation comment. Unsupported or malformed inline links and undefined or conflicting reference definitions fail closed. Remote evidence is accepted only after its identifier, canonical URL and PR association match the cited link. The resolver never follows arbitrary web links, never executes vault content and never accepts a directory as source context.
+Route patterns support `*` inside one path segment and `**` across segments. Documents selected by changed paths must remain under `docs/knowledge/` and use Markdown. The index and current state are always loaded, but links from these navigation roots do not expand other vault notes; the context map and changed vault files select those notes explicitly. References inside selected notes are traversed as a bounded, deduplicated graph so their evidence is verified. Documents declared in `catalogs` are metadata indexes: their own content participates in the fingerprint when selected, but outbound links are navigational and are not hydrated automatically. An Agent must query an original catalog source separately before using it as decision evidence. Single-line inline links (including angle-bracket destinations, balanced parentheses, optional titles and labels formatted as inline code) and links by reference may cite exact repository files or a same-repository GitHub review, inline review comment, or PR conversation comment. Unsupported or malformed inline links and undefined or conflicting reference definitions fail closed. Remote evidence is accepted only after its identifier, canonical URL and PR association match the cited link. The resolver never follows arbitrary web links, never executes vault content and never accepts a directory as source context.
 
 The `GitHub Reviewer` CI job runs `tools/knowledge/validate-vault.ps1` whenever the vault is present. A missing validator or an invalid vault blocks the check. Confirmed Code Review problems are recorded during the correction round in the appropriate file under `docs/knowledge/learnings/`, with review reference, affected SHA, impact, applied correction and prevention. Hypotheses, false positives, inconclusive findings and style preferences are not learnings. CI and the Code Review Agent do not commit changes automatically.
 
