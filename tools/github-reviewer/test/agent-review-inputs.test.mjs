@@ -121,6 +121,76 @@ test('loads all 32 changed files at the supported boundary without omitting sour
   assert.deepEqual(inputs.sourceFiles.map(({ path }) => path), files.map(({ filename }) => filename));
 });
 
+test('counts changed files already supplied by the vault only once', async () => {
+  const vaultFiles = Array.from({ length: 35 }, (_, index) => ({ filename: `docs/knowledge/generated/note-${index}.md`, status: 'added' }));
+  const files = [
+    { filename: 'docs/knowledge/README.md', status: 'added' },
+    { filename: 'docs/knowledge/current-state.md', status: 'added' },
+    ...vaultFiles,
+    { filename: 'src/example.ts', status: 'modified' },
+  ];
+  const sources = {
+    'docs/knowledge/README.md': '# Index\n',
+    'docs/knowledge/current-state.md': '# Current state\n',
+    ...Object.fromEntries(vaultFiles.map(({ filename }, index) => [filename, `# Note ${index}\n`])),
+  };
+
+  const inputs = await loadAgentReviewInputs(
+    createFetch({ files, sources }),
+    'owner/repo',
+    7,
+    { head: { sha: headSha }, base: { sha: baseSha } },
+    'token',
+  );
+
+  assert.deepEqual(inputs.sourceFiles.map(({ path }) => path), ['src/example.ts']);
+  assert.equal(inputs.vaultContext.filter(({ path }) => path.startsWith('docs/knowledge/')).length, 37);
+});
+
+test('still blocks more than 32 changed source files referenced by the vault', async () => {
+  const sourceFiles = Array.from({ length: 33 }, (_, index) => ({ filename: `src/file-${index}.ts`, status: 'modified' }));
+  const noteLinks = sourceFiles.map(({ filename }) => `[Source](../../../${filename})`).join('\n');
+  const files = [
+    { filename: 'docs/knowledge/README.md', status: 'modified' },
+    { filename: 'docs/knowledge/current-state.md', status: 'modified' },
+    { filename: 'docs/knowledge/learnings/source-index.md', status: 'modified' },
+    ...sourceFiles,
+  ];
+  const sources = {
+    'docs/knowledge/README.md': '# Index\n',
+    'docs/knowledge/current-state.md': '# Current state\n',
+    'docs/knowledge/learnings/source-index.md': `# Sources\n${noteLinks}\n`,
+    ...Object.fromEntries(sourceFiles.map(({ filename }) => [filename, 'export const value = 1;\n'])),
+  };
+
+  await assert.rejects(
+    loadAgentReviewInputs(createFetch({ files, sources }), 'owner/repo', 7, { head: { sha: headSha }, base: { sha: baseSha } }, 'token'),
+    /too many files/,
+  );
+});
+
+test('discovers dependencies for changed source files also supplied by the vault', async () => {
+  const sources = {
+    'docs/knowledge/README.md': '# Index\n',
+    'docs/knowledge/current-state.md': '# Current state\n',
+    'docs/knowledge/learnings/source.md': '# Source\n[Changed](../../../src/example.ts)\n',
+    'src/example.ts': "import { value } from './helper.js'; export { value };",
+    'src/helper.ts': 'export const value = 1;\n',
+  };
+  const inputs = await loadAgentReviewInputs(createFetch({
+    files: [
+      { filename: 'docs/knowledge/README.md', status: 'modified' },
+      { filename: 'docs/knowledge/current-state.md', status: 'modified' },
+      { filename: 'docs/knowledge/learnings/source.md', status: 'modified' },
+      { filename: 'src/example.ts', status: 'modified' },
+    ],
+    sources,
+  }), 'owner/repo', 7, { head: { sha: headSha }, base: { sha: baseSha } }, 'token');
+
+  assert.deepEqual(inputs.sourceFiles.map(({ path }) => path), ['src/example.ts', 'src/helper.ts']);
+  assert.equal(inputs.vaultContext.some(({ path }) => path === 'src/example.ts'), true);
+});
+
 test('keeps all 23 changed files when auxiliary dependencies exceed the byte budget', async () => {
   const files = Array.from({ length: 23 }, (_, index) => ({ filename: `src/changed-${index}.ts`, status: 'modified' }));
   const sources = Object.fromEntries(files.flatMap(({ filename }, index) => [

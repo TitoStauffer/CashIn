@@ -57,7 +57,7 @@ test('loads the vault index, current state, routed note and exact local source a
   assert.equal(requests.every((request) => request.searchParams.get('ref') === headSha), true);
 });
 
-test('inspects references from the required index and current state when only code changed', async () => {
+test('loads direct sources but does not expand vault navigation from the required roots', async () => {
   const files = baseVault({
     'docs/knowledge/README.md': { value: '# Index\n[Architecture](architecture.md)\n' },
     'docs/knowledge/current-state.md': { value: '# Current state\n[Contract](../../docs/contract.md)\n' },
@@ -70,7 +70,6 @@ test('inspects references from the required index and current state when only co
   assert.deepEqual(result.map(({ path }) => path), [
     'docs/knowledge/README.md',
     'docs/knowledge/current-state.md',
-    'docs/knowledge/architecture.md',
     'docs/contract.md',
   ]);
 });
@@ -84,8 +83,9 @@ test('walks referenced vault notes and loads their local and review evidence', a
   });
   const review = { id: 123, state: 'CHANGES_REQUESTED', body: 'First evidence', html_url: 'https://github.com/owner/repo/pull/44#pullrequestreview-123' };
 
-  const first = await loadVaultContext(fakeFetch(files, { [reviewPath]: review }), repository, [{ filename: 'apps/api/src/route.ts', status: 'modified' }], headSha, baseSha, 'token');
-  const second = await loadVaultContext(fakeFetch(files, { [reviewPath]: { ...review, body: 'Updated evidence' } }), repository, [{ filename: 'apps/api/src/route.ts', status: 'modified' }], headSha, baseSha, 'token');
+  const changedFiles = [{ filename: 'docs/knowledge/learnings/example.md', status: 'modified' }];
+  const first = await loadVaultContext(fakeFetch(files, { [reviewPath]: review }), repository, changedFiles, headSha, baseSha, 'token');
+  const second = await loadVaultContext(fakeFetch(files, { [reviewPath]: { ...review, body: 'Updated evidence' } }), repository, changedFiles, headSha, baseSha, 'token');
 
   assert.deepEqual(first.map(({ path }) => path), [
     'docs/knowledge/README.md',
@@ -101,20 +101,28 @@ test('walks referenced vault notes and loads their local and review evidence', a
 
 test('resolves collapsed and shortcut Markdown reference links without treating images as sources', async () => {
   const files = baseVault({
-    'docs/knowledge/README.md': {
+    'docs/knowledge/learnings/references.md': {
       value: '# Index\n[Collapsed][]\n[Shortcut]\n![Diagram][image]\n\n[collapsed]: collapsed.md\n[shortcut]: shortcut.md\n[image]: missing.png\n',
     },
-    'docs/knowledge/collapsed.md': { value: '# Collapsed\n' },
-    'docs/knowledge/shortcut.md': { value: '# Shortcut\n' },
+    'docs/knowledge/learnings/collapsed.md': { value: '# Collapsed\n' },
+    'docs/knowledge/learnings/shortcut.md': { value: '# Shortcut\n' },
   });
 
-  const result = await loadVaultContext(fakeFetch(files), repository, [], headSha, baseSha, 'token');
+  const result = await loadVaultContext(
+    fakeFetch(files),
+    repository,
+    [{ filename: 'docs/knowledge/learnings/references.md', status: 'modified' }],
+    headSha,
+    baseSha,
+    'token',
+  );
 
   assert.deepEqual(result.map(({ path }) => path), [
     'docs/knowledge/README.md',
     'docs/knowledge/current-state.md',
-    'docs/knowledge/collapsed.md',
-    'docs/knowledge/shortcut.md',
+    'docs/knowledge/learnings/references.md',
+    'docs/knowledge/learnings/collapsed.md',
+    'docs/knowledge/learnings/shortcut.md',
   ]);
 });
 
@@ -222,7 +230,7 @@ test('fails closed when a referenced vault note cites a missing source', async (
   });
 
   await assert.rejects(
-    loadVaultContext(fakeFetch(files), repository, [{ filename: 'apps/api/src/route.ts', status: 'modified' }], headSha, baseSha, 'token'),
+    loadVaultContext(fakeFetch(files), repository, [{ filename: 'docs/knowledge/learnings/example.md', status: 'modified' }], headSha, baseSha, 'token'),
     /GitHub API request failed \(404\)/,
   );
 });
@@ -294,6 +302,10 @@ test('fails closed for unsafe local paths, directories and invalid context maps'
     const files = baseVault({ 'docs/knowledge/context-map.json': { value: '{invalid' } });
     await assert.rejects(loadVaultContext(fakeFetch(files), repository, [], headSha, baseSha, 'token'), /not valid JSON/);
   });
+  await t.test('invalid catalog path', async () => {
+    const files = baseVault({ 'docs/knowledge/context-map.json': { value: JSON.stringify({ version: 1, routes: [], catalogs: ['docs/outside.md'] }) } });
+    await assert.rejects(loadVaultContext(fakeFetch(files), repository, [], headSha, baseSha, 'token'), /outside docs\/knowledge or is not Markdown/);
+  });
   await t.test('undefined Markdown link reference', async () => {
     const files = baseVault({ 'docs/knowledge/README.md': { value: '# Index\n[Missing][source]\n' } });
     await assert.rejects(loadVaultContext(fakeFetch(files), repository, [], headSha, baseSha, 'token'), /undefined Markdown link reference/);
@@ -302,6 +314,36 @@ test('fails closed for unsafe local paths, directories and invalid context maps'
     const files = baseVault({ 'docs/knowledge/README.md': { value: '# Index\n[Source][source]\n\n[source]: current-state.md\n[source]: other.md\n' } });
     await assert.rejects(loadVaultContext(fakeFetch(files), repository, [], headSha, baseSha, 'token'), /conflicting Markdown link definitions/);
   });
+});
+
+test('loads catalog metadata without hydrating its outbound evidence links', async () => {
+  const files = baseVault({
+    'docs/knowledge/context-map.json': {
+      value: JSON.stringify({ version: 1, routes: [], catalogs: ['docs/knowledge/evidence/catalog.md'] }),
+    },
+    'docs/knowledge/README.md': { value: '# Index\n[Catalog](evidence/catalog.md)\n' },
+    'docs/knowledge/evidence/catalog.md': {
+      value: '# Catalog\n[Missing](../../../apps/api/src/missing.ts)\n[Review](https://github.com/owner/repo/pull/44#pullrequestreview-123)\n',
+    },
+  });
+  const requests = [];
+
+  const result = await loadVaultContext(
+    fakeFetch(files, {}, requests),
+    repository,
+    [{ filename: 'docs/knowledge/evidence/catalog.md', status: 'modified' }],
+    headSha,
+    baseSha,
+    'token',
+  );
+
+  assert.deepEqual(result.map(({ path }) => path), [
+    'docs/knowledge/README.md',
+    'docs/knowledge/current-state.md',
+    'docs/knowledge/context-map.json',
+    'docs/knowledge/evidence/catalog.md',
+  ]);
+  assert.equal(requests.some(({ pathname }) => pathname.includes('missing.ts') || pathname.includes('/pulls/44/reviews/123')), false);
 });
 
 test('fails closed before fetching evidence when the item limit would be exceeded', async () => {
