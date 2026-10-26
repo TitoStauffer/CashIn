@@ -1,5 +1,9 @@
 {
   "version": 1,
+  "catalogs": [
+    "docs/knowledge/evidence/code-review-index.md",
+    "docs/knowledge/evidence/source-manifest.md"
+  ],
   "routes": [
     {
       "paths": ["apps/api/src/wallets/**", "apps/api/src/wallet-invitations/**", "apps/api/src/wallet-access-requests/**", "apps/web/src/wallets/**"],

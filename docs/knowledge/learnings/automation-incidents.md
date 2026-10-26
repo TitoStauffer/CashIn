@@ -27,6 +27,10 @@ Título é validado antes dos jobs caros; API, Web e ferramentas executam antes 
 
 Interromper a análise no primeiro achado causou ciclos repetidos. O prompt de Code Review agora exige investigação completa e consolidação dos achados da rodada.
 
+## Índice navegável não é seleção de contexto
+
+Na primeira execução com o vault completo, seguir recursivamente todos os links do índice tentou hidratar todo o histórico de revisões e excedeu o limite seguro antes do Code Review. O índice e o estado atual continuam sempre disponíveis, mas somente o mapa e os arquivos alterados selecionam notas. Catálogos preservam metadados e links navegáveis sem carregar automaticamente cada fonte; qualquer item usado em uma decisão deve ser consultado separadamente.
+
 ## Fontes verificáveis
 
 - Histórico Git e PRs do repositório.

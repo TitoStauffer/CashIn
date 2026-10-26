@@ -14,6 +14,8 @@ Este diretório é a memória operacional versionada do projeto. Ele orienta a i
 4. Registre divergências encontradas e atualize a nota afetada na mesma entrega.
 5. Não armazene secrets, tokens, dados pessoais, logs integrais ou valores de ambientes reais.
 
+O `context-map.json` seleciona automaticamente apenas as notas relacionadas aos caminhos alterados. Índices extensos declarados em `catalogs` continuam disponíveis para navegação, mas seus links não são carregados em massa; consulte a fonte original de um item antes de usá-lo em uma decisão.
+
 ## Roteiro por tipo de trabalho
 
 | Trabalho | Leitura inicial |

@@ -100,6 +100,24 @@ if (Test-Path -LiteralPath $contextMapPath -PathType Leaf) {
           }
         }
       }
+
+      if ($null -ne $contextMap.catalogs) {
+        if ($contextMap.catalogs -isnot [array]) {
+          $failures.Add("docs/knowledge/context-map.json: catalogs deve ser um array.")
+        }
+        else {
+          foreach ($catalog in @($contextMap.catalogs)) {
+            if ($catalog -isnot [string] -or -not $catalog.StartsWith('docs/knowledge/') -or -not $catalog.EndsWith('.md')) {
+              $failures.Add("docs/knowledge/context-map.json: catálogo fora do vault ou não Markdown '$catalog'.")
+              continue
+            }
+            $resolvedCatalog = [IO.Path]::GetFullPath((Join-Path $RepositoryRoot $catalog))
+            if (-not $resolvedCatalog.StartsWith($vaultRootPrefix, [StringComparison]::OrdinalIgnoreCase) -or -not (Test-Path -LiteralPath $resolvedCatalog -PathType Leaf)) {
+              $failures.Add("docs/knowledge/context-map.json: catálogo inexistente ou inseguro '$catalog'.")
+            }
+          }
+        }
+      }
     }
   }
 }
