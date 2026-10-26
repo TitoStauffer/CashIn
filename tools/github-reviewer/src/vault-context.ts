@@ -58,6 +58,7 @@ export async function loadVaultContext(
 
   const known = new Map(knownSources.map((source) => [`${source.revision}:${source.path}`, source]));
   const snapshots: VaultContextSnapshot[] = [];
+  const snapshotsByKey = new Map<string, VaultContextSnapshot>();
   const seen = new Set<string>();
   let totalBytes = 0;
 
@@ -69,6 +70,7 @@ export async function loadVaultContext(
       throw new Error('Vault context exceeds the supported item or byte limit.');
     }
     seen.add(key);
+    snapshotsByKey.set(key, snapshot);
     snapshots.push(snapshot);
     totalBytes += bytes;
     return true;
@@ -78,7 +80,10 @@ export async function loadVaultContext(
     assertSafeRepositoryPath(path);
     const status = changed.get(path);
     const revision: 'head' | 'base' = status === 'removed' ? 'base' : 'head';
-    const knownSource = known.get(`${revision}:${path}`);
+    const key = `${revision}:${path}`;
+    const loadedSource = snapshotsByKey.get(key);
+    if (loadedSource) return loadedSource;
+    const knownSource = known.get(key);
     if (knownSource) {
       addSnapshot(knownSource);
       return knownSource;
@@ -127,36 +132,53 @@ export async function loadVaultContext(
   }
 
   const documentsToInspect: VaultContextSnapshot[] = [index, currentState];
-  const inspectedDocuments = new Set(documentsToInspect.map(({ path }) => path));
+  const queuedDocuments = new Set(documentsToInspect.map(({ path }) => path));
   for (const document of selectedDocuments) {
     assertKnowledgeDocument(document);
     const loaded = await loadLocal(document);
-    if (loaded && !inspectedDocuments.has(loaded.path)) {
+    if (loaded && !queuedDocuments.has(loaded.path)) {
       documentsToInspect.push(loaded);
-      inspectedDocuments.add(loaded.path);
+      queuedDocuments.add(loaded.path);
     }
   }
 
-  const localReferences = new Set<string>();
   const remoteReferences = new Map<string, GitHubEvidenceReference>();
-  for (const document of documentsToInspect) {
+  for (let documentIndex = 0; documentIndex < documentsToInspect.length; documentIndex += 1) {
+    const document = documentsToInspect[documentIndex];
+    if (!document) continue;
     for (const target of markdownLinks(document.content)) {
       const local = resolveLocalReference(document.path, target);
-      if (local) localReferences.add(local);
+      if (local) {
+        const loaded = await loadLocal(local);
+        if (loaded && isKnowledgeDocument(loaded.path) && !queuedDocuments.has(loaded.path)) {
+          documentsToInspect.push(loaded);
+          queuedDocuments.add(loaded.path);
+        }
+      }
       const remote = resolveGitHubEvidenceReference(target, owner, repositoryName);
-      if (remote) remoteReferences.set(remote.sourceUrl, remote);
+      if (remote) remoteReferences.set(`${remote.kind}:${remote.pullRequestNumber}:${remote.evidenceId}`, remote);
     }
   }
 
-  if (snapshots.length + localReferences.size + remoteReferences.size > MAX_VAULT_ITEMS) {
+  const pendingEvidencePaths = new Set(
+    [...remoteReferences.values()]
+      .map(({ apiPath }) => `head:github-evidence://${apiPath.replace(/^\//, '')}`)
+      .filter((key) => !seen.has(key)),
+  );
+  if (snapshots.length + pendingEvidencePaths.size > MAX_VAULT_ITEMS) {
     throw new Error('Vault context exceeds the supported item limit.');
   }
 
-  for (const path of [...localReferences].sort()) await loadLocal(path);
+  const evidenceResponses = new Map<string, Record<string, unknown>>();
   for (const reference of remoteReferences.values()) {
     const { apiPath, sourceUrl } = reference;
-    const payload = await requestGitHubApi<unknown>(fetchImpl, apiPath, token, { maxResponseBytes: MAX_SINGLE_RESPONSE_BYTES });
-    if (!isRecord(payload)) throw new Error(`GitHub vault evidence is invalid: ${sourceUrl}.`);
+    let payload = evidenceResponses.get(apiPath);
+    if (!payload) {
+      const response = await requestGitHubApi<unknown>(fetchImpl, apiPath, token, { maxResponseBytes: MAX_SINGLE_RESPONSE_BYTES });
+      if (!isRecord(response)) throw new Error(`GitHub vault evidence is invalid: ${sourceUrl}.`);
+      payload = response;
+      evidenceResponses.set(apiPath, payload);
+    }
     assertGitHubEvidenceAssociation(payload, reference, owner, repositoryName);
     const evidence = normalizeGitHubEvidence(payload, sourceUrl);
     addSnapshot({
@@ -326,9 +348,13 @@ function matchesPattern(path: string, pattern: string): boolean {
 
 function assertKnowledgeDocument(path: string): void {
   assertSafeRepositoryPath(path);
-  if (!path.startsWith('docs/knowledge/') || !path.endsWith('.md')) {
+  if (!isKnowledgeDocument(path)) {
     throw new Error(`Vault context document is outside docs/knowledge or is not Markdown: ${path}.`);
   }
+}
+
+function isKnowledgeDocument(path: string): boolean {
+  return path.startsWith('docs/knowledge/') && path.endsWith('.md');
 }
 
 function assertSafeRepositoryPath(path: string): void {

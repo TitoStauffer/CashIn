@@ -70,9 +70,45 @@ test('inspects references from the required index and current state when only co
   assert.deepEqual(result.map(({ path }) => path), [
     'docs/knowledge/README.md',
     'docs/knowledge/current-state.md',
-    'docs/contract.md',
     'docs/knowledge/architecture.md',
+    'docs/contract.md',
   ]);
+});
+
+test('walks referenced vault notes and loads their local and review evidence', async () => {
+  const reviewPath = '/repos/owner/repo/pulls/44/reviews/123';
+  const files = baseVault({
+    'docs/knowledge/README.md': { value: '# Index\n[Learning](learnings/example.md)\n' },
+    'docs/knowledge/learnings/example.md': { value: '# Learning\n[Source](../../../apps/api/src/service.ts)\n[Review](https://github.com/owner/repo/pull/44#pullrequestreview-123)\n' },
+    'apps/api/src/service.ts': { value: 'export const value = 1;\n' },
+  });
+  const review = { id: 123, state: 'CHANGES_REQUESTED', body: 'First evidence', html_url: 'https://github.com/owner/repo/pull/44#pullrequestreview-123' };
+
+  const first = await loadVaultContext(fakeFetch(files, { [reviewPath]: review }), repository, [{ filename: 'apps/api/src/route.ts', status: 'modified' }], headSha, baseSha, 'token');
+  const second = await loadVaultContext(fakeFetch(files, { [reviewPath]: { ...review, body: 'Updated evidence' } }), repository, [{ filename: 'apps/api/src/route.ts', status: 'modified' }], headSha, baseSha, 'token');
+
+  assert.deepEqual(first.map(({ path }) => path), [
+    'docs/knowledge/README.md',
+    'docs/knowledge/current-state.md',
+    'docs/knowledge/learnings/example.md',
+    'apps/api/src/service.ts',
+    `github-evidence://${reviewPath.slice(1)}`,
+  ]);
+  assert.match(first.at(-1).content, /First evidence/);
+  assert.match(second.at(-1).content, /Updated evidence/);
+  assert.notEqual(first.at(-1).content, second.at(-1).content);
+});
+
+test('fails closed when a referenced vault note cites a missing source', async () => {
+  const files = baseVault({
+    'docs/knowledge/README.md': { value: '# Index\n[Learning](learnings/example.md)\n' },
+    'docs/knowledge/learnings/example.md': { value: '# Learning\n[Missing](../../../apps/api/src/missing.ts)\n' },
+  });
+
+  await assert.rejects(
+    loadVaultContext(fakeFetch(files), repository, [{ filename: 'apps/api/src/route.ts', status: 'modified' }], headSha, baseSha, 'token'),
+    /GitHub API request failed \(404\)/,
+  );
 });
 
 test('loads only verifiable same-repository GitHub review evidence', async () => {
@@ -151,6 +187,24 @@ test('fails closed before fetching evidence when the item limit would be exceede
 
   await assert.rejects(loadVaultContext(fakeFetch(files, {}, requests), repository, [{ filename: 'docs/knowledge/large.md', status: 'added' }], headSha, baseSha, 'token'), /item limit/);
   assert.equal(requests.some(({ pathname }) => pathname.includes('/pulls/44/reviews/')), false);
+});
+
+test('counts routed and linked vault documents only once when enforcing the item limit', async () => {
+  const documents = Array.from({ length: 157 }, (_, index) => `docs/knowledge/generated/note-${index}.md`);
+  const files = baseVault({
+    'docs/knowledge/README.md': { value: `# Index\n${documents.map((path, index) => `[Note ${index}](${path.replace('docs/knowledge/', '')})`).join('\n')}\n` },
+    'docs/knowledge/context-map.json': { value: JSON.stringify({ version: 1, routes: [{ paths: ['apps/api/src/**'], documents }] }) },
+    ...Object.fromEntries(documents.map((path, index) => [path, { value: `# Note ${index}\n` }])),
+  });
+  const requests = [];
+
+  const result = await loadVaultContext(fakeFetch(files, {}, requests), repository, [{ filename: 'apps/api/src/route.ts', status: 'modified' }], headSha, baseSha, 'token');
+
+  assert.equal(result.length, 160);
+  assert.equal(new Set(result.map(({ revision, path }) => `${revision}:${path}`)).size, 160);
+  for (const document of documents) {
+    assert.equal(requests.filter(({ pathname }) => pathname.endsWith(document)).length, 1);
+  }
 });
 
 test('treats a missing vault index as an optional empty context', async () => {
