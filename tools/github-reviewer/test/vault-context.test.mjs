@@ -350,6 +350,49 @@ test('loads catalog metadata without hydrating its outbound evidence links', asy
   assert.equal(requests.some(({ pathname }) => pathname.includes('missing.ts') || pathname.includes('/pulls/44/reviews/123')), false);
 });
 
+test('loads a complete documentation evidence graph above the previous byte ceiling', async () => {
+  const sources = Array.from({ length: 8 }, (_, index) => `apps/api/src/source-${index}.ts`);
+  const files = baseVault({
+    'docs/knowledge/note.md': {
+      value: sources.map((source, index) => `[Source ${index}](../../${source})`).join('\n'),
+    },
+    ...Object.fromEntries(sources.map((source) => [source, { value: 'x'.repeat(60_000) }])),
+  });
+
+  const result = await loadVaultContext(
+    fakeFetch(files),
+    repository,
+    [{ filename: 'docs/knowledge/note.md', status: 'added' }],
+    headSha,
+    baseSha,
+    'token',
+  );
+
+  assert.equal(result.filter(({ path }) => path.startsWith('apps/api/src/source-')).length, 8);
+});
+
+test('fails closed when the vault evidence graph exceeds the byte limit', async () => {
+  const sources = Array.from({ length: 11 }, (_, index) => `apps/api/src/source-${index}.ts`);
+  const files = baseVault({
+    'docs/knowledge/note.md': {
+      value: sources.map((source, index) => `[Source ${index}](../../${source})`).join('\n'),
+    },
+    ...Object.fromEntries(sources.map((source) => [source, { value: 'x'.repeat(60_000) }])),
+  });
+
+  await assert.rejects(
+    loadVaultContext(
+      fakeFetch(files),
+      repository,
+      [{ filename: 'docs/knowledge/note.md', status: 'added' }],
+      headSha,
+      baseSha,
+      'token',
+    ),
+    /item or byte limit/,
+  );
+});
+
 test('fails closed before fetching evidence when the item limit would be exceeded', async () => {
   const links = Array.from({ length: 160 }, (_, index) => `[Review ${index}](https://github.com/owner/repo/pull/44#pullrequestreview-${index + 1})`).join('\n');
   const files = baseVault({ 'docs/knowledge/large.md': { value: links } });
