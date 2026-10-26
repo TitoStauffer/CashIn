@@ -118,6 +118,21 @@ test('resolves collapsed and shortcut Markdown reference links without treating 
   ]);
 });
 
+test('ignores link-shaped examples inside inline and fenced Markdown code', async () => {
+  const files = baseVault({
+    'docs/knowledge/README.md': {
+      value: '# Index\n`[Inline][missing]`\n\n```markdown\n[Fenced][missing]\n```\n\n~~~\n[Other fence](missing.md)\n~~~\n',
+    },
+  });
+
+  const result = await loadVaultContext(fakeFetch(files), repository, [], headSha, baseSha, 'token');
+
+  assert.deepEqual(result.map(({ path }) => path), [
+    'docs/knowledge/README.md',
+    'docs/knowledge/current-state.md',
+  ]);
+});
+
 test('fails closed when a referenced vault note cites a missing source', async () => {
   const files = baseVault({
     'docs/knowledge/README.md': { value: '# Index\n[Learning](learnings/example.md)\n' },
