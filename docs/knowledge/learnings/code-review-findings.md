@@ -1,7 +1,7 @@
 # Aprendizados de Code Review
 
-**Status:** auditado até o PR #43
-**Última revisão:** 25/10/2026
+**Status:** auditado até o PR #45
+**Última revisão:** 26/10/2026
 
 Esta nota converte os achados históricos do Agent de Code Review em regras preventivas. O inventário e os links das revisões estão em [`code-review-audit.md`](code-review-audit.md).
 
@@ -61,12 +61,13 @@ Esta nota converte os achados históricos do Agent de Code Review em regras prev
 
 ## 7. Projeções de entrada não confiável devem ser estruturais
 
-- **Evidências:** [PR #33](https://github.com/TitoStauffer/CashIn/pull/33#pullrequestreview-5608351923) e [PR #35](https://github.com/TitoStauffer/CashIn/pull/35#pullrequestreview-5609434005).
+- **Evidências:** [PR #33](https://github.com/TitoStauffer/CashIn/pull/33#pullrequestreview-5608351923), [PR #35](https://github.com/TitoStauffer/CashIn/pull/35#pullrequestreview-5609434005) e [PR #45](https://github.com/TitoStauffer/CashIn/pull/45#pullrequestreview-5657791056).
 - **Problema recorrente:** retirar o diff do detector abriu um caminho para prompt injection; interpretar YAML por posição de linha deixou valores de `env` em formato flow escaparem à redação.
 - **Causa-raiz:** redução de falso positivo e sanitização foram implementadas removendo cobertura ou usando heurística textual incompleta.
 - **Impacto:** instruções não confiáveis alcançam o modelo e valores de ambiente podem ser expostos no contexto.
 - **Regra preventiva:** analisar todas as fontes não confiáveis e usar parser estrutural ou rejeitar formato não suportado; segurança falha fechada.
 - **Detecção:** corpus adversarial com payload apenas no diff/snapshot e variantes sintáticas válidas da configuração.
+- **Ocorrência no PR #45 (`29385064394defd2b18ca1377b793ddd7502be3e`):** comentários do GitHub eram buscados pelo identificador, mas o retorno não era confrontado com o PR indicado no link. O impacto era aceitar evidência pertencente a outro PR. A correção preserva número do PR, tipo e identificador da referência e valida `id`, URL canônica e `pull_request_url` ou `issue_url`. A prevenção é manter testes negativos para comentários inline, conversas e referências contraditórias.
 
 ## 8. Workflows precisam ser testados como grafo de eventos
 
@@ -79,18 +80,24 @@ Esta nota converte os achados históricos do Agent de Code Review em regras prev
 
 ## 9. Evidência e documentação acompanham o HEAD
 
-- **Evidências:** [PR #11](https://github.com/TitoStauffer/CashIn/pull/11#pullrequestreview-5586988527), rodadas do [PR #16](https://github.com/TitoStauffer/CashIn/pull/16#pullrequestreview-5590951918) e [PR #24](https://github.com/TitoStauffer/CashIn/pull/24#pullrequestreview-5609320295).
+- **Evidências:** [PR #11](https://github.com/TitoStauffer/CashIn/pull/11#pullrequestreview-5586988527), rodadas do [PR #16](https://github.com/TitoStauffer/CashIn/pull/16#pullrequestreview-5590951918), [PR #24](https://github.com/TitoStauffer/CashIn/pull/24#pullrequestreview-5609320295) e [PR #45](https://github.com/TitoStauffer/CashIn/pull/45#pullrequestreview-5657791056).
 - **Problema recorrente:** descrição do PR, contagem de testes, cobertura e README permaneceram com números ou comportamento anteriores.
 - **Causa-raiz:** documentação era atualizada na abertura, sem reconciliação após novos commits.
 - **Impacto:** reviewer e QA recebem evidência contraditória e consumidores leem contrato antigo.
 - **Regra preventiva:** antes de mover para review e antes do merge, o Product Manager reconcilia descrição, checklists, comandos e documentação com o HEAD.
 - **Detecção:** checklist factual do PR e revisão de documentação no diff; evitar números voláteis quando um link para o check é suficiente.
+- **Ocorrência no PR #45 (`29385064394defd2b18ca1377b793ddd7502be3e`):** o índice e o estado atual eram carregados, porém suas referências só eram inspecionadas quando os próprios documentos também estavam entre os arquivos alterados ou roteados. Em PRs somente de código, uma fonte obrigatória podia ficar ausente sem falha. A correção sempre inclui índice e estado atual na inspeção, com deduplicação e falha fechada. A prevenção é testar explicitamente um PR de código sem alteração no vault.
+- **Ocorrência no PR #45 (`7f2aaaa471eadacecc97fbb2f6fecc3a4e964278`):** notas descobertas por links do índice eram carregadas, mas as fontes citadas dentro delas não eram percorridas. O impacto era apresentar conhecimento sem comprovar suas evidências nem incluí-las no fingerprint. A correção percorre as notas do vault como um grafo limitado e deduplicado. A prevenção exige regressão para índice → nota → fonte local ou revisão, incluindo fonte ausente e evidência alterada. [Revisão](https://github.com/TitoStauffer/CashIn/pull/45#pullrequestreview-5657926601).
+- **Ocorrência no PR #45 (`36e1389312f5d1b0b9269ae0c1e1aea02b944cc6`):** o extrator reconhecia apenas links Markdown inline e ignorava a forma válida `[Fonte][id]`. O impacto era omitir fontes locais e revisões remotas do contexto e do fingerprint. A correção resolve definições por referência, incluindo formas completas, colapsadas e abreviadas, e falha fechada para definições ausentes ou conflitantes. A prevenção é executar as mesmas regressões de fonte ausente e evidência alterada nas duas sintaxes. [Revisão](https://github.com/TitoStauffer/CashIn/pull/45#pullrequestreview-5658015311).
+- **Ocorrência no PR #45 (`bb23977c81da38921f22d94afd34d947f910ef9d`):** ao remover código inline antes de interpretar Markdown, o extrator apagava o rótulo formatado em crases de um link válido e deixava de carregar seu destino. O impacto era omitir evidências locais ou remotas e ainda aprovar a validação do vault. A correção substitui somente o conteúdo do rótulo por um marcador neutro, preservando o destino, e mantém exemplos inteiramente dentro de código ignorados. A prevenção cobre fonte existente, fonte ausente e revisão remota com rótulos em crases. [Revisão](https://github.com/TitoStauffer/CashIn/pull/45#pullrequestreview-5658108678).
+- **Ocorrência no PR #45 (`201866759cf63ef5c5a6d12f44ee2ce8dc9dcac6`):** a expressão usada para links inline incluía títulos opcionais no destino e não interpretava corretamente destinos delimitados por sinais de menor e maior. O impacto era produzir 404 para fontes válidas e bloquear toda a orquestração. A correção usa um parser delimitado para rótulo, destino, parênteses balanceados e título, com rejeição explícita de sintaxe não suportada. A prevenção cobre fontes locais, evidência remota, espaços, escapes, parênteses, títulos, imagens e links malformados. [Revisão](https://github.com/TitoStauffer/CashIn/pull/45#pullrequestreview-5658177396).
 
 ## 10. Testes devem reproduzir o risco, não apenas a configuração
 
-- **Evidências:** os achados anteriores e a observação de cobertura no [PR #33](https://github.com/TitoStauffer/CashIn/pull/33#pullrequestreview-5608397261).
+- **Evidências:** os achados anteriores, a observação de cobertura no [PR #33](https://github.com/TitoStauffer/CashIn/pull/33#pullrequestreview-5608397261) e a [segunda rodada do PR #45](https://github.com/TitoStauffer/CashIn/pull/45#pullrequestreview-5657926601).
 - **Problema recorrente:** testes por regex, mocks felizes ou transformações puras passavam enquanto o contrato real, a transação ou o interleaving falhava.
 - **Causa-raiz:** o teste comprovava implementação esperada, mas não a propriedade de segurança ou recuperação declarada.
 - **Impacto:** ciclos sucessivos de correção para uma mesma feature.
 - **Regra preventiva:** cada regressão deve falhar na versão defeituosa e atravessar a fronteira onde ocorreu o problema.
 - **Detecção:** tabela de riscos no planejamento do teste: contrato, persistência, concorrência, contexto assíncrono, limite e falha parcial.
+- **Ocorrência no PR #45 (`7f2aaaa471eadacecc97fbb2f6fecc3a4e964278`):** a pré-validação do limite somava referências locais já presentes nos snapshots e podia rejeitar um contexto com menos de 160 itens únicos. A correção calcula a união das identidades e reutiliza snapshots locais. A prevenção é testar o valor de fronteira com os mesmos documentos simultaneamente roteados e vinculados.

@@ -26,5 +26,5 @@ A infraestrutura de upload, prévia, confirmação, histórico e desfazer existe
 ## Fontes verificáveis
 
 - [`docs/financial-imports-contract.md`](../../financial-imports-contract.md)
-- [`apps/api/src/financial-imports`](../../../apps/api/src/financial-imports)
-- [`apps/web/src/imports`](../../../apps/web/src/imports)
+- [`apps/api/src/financial-imports/financial-imports.service.ts`](../../../apps/api/src/financial-imports/financial-imports.service.ts)
+- [`apps/web/src/imports/FinancialImportsPage.tsx`](../../../apps/web/src/imports/FinancialImportsPage.tsx)

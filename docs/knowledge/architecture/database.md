@@ -30,6 +30,6 @@ Existem duas migrations iniciadas por `013_`. A ordem efetiva é lexical pelo no
 ## Fontes verificáveis
 
 - [`apps/api/src/database.ts`](../../../apps/api/src/database.ts)
-- [`apps/api/migrations/`](../../../apps/api/migrations/)
+- [`apps/api/migrations/014_import_sessions.sql`](../../../apps/api/migrations/014_import_sessions.sql)
 - [`compose.yaml`](../../../compose.yaml)
 - [`apps/api/src/financial-imports/postgres-financial-imports.repository.ts`](../../../apps/api/src/financial-imports/postgres-financial-imports.repository.ts)

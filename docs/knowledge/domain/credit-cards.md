@@ -22,7 +22,7 @@ O escopo atual trata fatura e quitação integral. Parcelamento, pagamento parci
 
 ## Fontes verificáveis
 
-- [`apps/api/src/credit-cards`](../../../apps/api/src/credit-cards)
-- [`apps/api/src/expenses`](../../../apps/api/src/expenses)
-- [`apps/web/src/creditCards`](../../../apps/web/src/creditCards)
-- [`apps/web/src/expenses`](../../../apps/web/src/expenses)
+- [`apps/api/src/credit-cards/credit-cards.service.ts`](../../../apps/api/src/credit-cards/credit-cards.service.ts)
+- [`apps/api/src/expenses/expenses.service.ts`](../../../apps/api/src/expenses/expenses.service.ts)
+- [`apps/web/src/creditCards/CreditCardsPage.tsx`](../../../apps/web/src/creditCards/CreditCardsPage.tsx)
+- [`apps/web/src/expenses/ExpensesPage.tsx`](../../../apps/web/src/expenses/ExpensesPage.tsx)

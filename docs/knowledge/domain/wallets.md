@@ -27,7 +27,7 @@ Convites e solicitações possuem estados próprios. A API deve validar identida
 
 ## Fontes verificáveis
 
-- [`apps/api/src/wallets`](../../../apps/api/src/wallets)
-- [`apps/api/src/wallet-invitations`](../../../apps/api/src/wallet-invitations)
-- [`apps/api/src/wallet-access-requests`](../../../apps/api/src/wallet-access-requests)
-- [`apps/web/src/wallets`](../../../apps/web/src/wallets)
+- [`apps/api/src/wallets/wallets.service.ts`](../../../apps/api/src/wallets/wallets.service.ts)
+- [`apps/api/src/wallet-invitations/wallet-invitations.service.ts`](../../../apps/api/src/wallet-invitations/wallet-invitations.service.ts)
+- [`apps/api/src/wallet-access-requests/wallet-access-requests.service.ts`](../../../apps/api/src/wallet-access-requests/wallet-access-requests.service.ts)
+- [`apps/web/src/wallets/WalletContext.tsx`](../../../apps/web/src/wallets/WalletContext.tsx)

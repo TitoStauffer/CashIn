@@ -28,10 +28,10 @@ Metas de investimento possuem objetivo, progresso e aportes. Um aporte deve alte
 
 ## Fontes verificáveis
 
-- [`apps/api/src/incomes`](../../../apps/api/src/incomes)
-- [`apps/api/src/expenses`](../../../apps/api/src/expenses)
-- [`apps/api/src/investment-goals`](../../../apps/api/src/investment-goals)
-- [`apps/api/src/payment-methods`](../../../apps/api/src/payment-methods)
-- [`apps/web/src/incomes`](../../../apps/web/src/incomes)
-- [`apps/web/src/expenses`](../../../apps/web/src/expenses)
-- [`apps/web/src/goals`](../../../apps/web/src/goals)
+- [`apps/api/src/incomes/incomes.service.ts`](../../../apps/api/src/incomes/incomes.service.ts)
+- [`apps/api/src/expenses/expenses.service.ts`](../../../apps/api/src/expenses/expenses.service.ts)
+- [`apps/api/src/investment-goals/investment-goals.service.ts`](../../../apps/api/src/investment-goals/investment-goals.service.ts)
+- [`apps/api/src/payment-methods/payment-methods.service.ts`](../../../apps/api/src/payment-methods/payment-methods.service.ts)
+- [`apps/web/src/incomes/IncomesPage.tsx`](../../../apps/web/src/incomes/IncomesPage.tsx)
+- [`apps/web/src/expenses/ExpensesPage.tsx`](../../../apps/web/src/expenses/ExpensesPage.tsx)
+- [`apps/web/src/goals/GoalsPage.tsx`](../../../apps/web/src/goals/GoalsPage.tsx)

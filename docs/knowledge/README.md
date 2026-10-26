@@ -1,7 +1,7 @@
 # Vault de conhecimento do CashIn
 
 **Status:** ativo
-**Última revisão:** 25/10/2026
+**Última revisão:** 26/10/2026
 **Responsável:** equipe de engenharia e Agents que alterarem o comportamento documentado
 
 Este diretório é a memória operacional versionada do projeto. Ele orienta a investigação inicial, registra decisões e aponta para as fontes verificáveis. Código, migrations, workflows e configurações continuam sendo as evidências executáveis.
@@ -32,18 +32,18 @@ Este diretório é a memória operacional versionada do projeto. Ele orienta a i
 | SonarQube | [`automation/sonarqube.md`](automation/sonarqube.md) |
 | Aprendizados de Code Review | [`learnings/code-review-findings.md`](learnings/code-review-findings.md) e [`learnings/code-review-audit.md`](learnings/code-review-audit.md) |
 | Evidências e validação do vault | [`evidence/README.md`](evidence/README.md) |
-| Mudança estrutural | ADRs em [`decisions/`](decisions/) e arquitetura afetada |
+| Mudança estrutural | [`ADR-001 — modelo de carteiras`](decisions/ADR-001-wallet-model.md), [`ADR-002 — orquestração`](decisions/ADR-002-agent-orchestration.md) e arquitetura afetada |
 
 ## Mapa do vault
 
 - [`current-state.md`](current-state.md): fotografia funcional e limitações conhecidas.
-- [`architecture/`](architecture/): visão do sistema, API, Web e banco.
-- [`domain/`](domain/): regras de negócio consolidadas por contexto.
-- [`automation/`](automation/): fluxo de entrega e integrações operacionais.
-- [`decisions/`](decisions/): decisões arquiteturais duráveis em formato ADR.
-- [`learnings/`](learnings/): aprendizados obtidos em reviews, incidentes e ciclos de correção.
-- [`evidence/`](evidence/): snapshots auditáveis, manifesto das fontes e relatório de validação.
-- [`runbooks/`](runbooks/): diagnóstico e recuperação passo a passo.
+- [`architecture/system-overview.md`](architecture/system-overview.md): visão do sistema; o roteiro acima direciona para API, Web e banco.
+- [`domain/transactions.md`](domain/transactions.md): regras de movimentações; o roteiro direciona para os demais contextos do domínio.
+- [`automation/delivery-flow.md`](automation/delivery-flow.md): fluxo de entrega; o roteiro direciona para cada integração operacional.
+- [`decisions/ADR-001-wallet-model.md`](decisions/ADR-001-wallet-model.md): índice inicial das decisões arquiteturais duráveis.
+- [`learnings/README.md`](learnings/README.md): aprendizados obtidos em reviews, incidentes e ciclos de correção.
+- [`evidence/README.md`](evidence/README.md): snapshots auditáveis, manifesto das fontes e relatório de validação.
+- [`runbooks/failed-ci.md`](runbooks/failed-ci.md): diagnóstico inicial; há runbooks específicos para falhas de Agents e Jira.
 
 ## Regra de manutenção
 

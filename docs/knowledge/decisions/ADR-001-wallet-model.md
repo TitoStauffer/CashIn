@@ -21,4 +21,4 @@ Entradas, despesas, metas, categorias, formas de pagamento e cartões pertencem 
 ## Fontes
 
 - [`domain/wallets.md`](../domain/wallets.md)
-- [`apps/api/src/wallets`](../../../apps/api/src/wallets)
+- [`apps/api/src/wallets/wallets.service.ts`](../../../apps/api/src/wallets/wallets.service.ts)

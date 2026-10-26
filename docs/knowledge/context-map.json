@@ -1,0 +1,49 @@
+{
+  "version": 1,
+  "routes": [
+    {
+      "paths": ["apps/api/src/wallets/**", "apps/api/src/wallet-invitations/**", "apps/api/src/wallet-access-requests/**", "apps/web/src/wallets/**"],
+      "documents": ["docs/knowledge/domain/wallets.md", "docs/knowledge/decisions/ADR-001-wallet-model.md"]
+    },
+    {
+      "paths": ["apps/api/src/incomes/**", "apps/api/src/expenses/**", "apps/api/src/investment-goals/**", "apps/api/src/payment-methods/**", "apps/web/src/incomes/**", "apps/web/src/expenses/**", "apps/web/src/goals/**"],
+      "documents": ["docs/knowledge/domain/transactions.md"]
+    },
+    {
+      "paths": ["apps/api/src/credit-cards/**", "apps/web/src/creditCards/**"],
+      "documents": ["docs/knowledge/domain/credit-cards.md", "docs/knowledge/domain/transactions.md"]
+    },
+    {
+      "paths": ["apps/api/src/financial-imports/**", "apps/web/src/imports/**", "docs/financial-imports-contract.md"],
+      "documents": ["docs/knowledge/domain/imports.md"]
+    },
+    {
+      "paths": ["apps/api/**"],
+      "documents": ["docs/knowledge/architecture/api.md"]
+    },
+    {
+      "paths": ["apps/web/**"],
+      "documents": ["docs/knowledge/architecture/web.md"]
+    },
+    {
+      "paths": ["apps/api/migrations/**", "docker-compose.yml"],
+      "documents": ["docs/knowledge/architecture/database.md"]
+    },
+    {
+      "paths": [".github/**", "tools/github-reviewer/**", "docs/hosted-agent-orchestration.md"],
+      "documents": ["docs/knowledge/automation/delivery-flow.md", "docs/knowledge/automation/github-app.md", "docs/knowledge/automation/merge-readiness.md", "docs/knowledge/decisions/ADR-002-agent-orchestration.md"]
+    },
+    {
+      "paths": ["tools/jira-dispatcher/**"],
+      "documents": ["docs/knowledge/automation/jira-dispatcher.md", "docs/knowledge/runbooks/jira-post-merge.md"]
+    },
+    {
+      "paths": ["sonar-project.properties", ".github/workflows/ci.yml"],
+      "documents": ["docs/knowledge/automation/sonarqube.md"]
+    },
+    {
+      "paths": ["AGENTS.md", "docs/knowledge/**", "tools/knowledge/**"],
+      "documents": ["docs/knowledge/learnings/README.md", "docs/knowledge/learnings/code-review-findings.md", "docs/knowledge/evidence/README.md"]
+    }
+  ]
+}
