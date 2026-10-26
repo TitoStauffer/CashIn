@@ -317,13 +317,17 @@ test('fails closed for unsafe local paths, directories and invalid context maps'
 });
 
 test('loads catalog metadata without hydrating its outbound evidence links', async () => {
+  const historicalEvidence = Array.from(
+    { length: 200 },
+    (_, index) => `[Review ${index + 1}](https://github.com/owner/repo/pull/44#pullrequestreview-${index + 1})`,
+  ).join('\n');
   const files = baseVault({
     'docs/knowledge/context-map.json': {
       value: JSON.stringify({ version: 1, routes: [], catalogs: ['docs/knowledge/evidence/catalog.md'] }),
     },
     'docs/knowledge/README.md': { value: '# Index\n[Catalog](evidence/catalog.md)\n' },
     'docs/knowledge/evidence/catalog.md': {
-      value: '# Catalog\n[Missing](../../../apps/api/src/missing.ts)\n[Review](https://github.com/owner/repo/pull/44#pullrequestreview-123)\n',
+      value: `# Catalog\n[Missing](../../../apps/api/src/missing.ts)\n${historicalEvidence}\n`,
     },
   });
   const requests = [];

@@ -1,7 +1,7 @@
 # Aprendizados de incidentes da automação
 
 **Status:** histórico vivo
-**Última revisão:** 25/10/2026
+**Última revisão:** 26/10/2026
 
 ## Evidência sempre pertence ao SHA
 
@@ -30,6 +30,8 @@ Interromper a análise no primeiro achado causou ciclos repetidos. O prompt de C
 ## Índice navegável não é seleção de contexto
 
 Na primeira execução com o vault completo, seguir recursivamente todos os links do índice tentou hidratar todo o histórico de revisões e excedeu o limite seguro antes do Code Review. O índice e o estado atual continuam sempre disponíveis, mas somente o mapa e os arquivos alterados selecionam notas. Catálogos preservam metadados e links navegáveis sem carregar automaticamente cada fonte; qualquer item usado em uma decisão deve ser consultado separadamente.
+
+Na rodada seguinte do [PR #44](https://github.com/TitoStauffer/CashIn/actions/runs/40398776847), todas as notas alteradas foram corretamente incluídas, porém os catálogos de auditoria e aprendizados ainda não estavam declarados como tal. Seus links históricos voltaram a hidratar dezenas de revisões e excederam o limite antes da chamada ao modelo. A correção mantém o conteúdo integral desses catálogos no contexto, mas exige consulta individual da evidência original somente quando ela sustentar uma decisão. A regressão usa um catálogo alterado com 200 referências e confirma que nenhuma delas é carregada automaticamente.
 
 ## Fontes verificáveis
 

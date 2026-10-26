@@ -2,7 +2,9 @@
   "version": 1,
   "catalogs": [
     "docs/knowledge/evidence/code-review-index.md",
-    "docs/knowledge/evidence/source-manifest.md"
+    "docs/knowledge/evidence/source-manifest.md",
+    "docs/knowledge/learnings/code-review-audit.md",
+    "docs/knowledge/learnings/code-review-findings.md"
   ],
   "routes": [
     {
