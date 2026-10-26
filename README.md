@@ -8,6 +8,10 @@ Base inicial do MVP 1.
 - Web: React, Vite e TypeScript
 - Banco local: PostgreSQL
 
+## Conhecimento do projeto
+
+O índice versionado de arquitetura, domínio, automação, decisões e runbooks está em [`docs/knowledge/README.md`](docs/knowledge/README.md). Comece por ele e por [`docs/knowledge/current-state.md`](docs/knowledge/current-state.md), validando informações críticas nas fontes de código e configuração indicadas em cada nota.
+
 ## Requisitos locais
 
 - Docker Desktop com Docker Compose

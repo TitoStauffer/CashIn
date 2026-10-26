@@ -110,6 +110,7 @@ jobs:
           if (-not (Test-Path -LiteralPath tools/knowledge/validate-vault.ps1)) {
             throw "Knowledge vault validator is missing."
           }
+          ./tools/knowledge/test-validate-vault.ps1
           ./tools/knowledge/validate-vault.ps1
 
   api:
