@@ -35,7 +35,7 @@ const VAULT_INDEX = 'docs/knowledge/README.md';
 const VAULT_CURRENT_STATE = 'docs/knowledge/current-state.md';
 const VAULT_CONTEXT_MAP = 'docs/knowledge/context-map.json';
 const MAX_VAULT_ITEMS = 160;
-const MAX_VAULT_BYTES = 450_000;
+const MAX_VAULT_BYTES = 650_000;
 const MAX_SINGLE_RESPONSE_BYTES = 100_000;
 
 export async function loadVaultContext(
