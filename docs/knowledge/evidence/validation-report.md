@@ -22,7 +22,7 @@ git diff --cached --check
 
 ## Resultado
 
-- Validador do vault: aprovado; 28 arquivos Markdown e 118 links locais verificados.
+- Validador do vault: aprovado; 28 arquivos Markdown e 119 links locais verificados.
 - Snapshot histórico: 77 revisões formais indexadas, com link para cada registro original.
 - Integridade do diff: aprovada, sem erros de whitespace.
 - Credenciais: nenhum padrão de chave privada ou token GitHub foi encontrado.
