@@ -79,7 +79,7 @@ test('walks referenced vault notes and loads their local and review evidence', a
   const reviewPath = '/repos/owner/repo/pulls/44/reviews/123';
   const files = baseVault({
     'docs/knowledge/README.md': { value: '# Index\n[Learning](learnings/example.md)\n' },
-    'docs/knowledge/learnings/example.md': { value: '# Learning\n[Index](../README.md)\n[Source](../../../apps/api/src/service.ts)\n[Review](https://github.com/owner/repo/pull/44#pullrequestreview-123)\n' },
+    'docs/knowledge/learnings/example.md': { value: '# Learning\n[Index](../README.md)\n[Source][source]\n[Review][review]\n\n[source]: ../../../apps/api/src/service.ts\n[review]: https://github.com/owner/repo/pull/44#pullrequestreview-123\n' },
     'apps/api/src/service.ts': { value: 'export const value = 1;\n' },
   });
   const review = { id: 123, state: 'CHANGES_REQUESTED', body: 'First evidence', html_url: 'https://github.com/owner/repo/pull/44#pullrequestreview-123' };
@@ -99,10 +99,29 @@ test('walks referenced vault notes and loads their local and review evidence', a
   assert.notEqual(first.at(-1).content, second.at(-1).content);
 });
 
+test('resolves collapsed and shortcut Markdown reference links without treating images as sources', async () => {
+  const files = baseVault({
+    'docs/knowledge/README.md': {
+      value: '# Index\n[Collapsed][]\n[Shortcut]\n![Diagram][image]\n\n[collapsed]: collapsed.md\n[shortcut]: shortcut.md\n[image]: missing.png\n',
+    },
+    'docs/knowledge/collapsed.md': { value: '# Collapsed\n' },
+    'docs/knowledge/shortcut.md': { value: '# Shortcut\n' },
+  });
+
+  const result = await loadVaultContext(fakeFetch(files), repository, [], headSha, baseSha, 'token');
+
+  assert.deepEqual(result.map(({ path }) => path), [
+    'docs/knowledge/README.md',
+    'docs/knowledge/current-state.md',
+    'docs/knowledge/collapsed.md',
+    'docs/knowledge/shortcut.md',
+  ]);
+});
+
 test('fails closed when a referenced vault note cites a missing source', async () => {
   const files = baseVault({
     'docs/knowledge/README.md': { value: '# Index\n[Learning](learnings/example.md)\n' },
-    'docs/knowledge/learnings/example.md': { value: '# Learning\n[Missing](../../../apps/api/src/missing.ts)\n' },
+    'docs/knowledge/learnings/example.md': { value: '# Learning\n[Missing][source]\n\n[source]: ../../../apps/api/src/missing.ts\n' },
   });
 
   await assert.rejects(
@@ -177,6 +196,14 @@ test('fails closed for unsafe local paths, directories and invalid context maps'
   await t.test('invalid context map', async () => {
     const files = baseVault({ 'docs/knowledge/context-map.json': { value: '{invalid' } });
     await assert.rejects(loadVaultContext(fakeFetch(files), repository, [], headSha, baseSha, 'token'), /not valid JSON/);
+  });
+  await t.test('undefined Markdown link reference', async () => {
+    const files = baseVault({ 'docs/knowledge/README.md': { value: '# Index\n[Missing][source]\n' } });
+    await assert.rejects(loadVaultContext(fakeFetch(files), repository, [], headSha, baseSha, 'token'), /undefined Markdown link reference/);
+  });
+  await t.test('conflicting Markdown link definitions', async () => {
+    const files = baseVault({ 'docs/knowledge/README.md': { value: '# Index\n[Source][source]\n\n[source]: current-state.md\n[source]: other.md\n' } });
+    await assert.rejects(loadVaultContext(fakeFetch(files), repository, [], headSha, baseSha, 'token'), /conflicting Markdown link definitions/);
   });
 });
 

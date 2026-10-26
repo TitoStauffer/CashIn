@@ -218,7 +218,42 @@ function parseContextMap(content: string): ContextMap {
 }
 
 function markdownLinks(content: string): string[] {
-  return [...content.matchAll(/\[[^\]]+\]\(([^)]+)\)/g)].map((match) => match[1]?.trim()).filter((value): value is string => Boolean(value));
+  const targets = new Set<string>();
+  for (const match of content.matchAll(/(?<!!)\[[^\]\r\n]+\]\(([^)\r\n]+)\)/g)) {
+    const target = match[1]?.trim();
+    if (target) targets.add(target);
+  }
+
+  const definitions = new Map<string, string>();
+  const definitionPattern = /^[ \t]{0,3}\[([^\]\r\n]+)\]:[ \t]*(?:<([^>\r\n]+)>|(\S+))(?:[ \t]+(?:"[^"\r\n]*"|'[^'\r\n]*'|\([^)]*\)))?[ \t]*$/gm;
+  for (const match of content.matchAll(definitionPattern)) {
+    const label = normalizeReferenceLabel(match[1]);
+    const target = (match[2] ?? match[3])?.trim();
+    if (!label || !target) continue;
+    const existing = definitions.get(label);
+    if (existing && existing !== target) {
+      throw new Error(`Vault document contains conflicting Markdown link definitions: ${match[1]}.`);
+    }
+    definitions.set(label, target);
+  }
+
+  for (const match of content.matchAll(/(?<!!)\[([^\]\r\n]+)\]\[([^\]\r\n]*)\]/g)) {
+    const label = normalizeReferenceLabel(match[2] || match[1]);
+    const target = definitions.get(label);
+    if (!target) throw new Error(`Vault document contains an undefined Markdown link reference: ${label}.`);
+    targets.add(target);
+  }
+
+  for (const match of content.matchAll(/(?<![!\]])\[([^\]\r\n]+)\](?![\[(:])/g)) {
+    const target = definitions.get(normalizeReferenceLabel(match[1]));
+    if (target) targets.add(target);
+  }
+
+  return [...targets];
+}
+
+function normalizeReferenceLabel(value: string | undefined): string {
+  return value?.trim().replace(/\s+/g, ' ').toLowerCase() ?? '';
 }
 
 function resolveLocalReference(documentPath: string, target: string): string | undefined {
