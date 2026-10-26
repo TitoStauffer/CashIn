@@ -28,7 +28,7 @@ When `docs/knowledge/README.md` exists, the hosted Agents use the vault as their
 }
 ```
 
-Route patterns support `*` inside one path segment and `**` across segments. Documents selected by changed paths must remain under `docs/knowledge/` and use Markdown. Links inside selected notes may cite exact repository files or a same-repository GitHub review, inline review comment, or PR conversation comment. The resolver never follows arbitrary web links, never executes vault content and never accepts a directory as source context.
+Route patterns support `*` inside one path segment and `**` across segments. Documents selected by changed paths must remain under `docs/knowledge/` and use Markdown. The index and current-state references are always inspected, including on code-only PRs. Links inside inspected notes may cite exact repository files or a same-repository GitHub review, inline review comment, or PR conversation comment. Remote evidence is accepted only after its identifier, canonical URL and PR association match the cited link. The resolver never follows arbitrary web links, never executes vault content and never accepts a directory as source context.
 
 The `GitHub Reviewer` CI job runs `tools/knowledge/validate-vault.ps1` whenever the vault is present. A missing validator or an invalid vault blocks the check. Confirmed Code Review problems are recorded during the correction round in the appropriate file under `docs/knowledge/learnings/`, with review reference, affected SHA, impact, applied correction and prevention. Hypotheses, false positives, inconclusive findings and style preferences are not learnings. CI and the Code Review Agent do not commit changes automatically.
 

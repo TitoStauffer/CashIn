@@ -22,6 +22,14 @@ interface ContextMap {
   routes: ContextRoute[];
 }
 
+interface GitHubEvidenceReference {
+  apiPath: string;
+  sourceUrl: string;
+  kind: 'review' | 'pullComment' | 'issueComment';
+  pullRequestNumber: number;
+  evidenceId: string;
+}
+
 const VAULT_INDEX = 'docs/knowledge/README.md';
 const VAULT_CURRENT_STATE = 'docs/knowledge/current-state.md';
 const VAULT_CONTEXT_MAP = 'docs/knowledge/context-map.json';
@@ -103,7 +111,8 @@ export async function loadVaultContext(
 
   const index = await loadLocal(VAULT_INDEX, true);
   if (!index) return [];
-  await loadLocal(VAULT_CURRENT_STATE);
+  const currentState = await loadLocal(VAULT_CURRENT_STATE, true);
+  if (!currentState) throw new Error('Vault current state is unavailable.');
   const contextMapSnapshot = await loadLocal(VAULT_CONTEXT_MAP, true);
   const contextMap = contextMapSnapshot ? parseContextMap(contextMapSnapshot.content) : undefined;
 
@@ -117,21 +126,25 @@ export async function loadVaultContext(
     }
   }
 
-  const documentsToInspect: VaultContextSnapshot[] = [];
+  const documentsToInspect: VaultContextSnapshot[] = [index, currentState];
+  const inspectedDocuments = new Set(documentsToInspect.map(({ path }) => path));
   for (const document of selectedDocuments) {
     assertKnowledgeDocument(document);
     const loaded = await loadLocal(document);
-    if (loaded) documentsToInspect.push(loaded);
+    if (loaded && !inspectedDocuments.has(loaded.path)) {
+      documentsToInspect.push(loaded);
+      inspectedDocuments.add(loaded.path);
+    }
   }
 
   const localReferences = new Set<string>();
-  const remoteReferences = new Map<string, { apiPath: string; sourceUrl: string }>();
+  const remoteReferences = new Map<string, GitHubEvidenceReference>();
   for (const document of documentsToInspect) {
     for (const target of markdownLinks(document.content)) {
       const local = resolveLocalReference(document.path, target);
       if (local) localReferences.add(local);
       const remote = resolveGitHubEvidenceReference(target, owner, repositoryName);
-      if (remote) remoteReferences.set(remote.apiPath, remote);
+      if (remote) remoteReferences.set(remote.sourceUrl, remote);
     }
   }
 
@@ -140,9 +153,11 @@ export async function loadVaultContext(
   }
 
   for (const path of [...localReferences].sort()) await loadLocal(path);
-  for (const { apiPath, sourceUrl } of remoteReferences.values()) {
+  for (const reference of remoteReferences.values()) {
+    const { apiPath, sourceUrl } = reference;
     const payload = await requestGitHubApi<unknown>(fetchImpl, apiPath, token, { maxResponseBytes: MAX_SINGLE_RESPONSE_BYTES });
     if (!isRecord(payload)) throw new Error(`GitHub vault evidence is invalid: ${sourceUrl}.`);
+    assertGitHubEvidenceAssociation(payload, reference, owner, repositoryName);
     const evidence = normalizeGitHubEvidence(payload, sourceUrl);
     addSnapshot({
       path: `github-evidence://${apiPath.replace(/^\//, '')}`,
@@ -203,7 +218,7 @@ function resolveGitHubEvidenceReference(
   target: string,
   owner: string,
   repository: string,
-): { apiPath: string; sourceUrl: string } | undefined {
+): GitHubEvidenceReference | undefined {
   let url: URL;
   try {
     url = new URL(target);
@@ -215,12 +230,77 @@ function resolveGitHubEvidenceReference(
   if (!match || match[1]?.toLowerCase() !== owner.toLowerCase() || match[2]?.toLowerCase() !== repository.toLowerCase()) return undefined;
   const pullRequestNumber = Number(match[3]);
   const review = url.hash.match(/^#pullrequestreview-(\d+)$/);
-  if (review) return { apiPath: `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repository)}/pulls/${pullRequestNumber}/reviews/${review[1]}`, sourceUrl: url.href };
+  if (review) return { apiPath: `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repository)}/pulls/${pullRequestNumber}/reviews/${review[1]}`, sourceUrl: url.href, kind: 'review', pullRequestNumber, evidenceId: review[1] };
   const comment = url.hash.match(/^#discussion_r(\d+)$/);
-  if (comment) return { apiPath: `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repository)}/pulls/comments/${comment[1]}`, sourceUrl: url.href };
+  if (comment) return { apiPath: `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repository)}/pulls/comments/${comment[1]}`, sourceUrl: url.href, kind: 'pullComment', pullRequestNumber, evidenceId: comment[1] };
   const issueComment = url.hash.match(/^#issuecomment-(\d+)$/);
-  if (issueComment) return { apiPath: `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repository)}/issues/comments/${issueComment[1]}`, sourceUrl: url.href };
+  if (issueComment) return { apiPath: `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repository)}/issues/comments/${issueComment[1]}`, sourceUrl: url.href, kind: 'issueComment', pullRequestNumber, evidenceId: issueComment[1] };
   return undefined;
+}
+
+function assertGitHubEvidenceAssociation(
+  payload: Record<string, unknown>,
+  reference: GitHubEvidenceReference,
+  owner: string,
+  repository: string,
+): void {
+  if (String(payload.id ?? '') !== reference.evidenceId) {
+    throw new Error(`GitHub vault evidence identifier does not match its reference: ${reference.sourceUrl}.`);
+  }
+  const expectedHash = reference.kind === 'review'
+    ? `#pullrequestreview-${reference.evidenceId}`
+    : reference.kind === 'pullComment' ? `#discussion_r${reference.evidenceId}` : `#issuecomment-${reference.evidenceId}`;
+  if (!matchesGitHubPullRequestUrl(payload.html_url, owner, repository, reference.pullRequestNumber, expectedHash)) {
+    throw new Error(`GitHub vault evidence URL does not match its reference: ${reference.sourceUrl}.`);
+  }
+  if (reference.kind === 'pullComment'
+    && !matchesGitHubApiUrl(payload.pull_request_url, owner, repository, 'pulls', reference.pullRequestNumber)) {
+    throw new Error(`GitHub review comment does not belong to the referenced Pull Request: ${reference.sourceUrl}.`);
+  }
+  if (reference.kind === 'issueComment'
+    && !matchesGitHubApiUrl(payload.issue_url, owner, repository, 'issues', reference.pullRequestNumber)) {
+    throw new Error(`GitHub conversation comment does not belong to the referenced Pull Request: ${reference.sourceUrl}.`);
+  }
+}
+
+function matchesGitHubPullRequestUrl(
+  value: unknown,
+  owner: string,
+  repository: string,
+  pullRequestNumber: number,
+  expectedHash: string,
+): boolean {
+  if (typeof value !== 'string') return false;
+  try {
+    const url = new URL(value);
+    return url.protocol === 'https:'
+      && url.hostname.toLowerCase() === 'github.com'
+      && url.pathname.toLowerCase() === `/${owner}/${repository}/pull/${pullRequestNumber}`.toLowerCase()
+      && url.hash === expectedHash
+      && url.search === '';
+  } catch {
+    return false;
+  }
+}
+
+function matchesGitHubApiUrl(
+  value: unknown,
+  owner: string,
+  repository: string,
+  collection: 'pulls' | 'issues',
+  pullRequestNumber: number,
+): boolean {
+  if (typeof value !== 'string') return false;
+  try {
+    const url = new URL(value);
+    return url.protocol === 'https:'
+      && url.hostname.toLowerCase() === 'api.github.com'
+      && url.pathname.toLowerCase() === `/repos/${owner}/${repository}/${collection}/${pullRequestNumber}`.toLowerCase()
+      && url.search === ''
+      && url.hash === '';
+  } catch {
+    return false;
+  }
 }
 
 function normalizeGitHubEvidence(payload: Record<string, unknown>, sourceUrl: string): Record<string, unknown> {
