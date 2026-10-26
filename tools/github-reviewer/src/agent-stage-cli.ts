@@ -47,7 +47,7 @@ async function main(): Promise<void> {
   }
 
   const reviewInputs = await loadAgentReviewInputs(fetch, repository, prNumber, pullRequest, token);
-  const { diff, checks, checkRuns, repositoryInstructions, sourceFiles, ciConfiguration } = reviewInputs;
+  const { diff, checks, checkRuns, repositoryInstructions, sourceFiles, vaultContext, ciConfiguration } = reviewInputs;
   if (diff.length > 350_000) throw new Error('Pull Request diff exceeds the supported review size.');
   // A title-triggered evaluation may precede CI completion; no model runs until every required check passes.
   assertRequiredChecksPassed(checks);
@@ -57,7 +57,7 @@ async function main(): Promise<void> {
     title: stringValue(pullRequest.title) ?? '',
     body: stringValue(pullRequest.body) ?? '',
     diff,
-    sourceFiles: [...sourceFiles, ...(ciConfiguration ?? []), { content: JSON.stringify(checkRuns.map(({ actions }) => actions)) }],
+    sourceFiles: [...vaultContext, ...sourceFiles, ...(ciConfiguration ?? []), { content: JSON.stringify(checkRuns.map(({ actions }) => actions)) }],
   })) {
     const blocked = { ...createInjectionBlockedResult(stage, resolution.headSha), contextHash };
     await writeStageResult(blocked, prNumber);
@@ -107,6 +107,7 @@ async function main(): Promise<void> {
     ciConfiguration,
     formalCodeReview,
     repositoryInstructions,
+    vaultContext,
     sourceFiles,
   });
   const result = { ...modelResult, contextHash };

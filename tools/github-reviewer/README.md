@@ -10,7 +10,27 @@ It does not merge pull requests or change GitHub App permissions. The existing f
 
 The hosted Code Review is instructed to inspect the complete supplied diff, related source snapshots, acceptance criteria, affected contracts, and tests before deciding. It must continue after finding an issue and consolidate every proven finding from that round in one report, including the reviewed areas with no relevant blockers.
 
-The context contains complete changed text files and direct local TypeScript dependencies at the exact HEAD (base for removed files), current-SHA check-run metadata, and the API-confirmed formal Code Review before QA/Coordinator. Changes are limited to 32 files, dependencies to 20 additional files, and combined snapshots to 500 KB (500,000 UTF-8 bytes, inclusive). Changed, removed and dependency source snapshots share that byte budget; exceeding it fails closed without truncating sources. Source snapshots are never executed. The fingerprint ignores checkbox marks and check URLs/timestamps; changes to requirements, code, base SHA or check outcomes still invalidate evidence. This prevents checklist maintenance and identical check retries from consuming another model round. The injection heuristic scans added lines and complete snapshots as untrusted source.
+The context contains complete changed text files and direct local TypeScript dependencies at the exact HEAD (base for removed files), current-SHA check-run metadata, and the API-confirmed formal Code Review before QA/Coordinator. Before inspecting those sources, the loader reads the versioned knowledge vault index, current state and context map at the PR HEAD, then selects notes for the changed paths. Exact local files cited by those notes and same-repository GitHub review evidence with a verifiable review/comment identifier are included as untrusted reference data. Directory references, unsafe paths, malformed maps and unavailable required sources fail closed. Changes are limited to 32 files, dependencies to 64 additional files, and combined source snapshots to 500 KB (500,000 UTF-8 bytes, inclusive). Vault context has its own limit of 160 items and 450 KB; each GitHub response is limited to 100 KB. Exceeding a limit fails closed without truncating sources. Source snapshots are never executed. The fingerprint ignores checkbox marks and check URLs/timestamps; changes to requirements, code, base SHA, vault context or check outcomes still invalidate evidence. This prevents checklist maintenance and identical check retries from consuming another model round. The injection heuristic scans added lines and complete source, vault and CI snapshots as untrusted input.
+
+## Versioned knowledge vault
+
+When `docs/knowledge/README.md` exists, the hosted Agents use the vault as their first context source. `docs/knowledge/current-state.md` is mandatory, while `docs/knowledge/context-map.json` is optional and has this deterministic format:
+
+```json
+{
+  "version": 1,
+  "routes": [
+    {
+      "paths": ["apps/api/src/**"],
+      "documents": ["docs/knowledge/domains/backend.md"]
+    }
+  ]
+}
+```
+
+Route patterns support `*` inside one path segment and `**` across segments. Documents selected by changed paths must remain under `docs/knowledge/` and use Markdown. The index and current-state references are always inspected, including on code-only PRs; referenced Markdown notes inside the vault are traversed as a bounded, deduplicated graph so their evidence is also verified. Single-line inline links (including angle-bracket destinations, balanced parentheses, optional titles and labels formatted as inline code) and links by reference may cite exact repository files or a same-repository GitHub review, inline review comment, or PR conversation comment. Unsupported or malformed inline links and undefined or conflicting reference definitions fail closed. Remote evidence is accepted only after its identifier, canonical URL and PR association match the cited link. The resolver never follows arbitrary web links, never executes vault content and never accepts a directory as source context.
+
+The `GitHub Reviewer` CI job runs `tools/knowledge/validate-vault.ps1` whenever the vault is present. A missing validator or an invalid vault blocks the check. Confirmed Code Review problems are recorded during the correction round in the appropriate file under `docs/knowledge/learnings/`, with review reference, affected SHA, impact, applied correction and prevention. Hypotheses, false positives, inconclusive findings and style preferences are not learnings. CI and the Code Review Agent do not commit changes automatically.
 
 The gate fetches individual ruleset details: the list endpoint returns summaries without rules. For a single-maintainer repository using App reviews, require the `Merge Readiness` status together with all CI/Sonar checks. That status independently requires the App's formal current-SHA approval plus structured QA and Coordinator approvals. GitHub's separate human-review count can be zero in this configuration; the formal App review remains mandatory in the gate. A required gate can make GitHub report `blocked` until the gate itself passes. This aggregate state is ignored only for that self-required, ruleset-only configuration with no human count, code-owner/last-push requirement, designated reviewers or unsupported rule types. All individual evidence checks still apply. Opaque classic-protection blocks and unsupported rules stay blocked. There are no bypass actors and the workflow does not merge.
 

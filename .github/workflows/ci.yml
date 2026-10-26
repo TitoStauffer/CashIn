@@ -102,6 +102,16 @@ jobs:
       - name: Build and test GitHub integration tools
         run: npm test
 
+      - name: Validate knowledge vault
+        if: hashFiles('docs/knowledge/**/*.md') != ''
+        working-directory: .
+        shell: pwsh
+        run: |
+          if (-not (Test-Path -LiteralPath tools/knowledge/validate-vault.ps1)) {
+            throw "Knowledge vault validator is missing."
+          }
+          ./tools/knowledge/validate-vault.ps1
+
   api:
     name: API
     needs: pr-title
