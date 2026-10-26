@@ -30,7 +30,7 @@ O fluxo ativo executa validação de título, API, Web, ferramentas de automaç�
 - A API não possui lint configurado.
 - O envio de e-mail e os rate limiters usam mecanismos adequados ao MVP local; filas e estado compartilhado são necessários para múltiplas instâncias.
 - O runner de agentes é Windows self-hosted e depende de máquina ligada, usuário autenticado e Codex CLI disponível.
-- CSV, faturas de cartão em OFX e detecção de duplicidade entre sessões ainda não estão implementados.
+- CSV, faturas de cartão em OFX, múltiplos extratos bancários no mesmo arquivo e detecção de duplicidade entre sessões ainda não estão implementados.
 - Mobile e deploy em nuvem estão fora do estado atual.
 
 ## Fontes verificáveis

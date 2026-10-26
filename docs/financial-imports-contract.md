@@ -13,11 +13,12 @@ A API mantém sessões de importação por carteira para que o cliente possa env
 ## Extratos OFX
 
 - São aceitas as variantes bancárias OFX 1.x (SGML) e OFX 2.x (XML), em UTF-8, UTF-16, Windows-1252 ou ISO-8859-1.
-- A conta de origem e a moeda são validadas; nesta etapa, somente `BRL` é aceito.
+- A conta de origem e a moeda são validadas; nesta etapa, somente `BRL` e um único extrato bancário por arquivo são aceitos. Arquivos com múltiplos blocos `STMTRS` são recusados antes da prévia para impedir a mistura de contas, moedas e identificadores.
 - Valores positivos geram sugestão de entrada, valores negativos geram sugestão de saída e `TRNTYPE=XFER` gera transferência pendente de conciliação.
 - `FITID` é preservado em `external_id`; uma identidade normalizada também é armazenada em `record_hash` para a futura detecção de duplicidades.
 - O identificador bruto da conta não é exposto nem persistido como metadado. A sessão armazena somente sua impressão SHA-256, banco, tipo de conta e moeda.
 - Registros malformados permanecem na prévia com motivo explícito quando isso é seguro. Data inválida pode ser corrigida; valor ou `FITID` inválido bloqueiam a linha.
+- Descrições em `NAME` e `MEMO` preservam o conteúdo multilinha e normalizam sequências de espaço somente na descrição exibida.
 - Faturas de cartão em OFX não fazem parte deste fluxo e são recusadas com mensagem específica.
 
 ## Endpoints

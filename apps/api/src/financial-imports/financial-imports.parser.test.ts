@@ -53,6 +53,51 @@ test("parses OFX 2.x XML statements", async () => {
   assert.equal(result.items[0]?.description, "Padaria");
 });
 
+test("preserves multiline NAME and MEMO values in OFX descriptions", async () => {
+  const document = `<?xml version="1.0" encoding="UTF-8"?>
+<OFX><BANKMSGSRSV1><STMTTRNRS><STMTRS><CURDEF>BRL</CURDEF>
+<BANKACCTFROM><ACCTID>123</ACCTID></BANKACCTFROM><BANKTRANLIST>
+<STMTTRN><DTPOSTED>20261020</DTPOSTED><TRNAMT>-10.00</TRNAMT><FITID>1</FITID>
+<NAME>Pagamento
+mensal</NAME><MEMO>Parcela 1
+de 2</MEMO></STMTTRN>
+</BANKTRANLIST></STMTRS></STMTTRNRS></BANKMSGSRSV1></OFX>`;
+
+  const result = await new OfxFinancialImportParser().parse({
+    format: "ofx",
+    fileName: "multiline.ofx",
+    content: Buffer.from(document),
+  });
+  const singleLineResult = await new OfxFinancialImportParser().parse({
+    format: "ofx",
+    fileName: "single-line.ofx",
+    content: Buffer.from(document
+      .replace("Pagamento\nmensal", "Pagamento mensal")
+      .replace("Parcela 1\nde 2", "Parcela 1 de 2")),
+  });
+
+  assert.equal(result.items[0]?.description, "Pagamento mensal — Parcela 1 de 2");
+  assert.equal(result.items[0]?.recordHash, singleLineResult.items[0]?.recordHash);
+});
+
+test("rejects multiple bank statements before mixing accounts, currencies or FITIDs", async () => {
+  const statement = (currency: string, accountId: string) => `<STMTTRNRS><STMTRS>
+<CURDEF>${currency}</CURDEF><BANKACCTFROM><ACCTID>${accountId}</ACCTID></BANKACCTFROM>
+<BANKTRANLIST><STMTTRN><DTPOSTED>20261020</DTPOSTED><TRNAMT>-10.00</TRNAMT>
+<FITID>same-fitid</FITID><NAME>Compra</NAME></STMTTRN></BANKTRANLIST>
+</STMTRS></STMTTRNRS>`;
+  const document = `<OFX><BANKMSGSRSV1>${statement("BRL", "account-1")}${statement("USD", "account-2")}</BANKMSGSRSV1></OFX>`;
+
+  await assert.rejects(
+    new OfxFinancialImportParser().parse({
+      format: "ofx",
+      fileName: "multiple-accounts.ofx",
+      content: Buffer.from(document),
+    }),
+    /apenas um extrato bancário/i,
+  );
+});
+
 test("keeps valid records visible and explains malformed OFX records", async () => {
   const result = await new OfxFinancialImportParser().parse({
     format: "ofx",

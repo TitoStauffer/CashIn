@@ -36,15 +36,16 @@ export class OfxFinancialImportParser implements FinancialImportParser {
 
     const document = decodeOfx(input.content);
     validateDocumentShape(document);
-    const currency = requiredTag(document, "CURDEF", "O arquivo OFX não informa a moeda da conta.").toUpperCase();
+    const statement = extractSingleBankStatement(document);
+    const currency = requiredTag(statement, "CURDEF", "O arquivo OFX não informa a moeda da conta.").toUpperCase();
     if (currency !== "BRL") {
       throw new FinancialImportError("Somente extratos OFX em reais (BRL) podem ser importados.", 422);
     }
-    const accountId = requiredTag(document, "ACCTID", "O arquivo OFX não informa a conta de origem.");
-    const bankId = optionalTag(document, "BANKID");
-    const accountType = optionalTag(document, "ACCTTYPE")?.toUpperCase();
+    const accountId = requiredTag(statement, "ACCTID", "O arquivo OFX não informa a conta de origem.");
+    const bankId = optionalTag(statement, "BANKID");
+    const accountType = optionalTag(statement, "ACCTTYPE")?.toUpperCase();
     const accountReferenceHash = sha256([bankId ?? "", accountId].join("|"));
-    const transactionBlocks = extractTransactionBlocks(document);
+    const transactionBlocks = extractTransactionBlocks(statement);
     if (transactionBlocks.length === 0) {
       throw new FinancialImportError("Nenhuma movimentação foi encontrada no arquivo OFX.", 422);
     }
@@ -128,9 +129,26 @@ function validateDocumentShape(document: string): void {
   if (/<CCSTMTTRNRS\b/i.test(document) || /<CCACCTFROM\b/i.test(document)) {
     throw new FinancialImportError("Faturas de cartão em OFX ainda não são suportadas nesta importação.", 422);
   }
-  if (!/<BANKTRANLIST\b/i.test(document)) {
+}
+
+function extractSingleBankStatement(document: string): string {
+  const statements = [...document.matchAll(/<STMTRS\b[^>]*>/gi)];
+  if (statements.length === 0) {
     throw new FinancialImportError("O arquivo não contém um extrato bancário OFX válido.", 422);
   }
+  if (statements.length > 1) {
+    throw new FinancialImportError("Importe apenas um extrato bancário por arquivo OFX.", 422);
+  }
+
+  const opening = statements[0]!;
+  const start = (opening.index ?? 0) + opening[0].length;
+  const tail = document.slice(start);
+  const closing = tail.search(/<\/STMTRS\s*>/i);
+  const statement = closing >= 0 ? tail.slice(0, closing) : tail;
+  if (!/<BANKTRANLIST\b/i.test(statement)) {
+    throw new FinancialImportError("O arquivo não contém um extrato bancário OFX válido.", 422);
+  }
+  return statement;
 }
 
 function extractTransactionBlocks(document: string): string[] {
@@ -247,8 +265,17 @@ function requiredTag(document: string, tag: string, message: string): string {
 }
 
 function optionalTag(document: string, tag: string): string | undefined {
-  const match = new RegExp(`<${tag}\\b[^>]*>\\s*([^<\\r\\n]*)`, "i").exec(document);
-  const value = match?.[1]?.trim();
+  const opening = new RegExp(`<${tag}\\b[^>]*>`, "i").exec(document);
+  if (!opening) return undefined;
+
+  const tail = document.slice((opening.index ?? 0) + opening[0].length);
+  const closing = new RegExp(`<\\/${tag}\\s*>`, "i").exec(tail);
+  const nextTag = tail.search(/<[!?/]?[a-z][^>]*>/i);
+  const rawValue = closing && (nextTag < 0 || closing.index === nextTag)
+    ? tail.slice(0, closing.index)
+    : tail.slice(0, nextTag < 0 ? tail.length : nextTag);
+  const cdata = /^\s*<!\[CDATA\[([\s\S]*)\]\]>\s*$/.exec(rawValue);
+  const value = (cdata?.[1] ?? rawValue).trim();
   return value ? decodeEntities(value) : undefined;
 }
 

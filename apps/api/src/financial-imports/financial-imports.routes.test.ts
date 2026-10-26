@@ -406,13 +406,14 @@ test("default API parser creates an editable preview from an OFX bank statement"
   });
   assert.deepEqual(detail.json().items.map((item: FinancialImportItem) => ({
     date: item.date,
+    description: item.description,
     amount: item.amount,
     type: item.type,
     status: item.validationStatus,
   })), [
-    { date: "2026-10-20", amount: "1500.50", type: "income", status: "uncategorized" },
-    { date: "2026-10-21", amount: "125.50", type: "expense", status: "uncategorized" },
-    { date: "2026-10-22", amount: "300.00", type: "transfer", status: "uncategorized" },
+    { date: "2026-10-20", description: "Salário — Pagamento mensal", amount: "1500.50", type: "income", status: "uncategorized" },
+    { date: "2026-10-21", description: "Mercado & Companhia", amount: "125.50", type: "expense", status: "uncategorized" },
+    { date: "2026-10-22", description: "Transferência entre contas", amount: "300.00", type: "transfer", status: "uncategorized" },
   ]);
   await app.close();
 });
