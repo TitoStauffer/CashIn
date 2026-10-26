@@ -219,11 +219,7 @@ function parseContextMap(content: string): ContextMap {
 
 function markdownLinks(content: string): string[] {
   const markdown = withoutMarkdownCode(content);
-  const targets = new Set<string>();
-  for (const match of markdown.matchAll(/(?<!!)\[[^\]\r\n]+\]\(([^)\r\n]+)\)/g)) {
-    const target = match[1]?.trim();
-    if (target) targets.add(target);
-  }
+  const targets = new Set(inlineMarkdownLinks(markdown));
 
   const definitions = new Map<string, string>();
   const definitionPattern = /^[ \t]{0,3}\[([^\]\r\n]+)\]:[ \t]*(?:<([^>\r\n]+)>|(\S+))(?:[ \t]+(?:"[^"\r\n]*"|'[^'\r\n]*'|\([^)]*\)))?[ \t]*$/gm;
@@ -251,6 +247,118 @@ function markdownLinks(content: string): string[] {
   }
 
   return [...targets];
+}
+
+function inlineMarkdownLinks(markdown: string): string[] {
+  const targets = new Set<string>();
+  for (const line of markdown.split(/\r?\n/)) {
+    let cursor = 0;
+    while (cursor < line.length) {
+      const labelStart = line.indexOf('[', cursor);
+      if (labelStart < 0) break;
+      if (isEscaped(line, labelStart)) {
+        cursor = labelStart + 1;
+        continue;
+      }
+      const labelEnd = closingDelimiter(line, labelStart, '[', ']');
+      if (line[labelStart - 1] === '!' && !isEscaped(line, labelStart - 1)) {
+        cursor = labelEnd < 0 ? labelStart + 1 : labelEnd + 1;
+        continue;
+      }
+      if (labelEnd < 0 || line[labelEnd + 1] !== '(') {
+        cursor = labelStart + 1;
+        continue;
+      }
+      const parsed = inlineLinkDestination(line, labelEnd + 2);
+      if (!parsed) {
+        throw new Error('Vault document contains an unsupported or malformed inline Markdown link.');
+      }
+      if (parsed.target) targets.add(unescapeMarkdownDestination(parsed.target));
+      cursor = parsed.end + 1;
+    }
+  }
+  return [...targets];
+}
+
+function inlineLinkDestination(line: string, start: number): { target: string; end: number } | undefined {
+  let cursor = skipHorizontalWhitespace(line, start);
+  let target: string;
+
+  if (line[cursor] === '<') {
+    const destinationStart = ++cursor;
+    while (cursor < line.length && line[cursor] !== '>') {
+      if (line[cursor] === '\\') cursor++;
+      cursor++;
+    }
+    if (line[cursor] !== '>') return undefined;
+    target = line.slice(destinationStart, cursor);
+    cursor++;
+  } else {
+    const destinationStart = cursor;
+    let nestedParentheses = 0;
+    while (cursor < line.length) {
+      const character = line[cursor];
+      if (character === '\\') {
+        cursor += 2;
+        continue;
+      }
+      if (character === '(') nestedParentheses++;
+      if (character === ')') {
+        if (nestedParentheses === 0) break;
+        nestedParentheses--;
+      }
+      if ((character === ' ' || character === '\t') && nestedParentheses === 0) break;
+      cursor++;
+    }
+    if (nestedParentheses !== 0) return undefined;
+    target = line.slice(destinationStart, cursor);
+  }
+
+  const afterDestination = cursor;
+  cursor = skipHorizontalWhitespace(line, cursor);
+  if (line[cursor] === ')') return { target, end: cursor };
+  if (cursor === afterDestination) return undefined;
+
+  const titleStart = line[cursor];
+  const titleEnd = titleStart === '(' ? ')' : titleStart === '"' || titleStart === "'" ? titleStart : undefined;
+  if (!titleEnd) return undefined;
+  cursor++;
+  while (cursor < line.length && line[cursor] !== titleEnd) {
+    if (line[cursor] === '\\') cursor++;
+    cursor++;
+  }
+  if (line[cursor] !== titleEnd) return undefined;
+  cursor = skipHorizontalWhitespace(line, cursor + 1);
+  return line[cursor] === ')' ? { target, end: cursor } : undefined;
+}
+
+function closingDelimiter(line: string, start: number, opening: string, closing: string): number {
+  let depth = 0;
+  for (let cursor = start; cursor < line.length; cursor++) {
+    if (line[cursor] === '\\') {
+      cursor++;
+      continue;
+    }
+    if (line[cursor] === opening) depth++;
+    if (line[cursor] === closing && --depth === 0) return cursor;
+  }
+  return -1;
+}
+
+function skipHorizontalWhitespace(value: string, start: number): number {
+  let cursor = start;
+  while (value[cursor] === ' ' || value[cursor] === '\t') cursor++;
+  return cursor;
+}
+
+function isEscaped(value: string, index: number): boolean {
+  let backslashes = 0;
+  for (let cursor = index - 1; cursor >= 0 && value[cursor] === '\\'; cursor--) backslashes++;
+  return backslashes % 2 === 1;
+}
+
+function unescapeMarkdownDestination(value: string): string {
+  return value.replace(/\\([!"#$%&'()*+,\-.\/:;<=\>?@[\]\\^_`{|}~])/g, '$1');
 }
 
 function withoutMarkdownCode(content: string): string {

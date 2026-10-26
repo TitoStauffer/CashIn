@@ -121,7 +121,7 @@ test('resolves collapsed and shortcut Markdown reference links without treating 
 test('ignores link-shaped examples inside inline and fenced Markdown code', async () => {
   const files = baseVault({
     'docs/knowledge/README.md': {
-      value: '# Index\n`[Inline][missing]`\n\n```markdown\n[Fenced][missing]\n```\n\n~~~\n[Other fence](missing.md)\n~~~\n',
+      value: '# Index\n`[Inline][missing]`\n![Inline image](missing.png "Not a source")\n\n```markdown\n[Fenced][missing]\n```\n\n~~~\n[Other fence](missing.md)\n~~~\n',
     },
   });
 
@@ -149,6 +149,39 @@ test('preserves link destinations when their labels contain inline code', async 
   assert.equal(result.some(({ path, content }) => path === `github-evidence://${reviewPath.slice(1)}` && content.includes('Confirmed issue')), true);
 });
 
+test('resolves inline destinations with titles, angle brackets, escapes and balanced parentheses', async () => {
+  const reviewPath = '/repos/owner/repo/pulls/44/reviews/123';
+  const files = baseVault({
+    'docs/knowledge/README.md': {
+      value: [
+        '# Index',
+        '[Service](../../apps/api/src/service.ts "Serviço")',
+        "[Spaced](\u003c../../apps/api/src/spaced file.ts\u003e 'Arquivo')",
+        '[Nested](../../apps/api/src/value(test).ts)',
+        '[Escaped](../../apps/api/src/value\\(escaped\\).ts)',
+        '[Review](\u003chttps://github.com/owner/repo/pull/44#pullrequestreview-123\u003e "Evidência")',
+      ].join('\n'),
+    },
+    'apps/api/src/service.ts': { value: 'export const service = 1;\n' },
+    'apps/api/src/spaced file.ts': { value: 'export const spaced = 1;\n' },
+    'apps/api/src/value(test).ts': { value: 'export const nested = 1;\n' },
+    'apps/api/src/value(escaped).ts': { value: 'export const escaped = 1;\n' },
+  });
+  const review = { id: 123, state: 'CHANGES_REQUESTED', body: 'Confirmed issue', html_url: 'https://github.com/owner/repo/pull/44#pullrequestreview-123' };
+
+  const result = await loadVaultContext(fakeFetch(files, { [reviewPath]: review }), repository, [], headSha, baseSha, 'token');
+
+  assert.deepEqual(result.map(({ path }) => path), [
+    'docs/knowledge/README.md',
+    'docs/knowledge/current-state.md',
+    'apps/api/src/service.ts',
+    'apps/api/src/spaced file.ts',
+    'apps/api/src/value(test).ts',
+    'apps/api/src/value(escaped).ts',
+    `github-evidence://${reviewPath.slice(1)}`,
+  ]);
+});
+
 test('fails closed for a missing source whose link label contains inline code', async () => {
   const files = baseVault({
     'docs/knowledge/README.md': { value: '# Index\n[`missing.ts`](../../apps/api/src/missing.ts)\n' },
@@ -157,6 +190,28 @@ test('fails closed for a missing source whose link label contains inline code', 
   await assert.rejects(
     loadVaultContext(fakeFetch(files), repository, [], headSha, baseSha, 'token'),
     /GitHub API request failed \(404\)/,
+  );
+});
+
+test('fails closed for a missing source in a titled inline link', async () => {
+  const files = baseVault({
+    'docs/knowledge/README.md': { value: '# Index\n[Missing](../../apps/api/src/missing.ts "Source")\n' },
+  });
+
+  await assert.rejects(
+    loadVaultContext(fakeFetch(files), repository, [], headSha, baseSha, 'token'),
+    /GitHub API request failed \(404\)/,
+  );
+});
+
+test('fails closed for unsupported or malformed inline link syntax', async () => {
+  const files = baseVault({
+    'docs/knowledge/README.md': { value: '# Index\n[Malformed](../../apps/api/src/service.ts "Missing close)\n' },
+  });
+
+  await assert.rejects(
+    loadVaultContext(fakeFetch(files), repository, [], headSha, baseSha, 'token'),
+    /unsupported or malformed inline Markdown link/,
   );
 });
 
