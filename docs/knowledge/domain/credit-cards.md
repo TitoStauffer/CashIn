@@ -8,7 +8,7 @@
 - Cartões pertencem a uma carteira e possuem datas de fechamento e vencimento configuráveis.
 - Uma despesa no crédito é vinculada a um cartão e atribuída ao ciclo de fatura calculado pelas datas do cartão.
 - A fatura consolida os gastos do ciclo.
-- A quitação integral da fatura representa a saída financeira no vencimento; a compra individual não reduz o saldo disponível como pagamento à vista.
+- A quitação integral da fatura representa a saída financeira na data informada na quitação; a compra individual não reduz o saldo disponível como pagamento à vista.
 
 ## Limites atuais
 

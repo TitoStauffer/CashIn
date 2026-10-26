@@ -15,6 +15,8 @@ A auditoria consultou em modo somente leitura os 43 Pull Requests existentes no 
 
 Os números representam ocorrências por rodada. Um mesmo problema reaparece quando foi republicado para outro SHA; a síntese em [`code-review-findings.md`](code-review-findings.md) agrupa reincidências.
 
+O snapshot completo das 77 revisões, com estado, SHA, contagens e link para a fonte original, está em [`../evidence/code-review-index.md`](../evidence/code-review-index.md).
+
 ## Inventário por PR
 
 ### PR #11 — DEV-26

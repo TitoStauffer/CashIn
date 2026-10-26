@@ -31,6 +31,7 @@ Este diretório é a memória operacional versionada do projeto. Ele orienta a i
 | Dispatcher/Jira | [`automation/jira-dispatcher.md`](automation/jira-dispatcher.md) |
 | SonarQube | [`automation/sonarqube.md`](automation/sonarqube.md) |
 | Aprendizados de Code Review | [`learnings/code-review-findings.md`](learnings/code-review-findings.md) e [`learnings/code-review-audit.md`](learnings/code-review-audit.md) |
+| Evidências e validação do vault | [`evidence/README.md`](evidence/README.md) |
 | Mudança estrutural | ADRs em [`decisions/`](decisions/) e arquitetura afetada |
 
 ## Mapa do vault
@@ -41,11 +42,18 @@ Este diretório é a memória operacional versionada do projeto. Ele orienta a i
 - [`automation/`](automation/): fluxo de entrega e integrações operacionais.
 - [`decisions/`](decisions/): decisões arquiteturais duráveis em formato ADR.
 - [`learnings/`](learnings/): aprendizados obtidos em reviews, incidentes e ciclos de correção.
+- [`evidence/`](evidence/): snapshots auditáveis, manifesto das fontes e relatório de validação.
 - [`runbooks/`](runbooks/): diagnóstico e recuperação passo a passo.
 
 ## Regra de manutenção
 
 Atualize o vault quando uma entrega mudar contrato público, regra de negócio, arquitetura, operação, segurança ou automação. Alterações internas sem impacto nessas áreas não exigem uma nova nota. Toda afirmação operacional deve apontar para uma fonte verificável ou ser marcada como hipótese/limitação.
+
+Valide a estrutura e os links locais antes de publicar mudanças:
+
+```powershell
+pwsh -File tools/knowledge/validate-vault.ps1
+```
 
 ## Fontes gerais
 
