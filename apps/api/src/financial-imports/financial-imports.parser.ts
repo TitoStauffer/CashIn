@@ -291,19 +291,18 @@ function optionalTag(document: string, tag: string): string | undefined {
 
 function maskXmlOpaqueRegions(document: string): string {
   let cursor = 0;
+  let literalStart = 0;
   const chunks: string[] = [];
   while (cursor < document.length) {
-    const cdataStart = document.indexOf("<![CDATA[", cursor);
-    const commentStart = document.indexOf("<!--", cursor);
-    const opaqueStart = cdataStart < 0
-      ? commentStart
-      : commentStart < 0 ? cdataStart : Math.min(cdataStart, commentStart);
-    if (opaqueStart < 0) {
-      chunks.push(document.slice(cursor));
-      break;
+    const opaqueStart = document.indexOf("<!", cursor);
+    if (opaqueStart < 0) break;
+    const isCdata = document.startsWith("<![CDATA[", opaqueStart);
+    const isComment = document.startsWith("<!--", opaqueStart);
+    if (!isCdata && !isComment) {
+      cursor = opaqueStart + 2;
+      continue;
     }
-    chunks.push(document.slice(cursor, opaqueStart));
-    const isCdata = opaqueStart === cdataStart;
+    chunks.push(document.slice(literalStart, opaqueStart));
     const markerLength = isCdata ? 9 : 4;
     const terminator = isCdata ? "]]>" : "-->";
     const terminatorStart = document.indexOf(terminator, opaqueStart + markerLength);
@@ -313,7 +312,9 @@ function maskXmlOpaqueRegions(document: string): string {
     const opaqueEnd = terminatorStart + terminator.length;
     chunks.push(" ".repeat(opaqueEnd - opaqueStart));
     cursor = opaqueEnd;
+    literalStart = opaqueEnd;
   }
+  chunks.push(document.slice(literalStart));
   return chunks.join("");
 }
 

@@ -78,6 +78,37 @@ test("ignores structural OFX tags inside XML comments", async () => {
   assert.equal(result.items[0]?.description, "Compra segura");
 });
 
+test("scans large sequences of comments and CDATA blocks without quadratic degradation", { timeout: 5_000 }, async () => {
+  const document = (noise: string) => `<?xml version="1.0" encoding="UTF-8"?>
+<OFX><BANKMSGSRSV1><STMTTRNRS><STMTRS>${noise}<CURDEF>BRL</CURDEF>
+<BANKACCTFROM><ACCTID>123</ACCTID></BANKACCTFROM><BANKTRANLIST>
+<STMTTRN><DTPOSTED>20261020</DTPOSTED><TRNAMT>-10.00</TRNAMT><FITID>1</FITID>
+<NAME>Compra segura</NAME></STMTTRN></BANKTRANLIST></STMTRS></STMTTRNRS></BANKMSGSRSV1></OFX>`;
+  const parser = new OfxFinancialImportParser();
+  const comments = "<!-- ignored -->".repeat(10_000);
+  const cdataBlocks = "<NOTE><![CDATA[ignored]]></NOTE>".repeat(10_000);
+
+  const commentResult = await parser.parse({
+    format: "ofx",
+    fileName: "many-comments.ofx",
+    content: Buffer.from(document(comments)),
+  });
+  const cdataResult = await parser.parse({
+    format: "ofx",
+    fileName: "many-cdata.ofx",
+    content: Buffer.from(document(cdataBlocks)),
+  });
+
+  assert.deepEqual(
+    [commentResult.items[0]?.signedAmount, cdataResult.items[0]?.signedAmount],
+    ["-10.00", "-10.00"],
+  );
+  assert.deepEqual(
+    [commentResult.items[0]?.description, cdataResult.items[0]?.description],
+    ["Compra segura", "Compra segura"],
+  );
+});
+
 test("preserves multiline NAME and MEMO values in OFX descriptions", async () => {
   const document = `<?xml version="1.0" encoding="UTF-8"?>
 <OFX><BANKMSGSRSV1><STMTTRNRS><STMTRS><CURDEF>BRL</CURDEF>
