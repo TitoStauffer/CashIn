@@ -27,6 +27,10 @@ export function detectPullRequestPromptInjection(input: {
   diff: string;
   sourceFiles: Array<{ content: string }>;
 }): boolean {
+  // Full snapshots contain trusted base content as well as the PR changes. Scanning
+  // them would repeatedly flag legitimate security regression fixtures already
+  // accepted on the default branch. Only PR-controlled metadata and newly added
+  // diff lines can introduce a new instruction in the current review round.
   const addedDiffLines = input.diff
     .split(/\r?\n/)
     .filter((line) => line.startsWith('+') && !line.startsWith('+++'))
@@ -36,7 +40,6 @@ export function detectPullRequestPromptInjection(input: {
     input.title,
     input.body,
     addedDiffLines,
-    ...input.sourceFiles.map(({ content }) => content),
   ].join('\n'));
 }
 
