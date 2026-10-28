@@ -7,6 +7,7 @@ const reviewSignalWorkflow = await readFile(new URL('../../../.github/workflows/
 const titleWorkflow = await readFile(new URL('../../../.github/workflows/pr-title.yml', import.meta.url), 'utf8');
 const ciWorkflow = await readFile(new URL('../../../.github/workflows/ci.yml', import.meta.url), 'utf8');
 const orchestrationWorkflow = await readFile(new URL('../../../.github/workflows/agent-orchestration.yml', import.meta.url), 'utf8');
+const recoveryWorkflow = await readFile(new URL('../../../.github/workflows/agent-report-recovery.yml', import.meta.url), 'utf8');
 
 test('serializes merge-readiness publications for the same pull request', () => {
   const concurrencyGroup = mergeReadinessWorkflow.match(/^\s+group:\s*(.+)$/m)?.[1] ?? '';
@@ -49,4 +50,18 @@ test('formal review relay listens to review changes and has no permissions or pr
   assert.match(reviewSignalWorkflow, /^permissions:\s*\{\}\s*$/m);
   assert.match(reviewSignalWorkflow, /^\s+permissions:\s*\{\}\s*$/m);
   assert.doesNotMatch(reviewSignalWorkflow, /uses:\s*actions\/checkout|secrets\./);
+});
+
+test('recovers only an existing agent artifact without calling Codex', () => {
+  assert.match(recoveryWorkflow, /workflow_dispatch:/);
+  assert.match(recoveryWorkflow, /node dist\/agent-recovery-cli\.js/);
+  assert.match(recoveryWorkflow, /run-id:\s*\$\{\{ inputs\.source_run_id \}\}/);
+  assert.match(recoveryWorkflow, /artifact-ids:\s*\$\{\{ steps\.source\.outputs\.artifact_id \}\}/);
+  assert.match(recoveryWorkflow, /merge-multiple:\s*true/);
+  assert.match(recoveryWorkflow, /node dist\/agent-publish-cli\.js/);
+  assert.ok(recoveryWorkflow.indexOf('node dist/agent-recovery-cli.js') < recoveryWorkflow.indexOf('uses: actions/download-artifact@'));
+  assert.match(recoveryWorkflow, /ref:\s*master/);
+  assert.match(recoveryWorkflow, /persist-credentials:\s*false/);
+  assert.doesNotMatch(recoveryWorkflow, /agent-stage-cli|codex\s+exec|runs-on:\s*\[self-hosted/);
+  assert.doesNotMatch(recoveryWorkflow, /git\s+(?:commit|push)|contents:\s*write/);
 });

@@ -1,7 +1,8 @@
 import type { createAppAuth } from '@octokit/auth-app';
 import { createGitHubInstallationSession, getRepositoryPath, requestGitHubApi, requestGitHubApiPages } from './github-api-client.js';
-import { computeAgentContextHash } from './agent-evidence.js';
+import { agentEvidenceMarker, computeAgentContextHash } from './agent-evidence.js';
 import { loadAgentReviewInputs } from './agent-review-inputs.js';
+import { extractAcceptanceCriteria, validateAgentResultCompleteness, type AgentEvaluationEvidence } from './agent-result-validation.js';
 
 export const REPORT_AGENT_SIGNATURES = {
   codeReview: 'Codex — Code Review Agent',
@@ -19,6 +20,7 @@ export interface PullRequestReport {
   status: string;
   reportMarkdown: string;
   contextHash?: string;
+  evidence?: AgentEvaluationEvidence;
 }
 
 export interface GitHubReportPublisherOptions {
@@ -63,6 +65,21 @@ export class GitHubReportPublisher {
     }
     const contextToken = this.options.contextToken || installationToken;
     const reviewInputs = await loadAgentReviewInputs(this.fetchImpl, `${this.options.owner}/${this.options.repository}`, report.pullRequestNumber, pullRequest, contextToken);
+    if (report.agentName !== 'pm') {
+      const completeness = validateAgentResultCompleteness({
+        stage: report.agentName === 'qualityGate' ? 'qualityGate' : report.agentName,
+        decision: report.status as 'APPROVED' | 'CHANGES_REQUESTED' | 'INCONCLUSIVE',
+        commitSha: report.commitSha,
+        reportMarkdown: report.reportMarkdown,
+        evidence: report.evidence,
+      }, {
+        stage: report.agentName === 'qualityGate' ? 'qualityGate' : report.agentName,
+        commitSha: report.commitSha,
+        changedFiles: reviewInputs.changedFiles,
+        acceptanceCriteria: extractAcceptanceCriteria(typeof pullRequest.body === 'string' ? pullRequest.body : ''),
+      });
+      if (completeness.length) throw new Error(`Agent report is incomplete: ${completeness.join(' ')}`);
+    }
     const currentContextHash = computeAgentContextHash(`${this.options.owner}/${this.options.repository}`, report.pullRequestNumber, pullRequest, reviewInputs);
     if (report.agentName !== 'pm' && (!report.contextHash || currentContextHash !== report.contextHash)) {
       throw new Error(`Pull request #${report.pullRequestNumber} metadata changed before the agent report could be published.`);
@@ -115,6 +132,7 @@ export function formatPullRequestReport(report: PullRequestReport): string {
   const reportBody = removeRepeatedMetadata(report.reportMarkdown, report.status, report.commitSha);
   return [
     reportMarker(report),
+    ...(report.evidence ? [agentEvidenceMarker(report.evidence)] : []),
     `### ${REPORT_AGENT_SIGNATURES[report.agentName]}`,
     '',
     `**Status:** ${report.status.trim()}`,
@@ -160,9 +178,13 @@ function validateReport(report: PullRequestReport): void {
   if (!report.status.trim()) {
     throw new Error('Report status must not be empty.');
   }
+  if (report.agentName !== 'pm' && !['APPROVED', 'CHANGES_REQUESTED', 'INCONCLUSIVE'].includes(report.status)) {
+    throw new Error('Agent report status is invalid.');
+  }
   if (!report.reportMarkdown.trim()) {
     throw new Error('Report Markdown must not be empty.');
   }
+  if (report.agentName !== 'pm' && !report.evidence) throw new Error('Agent report evidence must not be empty.');
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

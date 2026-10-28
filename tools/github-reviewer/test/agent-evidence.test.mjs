@@ -5,9 +5,10 @@ import { formatPullRequestReport } from '../dist/github-report-publisher.js';
 
 const sha = 'a'.repeat(40);
 const bot = 'cashin-devagents[bot]';
+const evidence = { reviewComplete: true, changedFilesReviewed: [], riskAreas: [], findings: [], acceptanceCriteria: [] };
 
 test('parses only structured reports authored by the App and bound to the expected SHA', () => {
-  const result = { agentName: 'qa', pullRequestNumber: 26, commitSha: sha, status: 'APPROVED', reportMarkdown: '**Verificações de QA:**\n- Check CI passou.' };
+  const result = { agentName: 'qa', pullRequestNumber: 26, commitSha: sha, status: 'APPROVED', reportMarkdown: '**Verificações de QA:**\n- Check CI passou.', evidence };
   const comment = { user: { login: bot }, body: formatPullRequestReport(result) };
 
   assert.equal(agentReportMarker('qa', sha), `<!-- cashin-agent-report:v1 stage=qa sha=${sha} -->`);
@@ -18,7 +19,7 @@ test('parses only structured reports authored by the App and bound to the expect
 });
 
 test('formal review result is recoverable only from latest App review on the current SHA', () => {
-  const result = { stage: 'codeReview', decision: 'APPROVED', commitSha: sha, reportMarkdown: '### Code Review — APPROVED\nNenhum bloqueio identificado.' };
+  const result = { stage: 'codeReview', decision: 'APPROVED', commitSha: sha, reportMarkdown: '### Code Review — APPROVED\nNenhum bloqueio identificado.', evidence };
   const review = { user: { login: bot }, commit_id: sha, state: 'APPROVED', submitted_at: '2026-10-21T10:00:00Z', body: formatFormalReviewEvidence(result) };
   assert.equal(parseStoredFormalReview(review, sha, 'cashin-devagents').decision, 'APPROVED');
   assert.equal(parseStoredFormalReview({ ...review, commit_id: 'b'.repeat(40) }, sha, 'cashin-devagents'), undefined);
@@ -28,8 +29,8 @@ test('formal review result is recoverable only from latest App review on the cur
 });
 
 test('QA and Coordinator report markers use separate stage identities', () => {
-  const qa = formatPullRequestReport({ agentName: 'qa', pullRequestNumber: 26, commitSha: sha, status: 'APPROVED', reportMarkdown: '## Verificações de QA\n- Evidência' });
-  const qg = formatPullRequestReport({ agentName: 'qualityGate', pullRequestNumber: 26, commitSha: sha, status: 'APPROVED', reportMarkdown: '## Checks verificados\n- Evidência' });
+  const qa = formatPullRequestReport({ agentName: 'qa', pullRequestNumber: 26, commitSha: sha, status: 'APPROVED', reportMarkdown: '## Verificações de QA\n- Evidência', evidence });
+  const qg = formatPullRequestReport({ agentName: 'qualityGate', pullRequestNumber: 26, commitSha: sha, status: 'APPROVED', reportMarkdown: '## Checks verificados\n- Evidência', evidence });
   assert.ok(qa.startsWith(agentReportMarker('qa', sha)));
   assert.ok(qg.startsWith(agentReportMarker('qualityGate', sha)));
   assert.equal(parseStoredAgentComment({ user: { login: bot }, body: qg }, 'qa', sha, 'cashin-devagents'), undefined);
@@ -38,7 +39,7 @@ test('QA and Coordinator report markers use separate stage identities', () => {
 test('evidence markers change when PR metadata or the review input changes without a new HEAD SHA', () => {
   const firstContext = 'c'.repeat(64);
   const editedContext = 'd'.repeat(64);
-  const report = { agentName: 'qa', pullRequestNumber: 26, commitSha: sha, contextHash: firstContext, status: 'APPROVED', reportMarkdown: '## Verificações de QA\n- Evidência' };
+  const report = { agentName: 'qa', pullRequestNumber: 26, commitSha: sha, contextHash: firstContext, status: 'APPROVED', reportMarkdown: '## Verificações de QA\n- Evidência', evidence };
   const comment = { user: { login: bot }, body: formatPullRequestReport(report) };
   assert.equal(parseStoredAgentComment(comment, 'qa', sha, 'cashin-devagents', firstContext).decision, 'APPROVED');
   assert.equal(parseStoredAgentComment(comment, 'qa', sha, 'cashin-devagents', editedContext), undefined);

@@ -1,4 +1,5 @@
 import type { AgentStage, AgentStageResult } from './agent-orchestrator.js';
+import { REVIEW_RISK_AREAS } from './agent-result-validation.js';
 
 const SUSPICIOUS_INSTRUCTIONS = [
   /ignore\s+(all\s+)?(previous|prior|above)\s+(instructions|rules|prompts)/i,
@@ -26,6 +27,10 @@ export function detectPullRequestPromptInjection(input: {
   diff: string;
   sourceFiles: Array<{ content: string }>;
 }): boolean {
+  // Full snapshots contain trusted base content as well as the PR changes. Scanning
+  // them would repeatedly flag legitimate security regression fixtures already
+  // accepted on the default branch. Only PR-controlled metadata and newly added
+  // diff lines can introduce a new instruction in the current review round.
   const addedDiffLines = input.diff
     .split(/\r?\n/)
     .filter((line) => line.startsWith('+') && !line.startsWith('+++'))
@@ -35,15 +40,23 @@ export function detectPullRequestPromptInjection(input: {
     input.title,
     input.body,
     addedDiffLines,
-    ...input.sourceFiles.map(({ content }) => content),
   ].join('\n'));
 }
 
-export function createInjectionBlockedResult(stage: AgentStage, commitSha: string): AgentStageResult {
+export function createInjectionBlockedResult(stage: AgentStage, commitSha: string, changedFiles: string[] = [], acceptanceCriteria: string[] = []): AgentStageResult {
   const reportMarkdown = stage === 'qa'
     ? '## Verificações de QA\n- INCONCLUSIVE: conteúdo do Pull Request contém uma instrução suspeita dirigida ao agente; revisão humana necessária.'
     : stage === 'qualityGate'
       ? '## Checks verificados\n- INCONCLUSIVE: conteúdo do Pull Request contém uma instrução suspeita dirigida ao agente; revisão humana necessária.'
       : '### Code Review — INCONCLUSIVE\nConteúdo do Pull Request contém uma instrução suspeita dirigida ao agente; revisão humana necessária.';
-  return { stage, decision: 'INCONCLUSIVE', commitSha, reportMarkdown };
+  return {
+    stage, decision: 'INCONCLUSIVE', commitSha, reportMarkdown,
+    evidence: {
+      reviewComplete: false,
+      changedFilesReviewed: [],
+      riskAreas: REVIEW_RISK_AREAS.map((area) => ({ area, status: 'INCONCLUSIVE', evidence: 'Avaliação bloqueada por conteúdo suspeito no Pull Request.' })),
+      findings: [],
+      acceptanceCriteria: acceptanceCriteria.map((criterion) => ({ criterion, status: 'INCONCLUSIVE', evidence: 'Avaliação bloqueada por conteúdo suspeito no Pull Request.' })),
+    },
+  };
 }

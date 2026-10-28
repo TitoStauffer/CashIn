@@ -14,6 +14,7 @@ const REQUIRED_AGENT_CHECKS = {
 
 export interface AgentReviewInputs {
   diff: string;
+  changedFiles: string[];
   checks: Record<keyof typeof REQUIRED_AGENT_CHECKS, string>;
   checkRuns: AgentCheckEvidence[];
   repositoryInstructions: string;
@@ -72,7 +73,9 @@ export async function loadAgentReviewInputs(
   }
   const ciConfiguration = checkRuns.some((check) => check.actions?.availability === 'available')
     ? await loadCiSnapshots(fetchImpl, repository, headSha, token) : [];
-  return { diff, checks: summarizeAgentChecks(runs, headSha), checkRuns, repositoryInstructions, sourceFiles, vaultContext, ciConfiguration };
+  const changedFiles = filesPayload.map((file) => stringValue(file.filename));
+  if (changedFiles.some((path) => !path)) throw new Error('GitHub returned incomplete changed-file metadata.');
+  return { diff, changedFiles: changedFiles as string[], checks: summarizeAgentChecks(runs, headSha), checkRuns, repositoryInstructions, sourceFiles, vaultContext, ciConfiguration };
 }
 
 async function loadChangedSourceFiles(
@@ -166,6 +169,7 @@ export function summarizeAgentChecks(runs: Array<Record<string, unknown>>, expec
 export function fingerprintAgentReviewInputs(inputs: AgentReviewInputs): Record<string, unknown> {
   return {
     diffSha256: hash(inputs.diff),
+    changedFiles: inputs.changedFiles ?? [],
     checks: inputs.checks,
     checkRuns: (inputs.checkRuns ?? []).map(({ name, appId, headSha, status, conclusion, actions }) => ({
       name, appId, headSha, status, conclusion,

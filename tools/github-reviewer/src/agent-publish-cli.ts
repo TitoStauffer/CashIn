@@ -5,6 +5,7 @@ import type { AgentStageResult } from './agent-orchestrator.js';
 import { computeAgentContextHash, formatFormalReviewEvidence, latestCurrentFormalReview } from './agent-evidence.js';
 import { loadAgentReviewInputs } from './agent-review-inputs.js';
 import { syncApprovalCheckbox } from './approval-checklist.js';
+import { extractAcceptanceCriteria, isAgentEvaluationEvidence, validateAgentResultCompleteness } from './agent-result-validation.js';
 
 try {
   await main();
@@ -25,7 +26,8 @@ async function main(): Promise<void> {
     || !['APPROVED', 'CHANGES_REQUESTED', 'INCONCLUSIVE'].includes(result.decision)
     || !/^[a-f0-9]{40}$/i.test(result.commitSha)
     || !/^[a-f0-9]{64}$/i.test(result.contextHash ?? '')
-    || !result.reportMarkdown.trim()) throw new Error('Agent result artifact is invalid.');
+    || !result.reportMarkdown.trim()
+    || !isAgentEvaluationEvidence(result.evidence)) throw new Error('Agent result artifact is invalid.');
 
   const credentials = {
     appId: required('CASHIN_APP_ID'),
@@ -49,6 +51,12 @@ async function main(): Promise<void> {
     if (pr.state !== 'open' || headSha !== result.commitSha) throw new Error('Pull Request HEAD changed before formal review publication.');
     const contextToken = process.env.GITHUB_TOKEN?.trim() || session.installationToken;
     const initialReviewInputs = await loadAgentReviewInputs(fetch, repository, positivePrNumber(), pr, contextToken);
+    const completeness = validateAgentResultCompleteness(result, {
+      stage: 'codeReview', commitSha: result.commitSha,
+      changedFiles: initialReviewInputs.changedFiles,
+      acceptanceCriteria: extractAcceptanceCriteria(typeof pr.body === 'string' ? pr.body : ''),
+    });
+    if (completeness.length) throw new Error(`Code Review result is incomplete: ${completeness.join(' ')}`);
     if (computeAgentContextHash(repository, positivePrNumber(), pr, initialReviewInputs) !== result.contextHash) throw new Error('Pull Request review inputs changed before formal review publication.');
     if (author === session.appSlug || author === `${session.appSlug}[bot]`) throw new Error('The review App cannot formally review its own Pull Request.');
     if (!result.reportMarkdown.includes(`Code Review — ${result.decision}`)
@@ -59,7 +67,7 @@ async function main(): Promise<void> {
       const publisher = new GitHubReportPublisher(credentials);
       await publisher.publishReport({
         agentName: 'codeReview', pullRequestNumber: positivePrNumber(), commitSha: result.commitSha,
-        contextHash: result.contextHash, status: result.decision, reportMarkdown: result.reportMarkdown,
+        contextHash: result.contextHash, status: result.decision, reportMarkdown: result.reportMarkdown, evidence: result.evidence,
       });
       await writeOutput('decision', result.decision);
       await writeOutput('commit_sha', result.commitSha);
@@ -107,6 +115,7 @@ async function main(): Promise<void> {
       status: result.decision,
       reportMarkdown: result.reportMarkdown,
       contextHash: result.contextHash,
+      evidence: result.evidence,
     });
     if (agentName === 'qa') await syncChecklist(credentials, repository, result, 'qa');
   } else {

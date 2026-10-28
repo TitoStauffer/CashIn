@@ -81,7 +81,16 @@ try {
     throw "Referência indefinida não foi rejeitada: $($undefinedReference.Output)"
   }
 
-  Write-Output 'Regressões do validador do vault aprovadas: links inline complexos, referências e falhas fechadas.'
+  $duplicateLearningRoot = New-VaultCase 'duplicate-learning' '# Índice' @{
+    'learnings/one.md' = "# Um`n`n- **Padrão:** ``same-cause``"
+    'learnings/two.md' = "# Dois`n`n- **Padrão:** ``same-cause``"
+  }
+  $duplicateLearning = Invoke-ValidatorCase $duplicateLearningRoot
+  if ($duplicateLearning.ExitCode -eq 0 -or $duplicateLearning.Output -notmatch 'padrão de aprendizado duplicado') {
+    throw "Aprendizado duplicado não foi rejeitado: $($duplicateLearning.Output)"
+  }
+
+  Write-Output 'Regressões do validador do vault aprovadas: links inline complexos, referências, deduplicação e falhas fechadas.'
 }
 finally {
   if (Test-Path -LiteralPath $temporaryRoot) {
