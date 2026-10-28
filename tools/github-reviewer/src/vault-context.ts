@@ -149,11 +149,12 @@ export async function loadVaultContext(
     const document = documentsToInspect[documentIndex];
     if (!document) continue;
     if (catalogDocuments.has(document.path)) continue;
-    const isNavigationRoot = document.path === VAULT_INDEX || document.path === VAULT_CURRENT_STATE;
-    for (const target of markdownLinks(document.content)) {
+    const targets = markdownLinks(document.content);
+    const isNavigationRoot = document.path === VAULT_CURRENT_STATE || document.path.endsWith('/README.md');
+    if (isNavigationRoot) continue;
+    for (const target of targets) {
       const local = resolveLocalReference(document.path, target);
       if (local) {
-        if (isNavigationRoot && isKnowledgeDocument(local)) continue;
         const loaded = await loadLocal(local);
         if (loaded && isKnowledgeDocument(loaded.path) && !queuedDocuments.has(loaded.path)) {
           documentsToInspect.push(loaded);

@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
 import test from 'node:test';
-import { buildPrompt } from '../dist/codex-cli-agent.js';
+import { gunzipSync } from 'node:zlib';
+import { assertCodexPromptWithinBudget, buildPrompt, MAX_CODEX_PROMPT_BYTES } from '../dist/codex-cli-agent.js';
 import { detectPullRequestPromptInjection } from '../dist/prompt-injection-guard.js';
 
 test('supplies complete source snapshots as untrusted context for review', () => {
@@ -38,6 +40,73 @@ test('supplies complete source snapshots as untrusted context for review', () =>
   assert.match(prompt, /Encontrar um problema não encerra a revisão/);
   assert.match(prompt, /consolide no mesmo relatório todos os achados comprovados da rodada/);
   assert.match(prompt, /áreas revisadas sem bloqueios relevantes/);
+});
+
+test('does not duplicate a source snapshot already supplied by the vault', () => {
+  const marker = 'unique-duplicate-content-marker';
+  const prompt = buildPrompt('codeReview', {
+    repository: 'TitoStauffer/CashIn', pullRequestNumber: 50, commitSha: 'a'.repeat(40), executionId: 'test-run', priorResults: [],
+  }, {
+    pullRequest: { number: 50, title: 'Example', url: 'https://example.test/pull/50', body: '', headSha: 'a'.repeat(40), baseBranch: 'master', diff: '' },
+    checks: { api: 'PASSED', web: 'PASSED', githubReviewer: 'PASSED', sonarQube: 'PASSED', sonarCloud: 'PASSED' },
+    repositoryInstructions: 'Trusted project policy',
+    vaultContext: [{ path: 'src/example.ts', revision: 'head', content: marker }],
+    sourceFiles: [{ path: 'src/example.ts', revision: 'head', content: marker }],
+  });
+
+  assert.equal(prompt.split(marker).length - 1, 1);
+});
+
+test('does not duplicate an unchanged AGENTS snapshot already supplied as base policy', () => {
+  const marker = 'unique-agents-policy-marker';
+  const prompt = buildPrompt('codeReview', {
+    repository: 'TitoStauffer/CashIn', pullRequestNumber: 51, commitSha: 'a'.repeat(40), executionId: 'test-run', priorResults: [],
+  }, {
+    pullRequest: { number: 51, title: 'Example', url: 'https://example.test/pull/51', body: '', headSha: 'a'.repeat(40), baseBranch: 'master', diff: '' },
+    checks: { api: 'PASSED', web: 'PASSED', githubReviewer: 'PASSED', sonarQube: 'PASSED', sonarCloud: 'PASSED' },
+    repositoryInstructions: marker,
+    vaultContext: [{ path: 'AGENTS.md', revision: 'head', content: marker }],
+    sourceFiles: [],
+  });
+
+  assert.equal(prompt.split(marker).length - 1, 1);
+});
+
+test('preserves a changed AGENTS snapshot that differs from the trusted base policy', () => {
+  const prompt = buildPrompt('codeReview', {
+    repository: 'TitoStauffer/CashIn', pullRequestNumber: 51, commitSha: 'a'.repeat(40), executionId: 'test-run', priorResults: [],
+  }, {
+    pullRequest: { number: 51, title: 'Example', url: 'https://example.test/pull/51', body: '', headSha: 'a'.repeat(40), baseBranch: 'master', diff: '' },
+    checks: { api: 'PASSED', web: 'PASSED', githubReviewer: 'PASSED', sonarQube: 'PASSED', sonarCloud: 'PASSED' },
+    repositoryInstructions: 'base-policy-marker',
+    vaultContext: [{ path: 'AGENTS.md', revision: 'head', content: 'changed-policy-marker' }],
+    sourceFiles: [],
+  });
+
+  assert.match(prompt, /base-policy-marker/);
+  assert.match(prompt, /changed-policy-marker/);
+});
+
+test('fails explicitly before invoking Codex when the prompt exceeds its safe budget', () => {
+  assert.doesNotThrow(() => assertCodexPromptWithinBudget('x'.repeat(MAX_CODEX_PROMPT_BYTES)));
+  assert.throws(() => assertCodexPromptWithinBudget('x'.repeat(MAX_CODEX_PROMPT_BYTES + 1)), /prompt budget/);
+});
+
+test('replays the authenticated PR 50 context below the final Codex prompt budget', async () => {
+  const packed = await readFile(new URL('./fixtures/pr-50-agent-context.json.gz.base64', import.meta.url), 'utf8');
+  const fixture = JSON.parse(gunzipSync(Buffer.from(packed.trim(), 'base64')).toString('utf8'));
+  const prompt = buildPrompt('codeReview', {
+    repository: fixture.repository,
+    pullRequestNumber: fixture.pullRequest.number,
+    commitSha: fixture.pullRequest.headSha,
+    executionId: 'dev69-regression',
+    priorResults: [],
+  }, { ...fixture.inputs, pullRequest: fixture.pullRequest });
+
+  assert.equal(fixture.pullRequest.headSha, '4fe8bc7d866e19f798e26936cf37d844fbb54ec8');
+  assert.equal(fixture.inputs.changedFiles.length, 11);
+  assert.equal(Buffer.byteLength(prompt, 'utf8'), 387_124);
+  assert.doesNotThrow(() => assertCodexPromptWithinBudget(prompt));
 });
 
 test('checks only newly introduced PR content for prompt injection', () => {
