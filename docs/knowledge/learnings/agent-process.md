@@ -92,3 +92,21 @@
 - **Prevenção:** registrar link da revisão, identificador e SHA exatos em cada aprendizado derivado de Code Review ou QA.
 - **Detecção:** revisão documental confirma a presença dos três identificadores na evidência.
 - **Evidência:** PR #49, revisão [`5684471719`](https://github.com/TitoStauffer/CashIn/pull/49#pullrequestreview-5684471719), SHA `5628865a67bc944f7f6f3ccbe9cf414d4b447daa`.
+
+## Rejeitar datas inválidas antes de comparar intervalos
+
+- **Padrão:** `temporal-validation-reject-nan`
+- **Causa:** comparações relacionais com `NaN` retornam falso e podem transformar uma guarda por exclusão em validação permissiva.
+- **Impacto:** a recuperação aceitava um artifact sem comprovar temporalmente qual tentativa o produziu.
+- **Prevenção:** exigir timestamps finitos e intervalo ordenado antes de avaliar pertencimento temporal.
+- **Detecção:** regressões cobrem cada data ausente, cada data inválida e intervalo invertido.
+- **Evidência:** PR #49, revisão [`5684655538`](https://github.com/TitoStauffer/CashIn/pull/49#pullrequestreview-5684655538), SHA `5a21a75806d40530ca55f1c17bccde45e209cdaf`.
+
+## Manter documentação de segurança alinhada ao runtime
+
+- **Padrão:** `security-docs-match-runtime`
+- **Causa:** o detector foi restringido ao conteúdo novo do PR, mas dois trechos continuaram afirmando que snapshots completos também eram verificados.
+- **Impacto:** a documentação prometia uma cobertura de segurança inexistente e poderia induzir decisões incorretas.
+- **Prevenção:** atualizar documentação e implementação na mesma mudança sempre que o limite de confiança de uma guarda for alterado.
+- **Detecção:** busca documental pelos termos da guarda e revisão do contrato de testes.
+- **Evidência:** PR #49, revisão [`5684655538`](https://github.com/TitoStauffer/CashIn/pull/49#pullrequestreview-5684655538), SHA `5a21a75806d40530ca55f1c17bccde45e209cdaf`.

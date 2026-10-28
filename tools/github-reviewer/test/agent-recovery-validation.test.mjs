@@ -129,3 +129,34 @@ test('rejects an artifact whose producing attempt cannot be authenticated', () =
     }),
   }), /invalid, ambiguous, or expired/);
 });
+
+for (const scenario of [
+  { name: 'missing artifact creation time', artifactCreatedAt: undefined },
+  { name: 'invalid artifact creation time', artifactCreatedAt: 'not-a-date' },
+  { name: 'missing job start time', startedAt: undefined },
+  { name: 'invalid job start time', startedAt: 'not-a-date' },
+  { name: 'missing job completion time', completedAt: undefined },
+  { name: 'invalid job completion time', completedAt: 'not-a-date' },
+  { name: 'inverted job interval', startedAt: '2026-10-28T10:10:00Z', completedAt: '2026-10-28T10:00:00Z' },
+]) {
+  test(`rejects temporal provenance with ${scenario.name}`, () => {
+    assert.throws(() => validateRecoverySource({
+      repository,
+      sourceRunId,
+      stage: 'qa',
+      evidence: evidence({
+        jobs: [{
+          name: 'Codex QA', run_id: sourceRunId, run_attempt: 1, status: 'completed',
+          started_at: scenario.startedAt ?? (Object.hasOwn(scenario, 'startedAt') ? undefined : '2026-10-28T10:00:00Z'),
+          completed_at: scenario.completedAt ?? (Object.hasOwn(scenario, 'completedAt') ? undefined : '2026-10-28T10:10:00Z'),
+          steps: [{ name: 'Upload QA result', status: 'completed', conclusion: 'success' }],
+        }],
+        artifacts: [{
+          id: 101, name: `codex-qa-${sourceRunId}`, expired: false, size_in_bytes: 512,
+          created_at: scenario.artifactCreatedAt ?? (Object.hasOwn(scenario, 'artifactCreatedAt') ? undefined : '2026-10-28T10:09:00Z'),
+          workflow_run: { id: sourceRunId },
+        }],
+      }),
+    }), /provenance is invalid/);
+  });
+}

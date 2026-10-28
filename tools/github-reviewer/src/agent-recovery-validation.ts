@@ -90,6 +90,7 @@ export function validateRecoverySource(input: {
       const createdAt = timestamp(artifact.created_at);
       const startedAt = timestamp(latestJob.started_at);
       const completedAt = timestamp(latestJob.completed_at);
+      if (![createdAt, startedAt, completedAt].every(Number.isFinite) || startedAt > completedAt) return undefined;
       if (createdAt < startedAt || createdAt > completedAt) return undefined;
       return { artifactName: expectedArtifact, artifactId: numberValue(artifact.id), runAttempt: latestAttempt };
     })
