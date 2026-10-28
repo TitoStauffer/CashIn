@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
 import test from 'node:test';
+import { gunzipSync } from 'node:zlib';
 import { assertCodexPromptWithinBudget, buildPrompt, MAX_CODEX_PROMPT_BYTES } from '../dist/codex-cli-agent.js';
 import { detectPullRequestPromptInjection } from '../dist/prompt-injection-guard.js';
 
@@ -119,6 +121,23 @@ test('fails explicitly before invoking Codex when the prompt exceeds its safe bu
   assert.equal(MAX_CODEX_PROMPT_BYTES, 750_000);
   assert.doesNotThrow(() => assertCodexPromptWithinBudget('x'.repeat(750_000)));
   assert.throws(() => assertCodexPromptWithinBudget('x'.repeat(750_001)), /prompt budget/);
+});
+
+test('replays the authenticated PR 50 context below the final Codex prompt budget', async () => {
+  const packed = await readFile(new URL('./fixtures/pr-50-agent-context.json.gz.base64', import.meta.url), 'utf8');
+  const fixture = JSON.parse(gunzipSync(Buffer.from(packed.trim(), 'base64')).toString('utf8'));
+  const prompt = buildPrompt('codeReview', {
+    repository: fixture.repository,
+    pullRequestNumber: fixture.pullRequest.number,
+    commitSha: fixture.pullRequest.headSha,
+    executionId: 'dev69-regression',
+    priorResults: [],
+  }, { ...fixture.inputs, pullRequest: fixture.pullRequest });
+
+  assert.equal(fixture.pullRequest.headSha, '4fe8bc7d866e19f798e26936cf37d844fbb54ec8');
+  assert.equal(fixture.inputs.changedFiles.length, 11);
+  assert.equal(Buffer.byteLength(prompt, 'utf8'), 387_124);
+  assert.doesNotThrow(() => assertCodexPromptWithinBudget(prompt));
 });
 
 test('checks only newly introduced PR content for prompt injection', () => {
