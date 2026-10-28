@@ -4,7 +4,7 @@ import { loadAndValidateRecoverySource, parseAgentStage } from './agent-recovery
 try {
   const sourceRunId = Number(required('SOURCE_RUN_ID'));
   if (!Number.isSafeInteger(sourceRunId) || sourceRunId < 1) throw new Error('SOURCE_RUN_ID must be a positive integer.');
-  const artifactName = await loadAndValidateRecoverySource({
+  const artifact = await loadAndValidateRecoverySource({
     fetchImpl: fetch,
     repository: required('GITHUB_REPOSITORY'),
     token: required('GITHUB_TOKEN'),
@@ -12,8 +12,8 @@ try {
     stage: parseAgentStage(required('AGENT_STAGE')),
   });
   const output = process.env.GITHUB_OUTPUT;
-  if (output) await appendFile(output, `artifact_name=${artifactName}\n`, 'utf8');
-  process.stdout.write('Trusted orchestration artifact provenance validated.\n');
+  if (output) await appendFile(output, `artifact_name=${artifact.artifactName}\nartifact_id=${artifact.artifactId}\n`, 'utf8');
+  process.stdout.write(`Trusted orchestration artifact provenance validated for run attempt ${artifact.runAttempt}.\n`);
 } catch (error) {
   process.stderr.write(`${error instanceof Error ? error.message : 'Could not validate recovery source.'}\n`);
   process.exitCode = 1;

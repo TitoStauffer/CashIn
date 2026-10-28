@@ -38,7 +38,7 @@ flowchart LR
 - Resultado ausente, desatualizado ou inacessível fecha o fluxo com segurança.
 - Comentário textual não substitui revisão formal.
 - Code Review só conclui depois de cobrir todos os arquivos e áreas de risco; QA só conclui depois de registrar resultado e evidência para cada critério seguro e independente.
-- Falha exclusiva de publicação é recuperada com o artefato estruturado original, sem repetir a chamada de modelo; workflow, run, job de origem e vínculo do artefato são autenticados pela API do GitHub antes do download.
+- Falha exclusiva de publicação é recuperada com o artefato estruturado original, sem repetir a chamada de modelo; workflow, run, tentativa do job e ID do artefato são autenticados pela API do GitHub antes do download. Se houver reexecuções, somente o artefato correlacionado à tentativa bem-sucedida mais recente é selecionado.
 - O merge não é executado pelos workflows de agentes ou pelo Merge Readiness.
 
 ## Fontes verificáveis

@@ -15,13 +15,19 @@ export interface RecoverySourceEvidence {
   artifacts: Array<Record<string, unknown>>;
 }
 
+export interface RecoveryArtifactSelection {
+  artifactName: string;
+  artifactId: number;
+  runAttempt: number;
+}
+
 export async function loadAndValidateRecoverySource(input: {
   fetchImpl: typeof fetch;
   repository: string;
   token: string;
   sourceRunId: number;
   stage: AgentStage;
-}): Promise<string> {
+}): Promise<RecoveryArtifactSelection> {
   const path = `/repos/${input.repository}/actions/runs/${input.sourceRunId}`;
   const [run, jobsPayload, artifactsPayload] = await Promise.all([
     requestGitHubApi<Record<string, unknown>>(input.fetchImpl, path, input.token, { maxResponseBytes: 200_000 }),
@@ -46,7 +52,7 @@ export function validateRecoverySource(input: {
   sourceRunId: number;
   stage: AgentStage;
   evidence: RecoverySourceEvidence;
-}): string {
+}): RecoveryArtifactSelection {
   const { repository, sourceRunId, stage, evidence } = input;
   const source = STAGE_SOURCE[stage];
   const runRepository = record(evidence.run.repository);
@@ -61,24 +67,37 @@ export function validateRecoverySource(input: {
     throw new Error('Recovery source is not a completed trusted orchestration run on master.');
   }
 
-  const matchingJobs = evidence.jobs.filter((job) => job.name === source.job && job.run_id === sourceRunId);
-  if (matchingJobs.length !== 1) throw new Error('Recovery source does not contain exactly one trusted stage job.');
-  const job = matchingJobs[0];
-  const upload = records(job.steps).find((step) => step.name === source.uploadStep);
-  if (job.status !== 'completed' || !upload || upload.status !== 'completed' || upload.conclusion !== 'success') {
-    throw new Error('Recovery source stage did not produce a successful artifact upload.');
-  }
-
   const expectedArtifact = `${source.artifact}-${sourceRunId}`;
-  const matchingArtifacts = evidence.artifacts.filter((artifact) => artifact.name === expectedArtifact);
-  if (matchingArtifacts.length !== 1) throw new Error('Recovery source does not contain exactly one expected stage artifact.');
-  const artifact = matchingArtifacts[0];
-  if (artifact.expired !== false
-    || numberValue(artifact.size_in_bytes) < 1
-    || record(artifact.workflow_run)?.id !== sourceRunId) {
-    throw new Error('Recovery artifact provenance is invalid or expired.');
-  }
-  return expectedArtifact;
+  const successfulJobs = evidence.jobs
+    .filter((job) => job.name === source.job && job.run_id === sourceRunId)
+    .filter((job) => {
+      const upload = records(job.steps).find((step) => step.name === source.uploadStep);
+      return job.status === 'completed' && upload?.status === 'completed' && upload.conclusion === 'success';
+    });
+  if (successfulJobs.length === 0) throw new Error('Recovery source stage did not produce a successful artifact upload.');
+  const latestAttempt = Math.max(...successfulJobs.map((job) => numberValue(job.run_attempt)));
+  const latestJobs = successfulJobs.filter((job) => numberValue(job.run_attempt) === latestAttempt);
+  if (latestAttempt < 1 || latestJobs.length !== 1) throw new Error('Recovery source has ambiguous stage jobs for its latest successful attempt.');
+  const latestJob = latestJobs[0];
+
+  const candidates = evidence.artifacts
+    .filter((artifact) => artifact.name === expectedArtifact)
+    .filter((artifact) => artifact.expired === false
+      && numberValue(artifact.id) > 0
+      && numberValue(artifact.size_in_bytes) > 0
+      && record(artifact.workflow_run)?.id === sourceRunId)
+    .map((artifact) => {
+      const createdAt = timestamp(artifact.created_at);
+      const startedAt = timestamp(latestJob.started_at);
+      const completedAt = timestamp(latestJob.completed_at);
+      if (createdAt < startedAt || createdAt > completedAt) return undefined;
+      return { artifactName: expectedArtifact, artifactId: numberValue(artifact.id), runAttempt: latestAttempt };
+    })
+    .filter((candidate): candidate is RecoveryArtifactSelection => Boolean(candidate));
+
+  if (candidates.length === 0) throw new Error('Recovery artifact provenance is invalid, ambiguous, or expired.');
+  if (candidates.length !== 1) throw new Error('Recovery artifact provenance is ambiguous for the latest successful attempt.');
+  return candidates[0];
 }
 
 export function parseAgentStage(value: string): AgentStage {
@@ -97,4 +116,10 @@ function record(value: unknown): Record<string, unknown> | undefined {
 
 function numberValue(value: unknown): number {
   return typeof value === 'number' && Number.isSafeInteger(value) ? value : -1;
+}
+
+function timestamp(value: unknown): number {
+  if (typeof value !== 'string') return Number.NaN;
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) ? parsed : Number.NaN;
 }

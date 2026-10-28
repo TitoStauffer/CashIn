@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { extractAcceptanceCriteria, failClosedIncompleteResult, REVIEW_RISK_AREAS, validateAgentResultCompleteness } from '../dist/agent-result-validation.js';
+import { extractAcceptanceCriteria, failClosedIncompleteResult, isAgentStageResult, REVIEW_RISK_AREAS, validateAgentResultCompleteness } from '../dist/agent-result-validation.js';
 
 const sha = 'a'.repeat(40);
 const risks = REVIEW_RISK_AREAS.map((area) => ({ area, status: 'REVIEWED', evidence: `Revisado: ${area}` }));
@@ -80,4 +80,34 @@ test('extracts only checklist items from the acceptance criteria section', () =>
     '## 9. Segurança e qualidade',
     '- [ ] Não expor segredos',
   ].join('\n')), ['Importar OFX', 'Evitar duplicidade']);
+});
+
+test('rejects an agent result envelope with an unknown decision', () => {
+  const valid = result('codeReview', {
+    reviewComplete: true, changedFilesReviewed: ['src/a.ts'], riskAreas: risks, findings: [], acceptanceCriteria: [],
+  });
+  assert.equal(isAgentStageResult({ ...valid, decision: 'INVALID' }), false);
+});
+
+test('rejects an agent result envelope without a full commit SHA', () => {
+  const valid = result('codeReview', {
+    reviewComplete: true, changedFilesReviewed: ['src/a.ts'], riskAreas: risks, findings: [], acceptanceCriteria: [],
+  });
+  assert.equal(isAgentStageResult({ ...valid, commitSha: 'abc123' }), false);
+});
+
+test('rejects an otherwise valid result when it belongs to another expected HEAD SHA', () => {
+  const valid = result('codeReview', {
+    reviewComplete: true, changedFilesReviewed: ['src/a.ts'], riskAreas: risks, findings: [], acceptanceCriteria: [],
+  });
+  const reasons = validateAgentResultCompleteness(valid, {
+    stage: 'codeReview', commitSha: 'b'.repeat(40), changedFiles: ['src/a.ts'], acceptanceCriteria: [],
+  });
+  assert.match(reasons.join(' '), /SHA do resultado não corresponde/);
+});
+
+test('rejects an agent result envelope without complete structured evidence', () => {
+  assert.equal(isAgentStageResult({
+    stage: 'qa', decision: 'INCONCLUSIVE', commitSha: sha, reportMarkdown: 'Limitação registrada.',
+  }), false);
 });

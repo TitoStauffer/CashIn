@@ -1,16 +1,19 @@
 import { readFile } from 'node:fs/promises';
-import type { AgentStageResult } from './agent-orchestrator.js';
-import { extractAcceptanceCriteria, validateAgentResultCompleteness } from './agent-result-validation.js';
+import { extractAcceptanceCriteria, isAgentStageResult, validateAgentResultCompleteness } from './agent-result-validation.js';
 
 try {
-  const stage = required('AGENT_STAGE') as AgentStageResult['stage'];
-  if (!['codeReview', 'qa', 'qualityGate'].includes(stage)) throw new Error('AGENT_STAGE is invalid.');
-  const result = JSON.parse(await readFile(required('AGENT_RESULT_PATH'), 'utf8')) as AgentStageResult;
+  const stage = required('AGENT_STAGE');
+  if (stage !== 'codeReview' && stage !== 'qa' && stage !== 'qualityGate') throw new Error('AGENT_STAGE is invalid.');
+  const expectedCommitSha = required('EXPECTED_COMMIT_SHA');
+  if (!/^[a-f0-9]{40}$/i.test(expectedCommitSha)) throw new Error('EXPECTED_COMMIT_SHA must be a full commit SHA.');
+  const parsed: unknown = JSON.parse(await readFile(required('AGENT_RESULT_PATH'), 'utf8'));
+  if (!isAgentStageResult(parsed)) throw new Error('Agent result has an invalid or incomplete envelope.');
+  const result = parsed;
   const changedFiles = (await readFile(required('CHANGED_FILES_PATH'), 'utf8')).split(/\r?\n/).map((value) => value.trim()).filter(Boolean);
   const pullRequestBody = await readFile(required('PR_BODY_PATH'), 'utf8');
   const reasons = validateAgentResultCompleteness(result, {
     stage,
-    commitSha: result.commitSha,
+    commitSha: expectedCommitSha,
     changedFiles,
     acceptanceCriteria: extractAcceptanceCriteria(pullRequestBody),
   });

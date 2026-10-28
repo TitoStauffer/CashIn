@@ -159,6 +159,18 @@ export function isAgentEvaluationEvidence(value: unknown): value is AgentEvaluat
       && nonEmpty(entry.evidence));
 }
 
+export function isAgentStageResult(value: unknown): value is AgentStageResult {
+  if (!isRecord(value)
+    || !['codeReview', 'qa', 'qualityGate'].includes(String(value.stage))
+    || !['APPROVED', 'CHANGES_REQUESTED', 'INCONCLUSIVE'].includes(String(value.decision))
+    || typeof value.commitSha !== 'string'
+    || !/^[a-f0-9]{40}$/i.test(value.commitSha)
+    || !nonEmpty(value.reportMarkdown)
+    || (value.contextHash !== undefined && (typeof value.contextHash !== 'string' || !/^[a-f0-9]{64}$/i.test(value.contextHash)))
+    || !isAgentEvaluationEvidence(value.evidence)) return false;
+  return true;
+}
+
 function validateCodeReviewEvidence(
   decision: AgentDecision,
   evidence: AgentEvaluationEvidence,

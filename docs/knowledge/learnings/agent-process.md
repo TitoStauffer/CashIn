@@ -37,7 +37,7 @@
 - **Impacto:** um artefato de outra execução poderia chegar ao publicador privilegiado usando um nome previsível.
 - **Prevenção:** validar workflow, evento, branch, repositório, job, etapa de upload e vínculo do artefato ao run antes do download.
 - **Detecção:** regressões rejeitam outro workflow, upload falho e artefato associado a outro run.
-- **Evidência:** achado HIGH do Code Review do PR #49.
+- **Evidência:** PR #49, revisão [`5684284143`](https://github.com/TitoStauffer/CashIn/pull/49#pullrequestreview-5684284143), SHA `47a5df0a1a714d1881ac4781ba29265c858731e8`.
 
 ## Manter resultados inconclusivos publicáveis
 
@@ -46,7 +46,7 @@
 - **Impacto:** limitações reais não eram registradas e a recuperação repetia a falha.
 - **Prevenção:** normalizar áreas e critérios ausentes como inconclusivos, deduplicar evidências e validar novamente o resultado fechado antes da publicação.
 - **Detecção:** regressão cobre runtime, artefato normalizado e publicador.
-- **Evidência:** primeiro achado MEDIUM do Code Review do PR #49.
+- **Evidência:** PR #49, revisão [`5684284143`](https://github.com/TitoStauffer/CashIn/pull/49#pullrequestreview-5684284143), SHA `47a5df0a1a714d1881ac4781ba29265c858731e8`.
 
 ## Dar precedência segura a resultados mistos de QA
 
@@ -55,7 +55,7 @@
 - **Impacto:** QA exaustivo com falha comprovada e limitação independente não possuía resultado publicável.
 - **Prevenção:** publicar a rodada mista como `INCONCLUSIVE`, preservar todas as falhas e bloquear as etapas dependentes.
 - **Detecção:** regressão combina um critério reprovado com outro não avaliado.
-- **Evidência:** segundo achado MEDIUM do Code Review do PR #49.
+- **Evidência:** PR #49, revisão [`5684284143`](https://github.com/TitoStauffer/CashIn/pull/49#pullrequestreview-5684284143), SHA `47a5df0a1a714d1881ac4781ba29265c858731e8`.
 
 ## Manter chaves únicas em manifestos JSON
 
@@ -64,4 +64,31 @@
 - **Impacto:** parsers descartavam silenciosamente uma definição e permitiam divergência futura.
 - **Prevenção:** manter uma única definição por script e revisar o diff do manifesto.
 - **Detecção:** parsing e revisão estrutural do manifesto durante testes e Code Review.
-- **Evidência:** achado LOW do Code Review do PR #49.
+- **Evidência:** PR #49, revisão [`5684284143`](https://github.com/TitoStauffer/CashIn/pull/49#pullrequestreview-5684284143), SHA `47a5df0a1a714d1881ac4781ba29265c858731e8`.
+
+## Correlacionar artefatos à tentativa que os produziu
+
+- **Padrão:** `agent-recovery-select-producing-attempt`
+- **Causa:** a API de jobs com `filter=all` retorna todas as tentativas de uma execução, enquanto o nome previsível do artefato não identifica sozinho a tentativa produtora.
+- **Impacto:** a recuperação podia rejeitar uma execução válida ou selecionar evidência de uma tentativa anterior.
+- **Prevenção:** correlacionar `created_at` do artefato com o intervalo do job, selecionar a tentativa bem-sucedida mais recente e baixar pelo ID autenticado.
+- **Detecção:** regressão cobre duas tentativas válidas e confirma a seleção exclusiva do artefato mais recente.
+- **Evidência:** PR #49, revisão [`5684471719`](https://github.com/TitoStauffer/CashIn/pull/49#pullrequestreview-5684471719), SHA `5628865a67bc944f7f6f3ccbe9cf414d4b447daa`.
+
+## Validar envelopes externos antes de confiar nos campos
+
+- **Padrão:** `agent-preflight-validate-untrusted-envelope`
+- **Causa:** o preflight convertia JSON externo diretamente para o tipo interno e comparava o SHA do resultado com ele próprio.
+- **Impacto:** decisão desconhecida, SHA inválido ou evidência incompleta podiam atravessar a validação estrutural.
+- **Prevenção:** tratar JSON como `unknown`, validar o envelope completo e comparar com um SHA esperado fornecido de forma independente.
+- **Detecção:** regressões rejeitam decisão desconhecida, SHA incompleto e ausência de evidência estruturada.
+- **Evidência:** PR #49, revisão [`5684471719`](https://github.com/TitoStauffer/CashIn/pull/49#pullrequestreview-5684471719), SHA `5628865a67bc944f7f6f3ccbe9cf414d4b447daa`.
+
+## Vincular aprendizados à evidência exata
+
+- **Padrão:** `vault-learning-exact-review-evidence`
+- **Causa:** referências genéricas ao PR não permitiam localizar a rodada e o SHA que originaram o aprendizado.
+- **Impacto:** auditoria e reutilização do conhecimento exigiam reconstrução manual do histórico.
+- **Prevenção:** registrar link da revisão, identificador e SHA exatos em cada aprendizado derivado de Code Review ou QA.
+- **Detecção:** revisão documental confirma a presença dos três identificadores na evidência.
+- **Evidência:** PR #49, revisão [`5684471719`](https://github.com/TitoStauffer/CashIn/pull/49#pullrequestreview-5684471719), SHA `5628865a67bc944f7f6f3ccbe9cf414d4b447daa`.
