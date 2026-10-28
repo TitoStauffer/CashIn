@@ -3,6 +3,7 @@ import test from 'node:test';
 import { GitHubReportPublisher, formatPullRequestReport, REPORT_AGENT_SIGNATURES } from '../dist/github-report-publisher.js';
 import { computeAgentContextHash } from '../dist/agent-evidence.js';
 import { summarizeAgentChecks, summarizeCheckRunEvidence } from '../dist/agent-review-inputs.js';
+import { failClosedIncompleteResult } from '../dist/agent-result-validation.js';
 
 const sha = 'a'.repeat(40);
 const baseSha = 'c'.repeat(40);
@@ -91,6 +92,28 @@ test('discovers the repository installation and publishes using an installation 
     htmlUrl: 'https://github.com/TitoStauffer/CashIn/pull/42#issuecomment-9876',
     repository: 'TitoStauffer/CashIn', pullRequestNumber: 42, reusedComment: false,
   });
+});
+
+test('publishes a runtime-normalized incomplete QA artifact without releasing dependent stages', async () => {
+  const requests = [];
+  const incomplete = failClosedIncompleteResult({
+    stage: 'qa', decision: 'APPROVED', commitSha: sha, reportMarkdown: '## Verificações de QA\n- Evidência parcial.',
+    evidence: { reviewComplete: true, changedFilesReviewed: [], riskAreas: [], findings: [], acceptanceCriteria: [] },
+  }, { stage: 'qa', commitSha: sha, changedFiles: [], acceptanceCriteria: ['Validar exemplo'] });
+  const publisher = new GitHubReportPublisher({
+    appId: '5397579', privateKey: 'test-private-key', owner: 'TitoStauffer', repository: 'CashIn',
+    installationId: '173427336', authFactory: fakeAuthFactory([]), fetchImpl: fakeGitHub(requests),
+  });
+
+  const artifact = JSON.parse(JSON.stringify({
+    ...baseReport, status: incomplete.decision, reportMarkdown: incomplete.reportMarkdown, evidence: incomplete.evidence,
+  }));
+  const published = await publisher.publishReport(artifact);
+
+  assert.equal(incomplete.decision, 'INCONCLUSIVE');
+  assert.equal(incomplete.evidence.acceptanceCriteria[0].status, 'INCONCLUSIVE');
+  assert.equal(published.commentId, 9876);
+  assert.ok(requests.some(({ options }) => options.method === 'POST'));
 });
 
 test('uses a configured installation ID without making an app discovery request', async () => {

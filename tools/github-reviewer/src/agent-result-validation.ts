@@ -72,10 +72,50 @@ export function validateAgentResultCompleteness(result: AgentStageResult, expect
 export function failClosedIncompleteResult(result: AgentStageResult, expected: AgentResultExpectation): AgentStageResult {
   const reasons = validateAgentResultCompleteness(result, expected);
   if (reasons.length === 0) return result;
+  const evidence = normalizeInconclusiveEvidence(result.evidence, expected);
   return {
     ...result,
     decision: 'INCONCLUSIVE',
+    evidence,
     reportMarkdown: `${result.reportMarkdown.trim().replace(/(Code Review\s+[—-]\s*)(APPROVED|CHANGES_REQUESTED|INCONCLUSIVE)/i, '$1INCONCLUSIVE')}\n\n**Limitações de completude:**\n${reasons.map((reason) => `- ${reason}`).join('\n')}`,
+  };
+}
+
+function normalizeInconclusiveEvidence(
+  source: AgentEvaluationEvidence | undefined,
+  expected: AgentResultExpectation,
+): AgentEvaluationEvidence {
+  const evidence = source ?? {
+    reviewComplete: false,
+    changedFilesReviewed: [],
+    riskAreas: [],
+    findings: [],
+    acceptanceCriteria: [],
+  };
+  const expectedFiles = normalizedSet(expected.changedFiles);
+  const reviewedFiles = [...new Set(evidence.changedFilesReviewed
+    .map((path) => path.trim().replace(/\\/g, '/'))
+    .filter((path) => expectedFiles.has(path)))];
+  const riskAreas = expected.stage === 'codeReview'
+    ? REVIEW_RISK_AREAS.map((area) => evidence.riskAreas.find((entry) => entry.area === area) ?? {
+      area,
+      status: 'INCONCLUSIVE' as const,
+      evidence: 'Área não avaliada na rodada; resultado mantido fechado para revisão posterior.',
+    })
+    : uniqueBy(evidence.riskAreas, ({ area }) => area);
+  const acceptanceCriteria = expected.stage === 'qa'
+    ? expected.acceptanceCriteria.map((criterion) => evidence.acceptanceCriteria.find((entry) => normalize(entry.criterion) === normalize(criterion)) ?? {
+      criterion,
+      status: 'INCONCLUSIVE' as const,
+      evidence: 'Critério não avaliado na rodada; resultado mantido fechado para revisão posterior.',
+    })
+    : uniqueBy(evidence.acceptanceCriteria, ({ criterion }) => normalize(criterion));
+  return {
+    reviewComplete: false,
+    changedFilesReviewed: reviewedFiles,
+    riskAreas,
+    findings: uniqueBy(evidence.findings, ({ file, line, problem }) => `${file.trim()}\0${line.trim()}\0${problem.trim()}`),
+    acceptanceCriteria,
   };
 }
 
@@ -155,7 +195,7 @@ function validateQaEvidence(
   expectedCriteria: string[],
   reasons: string[],
 ): void {
-  if (expectedCriteria.length === 0) reasons.push('O Pull Request não contém critérios de aceitação verificáveis.');
+  if (expectedCriteria.length === 0 && decision !== 'INCONCLUSIVE') reasons.push('O Pull Request não contém critérios de aceitação verificáveis.');
   const expected = normalizedSet(expectedCriteria);
   const evaluated = normalizedSet(evidence.acceptanceCriteria.map(({ criterion }) => criterion));
   const missing = [...expected].filter((criterion) => !evaluated.has(criterion));
@@ -165,7 +205,8 @@ function validateQaEvidence(
   if (evaluated.size !== evidence.acceptanceCriteria.length) reasons.push('Há critérios de aceitação duplicados no resultado de QA.');
   const statuses = evidence.acceptanceCriteria.map(({ status }) => status);
   if (statuses.includes('INCONCLUSIVE') && decision !== 'INCONCLUSIVE') reasons.push('Critério inconclusivo exige decisão INCONCLUSIVE.');
-  if (statuses.includes('FAILED') && decision !== 'CHANGES_REQUESTED') reasons.push('Critério reprovado exige CHANGES_REQUESTED.');
+  if (statuses.includes('FAILED') && decision !== 'CHANGES_REQUESTED' && decision !== 'INCONCLUSIVE') reasons.push('Critério reprovado exige CHANGES_REQUESTED ou INCONCLUSIVE quando a rodada também tiver limitações.');
+  if (decision === 'INCONCLUSIVE' && evidence.reviewComplete && !statuses.includes('INCONCLUSIVE')) reasons.push('QA inconclusivo deve registrar ao menos uma limitação ou marcar a rodada como incompleta.');
   if (decision === 'CHANGES_REQUESTED' && !statuses.includes('FAILED')) reasons.push('QA solicitou alterações sem critério reprovado.');
   if (decision === 'APPROVED' && statuses.some((status) => status !== 'PASSED' && status !== 'NOT_APPLICABLE')) {
     reasons.push('QA aprovado contém critério não aprovado.');
@@ -174,7 +215,21 @@ function validateQaEvidence(
 }
 
 function normalizedSet(values: string[]): Set<string> {
-  return new Set(values.map((value) => value.trim().replace(/\\/g, '/')).filter(Boolean));
+  return new Set(values.map(normalize).filter(Boolean));
+}
+
+function normalize(value: string): string {
+  return value.trim().replace(/\\/g, '/');
+}
+
+function uniqueBy<T>(values: T[], key: (value: T) => string): T[] {
+  const seen = new Set<string>();
+  return values.filter((value) => {
+    const current = key(value);
+    if (seen.has(current)) return false;
+    seen.add(current);
+    return true;
+  });
 }
 
 function isStringArray(value: unknown): value is string[] {

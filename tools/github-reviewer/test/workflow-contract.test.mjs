@@ -54,8 +54,11 @@ test('formal review relay listens to review changes and has no permissions or pr
 
 test('recovers only an existing agent artifact without calling Codex', () => {
   assert.match(recoveryWorkflow, /workflow_dispatch:/);
+  assert.match(recoveryWorkflow, /node dist\/agent-recovery-cli\.js/);
   assert.match(recoveryWorkflow, /run-id:\s*\$\{\{ inputs\.source_run_id \}\}/);
+  assert.match(recoveryWorkflow, /name:\s*\$\{\{ steps\.source\.outputs\.artifact_name \}\}/);
   assert.match(recoveryWorkflow, /node dist\/agent-publish-cli\.js/);
+  assert.ok(recoveryWorkflow.indexOf('node dist/agent-recovery-cli.js') < recoveryWorkflow.indexOf('uses: actions/download-artifact@'));
   assert.match(recoveryWorkflow, /ref:\s*master/);
   assert.match(recoveryWorkflow, /persist-credentials:\s*false/);
   assert.doesNotMatch(recoveryWorkflow, /agent-stage-cli|codex\s+exec|runs-on:\s*\[self-hosted/);
