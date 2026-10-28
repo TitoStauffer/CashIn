@@ -59,6 +59,7 @@ Ele lista os campos preenchidos (id, nome e amostra), as transições disponíve
 | Chave | O que preencher |
 | --- | --- |
 | `jira.eligibilityJql` | JQL que traduz os critérios do `AGENTS.md`. Termine com `ORDER BY Rank ASC` para respeitar a priorização do quadro. Veja abaixo. |
+| `jira.allowedEpicKeys` | Lista explícita e não vazia de épicos autorizados para execução autônoma. A checagem é repetida imediatamente antes da reserva; nenhum épico fora da lista é executado, mesmo se a JQL o retornar. |
 | `jira.requiredFields` | Campos que precisam estar preenchidos. Cada item aceita `mustContain` (textos obrigatórios), `pattern` (regex) e `allowedValues` (valores aceitos). Use isso para o **papel do Agent técnico principal** e para objetivo, escopo e critérios de aceitação. |
 | `jira.blockingLinks` | Tipo de link de dependência (ex.: o nome exato de "Blocks") e o lado (`inward`/`outward`) onde fica a issue que bloqueia. A issue bloqueadora precisa estar em categoria *done*. |
 | `jira.reservableStatuses` | Status, por id ou nome, em que a issue precisa estar no momento da reserva (o "To Do"). |
@@ -71,13 +72,15 @@ Ids de status são mais estáveis que nomes, já que o Jira exibe nomes traduzid
 
 #### Configurar a elegibilidade
 
-Os critérios do `AGENTS.md` para o MVP 1 são: História, em `To Do`, na sprint ativa, associada ao épico `DEV-6`, com objetivo, escopo e critérios de aceitação claros, dependências resolvidas e papel do Agent técnico principal registrado. Um ponto de partida para a JQL, **a confirmar no seu Jira** (o tipo, o status e o vínculo com o épico podem ter outros nomes):
+Os critérios do `AGENTS.md` são: História, em `To Do`, na sprint ativa, associada a um épico explicitamente autorizado, com objetivo, escopo e critérios de aceitação claros, dependências resolvidas e papel do Agent técnico principal registrado. A autorização é feita em `jira.allowedEpicKeys`; inicialmente, use `DEV-6` e `DEV-50`. Um ponto de partida para a JQL, **a confirmar no seu Jira** (o tipo, o status e o vínculo com o épico podem ter outros nomes):
 
 ```
-project = DEV AND issuetype = "História" AND status = "To Do" AND sprint in openSprints() AND parent = DEV-6 ORDER BY Rank ASC
+project = DEV AND issuetype = "História" AND status = "To Do" AND sprint in openSprints() AND parent in (DEV-6, DEV-50) ORDER BY Rank ASC
 ```
 
-Se quiser um sinal explícito de "pronto para execução autônoma", como uma label, inclua-o na JQL. O dispatcher não cria nem presume essa label.
+Mantenha a cláusula `parent` da JQL alinhada com `allowedEpicKeys`: a JQL reduz o conjunto consultado, enquanto a allowlist é a barreira determinística aplicada novamente antes da reserva. Para autorizar um épico, adicione sua chave aos dois lugares e valide em modo dry-run. Para revogar, remova-a da allowlist (o que bloqueia imediatamente novas reservas) e também da JQL. Isso não exige alteração de código.
+
+Se quiser um sinal explícito de "pronto para execução autônoma", como uma label, inclua-o na JQL. O dispatcher não cria nem presume essa label. A ordem `ORDER BY Rank ASC` deve ser preservada para que a fila respeite a prioridade do quadro.
 
 Valide sem alterar nada no Jira:
 
@@ -239,17 +242,17 @@ npm run post-merge -- --help
 ## Testes
 
 ```bash
-npm test          # 92 testes (node:test via tsx)
+npm test          # 98 testes (node:test via tsx)
 npm run typecheck
 ```
 
-Os 92 testes cobrem elegibilidade, concorrência (lock de processo, recuperação de lock incompleto, execução ativa por issue, mudança de status concorrente, transição indisponível ou ambígua), reserva (comentário no formato do `AGENTS.md`, retry só do comentário), recuperação (`interrupted`, Codex órfão vivo, `resume`, `clear`, persistência), falhas do Codex com um processo real simulado (código ≠ 0, timeout, resultado inválido, issue errada, comando inexistente, parada forçada), redação de segredos, worktree com Git real, clientes HTTP do Jira e GitHub, idempotência e falhas parciais do pós-merge, além do loop com encerramento gracioso.
+Os 98 testes cobrem allowlist de épicos, elegibilidade, concorrência (lock de processo, recuperação de lock incompleto, execução ativa por issue, mudança de status ou épico concorrente, transição indisponível ou ambígua), reserva (comentário no formato do `AGENTS.md`, retry só do comentário), recuperação (`interrupted`, Codex órfão vivo, `resume`, `clear`, persistência), falhas do Codex com um processo real simulado (código ≠ 0, timeout, resultado inválido, issue errada, comando inexistente, parada forçada), redação de segredos, worktree com Git real, clientes HTTP do Jira e GitHub, idempotência e falhas parciais do pós-merge, além do loop com encerramento gracioso.
 
 ## O que ainda exige configuração ou verificação manual
 
 1. Criar o token de API e o `.env`.
-2. Rodar `discover` numa História e preencher todos os `PREENCHA` do `dispatcher.config.json`.
-3. Validar a JQL e os critérios com `check` e `once --dry-run`.
+2. Rodar `discover` numa História, preencher todos os `PREENCHA` do `dispatcher.config.json` e definir `allowedEpicKeys`.
+3. Alinhar a cláusula `parent` da JQL com a allowlist e validar os critérios com `check` e `once --dry-run`.
 4. Decidir sobre o acesso à rede no sandbox do Codex (veja "Codex CLI").
 5. Confirmar que o Codex acessa o Jira e o GitHub (`gh`) sozinho, sem as credenciais do dispatcher.
 6. Fazer a primeira execução real com `once` numa História de baixo risco e acompanhar `status` e os logs.

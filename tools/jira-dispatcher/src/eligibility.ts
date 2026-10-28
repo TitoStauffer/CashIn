@@ -9,7 +9,7 @@ export interface EligibilityResult {
 
 /** Fields the dispatcher must request from Jira to evaluate eligibility. */
 export function eligibilityFields(config: DispatcherConfig): string[] {
-  return [...new Set(["summary", "status", "issuelinks", ...config.jira.requiredFields.map((f) => f.field)])];
+  return [...new Set(["summary", "status", "parent", "issuelinks", ...config.jira.requiredFields.map((f) => f.field)])];
 }
 
 /**
@@ -22,6 +22,13 @@ export function evaluateEligibility(issue: JiraIssue, config: DispatcherConfig):
 
   if (!statusMatches(issue.fields.status, config.jira.reservableStatuses)) {
     reasons.push(`status atual "${issue.fields.status?.name ?? "desconhecido"}" não está em reservableStatuses`);
+  }
+
+  const parentKey = issue.fields.parent?.key?.trim().toUpperCase();
+  if (!parentKey) {
+    reasons.push("épico pai não está preenchido");
+  } else if (!config.jira.allowedEpicKeys.includes(parentKey)) {
+    reasons.push(`épico pai ${parentKey} não está autorizado em allowedEpicKeys`);
   }
 
   for (const requirement of config.jira.requiredFields) {
