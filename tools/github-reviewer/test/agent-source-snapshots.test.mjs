@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { buildPrompt } from '../dist/codex-cli-agent.js';
+import { assertCodexPromptWithinBudget, buildPrompt, MAX_CODEX_PROMPT_BYTES } from '../dist/codex-cli-agent.js';
 import { detectPullRequestPromptInjection } from '../dist/prompt-injection-guard.js';
 
 test('supplies complete source snapshots as untrusted context for review', () => {
@@ -38,6 +38,26 @@ test('supplies complete source snapshots as untrusted context for review', () =>
   assert.match(prompt, /Encontrar um problema não encerra a revisão/);
   assert.match(prompt, /consolide no mesmo relatório todos os achados comprovados da rodada/);
   assert.match(prompt, /áreas revisadas sem bloqueios relevantes/);
+});
+
+test('does not duplicate a source snapshot already supplied by the vault', () => {
+  const marker = 'unique-duplicate-content-marker';
+  const prompt = buildPrompt('codeReview', {
+    repository: 'TitoStauffer/CashIn', pullRequestNumber: 50, commitSha: 'a'.repeat(40), executionId: 'test-run', priorResults: [],
+  }, {
+    pullRequest: { number: 50, title: 'Example', url: 'https://example.test/pull/50', body: '', headSha: 'a'.repeat(40), baseBranch: 'master', diff: '' },
+    checks: { api: 'PASSED', web: 'PASSED', githubReviewer: 'PASSED', sonarQube: 'PASSED', sonarCloud: 'PASSED' },
+    repositoryInstructions: 'Trusted project policy',
+    vaultContext: [{ path: 'src/example.ts', revision: 'head', content: marker }],
+    sourceFiles: [{ path: 'src/example.ts', revision: 'head', content: marker }],
+  });
+
+  assert.equal(prompt.split(marker).length - 1, 1);
+});
+
+test('fails explicitly before invoking Codex when the prompt exceeds its safe budget', () => {
+  assert.doesNotThrow(() => assertCodexPromptWithinBudget('x'.repeat(MAX_CODEX_PROMPT_BYTES)));
+  assert.throws(() => assertCodexPromptWithinBudget('x'.repeat(MAX_CODEX_PROMPT_BYTES + 1)), /prompt budget/);
 });
 
 test('checks only newly introduced PR content for prompt injection', () => {

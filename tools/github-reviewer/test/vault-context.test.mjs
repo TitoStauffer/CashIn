@@ -57,7 +57,7 @@ test('loads the vault index, current state, routed note and exact local source a
   assert.equal(requests.every((request) => request.searchParams.get('ref') === headSha), true);
 });
 
-test('loads direct sources but does not expand vault navigation from the required roots', async () => {
+test('does not expand links from required vault navigation roots', async () => {
   const files = baseVault({
     'docs/knowledge/README.md': { value: '# Index\n[Architecture](architecture.md)\n' },
     'docs/knowledge/current-state.md': { value: '# Current state\n[Contract](../../docs/contract.md)\n' },
@@ -70,7 +70,23 @@ test('loads direct sources but does not expand vault navigation from the require
   assert.deepEqual(result.map(({ path }) => path), [
     'docs/knowledge/README.md',
     'docs/knowledge/current-state.md',
-    'docs/contract.md',
+  ]);
+});
+
+test('does not expand links from a selected domain index', async () => {
+  const files = baseVault({
+    'docs/knowledge/context-map.json': { value: JSON.stringify({ version: 1, catalogs: [], routes: [{ paths: ['src/**'], documents: ['docs/knowledge/domain/README.md'] }] }) },
+    'docs/knowledge/domain/README.md': { value: '# Domain index\n[Large note](large.md)\n' },
+    'docs/knowledge/domain/large.md': { value: '# Large note\n' },
+  });
+
+  const result = await loadVaultContext(fakeFetch(files), repository, [{ filename: 'src/example.ts', status: 'modified' }], headSha, baseSha, 'token');
+
+  assert.deepEqual(result.map(({ path }) => path), [
+    'docs/knowledge/README.md',
+    'docs/knowledge/current-state.md',
+    'docs/knowledge/context-map.json',
+    'docs/knowledge/domain/README.md',
   ]);
 });
 
@@ -144,14 +160,14 @@ test('ignores link-shaped examples inside inline and fenced Markdown code', asyn
 test('preserves link destinations when their labels contain inline code', async () => {
   const reviewPath = '/repos/owner/repo/pulls/44/reviews/123';
   const files = baseVault({
-    'docs/knowledge/README.md': {
-      value: '# Index\n[`service.ts`](../../apps/api/src/service.ts)\n[`Review`](https://github.com/owner/repo/pull/44#pullrequestreview-123)\n',
+    'docs/knowledge/note.md': {
+      value: '# Note\n[`service.ts`](../../apps/api/src/service.ts)\n[`Review`](https://github.com/owner/repo/pull/44#pullrequestreview-123)\n',
     },
     'apps/api/src/service.ts': { value: 'export const value = 1;\n' },
   });
   const review = { id: 123, state: 'CHANGES_REQUESTED', body: 'Confirmed issue', html_url: 'https://github.com/owner/repo/pull/44#pullrequestreview-123' };
 
-  const result = await loadVaultContext(fakeFetch(files, { [reviewPath]: review }), repository, [], headSha, baseSha, 'token');
+  const result = await loadVaultContext(fakeFetch(files, { [reviewPath]: review }), repository, [{ filename: 'docs/knowledge/note.md', status: 'modified' }], headSha, baseSha, 'token');
 
   assert.equal(result.some(({ path }) => path === 'apps/api/src/service.ts'), true);
   assert.equal(result.some(({ path, content }) => path === `github-evidence://${reviewPath.slice(1)}` && content.includes('Confirmed issue')), true);
@@ -160,7 +176,7 @@ test('preserves link destinations when their labels contain inline code', async 
 test('resolves inline destinations with titles, angle brackets, escapes and balanced parentheses', async () => {
   const reviewPath = '/repos/owner/repo/pulls/44/reviews/123';
   const files = baseVault({
-    'docs/knowledge/README.md': {
+    'docs/knowledge/note.md': {
       value: [
         '# Index',
         '[Service](../../apps/api/src/service.ts "Serviço")',
@@ -177,11 +193,12 @@ test('resolves inline destinations with titles, angle brackets, escapes and bala
   });
   const review = { id: 123, state: 'CHANGES_REQUESTED', body: 'Confirmed issue', html_url: 'https://github.com/owner/repo/pull/44#pullrequestreview-123' };
 
-  const result = await loadVaultContext(fakeFetch(files, { [reviewPath]: review }), repository, [], headSha, baseSha, 'token');
+  const result = await loadVaultContext(fakeFetch(files, { [reviewPath]: review }), repository, [{ filename: 'docs/knowledge/note.md', status: 'modified' }], headSha, baseSha, 'token');
 
   assert.deepEqual(result.map(({ path }) => path), [
     'docs/knowledge/README.md',
     'docs/knowledge/current-state.md',
+    'docs/knowledge/note.md',
     'apps/api/src/service.ts',
     'apps/api/src/spaced file.ts',
     'apps/api/src/value(test).ts',
@@ -192,33 +209,33 @@ test('resolves inline destinations with titles, angle brackets, escapes and bala
 
 test('fails closed for a missing source whose link label contains inline code', async () => {
   const files = baseVault({
-    'docs/knowledge/README.md': { value: '# Index\n[`missing.ts`](../../apps/api/src/missing.ts)\n' },
+    'docs/knowledge/note.md': { value: '# Note\n[`missing.ts`](../../apps/api/src/missing.ts)\n' },
   });
 
   await assert.rejects(
-    loadVaultContext(fakeFetch(files), repository, [], headSha, baseSha, 'token'),
+    loadVaultContext(fakeFetch(files), repository, [{ filename: 'docs/knowledge/note.md', status: 'modified' }], headSha, baseSha, 'token'),
     /GitHub API request failed \(404\)/,
   );
 });
 
 test('fails closed for a missing source in a titled inline link', async () => {
   const files = baseVault({
-    'docs/knowledge/README.md': { value: '# Index\n[Missing](../../apps/api/src/missing.ts "Source")\n' },
+    'docs/knowledge/note.md': { value: '# Note\n[Missing](../../apps/api/src/missing.ts "Source")\n' },
   });
 
   await assert.rejects(
-    loadVaultContext(fakeFetch(files), repository, [], headSha, baseSha, 'token'),
+    loadVaultContext(fakeFetch(files), repository, [{ filename: 'docs/knowledge/note.md', status: 'modified' }], headSha, baseSha, 'token'),
     /GitHub API request failed \(404\)/,
   );
 });
 
 test('fails closed for unsupported or malformed inline link syntax', async () => {
   const files = baseVault({
-    'docs/knowledge/README.md': { value: '# Index\n[Malformed](../../apps/api/src/service.ts "Missing close)\n' },
+    'docs/knowledge/note.md': { value: '# Note\n[Malformed](../../apps/api/src/service.ts "Missing close)\n' },
   });
 
   await assert.rejects(
-    loadVaultContext(fakeFetch(files), repository, [], headSha, baseSha, 'token'),
+    loadVaultContext(fakeFetch(files), repository, [{ filename: 'docs/knowledge/note.md', status: 'modified' }], headSha, baseSha, 'token'),
     /unsupported or malformed inline Markdown link/,
   );
 });
