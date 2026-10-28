@@ -51,12 +51,13 @@ export async function loadAgentReviewInputs(
   const baseSha = stringValue(base?.sha);
   if (!headSha || !baseSha) throw new Error('Pull Request is missing a complete head or base commit.');
 
-  const [diff, runs, instructionsPayload, filesPayload] = await Promise.all([
+  const [rawDiff, runs, instructionsPayload, filesPayload] = await Promise.all([
     requestGitHubText(fetchImpl, `/repos/${repository}/pulls/${pullRequestNumber}`, token, 'application/vnd.github.v3.diff'),
     readCheckRuns(fetchImpl, repository, headSha, token),
     requestGitHubApi<Record<string, unknown>>(fetchImpl, `/repos/${repository}/contents/AGENTS.md?ref=${encodeURIComponent(baseSha)}`, token),
     requestGitHubApiPages<Record<string, unknown>>(fetchImpl, `/repos/${repository}/pulls/${pullRequestNumber}/files`, token),
   ]);
+  const diff = sanitizeAgentDiff(rawDiff);
   const encoding = stringValue(instructionsPayload.encoding);
   const encodedInstructions = stringValue(instructionsPayload.content);
   if (encoding !== 'base64' || !encodedInstructions) throw new Error('Could not read AGENTS.md from the Pull Request base commit.');
@@ -121,15 +122,18 @@ async function loadChangedSourceFiles(
     }
     const content = Buffer.from(payload.content.replace(/\s/g, ''), 'base64').toString('utf8');
     if (content.includes('\0')) throw new Error(`Pull Request includes a binary file that cannot be reviewed as source: ${path}.`);
-    const contentBytes = Buffer.byteLength(content, 'utf8');
+    const reviewContent = isEncodedReviewFixture(path)
+      ? encodedFixtureMarker(path, content)
+      : content;
+    const contentBytes = Buffer.byteLength(reviewContent, 'utf8');
     if (totalBytes + contentBytes > MAX_SOURCE_BYTES) {
       if (isChangedFile) throw new Error('Pull Request source files exceed the supported review context size.');
       continue;
     }
     totalBytes += contentBytes;
-    sourceFiles.push({ path, revision, content });
+    sourceFiles.push({ path, revision, content: reviewContent });
     if (isChangedFile && /\.[cm]?tsx?$/.test(path)) {
-      for (const match of content.matchAll(/\bfrom\s+['"](\.[^'"]+\.js)['"]/g)) {
+      for (const match of reviewContent.matchAll(/\bfrom\s+['"](\.[^'"]+\.js)['"]/g)) {
         const dependency = posix.normalize(posix.join(posix.dirname(path), match[1].replace(/\.js$/, '.ts')));
         const key = `${revision}:${dependency}`;
         if (dependency.startsWith('../') || seen.has(key)) continue;
@@ -140,6 +144,24 @@ async function loadChangedSourceFiles(
     }
   }
   return sourceFiles;
+}
+
+export function sanitizeAgentDiff(diff: string): string {
+  return diff.split(/(?=^diff --git )/m).map((section) => {
+    const path = section.match(/^diff --git a\/.+ b\/(.+)$/m)?.[1]?.trim();
+    if (!path || !isEncodedReviewFixture(path)) return section;
+    const header = section.split(/\r?\n/, 1)[0];
+    const bytes = Buffer.byteLength(section, 'utf8');
+    return `${header}\n[encoded test fixture omitted from model context; bytes=${bytes}; sha256=${hash(section)}]\n`;
+  }).join('');
+}
+
+function isEncodedReviewFixture(path: string): boolean {
+  return /^tools\/github-reviewer\/test\/fixtures\/[A-Za-z0-9._-]+\.json\.gz\.base64$/.test(path);
+}
+
+function encodedFixtureMarker(path: string, content: string): string {
+  return `[encoded test fixture omitted from model context; path=${path}; bytes=${Buffer.byteLength(content, 'utf8')}; sha256=${hash(content)}]`;
 }
 
 function isVaultManagedDocument(path: string): boolean {
