@@ -2,7 +2,7 @@
 
 ## Current state
 
-`tools/github-reviewer/src/agent-orchestrator.ts` implements the provider-neutral orchestration policy. It requires current-head CI and Sonar evidence, runs Code Review before QA, requires a formal GitHub Code Review decision before QA, and runs the Quality Gate Coordinator only after QA approves. Each agent result must identify the same full commit SHA and include a report. The current HEAD is re-read before and after agent execution, stale evidence is rejected, and failures return `INCONCLUSIVE` without proceeding to dependent stages.
+`tools/github-reviewer/src/agent-orchestrator.ts` implements the provider-neutral orchestration policy. It requires current-head CI and Sonar evidence, runs Code Review before QA, requires a formal GitHub Code Review decision before QA, and runs the Quality Gate Coordinator only after QA approves. Each agent result must identify the same full commit SHA and include a report. Code Review also proves coverage of every changed file and risk area; QA records a result and evidence for every acceptance criterion. The current HEAD is re-read before and after agent execution, stale or incomplete evidence is rejected, and failures return `INCONCLUSIVE` without proceeding to dependent stages.
 
 The orchestrator receives infrastructure adapters for GitHub, execution locking, agent execution, and report publication. It does not load a model SDK, contact an AI service, create a GitHub review on its own, or merge a pull request. Tests use adapter fakes and do not represent hosted validation.
 

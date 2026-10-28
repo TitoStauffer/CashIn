@@ -7,8 +7,10 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "test": "npm run build && node --test test/*.test.mjs",
+    "preflight-result": "npm run build && node dist/agent-preflight-cli.js",
     "review": "node src/cli.mjs",
     "publish-report": "npm run build && node dist/report-cli.js",
+    "preflight-result": "npm run build && node dist/agent-preflight-cli.js",
     "readiness": "npm run build && node dist/readiness-cli.js",
     "workflow-readiness": "npm run build && node dist/workflow-readiness-cli.js",
     "agent-stage": "node dist/agent-stage-cli.js",

@@ -1,4 +1,5 @@
 import type { AgentStage, AgentStageResult } from './agent-orchestrator.js';
+import { REVIEW_RISK_AREAS } from './agent-result-validation.js';
 
 const SUSPICIOUS_INSTRUCTIONS = [
   /ignore\s+(all\s+)?(previous|prior|above)\s+(instructions|rules|prompts)/i,
@@ -39,11 +40,20 @@ export function detectPullRequestPromptInjection(input: {
   ].join('\n'));
 }
 
-export function createInjectionBlockedResult(stage: AgentStage, commitSha: string): AgentStageResult {
+export function createInjectionBlockedResult(stage: AgentStage, commitSha: string, changedFiles: string[] = [], acceptanceCriteria: string[] = []): AgentStageResult {
   const reportMarkdown = stage === 'qa'
     ? '## Verificações de QA\n- INCONCLUSIVE: conteúdo do Pull Request contém uma instrução suspeita dirigida ao agente; revisão humana necessária.'
     : stage === 'qualityGate'
       ? '## Checks verificados\n- INCONCLUSIVE: conteúdo do Pull Request contém uma instrução suspeita dirigida ao agente; revisão humana necessária.'
       : '### Code Review — INCONCLUSIVE\nConteúdo do Pull Request contém uma instrução suspeita dirigida ao agente; revisão humana necessária.';
-  return { stage, decision: 'INCONCLUSIVE', commitSha, reportMarkdown };
+  return {
+    stage, decision: 'INCONCLUSIVE', commitSha, reportMarkdown,
+    evidence: {
+      reviewComplete: false,
+      changedFilesReviewed: [],
+      riskAreas: REVIEW_RISK_AREAS.map((area) => ({ area, status: 'INCONCLUSIVE', evidence: 'Avaliação bloqueada por conteúdo suspeito no Pull Request.' })),
+      findings: [],
+      acceptanceCriteria: acceptanceCriteria.map((criterion) => ({ criterion, status: 'INCONCLUSIVE', evidence: 'Avaliação bloqueada por conteúdo suspeito no Pull Request.' })),
+    },
+  };
 }

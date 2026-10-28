@@ -249,6 +249,7 @@ if (-not (Test-Path -LiteralPath $vaultRoot -PathType Container)) {
 }
 
 $markdownFiles = Get-ChildItem -LiteralPath $vaultRoot -Recurse -File -Filter "*.md" | Sort-Object FullName
+$learningPatterns = @{}
 
 foreach ($file in $markdownFiles) {
   $content = Get-Content -LiteralPath $file.FullName -Raw
@@ -299,6 +300,19 @@ foreach ($file in $markdownFiles) {
     if ($content -match $pattern) {
       $relativeFile = [IO.Path]::GetRelativePath($RepositoryRoot, $file.FullName)
       $failures.Add("${relativeFile}: padrão de credencial detectado.")
+    }
+  }
+
+  if ($file.FullName.StartsWith((Join-Path $vaultRoot "learnings"), [StringComparison]::OrdinalIgnoreCase)) {
+    foreach ($match in [regex]::Matches($content, '(?m)^- \*\*Padrão:\*\*\s*`?([^`\r\n]+)`?\s*$')) {
+      $patternId = $match.Groups[1].Value.Trim().ToLowerInvariant()
+      $relativeFile = [IO.Path]::GetRelativePath($RepositoryRoot, $file.FullName)
+      if ($learningPatterns.ContainsKey($patternId)) {
+        $failures.Add("${relativeFile}: padrão de aprendizado duplicado '$patternId' (já registrado em $($learningPatterns[$patternId])).")
+      }
+      else {
+        $learningPatterns[$patternId] = $relativeFile
+      }
     }
   }
 }

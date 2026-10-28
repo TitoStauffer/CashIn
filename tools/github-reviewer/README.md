@@ -197,7 +197,23 @@ To run it manually, open **Actions → Merge Readiness → Run workflow**, enter
 
 ### Validate hosted agent orchestration
 
-Use an open pull request targeting `master`. Only a successful, complete `CI` run triggers `Codex Agent Orchestration`; `agent-stage-cli.ts` revalidates all required CI/Sonar evidence for the PR HEAD before starting a model. A newer SHA cancels the obsolete orchestration. The first job runs on the self-hosted Windows runner labeled `codex-plus`; subsequent jobs publish the formal Code Review and the QA and Quality Gate Coordinator reports through the GitHub App. Code Review and QA update only their own template checkboxes after current-context publication; non-approved results clear the corresponding checkbox. For recovery, open **Actions → Codex Agent Orchestration → Run workflow**, select `master`, enter the open PR number, and start the run. The trigger and job sequence are defined in `.github/workflows/agent-orchestration.yml`.
+Use an open pull request targeting `master`. Only a successful, complete `CI` run triggers `Codex Agent Orchestration`; `agent-stage-cli.ts` revalidates all required CI/Sonar evidence for the PR HEAD before starting a model. A newer SHA cancels the obsolete orchestration. The first job runs on the self-hosted Windows runner labeled `codex-plus`; subsequent jobs publish the formal Code Review and the QA and Quality Gate Coordinator reports through the GitHub App. Code Review and QA update only their own template checkboxes after current-context publication; non-approved results clear the corresponding checkbox. If the analysis itself must be repeated, open **Actions → Codex Agent Orchestration → Run workflow**, select `master`, enter the open PR number, and start the run. The trigger and job sequence are defined in `.github/workflows/agent-orchestration.yml`.
+
+If analysis completed and only publication failed, do not rerun the orchestration. Open **Actions → Recover Agent Report Publication**, provide the original orchestration run ID, PR number and failed publication stage. Recovery downloads the original one-day artifact and invokes only the idempotent publisher. It makes no Codex/model call and revalidates PR, HEAD, context fingerprint and structured completeness before writing.
+
+## Structured round preflight
+
+Code Review results include every changed file, all six risk areas and typed findings. QA results include every acceptance criterion with status and evidence. Missing coverage fails closed. The same validator can be run before push against a prepared result:
+
+```powershell
+$env:AGENT_STAGE = 'codeReview' # or qa / qualityGate
+$env:AGENT_RESULT_PATH = 'agent-result.json'
+$env:CHANGED_FILES_PATH = 'changed-files.txt'
+$env:PR_BODY_PATH = 'pr-body.md'
+npm run preflight-result
+```
+
+`changed-files.txt` contains one repository-relative path per line. This command validates evidence only; it does not call Codex, publish, approve, merge or modify Jira.
 
 For an end-to-end check, confirm that the workflow run resolves to the intended open PR, then compare the SHA in every agent report with the PR's current HEAD. After the reports are published, inspect the `Merge Readiness` check and its JSON summary for the same SHA. A skipped orchestration, missing report, stale SHA, runner failure, or `INCONCLUSIVE` readiness result is a validation failure or an explicit blocker; do not replace it with a manual approval. If the PR head changes, wait for the new CI-triggered run and evaluate the new SHA. Keep a validation PR unmerged until the project owner decides otherwise.
 

@@ -3,6 +3,7 @@ import { resolve } from 'node:path';
 import type { AgentStageResult } from './agent-orchestrator.js';
 import { requestGitHubApi } from './github-api-client.js';
 import { loadAgentReviewInputs } from './agent-review-inputs.js';
+import { extractAcceptanceCriteria, validateAgentResultCompleteness } from './agent-result-validation.js';
 import { computeAgentContextHash, hasLaterChangeRequest, latestCurrentFormalReview, parseStoredAgentComment, parseStoredFormalReview } from './agent-evidence.js';
 import { executeCodexAgent, type CheckSummary, type FormalCodeReviewEvidence, type PullRequestContext } from './codex-cli-agent.js';
 import { resolveWorkflowEvent } from './workflow-event.js';
@@ -47,7 +48,8 @@ async function main(): Promise<void> {
   }
 
   const reviewInputs = await loadAgentReviewInputs(fetch, repository, prNumber, pullRequest, token);
-  const { diff, checks, checkRuns, repositoryInstructions, sourceFiles, vaultContext, ciConfiguration } = reviewInputs;
+  const { diff, changedFiles, checks, checkRuns, repositoryInstructions, sourceFiles, vaultContext, ciConfiguration } = reviewInputs;
+  const acceptanceCriteria = extractAcceptanceCriteria(stringValue(pullRequest.body) ?? '');
   if (diff.length > 350_000) throw new Error('Pull Request diff exceeds the supported review size.');
   // A title-triggered evaluation may precede CI completion; no model runs until every required check passes.
   assertRequiredChecksPassed(checks);
@@ -59,13 +61,13 @@ async function main(): Promise<void> {
     diff,
     sourceFiles: [...vaultContext, ...sourceFiles, ...(ciConfiguration ?? []), { content: JSON.stringify(checkRuns.map(({ actions }) => actions)) }],
   })) {
-    const blocked = { ...createInjectionBlockedResult(stage, resolution.headSha), contextHash };
+    const blocked = { ...createInjectionBlockedResult(stage, resolution.headSha, changedFiles, acceptanceCriteria), contextHash };
     await writeStageResult(blocked, prNumber);
     process.exitCode = 2;
     return;
   }
 
-  const priorResults = await readPriorResults(stage, contextHash);
+  const priorResults = await readPriorResults(stage, contextHash, resolution.headSha, changedFiles, acceptanceCriteria);
   const formalCodeReview = stage !== 'codeReview'
     ? await readFormalReviewEvidence(prNumber, resolution.headSha, repository, token)
     : undefined;
@@ -77,7 +79,8 @@ async function main(): Promise<void> {
   }
 
   const cachedResult = await readReusableResult(stage, prNumber, resolution.headSha, repository, token, contextHash);
-  if (cachedResult && cachedResult.decision !== 'INCONCLUSIVE') {
+  if (cachedResult && cachedResult.decision !== 'INCONCLUSIVE'
+    && validateAgentResultCompleteness(cachedResult, { stage, commitSha: resolution.headSha, changedFiles, acceptanceCriteria }).length === 0) {
     await verifyContextUnchanged(prNumber, repository, token, pullRequest, resolution.headSha, contextHash);
     await writeStageResult(cachedResult, prNumber);
     process.exitCode = cachedResult.decision === 'APPROVED' ? 0 : 1;
@@ -102,6 +105,7 @@ async function main(): Promise<void> {
       baseBranch: 'master',
       diff,
     },
+    changedFiles,
     checks,
     checkRuns,
     ciConfiguration,
@@ -144,7 +148,13 @@ async function readReusableResult(stage: 'codeReview' | 'qa' | 'qualityGate', pr
   return reusable?.decision === 'INCONCLUSIVE' ? undefined : reusable;
 }
 
-async function readPriorResults(stage: 'codeReview' | 'qa' | 'qualityGate', expectedContextHash: string): Promise<AgentStageResult[]> {
+async function readPriorResults(
+  stage: 'codeReview' | 'qa' | 'qualityGate',
+  expectedContextHash: string,
+  commitSha: string,
+  changedFiles: string[],
+  acceptanceCriteria: string[],
+): Promise<AgentStageResult[]> {
   const paths = stage === 'qa'
     ? [required('CODE_REVIEW_RESULT_PATH')]
     : stage === 'qualityGate'
@@ -157,7 +167,13 @@ async function readPriorResults(stage: 'codeReview' | 'qa' | 'qualityGate', expe
       || !['APPROVED', 'CHANGES_REQUESTED', 'INCONCLUSIVE'].includes(result.decision)
       || !/^[a-f0-9]{40}$/i.test(result.commitSha)
       || result.contextHash !== expectedContextHash
-      || typeof result.reportMarkdown !== 'string') throw new Error('A previous agent artifact is invalid.');
+      || typeof result.reportMarkdown !== 'string'
+      || validateAgentResultCompleteness(result, {
+        stage: result.stage,
+        commitSha,
+        changedFiles,
+        acceptanceCriteria,
+      }).length > 0) throw new Error('A previous agent artifact is invalid or incomplete.');
     results.push(result);
   }
   if (results.some((result) => result.decision !== 'APPROVED')) throw new Error('A previous agent stage did not approve the current change.');

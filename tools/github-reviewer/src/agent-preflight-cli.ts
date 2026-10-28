@@ -1,0 +1,28 @@
+import { readFile } from 'node:fs/promises';
+import type { AgentStageResult } from './agent-orchestrator.js';
+import { extractAcceptanceCriteria, validateAgentResultCompleteness } from './agent-result-validation.js';
+
+try {
+  const stage = required('AGENT_STAGE') as AgentStageResult['stage'];
+  if (!['codeReview', 'qa', 'qualityGate'].includes(stage)) throw new Error('AGENT_STAGE is invalid.');
+  const result = JSON.parse(await readFile(required('AGENT_RESULT_PATH'), 'utf8')) as AgentStageResult;
+  const changedFiles = (await readFile(required('CHANGED_FILES_PATH'), 'utf8')).split(/\r?\n/).map((value) => value.trim()).filter(Boolean);
+  const pullRequestBody = await readFile(required('PR_BODY_PATH'), 'utf8');
+  const reasons = validateAgentResultCompleteness(result, {
+    stage,
+    commitSha: result.commitSha,
+    changedFiles,
+    acceptanceCriteria: extractAcceptanceCriteria(pullRequestBody),
+  });
+  if (reasons.length) throw new Error(`Preflight rejected the agent result:\n${reasons.map((reason) => `- ${reason}`).join('\n')}`);
+  process.stdout.write(`Preflight approved ${stage} evidence for ${result.commitSha}.\n`);
+} catch (error) {
+  process.stderr.write(`${error instanceof Error ? error.message : 'Agent preflight failed.'}\n`);
+  process.exitCode = 1;
+}
+
+function required(name: string): string {
+  const value = process.env[name]?.trim();
+  if (!value) throw new Error(`Missing ${name}.`);
+  return value;
+}

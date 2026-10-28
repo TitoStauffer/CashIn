@@ -37,7 +37,7 @@
     },
     {
       "paths": [".github/**", "tools/github-reviewer/**", "docs/hosted-agent-orchestration.md"],
-      "documents": ["docs/knowledge/automation/delivery-flow.md", "docs/knowledge/automation/github-app.md", "docs/knowledge/automation/merge-readiness.md", "docs/knowledge/decisions/ADR-002-agent-orchestration.md"]
+      "documents": ["docs/knowledge/automation/delivery-flow.md", "docs/knowledge/automation/github-app.md", "docs/knowledge/automation/merge-readiness.md", "docs/knowledge/decisions/ADR-002-agent-orchestration.md", "docs/knowledge/learnings/agent-process.md"]
     },
     {
       "paths": ["tools/jira-dispatcher/**"],
@@ -49,7 +49,7 @@
     },
     {
       "paths": ["AGENTS.md", "docs/knowledge/**", "tools/knowledge/**"],
-      "documents": ["docs/knowledge/learnings/README.md", "docs/knowledge/learnings/code-review-findings.md", "docs/knowledge/evidence/README.md"]
+      "documents": ["docs/knowledge/learnings/README.md", "docs/knowledge/learnings/code-review-findings.md", "docs/knowledge/learnings/agent-process.md", "docs/knowledge/evidence/README.md"]
     }
   ]
 }

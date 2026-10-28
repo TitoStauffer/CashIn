@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import type { AgentStageResult, AgentStage } from './agent-orchestrator.js';
 import { fingerprintAgentReviewInputs, type AgentReviewInputs } from './agent-review-inputs.js';
+import { decodeAgentEvidence, encodeAgentEvidence } from './agent-result-validation.js';
 
 const SIGNATURES: Record<AgentStage, string> = {
   codeReview: 'Codex — Code Review Agent',
@@ -33,6 +34,7 @@ export function agentReportMarker(stage: AgentStage, commitSha: string, contextH
 export function formatFormalReviewEvidence(result: AgentStageResult): string {
   return [
     agentReportMarker('codeReview', result.commitSha, result.contextHash),
+    ...(result.evidence ? [agentEvidenceMarker(result.evidence)] : []),
     '### Codex — Code Review Agent',
     '',
     `**Status:** ${result.decision}`,
@@ -78,7 +80,17 @@ export function parseStoredAgentComment(
   if (!reportMarkdown) return undefined;
   if (stage === 'qa' && !/^(?:#{1,3}\s+Verificações de QA|\*\*Verificações de QA:\*\*)\s*$/im.test(reportMarkdown)) return undefined;
   if (stage === 'qualityGate' && !/^(?:#{1,3}\s+Checks verificados|\*\*Checks verificados:\*\*)\s*$/im.test(reportMarkdown)) return undefined;
-  return { stage, decision: status as AgentStageResult['decision'], commitSha: commitSha.toLowerCase(), reportMarkdown, contextHash };
+  const evidence = parseAgentEvidenceMarker(body);
+  return { stage, decision: status as AgentStageResult['decision'], commitSha: commitSha.toLowerCase(), reportMarkdown, contextHash, evidence };
+}
+
+export function agentEvidenceMarker(evidence: NonNullable<AgentStageResult['evidence']>): string {
+  return `<!-- cashin-agent-evidence:v1 data=${encodeAgentEvidence(evidence)} -->`;
+}
+
+function parseAgentEvidenceMarker(body: string): AgentStageResult['evidence'] {
+  const encoded = body.match(/^<!-- cashin-agent-evidence:v1 data=([A-Za-z0-9+/=]+) -->$/m)?.[1];
+  return encoded ? decodeAgentEvidence(encoded) : undefined;
 }
 
 export function latestCurrentFormalReview(

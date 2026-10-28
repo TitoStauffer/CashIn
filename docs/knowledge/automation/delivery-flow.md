@@ -1,7 +1,7 @@
 # Fluxo de entrega
 
 **Status:** ativo
-**Última revisão:** 25/10/2026
+**Última revisão:** 28/10/2026
 
 ## Sequência real
 
@@ -37,6 +37,8 @@ flowchart LR
 - Toda evidência precisa corresponder ao HEAD SHA atual.
 - Resultado ausente, desatualizado ou inacessível fecha o fluxo com segurança.
 - Comentário textual não substitui revisão formal.
+- Code Review só conclui depois de cobrir todos os arquivos e áreas de risco; QA só conclui depois de registrar resultado e evidência para cada critério seguro e independente.
+- Falha exclusiva de publicação é recuperada com o artefato estruturado original, sem repetir a chamada de modelo.
 - O merge não é executado pelos workflows de agentes ou pelo Merge Readiness.
 
 ## Fontes verificáveis
@@ -44,5 +46,6 @@ flowchart LR
 - [`AGENTS.md`](../../../AGENTS.md)
 - [`.github/workflows/ci.yml`](../../../.github/workflows/ci.yml)
 - [`.github/workflows/agent-orchestration.yml`](../../../.github/workflows/agent-orchestration.yml)
+- [`.github/workflows/agent-report-recovery.yml`](../../../.github/workflows/agent-report-recovery.yml)
 - [`.github/workflows/merge-readiness.yml`](../../../.github/workflows/merge-readiness.yml)
 - [`.github/workflows/jira-post-merge.yml`](../../../.github/workflows/jira-post-merge.yml)

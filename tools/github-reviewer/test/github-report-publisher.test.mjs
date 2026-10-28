@@ -8,7 +8,7 @@ const sha = 'a'.repeat(40);
 const baseSha = 'c'.repeat(40);
 const checkRuns = ['API', 'Web', 'Automation Tools', 'SonarQube', 'SonarCloud Code Analysis'].map((name) => ({ name, head_sha: sha, status: 'completed', conclusion: 'success', ...(name === 'Automation Tools' ? { app: { id: 15368 } } : {}) }));
 const currentPr = {
-  title: 'Example PR', html_url: 'https://github.com/TitoStauffer/CashIn/pull/42', body: '',
+  title: 'Example PR', html_url: 'https://github.com/TitoStauffer/CashIn/pull/42', body: '## 8. Critérios de aceitação\n\n- [ ] Validar exemplo\n\n## 9. Segurança',
   head: { sha }, base: { ref: 'master', sha: baseSha },
 };
 const currentInputs = { diff: 'diff contents', checks: summarizeAgentChecks(checkRuns, sha), checkRuns: summarizeCheckRunEvidence(checkRuns, sha), repositoryInstructions: 'trusted instructions', sourceFiles: [] };
@@ -16,6 +16,10 @@ const contextHash = computeAgentContextHash('TitoStauffer/CashIn', 42, currentPr
 const baseReport = {
   agentName: 'qa', pullRequestNumber: 42, commitSha: sha, contextHash, status: 'APPROVED',
   reportMarkdown: '## Resultado\n\nCritérios validados.',
+  evidence: {
+    reviewComplete: true, changedFilesReviewed: [], riskAreas: [], findings: [],
+    acceptanceCriteria: [{ criterion: 'Validar exemplo', status: 'PASSED', evidence: 'CI aprovado.' }],
+  },
 };
 
 function fakeAuthFactory(authCalls) {

@@ -48,4 +48,6 @@ test('QA scope separates implementation acceptance from merge approval and prote
   });
   assert.match(prompt, /A aprovação formal de Code Review já foi validada/);
   assert.match(prompt, /Branch protection, aprovação humana exigida para merge e autorização de merge pertencem ao Merge Readiness\/PM/);
+  assert.match(prompt, /Uma falha não encerra a rodada/);
+  assert.match(prompt, /Every acceptance criterion must appear exactly once/);
 });

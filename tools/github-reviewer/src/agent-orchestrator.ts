@@ -1,3 +1,5 @@
+import type { AgentEvaluationEvidence } from './agent-result-validation.js';
+
 export type AgentStage = 'codeReview' | 'qa' | 'qualityGate';
 export type AgentDecision = 'APPROVED' | 'CHANGES_REQUESTED' | 'INCONCLUSIVE';
 export type OrchestrationStatus = 'COMPLETED' | 'BLOCKED' | 'INCONCLUSIVE' | 'ALREADY_RUNNING';
@@ -8,6 +10,7 @@ export interface AgentStageResult {
   commitSha: string;
   reportMarkdown: string;
   contextHash?: string;
+  evidence?: AgentEvaluationEvidence;
 }
 
 export interface QualityPrerequisites {
