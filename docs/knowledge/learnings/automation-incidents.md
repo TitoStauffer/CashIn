@@ -39,6 +39,12 @@ No [PR #50](https://github.com/TitoStauffer/CashIn/pull/50), o grafo ficou abaix
 
 A reprodução corrigida ficou registrada pela identidade do GitHub App na revisão formal [#5686923604 do PR #50](https://github.com/TitoStauffer/CashIn/pull/50#pullrequestreview-5686923604), vinculada ao SHA `4fe8bc7d866e19f798e26936cf37d844fbb54ec8`. O Agent gerou decisão estruturada `CHANGES_REQUESTED`, cobriu os 11 arquivos alterados e as seis áreas de risco e identificou um bloqueio funcional real na retomada do dispatcher. Antes da chamada, a mesma entrada produziu um prompt de 387.122 bytes, abaixo do teto final de 500.000 bytes. A revisão durável comprova que a redução não omitiu a matriz de completude nem impediu a geração de evidência estruturada.
 
+## Fixtures autenticadas não devem consumir o orçamento do próprio review
+
+Uma fixture compactada e codificada em Base64, criada para reproduzir um contexto real, fez o PR que a introduziu ultrapassar o orçamento final do prompt ao aparecer integralmente no diff e novamente no snapshot de fontes. Arquivos `*.json.gz.base64` são texto para o Git e para a API, embora seu conteúdo seja um artefato gerado sem valor para inspeção direta do modelo.
+
+A prevenção representa fixtures geradas no diretório de testes do reviewer somente por caminho, tamanho e SHA-256 no contexto dos Agents. A suíte continua decodificando e validando integralmente o artefato versionado; qualquer outro arquivo alterado continua sendo fornecido sem truncamento.
+
 Na revisão formal [#5686657727 do PR #51](https://github.com/TitoStauffer/CashIn/pull/51#pullrequestreview-5686657727), para o SHA `b446ee41f59bfed70b1399f8b25b6a2cb12b0f2e`, foi confirmado que a primeira correção ainda propagava qualquer texto escrito em `stderr`, contrariando a fronteira de diagnóstico seguro declarada. A correção substituiu `stderr` por uma mensagem genérica e passou a extrair detalhes somente do campo `error.message` (ou erro textual) de eventos JSON explicitamente identificados como `error` ou `turn.failed`. Casos negativos garantem que eventos de saída do modelo e erros em tipos não permitidos nunca sejam ecoados.
 
 ## Fontes verificáveis

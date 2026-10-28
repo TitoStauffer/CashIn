@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 import { gunzipSync } from 'node:zlib';
-import { loadAgentReviewInputs, summarizeAgentChecks, summarizeCheckRunEvidence } from '../dist/agent-review-inputs.js';
+import { loadAgentReviewInputs, sanitizeAgentDiff, summarizeAgentChecks, summarizeCheckRunEvidence } from '../dist/agent-review-inputs.js';
 import { requestGitHubApiPages } from '../dist/github-api-client.js';
 
 const headSha = 'a'.repeat(40);
@@ -12,6 +12,26 @@ const baseSha = 'b'.repeat(40);
 function encoded(content) {
   return Buffer.from(content, 'utf8').toString('base64');
 }
+
+test('replaces encoded review fixtures in diffs with verifiable metadata', () => {
+  const fixture = 'A'.repeat(20_000);
+  const diff = [
+    'diff --git a/src/example.ts b/src/example.ts',
+    '@@ -1 +1 @@',
+    '-export const value = 1;',
+    '+export const value = 2;',
+    'diff --git a/tools/github-reviewer/test/fixtures/context.json.gz.base64 b/tools/github-reviewer/test/fixtures/context.json.gz.base64',
+    '@@ -0,0 +1 @@',
+    `+${fixture}`,
+  ].join('\n');
+
+  const sanitized = sanitizeAgentDiff(diff);
+
+  assert.match(sanitized, /export const value = 2/);
+  assert.match(sanitized, /encoded test fixture omitted from model context/);
+  assert.match(sanitized, /sha256=[a-f0-9]{64}/);
+  assert.doesNotMatch(sanitized, new RegExp(fixture.slice(0, 100)));
+});
 
 function createFetch({
   files = [{ filename: 'src/example.ts', status: 'modified' }],
@@ -70,6 +90,22 @@ test('loads complete changed source snapshots at the PR HEAD alongside diff and 
   assert.equal(inputs.repositoryInstructions, 'Project rules');
   assert.deepEqual(inputs.sourceFiles, [{ path: 'src/example.ts', revision: 'head', content: 'export const value = 42;\n' }]);
   assert.equal(requests.some((request) => request.pathname.endsWith('/contents/src/example.ts') && request.searchParams.get('ref') === headSha), true);
+});
+
+test('represents encoded review fixtures by hash instead of duplicating their payload', async () => {
+  const path = 'tools/github-reviewer/test/fixtures/context.json.gz.base64';
+  const content = 'A'.repeat(20_000);
+  const inputs = await loadAgentReviewInputs(createFetch({
+    files: [{ filename: path, status: 'added' }],
+    sources: { [path]: content },
+  }), 'owner/repo', 7, { head: { sha: headSha }, base: { sha: baseSha } }, 'token');
+
+  assert.equal(inputs.sourceFiles.length, 1);
+  assert.equal(inputs.sourceFiles[0].path, path);
+  assert.match(inputs.sourceFiles[0].content, /encoded test fixture omitted from model context/);
+  assert.match(inputs.sourceFiles[0].content, /bytes=20000/);
+  assert.match(inputs.sourceFiles[0].content, /sha256=[a-f0-9]{64}/);
+  assert.doesNotMatch(inputs.sourceFiles[0].content, new RegExp(content.slice(0, 100)));
 });
 
 test('uses latest rerun results for summaries and exposes only current-SHA required checks', () => {
