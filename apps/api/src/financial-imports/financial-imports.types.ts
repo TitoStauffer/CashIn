@@ -63,6 +63,13 @@ export interface ParsedFinancialImportItem {
   validationStatus?: Exclude<FinancialImportItemStatus, "imported">;
   errorMessage?: string | null;
   isRepairable?: boolean;
+  externalId?: string | null;
+  recordHash?: string | null;
+}
+
+export interface ParsedFinancialImport {
+  items: ParsedFinancialImportItem[];
+  sourceMetadata?: Record<string, string>;
 }
 
 export interface FinancialImportParserInput {
@@ -72,7 +79,7 @@ export interface FinancialImportParserInput {
 }
 
 export interface FinancialImportParser {
-  parse(input: FinancialImportParserInput): Promise<ParsedFinancialImportItem[]>;
+  parse(input: FinancialImportParserInput): Promise<ParsedFinancialImport | ParsedFinancialImportItem[]>;
 }
 
 export interface CreateFinancialImportInput {
@@ -97,6 +104,7 @@ export interface FinancialImportRepository {
     walletId: string,
     importId: string,
     items: ParsedFinancialImportItem[],
+    sourceMetadata?: Record<string, string>,
   ): Promise<FinancialImportSession | null>;
   listImports(userId: string, walletId: string): Promise<FinancialImportSession[]>;
   getImport(userId: string, walletId: string, importId: string): Promise<FinancialImportSession | null>;

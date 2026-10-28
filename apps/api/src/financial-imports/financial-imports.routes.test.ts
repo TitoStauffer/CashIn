@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import test from "node:test";
+import { fileURLToPath } from "node:url";
 import { createApp } from "../app.js";
 import type { Database, QueryExecutor } from "../database.js";
 import { hashToken } from "../auth/token.js";
@@ -315,7 +317,9 @@ class SessionAuthRepository implements AuthRepository {
   async deleteSession(tokenHash: string): Promise<void> { this.sessions.delete(tokenHash); }
 }
 
-function createTestApp(parser: FinancialImportParser = new TestParser()) {
+const fixtures = fileURLToPath(new URL("./fixtures/", import.meta.url));
+
+function createTestApp(parser: FinancialImportParser | null = new TestParser()) {
   const repository = new MemoryFinancialImportRepository();
   const executor: QueryExecutor = { query: async <Row>() => ({ rows: [] as Row[], rowCount: 0 }) };
   const database: Database = { ...executor, transaction: async (work) => work(executor) };
@@ -324,7 +328,7 @@ function createTestApp(parser: FinancialImportParser = new TestParser()) {
       authRepository: new SessionAuthRepository(),
       walletRepository: new WalletsTestFixture(),
       financialImportRepository: repository,
-      financialImportParser: parser,
+      financialImportParser: parser ?? undefined,
     }),
     repository,
   };
@@ -376,6 +380,69 @@ test("financial import routes require authentication and expose wallet-scoped pr
     method: "GET", url: `/financial-imports/${created.json().id}`, headers: { cookie: authCookie(SESSION_B) },
   });
   assert.equal(hidden.statusCode, 404);
+  await app.close();
+});
+
+test("default API parser creates an editable preview from an OFX bank statement", async () => {
+  const { app } = createTestApp(null);
+  const response = await app.inject({
+    method: "POST",
+    url: "/financial-imports",
+    headers: {
+      cookie: authCookie(),
+      "content-type": "application/octet-stream",
+      "x-file-name": encodeURIComponent("extrato.ofx"),
+      "x-file-format": "ofx",
+    },
+    payload: await readFile(`${fixtures}valid-bank.ofx`),
+  });
+
+  assert.equal(response.statusCode, 201);
+  assert.equal(response.json().status, "preview");
+  const detail = await app.inject({
+    method: "GET",
+    url: `/financial-imports/${response.json().id}`,
+    headers: { cookie: authCookie() },
+  });
+  assert.deepEqual(detail.json().items.map((item: FinancialImportItem) => ({
+    date: item.date,
+    description: item.description,
+    amount: item.amount,
+    type: item.type,
+    status: item.validationStatus,
+  })), [
+    { date: "2026-10-20", description: "Salário — Pagamento mensal", amount: "1500.50", type: "income", status: "uncategorized" },
+    { date: "2026-10-21", description: "Mercado & Companhia", amount: "125.50", type: "expense", status: "uncategorized" },
+    { date: "2026-10-22", description: "Transferência entre contas", amount: "300.00", type: "transfer", status: "uncategorized" },
+  ]);
+  await app.close();
+});
+
+test("default API parser preserves literal CDATA content in the persisted preview", async () => {
+  const { app } = createTestApp(null);
+  const response = await app.inject({
+    method: "POST",
+    url: "/financial-imports",
+    headers: {
+      cookie: authCookie(),
+      "content-type": "application/octet-stream",
+      "x-file-name": encodeURIComponent("extrato-xml.ofx"),
+      "x-file-format": "ofx",
+    },
+    payload: await readFile(`${fixtures}valid-xml.ofx`),
+  });
+
+  assert.equal(response.statusCode, 201);
+  const detail = await app.inject({
+    method: "GET",
+    url: `/financial-imports/${response.json().id}`,
+    headers: { cookie: authCookie() },
+  });
+  assert.equal(detail.statusCode, 200);
+  assert.equal(
+    detail.json().items[0].description,
+    "Padaria & Filial </STMTTRN> Centro <STMTTRN> <STMTRS> </STMTRS> <CCACCTFROM> <CCSTMTTRNRS> &amp;",
+  );
   await app.close();
 });
 

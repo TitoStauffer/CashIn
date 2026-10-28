@@ -87,6 +87,8 @@ test("PostgreSQL financial import confirms exact amounts, isolates wallets, and 
         type: "income",
         categoryId: incomeCategoryId,
         validationStatus: "valid",
+        externalId: "fitid-income-1",
+        recordHash: "f".repeat(64),
       },
       {
         sequence: 2,
@@ -132,7 +134,10 @@ test("PostgreSQL financial import confirms exact amounts, isolates wallets, and 
         validationStatus: "duplicate",
         errorMessage: "A movimentação já existe.",
       },
-    ]);
+    ], {
+      currency: "BRL",
+      accountReferenceHash: "e".repeat(64),
+    });
     assert.deepEqual(preview?.summary, {
       total: 6,
       valid: 2,
@@ -142,6 +147,22 @@ test("PostgreSQL financial import confirms exact amounts, isolates wallets, and 
       imported: 0,
     });
     assert.equal(preview?.items?.length, 6);
+    const persistedSource = await database.query<{
+      source_metadata: Record<string, string>;
+      external_id: string;
+      record_hash: string;
+    }>(
+      `SELECT session.source_metadata, item.external_id, item.record_hash
+       FROM import_sessions AS session
+       JOIN import_items AS item ON item.import_session_id = session.id
+       WHERE session.id = $1 AND item.sequence = 1`,
+      [created.id],
+    );
+    assert.deepEqual(persistedSource.rows[0], {
+      source_metadata: { currency: "BRL", accountReferenceHash: "e".repeat(64) },
+      external_id: "fitid-income-1",
+      record_hash: "f".repeat(64),
+    });
     assert.deepEqual(preview?.items?.[3], {
       id: preview?.items?.[3]?.id,
       sequence: 4,

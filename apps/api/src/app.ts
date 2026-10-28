@@ -51,7 +51,7 @@ import {
   MAX_FINANCIAL_IMPORT_FILE_SIZE,
 } from "./financial-imports/financial-imports.service.js";
 import { PostgresFinancialImportsRepository } from "./financial-imports/postgres-financial-imports.repository.js";
-import { UnsupportedFinancialImportParser } from "./financial-imports/financial-imports.parser.js";
+import { DefaultFinancialImportParser } from "./financial-imports/financial-imports.parser.js";
 import { registerFinancialImportRoutes } from "./financial-imports/financial-imports.routes.js";
 import type { FinancialImportParser, FinancialImportRepository } from "./financial-imports/financial-imports.types.js";
 
@@ -252,7 +252,7 @@ export function createApp(
   registerFinancialImportRoutes(app, {
     financialImportsService: new FinancialImportsService(
       options.financialImportRepository ?? new PostgresFinancialImportsRepository(database),
-      options.financialImportParser ?? new UnsupportedFinancialImportParser(),
+      options.financialImportParser ?? new DefaultFinancialImportParser(),
     ),
   });
 
