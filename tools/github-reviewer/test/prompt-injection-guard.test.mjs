@@ -40,11 +40,13 @@ test('Codex runs without its shell tool so PR-controlled prompts cannot run comm
 });
 
 test('Codex failure diagnostics expose only stderr or a structured error event', () => {
-  assert.equal(codexFailureDetail('', ' safe failure\n'), 'safe failure');
+  assert.equal(codexFailureDetail('', 'arbitrary stderr with repository content'), 'Codex CLI reported an execution error.');
   assert.equal(codexFailureDetail([
     JSON.stringify({ type: 'item.completed', item: { text: 'arbitrary model output' } }),
     JSON.stringify({ type: 'error', error: { message: 'schema rejected' } }),
   ].join('\n'), ''), 'schema rejected');
+  assert.equal(codexFailureDetail(JSON.stringify({ type: 'turn.failed', error: { message: 'turn failed safely' } }), ''), 'turn failed safely');
+  assert.equal(codexFailureDetail(JSON.stringify({ type: 'item.completed', error: { message: 'must stay hidden' } }), ''), '');
   assert.equal(codexFailureDetail(JSON.stringify({ type: 'item.completed', item: { text: 'sensitive output' } }), ''), '');
 });
 
