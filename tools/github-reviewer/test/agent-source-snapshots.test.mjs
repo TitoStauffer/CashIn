@@ -57,6 +57,36 @@ test('does not duplicate a source snapshot already supplied by the vault', () =>
   assert.equal(prompt.split(marker).length - 1, 1);
 });
 
+test('does not duplicate an unchanged AGENTS snapshot already supplied as base policy', () => {
+  const marker = 'unique-agents-policy-marker';
+  const prompt = buildPrompt('codeReview', {
+    repository: 'TitoStauffer/CashIn', pullRequestNumber: 51, commitSha: 'a'.repeat(40), executionId: 'test-run', priorResults: [],
+  }, {
+    pullRequest: { number: 51, title: 'Example', url: 'https://example.test/pull/51', body: '', headSha: 'a'.repeat(40), baseBranch: 'master', diff: '' },
+    checks: { api: 'PASSED', web: 'PASSED', githubReviewer: 'PASSED', sonarQube: 'PASSED', sonarCloud: 'PASSED' },
+    repositoryInstructions: marker,
+    vaultContext: [{ path: 'AGENTS.md', revision: 'head', content: marker }],
+    sourceFiles: [],
+  });
+
+  assert.equal(prompt.split(marker).length - 1, 1);
+});
+
+test('preserves a changed AGENTS snapshot that differs from the trusted base policy', () => {
+  const prompt = buildPrompt('codeReview', {
+    repository: 'TitoStauffer/CashIn', pullRequestNumber: 51, commitSha: 'a'.repeat(40), executionId: 'test-run', priorResults: [],
+  }, {
+    pullRequest: { number: 51, title: 'Example', url: 'https://example.test/pull/51', body: '', headSha: 'a'.repeat(40), baseBranch: 'master', diff: '' },
+    checks: { api: 'PASSED', web: 'PASSED', githubReviewer: 'PASSED', sonarQube: 'PASSED', sonarCloud: 'PASSED' },
+    repositoryInstructions: 'base-policy-marker',
+    vaultContext: [{ path: 'AGENTS.md', revision: 'head', content: 'changed-policy-marker' }],
+    sourceFiles: [],
+  });
+
+  assert.match(prompt, /base-policy-marker/);
+  assert.match(prompt, /changed-policy-marker/);
+});
+
 test('fails explicitly before invoking Codex when the prompt exceeds its safe budget', () => {
   assert.doesNotThrow(() => assertCodexPromptWithinBudget('x'.repeat(MAX_CODEX_PROMPT_BYTES)));
   assert.throws(() => assertCodexPromptWithinBudget('x'.repeat(MAX_CODEX_PROMPT_BYTES + 1)), /prompt budget/);
