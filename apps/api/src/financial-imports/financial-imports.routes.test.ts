@@ -439,7 +439,10 @@ test("default API parser preserves literal CDATA content in the persisted previe
     headers: { cookie: authCookie() },
   });
   assert.equal(detail.statusCode, 200);
-  assert.equal(detail.json().items[0].description, "Padaria & Filial <b>Centro</b> &amp;");
+  assert.equal(
+    detail.json().items[0].description,
+    "Padaria & Filial </STMTTRN> Centro <STMTTRN> <STMTRS> </STMTRS> <CCACCTFROM> <CCSTMTTRNRS> &amp;",
+  );
   await app.close();
 });
 

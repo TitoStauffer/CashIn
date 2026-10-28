@@ -126,13 +126,15 @@ function resolveOfxDecoderEncoding(
 }
 
 function validateDocumentShape(document: string): void {
-  if (/<CCSTMTTRNRS\b/i.test(document) || /<CCACCTFROM\b/i.test(document)) {
+  const structure = maskXmlOpaqueRegions(document);
+  if (/<CCSTMTTRNRS\b/i.test(structure) || /<CCACCTFROM\b/i.test(structure)) {
     throw new FinancialImportError("Faturas de cartão em OFX ainda não são suportadas nesta importação.", 422);
   }
 }
 
 function extractSingleBankStatement(document: string): string {
-  const statements = [...document.matchAll(/<STMTRS\b[^>]*>/gi)];
+  const structure = maskXmlOpaqueRegions(document);
+  const statements = [...structure.matchAll(/<STMTRS\b[^>]*>/gi)];
   if (statements.length === 0) {
     throw new FinancialImportError("O arquivo não contém um extrato bancário OFX válido.", 422);
   }
@@ -143,20 +145,21 @@ function extractSingleBankStatement(document: string): string {
   const opening = statements[0]!;
   const start = (opening.index ?? 0) + opening[0].length;
   const tail = document.slice(start);
-  const closing = tail.search(/<\/STMTRS\s*>/i);
+  const closing = structure.slice(start).search(/<\/STMTRS\s*>/i);
   const statement = closing >= 0 ? tail.slice(0, closing) : tail;
-  if (!/<BANKTRANLIST\b/i.test(statement)) {
+  if (!/<BANKTRANLIST\b/i.test(maskXmlOpaqueRegions(statement))) {
     throw new FinancialImportError("O arquivo não contém um extrato bancário OFX válido.", 422);
   }
   return statement;
 }
 
 function extractTransactionBlocks(document: string): string[] {
-  const starts = [...document.matchAll(/<STMTTRN\b[^>]*>/gi)];
+  const structure = maskXmlOpaqueRegions(document);
+  const starts = [...structure.matchAll(/<STMTTRN\b[^>]*>/gi)];
   return starts.map((match, index) => {
     const start = (match.index ?? 0) + match[0].length;
     const nextStart = starts[index + 1]?.index ?? document.length;
-    const closing = document.slice(start, nextStart).search(/<\/STMTTRN\s*>/i);
+    const closing = structure.slice(start, nextStart).search(/<\/STMTTRN\s*>/i);
     const end = closing >= 0 ? start + closing : nextStart;
     return document.slice(start, end);
   });
@@ -265,41 +268,53 @@ function requiredTag(document: string, tag: string, message: string): string {
 }
 
 function optionalTag(document: string, tag: string): string | undefined {
-  const opening = new RegExp(`<${tag}\\b[^>]*>`, "i").exec(document);
+  const structure = maskXmlOpaqueRegions(document);
+  const opening = new RegExp(`<${tag}\\b[^>]*>`, "i").exec(structure);
   if (!opening) return undefined;
 
-  const tail = document.slice((opening.index ?? 0) + opening[0].length);
-  const closing = findXmlClosingTag(tail, tag);
+  const start = (opening.index ?? 0) + opening[0].length;
+  const tail = document.slice(start);
+  const structuralTail = structure.slice(start);
+  const closing = structuralTail.search(new RegExp(`<\\/${tag}\\s*>`, "i"));
   if (closing >= 0) {
     const xmlValue = parseXmlScalarContent(tail.slice(0, closing));
     if (xmlValue === null) return undefined;
     const value = xmlValue.trim();
     return value || undefined;
   }
-  if (/^\s*<!\[CDATA\[/i.test(tail)) return undefined;
-
-  const nextTag = tail.search(/<[!?/]?[a-z][^>]*>/i);
-  const value = tail.slice(0, nextTag < 0 ? tail.length : nextTag).trim();
-  return value ? decodeEntities(value) : undefined;
+  const nextTag = structuralTail.search(/<[!?/]?[a-z][^>]*>/i);
+  const sgmlValue = parseXmlScalarContent(tail.slice(0, nextTag < 0 ? tail.length : nextTag));
+  if (sgmlValue === null) return undefined;
+  const value = sgmlValue.trim();
+  return value || undefined;
 }
 
-function findXmlClosingTag(content: string, tag: string): number {
-  const closingPattern = new RegExp(`<\\/${tag}\\s*>`, "iy");
+function maskXmlOpaqueRegions(document: string): string {
   let cursor = 0;
-  while (cursor < content.length) {
-    const markup = content.indexOf("<", cursor);
-    if (markup < 0) return -1;
-    if (content.startsWith("<![CDATA[", markup)) {
-      const cdataEnd = content.indexOf("]]>", markup + 9);
-      if (cdataEnd < 0) return -1;
-      cursor = cdataEnd + 3;
-      continue;
+  const chunks: string[] = [];
+  while (cursor < document.length) {
+    const cdataStart = document.indexOf("<![CDATA[", cursor);
+    const commentStart = document.indexOf("<!--", cursor);
+    const opaqueStart = cdataStart < 0
+      ? commentStart
+      : commentStart < 0 ? cdataStart : Math.min(cdataStart, commentStart);
+    if (opaqueStart < 0) {
+      chunks.push(document.slice(cursor));
+      break;
     }
-    closingPattern.lastIndex = markup;
-    if (closingPattern.test(content)) return markup;
-    cursor = markup + 1;
+    chunks.push(document.slice(cursor, opaqueStart));
+    const isCdata = opaqueStart === cdataStart;
+    const markerLength = isCdata ? 9 : 4;
+    const terminator = isCdata ? "]]>" : "-->";
+    const terminatorStart = document.indexOf(terminator, opaqueStart + markerLength);
+    if (terminatorStart < 0) {
+      throw new FinancialImportError("O conteúdo XML do arquivo OFX é inválido.", 422);
+    }
+    const opaqueEnd = terminatorStart + terminator.length;
+    chunks.push(" ".repeat(opaqueEnd - opaqueStart));
+    cursor = opaqueEnd;
   }
-  return -1;
+  return chunks.join("");
 }
 
 function parseXmlScalarContent(content: string): string | null {
@@ -312,11 +327,20 @@ function parseXmlScalarContent(content: string): string | null {
       return chunks.join("");
     }
     chunks.push(decodeEntities(content.slice(cursor, markup)));
-    if (!content.startsWith("<![CDATA[", markup)) return null;
-    const cdataEnd = content.indexOf("]]>", markup + 9);
-    if (cdataEnd < 0) return null;
-    chunks.push(content.slice(markup + 9, cdataEnd));
-    cursor = cdataEnd + 3;
+    if (content.startsWith("<![CDATA[", markup)) {
+      const cdataEnd = content.indexOf("]]>", markup + 9);
+      if (cdataEnd < 0) return null;
+      chunks.push(content.slice(markup + 9, cdataEnd));
+      cursor = cdataEnd + 3;
+      continue;
+    }
+    if (content.startsWith("<!--", markup)) {
+      const commentEnd = content.indexOf("-->", markup + 4);
+      if (commentEnd < 0) return null;
+      cursor = commentEnd + 3;
+      continue;
+    }
+    return null;
   }
   return chunks.join("");
 }

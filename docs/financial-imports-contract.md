@@ -18,7 +18,7 @@ A API mantém sessões de importação por carteira para que o cliente possa env
 - `FITID` é preservado em `external_id`; uma identidade normalizada também é armazenada em `record_hash` para a futura detecção de duplicidades.
 - O identificador bruto da conta não é exposto nem persistido como metadado. A sessão armazena somente sua impressão SHA-256, banco, tipo de conta e moeda.
 - Registros malformados permanecem na prévia com motivo explícito quando isso é seguro. Data inválida pode ser corrigida; valor ou `FITID` inválido bloqueiam a linha.
-- Descrições em `NAME` e `MEMO` preservam o conteúdo multilinha e o texto literal de seções XML `CDATA`; sequências de espaço são normalizadas somente na descrição exibida.
+- Descrições em `NAME` e `MEMO` preservam o conteúdo multilinha e o texto literal de seções XML `CDATA`; tags aparentes dentro de `CDATA` e comentários não alteram a estrutura do extrato, e sequências de espaço são normalizadas somente na descrição exibida.
 - Faturas de cartão em OFX não fazem parte deste fluxo e são recusadas com mensagem específica.
 
 ## Endpoints

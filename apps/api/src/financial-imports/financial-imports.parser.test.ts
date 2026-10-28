@@ -50,7 +50,32 @@ test("parses OFX 2.x XML statements", async () => {
   assert.equal(result.items.length, 1);
   assert.equal(result.items[0]?.date, "2026-02-28");
   assert.equal(result.items[0]?.signedAmount, "-10.01");
-  assert.equal(result.items[0]?.description, "Padaria & Filial <b>Centro</b> &amp;");
+  assert.equal(
+    result.items[0]?.description,
+    "Padaria & Filial </STMTTRN> Centro <STMTTRN> <STMTRS> </STMTRS> <CCACCTFROM> <CCSTMTTRNRS> &amp;",
+  );
+  assert.equal(result.sourceMetadata?.currency, "BRL");
+  assert.equal(result.sourceMetadata?.bankId, "341");
+});
+
+test("ignores structural OFX tags inside XML comments", async () => {
+  const document = `<?xml version="1.0" encoding="UTF-8"?>
+<OFX><!-- <STMTRS><CCACCTFROM><STMTTRN></STMTTRN> -->
+<BANKMSGSRSV1><STMTTRNRS><STMTRS><CURDEF>BRL</CURDEF>
+<BANKACCTFROM><ACCTID>123</ACCTID></BANKACCTFROM><BANKTRANLIST>
+<STMTTRN><DTPOSTED>20261020</DTPOSTED><TRNAMT>-10.00</TRNAMT><FITID>1</FITID>
+<NAME>Compra<!-- <MEMO>falso</MEMO> --> segura</NAME></STMTTRN>
+</BANKTRANLIST></STMTRS></STMTTRNRS></BANKMSGSRSV1></OFX>`;
+
+  const result = await new OfxFinancialImportParser().parse({
+    format: "ofx",
+    fileName: "comments.ofx",
+    content: Buffer.from(document),
+  });
+
+  assert.equal(result.items.length, 1);
+  assert.equal(result.items[0]?.signedAmount, "-10.00");
+  assert.equal(result.items[0]?.description, "Compra segura");
 });
 
 test("preserves multiline NAME and MEMO values in OFX descriptions", async () => {
@@ -179,6 +204,22 @@ test("rejects unsupported account documents, currencies, encodings and CSV dispa
       content: base("", "ENCODING:USASCII\nCHARSET:KOI8-R\n"),
     }),
     /codificação/i,
+  );
+  await assert.rejects(
+    parser.parse({
+      format: "ofx",
+      fileName: "unclosed-cdata.ofx",
+      content: base("<CURDEF>BRL<BANKACCTFROM><ACCTID>1</BANKACCTFROM><BANKTRANLIST><![CDATA[sem fim"),
+    }),
+    /conteúdo XML.*inválido/i,
+  );
+  await assert.rejects(
+    parser.parse({
+      format: "ofx",
+      fileName: "unclosed-comment.ofx",
+      content: base("<CURDEF>BRL<BANKACCTFROM><ACCTID>1</BANKACCTFROM><BANKTRANLIST><!-- sem fim"),
+    }),
+    /conteúdo XML.*inválido/i,
   );
   await assert.rejects(
     new DefaultFinancialImportParser().parse({ format: "csv", fileName: "statement.csv", content: Buffer.from("date,amount") }),
