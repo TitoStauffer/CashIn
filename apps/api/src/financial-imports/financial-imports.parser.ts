@@ -269,14 +269,56 @@ function optionalTag(document: string, tag: string): string | undefined {
   if (!opening) return undefined;
 
   const tail = document.slice((opening.index ?? 0) + opening[0].length);
-  const closing = new RegExp(`<\\/${tag}\\s*>`, "i").exec(tail);
+  const closing = findXmlClosingTag(tail, tag);
+  if (closing >= 0) {
+    const xmlValue = parseXmlScalarContent(tail.slice(0, closing));
+    if (xmlValue === null) return undefined;
+    const value = xmlValue.trim();
+    return value || undefined;
+  }
+  if (/^\s*<!\[CDATA\[/i.test(tail)) return undefined;
+
   const nextTag = tail.search(/<[!?/]?[a-z][^>]*>/i);
-  const rawValue = closing && (nextTag < 0 || closing.index === nextTag)
-    ? tail.slice(0, closing.index)
-    : tail.slice(0, nextTag < 0 ? tail.length : nextTag);
-  const cdata = /^\s*<!\[CDATA\[([\s\S]*)\]\]>\s*$/.exec(rawValue);
-  const value = (cdata?.[1] ?? rawValue).trim();
+  const value = tail.slice(0, nextTag < 0 ? tail.length : nextTag).trim();
   return value ? decodeEntities(value) : undefined;
+}
+
+function findXmlClosingTag(content: string, tag: string): number {
+  const closingPattern = new RegExp(`<\\/${tag}\\s*>`, "iy");
+  let cursor = 0;
+  while (cursor < content.length) {
+    const markup = content.indexOf("<", cursor);
+    if (markup < 0) return -1;
+    if (content.startsWith("<![CDATA[", markup)) {
+      const cdataEnd = content.indexOf("]]>", markup + 9);
+      if (cdataEnd < 0) return -1;
+      cursor = cdataEnd + 3;
+      continue;
+    }
+    closingPattern.lastIndex = markup;
+    if (closingPattern.test(content)) return markup;
+    cursor = markup + 1;
+  }
+  return -1;
+}
+
+function parseXmlScalarContent(content: string): string | null {
+  let cursor = 0;
+  const chunks: string[] = [];
+  while (cursor < content.length) {
+    const markup = content.indexOf("<", cursor);
+    if (markup < 0) {
+      chunks.push(decodeEntities(content.slice(cursor)));
+      return chunks.join("");
+    }
+    chunks.push(decodeEntities(content.slice(cursor, markup)));
+    if (!content.startsWith("<![CDATA[", markup)) return null;
+    const cdataEnd = content.indexOf("]]>", markup + 9);
+    if (cdataEnd < 0) return null;
+    chunks.push(content.slice(markup + 9, cdataEnd));
+    cursor = cdataEnd + 3;
+  }
+  return chunks.join("");
 }
 
 function readHeader(document: string, name: string): string | undefined {

@@ -50,7 +50,7 @@ test("parses OFX 2.x XML statements", async () => {
   assert.equal(result.items.length, 1);
   assert.equal(result.items[0]?.date, "2026-02-28");
   assert.equal(result.items[0]?.signedAmount, "-10.01");
-  assert.equal(result.items[0]?.description, "Padaria");
+  assert.equal(result.items[0]?.description, "Padaria & Filial <b>Centro</b> &amp;");
 });
 
 test("preserves multiline NAME and MEMO values in OFX descriptions", async () => {

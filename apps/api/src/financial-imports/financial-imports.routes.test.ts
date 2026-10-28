@@ -418,6 +418,31 @@ test("default API parser creates an editable preview from an OFX bank statement"
   await app.close();
 });
 
+test("default API parser preserves literal CDATA content in the persisted preview", async () => {
+  const { app } = createTestApp(null);
+  const response = await app.inject({
+    method: "POST",
+    url: "/financial-imports",
+    headers: {
+      cookie: authCookie(),
+      "content-type": "application/octet-stream",
+      "x-file-name": encodeURIComponent("extrato-xml.ofx"),
+      "x-file-format": "ofx",
+    },
+    payload: await readFile(`${fixtures}valid-xml.ofx`),
+  });
+
+  assert.equal(response.statusCode, 201);
+  const detail = await app.inject({
+    method: "GET",
+    url: `/financial-imports/${response.json().id}`,
+    headers: { cookie: authCookie() },
+  });
+  assert.equal(detail.statusCode, 200);
+  assert.equal(detail.json().items[0].description, "Padaria & Filial <b>Centro</b> &amp;");
+  await app.close();
+});
+
 test("preview items can be classified, confirmed atomically, and undone", async () => {
   const { app } = createTestApp();
   const created = await upload(app);
