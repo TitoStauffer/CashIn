@@ -58,6 +58,20 @@ describe("concurrency", () => {
     assert.equal(run.jiraReserved, false);
   });
 
+  it("does not reserve when the parent changes to an unauthorized epic before reservation", async () => {
+    const jira = new FakeJira().add(eligibleIssue("DEV-10"));
+    jira.onGetIssue = (issue) => {
+      issue.fields.parent = { key: "DEV-25" };
+    };
+    const { dispatcher, store, codex } = makeDispatcher({ jira });
+
+    const summary = await dispatcher.pollOnce();
+    assert.deepEqual(summary.started, []);
+    assert.equal(jira.transitionsCalled.length, 0);
+    assert.equal((codex as ControlledCodex).calls.length, 0);
+    assert.equal(store.latestForIssue("DEV-10")!.status, "cancelled");
+  });
+
   it("allows only one dispatcher process per state directory", () => {
     const dir = tempDir();
     const first = new ProcessLock(dir);

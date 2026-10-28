@@ -34,6 +34,7 @@ export function makeConfig(overrides: Partial<Record<string, unknown>> = {}, dir
     jira: {
       baseUrl: "https://example.atlassian.net",
       eligibilityJql: 'project = DEV AND status = "To Do" ORDER BY Rank ASC',
+      allowedEpicKeys: ["DEV-6"],
       requiredFields: [
         { field: "description", label: "Descrição", mustContain: ["Critérios de aceitação"] },
         { field: "customfield_agent", label: "Agent técnico principal", allowedValues: ["Backend", "Frontend", "DBA"] }
@@ -63,6 +64,7 @@ export function eligibleIssue(key: string, patch: Partial<JiraIssue["fields"]> =
     fields: {
       summary: `História ${key}`,
       status: STATUS.todo,
+      parent: { key: "DEV-6" },
       description: {
         type: "doc",
         version: 1,

@@ -31,7 +31,18 @@ describe("config", () => {
 
   it("requires an explicit eligibility JQL and https Jira URL", () => {
     assert.throws(() => makeConfig({ jira: { eligibilityJql: "  " } }), /eligibilityJql/);
+    assert.throws(() => makeConfig({ jira: { eligibilityJql: 'project = DEV ORDER BY created DESC' } }), /ORDER BY Rank ASC/);
     assert.throws(() => makeConfig({ jira: { baseUrl: "http://example.atlassian.net" } }), /https/);
+  });
+
+  it("requires a valid, non-empty and unique epic allowlist", () => {
+    assert.throws(() => makeConfig({ jira: { allowedEpicKeys: [] } }), /allowedEpicKeys/);
+    assert.throws(() => makeConfig({ jira: { allowedEpicKeys: ["epic without key"] } }), /chave de issue válida/);
+    assert.throws(() => makeConfig({ jira: { allowedEpicKeys: ["DEV-6", "dev-6"] } }), /duplicadas/);
+  });
+
+  it("normalizes authorized epic keys", () => {
+    assert.deepEqual(makeConfig({ jira: { allowedEpicKeys: ["dev-6", "dev-50"] } }).jira.allowedEpicKeys, ["DEV-6", "DEV-50"]);
   });
 
   it("rejects the example file until every PREENCHA placeholder is filled", () => {
