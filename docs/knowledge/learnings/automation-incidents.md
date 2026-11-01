@@ -47,6 +47,14 @@ A prevenção representa fixtures geradas no diretório de testes do reviewer so
 
 Na revisão formal [#5686657727 do PR #51](https://github.com/TitoStauffer/CashIn/pull/51#pullrequestreview-5686657727), para o SHA `b446ee41f59bfed70b1399f8b25b6a2cb12b0f2e`, foi confirmado que a primeira correção ainda propagava qualquer texto escrito em `stderr`, contrariando a fronteira de diagnóstico seguro declarada. A correção substituiu `stderr` por uma mensagem genérica e passou a extrair detalhes somente do campo `error.message` (ou erro textual) de eventos JSON explicitamente identificados como `error` ou `turn.failed`. Casos negativos garantem que eventos de saída do modelo e erros em tipos não permitidos nunca sejam ecoados.
 
+## Checkout confiável em `workflow_run` deve usar contexto disponível
+
+- **Incidente:** a execução de orquestração `41344172296` falhou nos seis checkouts antes de iniciar os agentes porque `github.workflow_sha` foi resolvido como vazio.
+- **Causa:** a revisão anterior tratou `github.workflow_sha` como disponível em todos os eventos, mas o workflow também é acionado por `workflow_run`.
+- **Impacto:** Code Review, QA e Quality Gate Coordinator ficaram sem execução mesmo com o CI do PR aprovado.
+- **Correção:** fixar os checkouts em `github.sha`, que no `workflow_run` corresponde ao commit confiável da branch padrão registrado como HEAD da execução.
+- **Prevenção:** o teste de contrato exige seis referências a `github.sha` e rejeita qualquer ocorrência de `github.workflow_sha` no workflow.
+
 ## Fontes verificáveis
 
 - Histórico Git e PRs do repositório.

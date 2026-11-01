@@ -228,7 +228,7 @@ npm test
 
 ### Execution economy (DEV-70)
 
-Every reader and publisher in one orchestration checks out `github.workflow_sha`, an immutable trusted workflow revision; moving `master` between jobs cannot mix runtime versions. The Coordinator runs on GitHub-hosted Ubuntu without Codex or App credentials and verifies current structured formal review, QA, CI and Sonar evidence. It does not execute behavioral tests or infer QA acceptance from green CI.
+Every reader and publisher in one orchestration checks out `github.sha`. For `workflow_run`, this is the immutable default-branch commit recorded as the orchestration run HEAD; for manual dispatch, it is the selected trusted branch commit. This keeps all jobs on one trusted runtime revision even if `master` moves between jobs. Do not use `github.workflow_sha`: it is not populated in the `workflow_run` context used by this workflow. The Coordinator runs on GitHub-hosted Ubuntu without Codex or App credentials and verifies current structured formal review, QA, CI and Sonar evidence. It does not execute behavioral tests or infer QA acceptance from green CI.
 
 Stage outputs and summaries expose `execution_source` (`model`, `reused`, `deterministic`) and `model_calls` (0 or 1); these measure invocations, not token billing. Early Merge Readiness events fail closed without a full evidence scan when no current Coordinator report exists; final reports and manual dispatch perform full evaluation. A current report candidate never grants approval by itself.
 

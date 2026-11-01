@@ -69,7 +69,8 @@ test('recovers only an existing agent artifact without calling Codex', () => {
 test('pins orchestration runtime and isolates deterministic consolidation from Codex', () => {
   const refs = [...orchestrationWorkflow.matchAll(/^\s+ref: (.+)$/gm)].map(match => match[1].trim());
   assert.equal(refs.length, 6);
-  assert.ok(refs.every(ref => ref === '${{ github.workflow_sha }}'));
+  assert.ok(refs.every(ref => ref === '${{ github.sha }}'));
+  assert.doesNotMatch(orchestrationWorkflow, /github\.workflow_sha/);
   const coordinator = orchestrationWorkflow.split('  quality-gate:')[1].split('  publish-quality-gate:')[0];
   assert.match(coordinator, /runs-on: ubuntu-24.04/);
   assert.doesNotMatch(coordinator, /self-hosted|secrets\./);
