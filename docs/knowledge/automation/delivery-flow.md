@@ -45,7 +45,7 @@ flowchart LR
 
 - Review e QA usam Codex; o Coordinator cruza as evidências publicadas sem chamada de modelo. CI verde não substitui QA.
 - Resultados válidos são reutilizados por SHA/contexto; `INCONCLUSIVE` inalterado só é reanalisado com `retry_inconclusive` no dispatch manual após resolver o bloqueio.
-- A rodada termina antes de uma repetição no mesmo grupo; todas as etapas usam o `github.sha` imutável registrado na execução confiável. Em `workflow_run`, ele identifica o commit da branch padrão que disparou a orquestração; `github.workflow_sha` não é usado porque fica indisponível nesse contexto. Mudanças no HEAD do PR continuam invalidando resultados antigos.
+- A rodada termina antes de uma repetição no mesmo grupo; os checkouts deixam `ref` sem configuração explícita para preservar a ref confiável do evento e o SHA imutável associado. O despacho manual continua restrito à `master`; mudanças no HEAD do PR continuam invalidando resultados antigos.
 - Edições só de checkboxes não recuperam CI; título ou conteúdo substantivo alterado mantém a recuperação.
 - Resumos registram origem do resultado e número de invocações, sem prometer contagem de tokens.
 
