@@ -176,7 +176,7 @@ Para continuar:
 node dist/cli.js resume DEV-10
 ```
 
-O `resume` exige que a issue esteja num `resumableStatuses`. Ele cria uma nova execução ligada à anterior (`previousRunId`), **não repete a transição de reserva**, comenta a retomada (ou posta o comentário de início que faltou) e reaproveita a worktree anterior. O prompt de retomada orienta o Codex a verificar o status no Jira, a branch, o PR e as aprovações antes de continuar, como pede o `AGENTS.md`.
+O `resume` exige que a issue esteja num `resumableStatuses` e revalida o épico pai atual contra `allowedEpicKeys` antes de criar a nova execução, comentar ou preparar a worktree. Revogar a autorização, mover a issue para outro épico ou remover seu pai bloqueia a retomada. Quando autorizada, a retomada cria uma nova execução ligada à anterior (`previousRunId`), **não repete a transição de reserva**, comenta a retomada (ou posta o comentário de início que faltou) e reaproveita a worktree anterior. O prompt de retomada orienta o Codex a verificar o status no Jira, a branch, o PR e as aprovações antes de continuar, como pede o `AGENTS.md`.
 
 Para descartar uma execução bloqueante sem retomar:
 
@@ -246,7 +246,7 @@ npm test          # 98 testes (node:test via tsx)
 npm run typecheck
 ```
 
-Os 98 testes cobrem allowlist de épicos, elegibilidade, concorrência (lock de processo, recuperação de lock incompleto, execução ativa por issue, mudança de status ou épico concorrente, transição indisponível ou ambígua), reserva (comentário no formato do `AGENTS.md`, retry só do comentário), recuperação (`interrupted`, Codex órfão vivo, `resume`, `clear`, persistência), falhas do Codex com um processo real simulado (código ≠ 0, timeout, resultado inválido, issue errada, comando inexistente, parada forçada), redação de segredos, worktree com Git real, clientes HTTP do Jira e GitHub, idempotência e falhas parciais do pós-merge, além do loop com encerramento gracioso.
+Os 101 testes cobrem allowlist de épicos, elegibilidade, concorrência (lock de processo, recuperação de lock incompleto, execução ativa por issue, mudança de status ou épico concorrente, transição indisponível ou ambígua), reserva (comentário no formato do `AGENTS.md`, retry só do comentário), recuperação (`interrupted`, Codex órfão vivo, `resume`, revogação ou troca de épico, pai ausente, `clear`, persistência), falhas do Codex com um processo real simulado (código ≠ 0, timeout, resultado inválido, issue errada, comando inexistente, parada forçada), redação de segredos, worktree com Git real, clientes HTTP do Jira e GitHub, idempotência e falhas parciais do pós-merge, além do loop com encerramento gracioso.
 
 ## O que ainda exige configuração ou verificação manual
 

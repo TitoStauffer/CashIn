@@ -7,7 +7,7 @@
 
 O dispatcher seleciona issues elegíveis, reserva uma issue pela transição para `In Progress`, registra um `runId`, cria uma worktree e inicia o Codex. Ele não implementa funcionalidades e não escolhe outra issue ao final de uma execução iniciada por ele.
 
-Estados locais evitam duas execuções da mesma issue. Retomadas reaproveitam a execução anterior sem repetir a transição de reserva.
+Estados locais evitam duas execuções da mesma issue. Retomadas reaproveitam a execução anterior sem repetir a transição de reserva, mas primeiro revalidam o épico pai atual contra a allowlist. Revogação, troca para épico não autorizado ou ausência de pai bloqueiam a retomada antes de comentários, worktree ou Codex.
 
 ## Elegibilidade por épico
 

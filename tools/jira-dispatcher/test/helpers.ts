@@ -168,6 +168,7 @@ export class FakeJira implements JiraApi {
 
 export class FakeWorkspace implements Workspace {
   readonly prepared: string[] = [];
+  readonly reused: string[] = [];
   failPrepare?: Error;
 
   constructor(private readonly baseDir: string) {}
@@ -183,6 +184,7 @@ export class FakeWorkspace implements Workspace {
   }
 
   async reuse(workdir: string, worktreePath?: string): Promise<PreparedWorkspace> {
+    this.reused.push(workdir);
     return { workdir, worktreePath, extraWritableDirs: [] };
   }
 
