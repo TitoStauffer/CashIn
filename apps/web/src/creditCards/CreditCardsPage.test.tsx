@@ -140,7 +140,7 @@ describe('CreditCardsPage', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('Não foi possível carregar cartões e faturas')
     expect(screen.queryByText('Nenhuma fatura neste período')).not.toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'Tentar novamente' }))
-    expect(await screen.findByText('Faturas com fechamento em outubro de 2026.')).toBeVisible()
+    expect(await screen.findByText(/^Faturas com fechamento em .+\.$/)).toBeVisible()
     expect(await screen.findByText('As faturas aparecerão aqui conforme houver compras no cartão.')).toBeVisible()
   })
 

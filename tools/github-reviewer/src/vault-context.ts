@@ -7,6 +7,65 @@ export interface VaultContextSnapshot {
   content: string;
 }
 
+export function selectPromptVaultContext(
+  snapshots: VaultContextSnapshot[],
+  changedFiles: ReadonlySet<string>,
+  repository: string,
+): VaultContextSnapshot[] {
+  if (!repository) return snapshots;
+  const [owner, repositoryName, unexpected] = repository.split('/');
+  if (!owner || !repositoryName || unexpected) throw new Error('Invalid repository identity for vault prompt context.');
+  const localSnapshots = new Map(snapshots
+    .filter(({ path }) => !path.startsWith('github-evidence://'))
+    .map((snapshot) => [snapshot.path, snapshot]));
+  if (!localSnapshots.has(VAULT_INDEX)) return snapshots;
+  const selectedPaths = new Set<string>();
+  const documentsToInspect: VaultContextSnapshot[] = [];
+  const queuedDocuments = new Set<string>();
+  const selectDocument = (path: string) => {
+    const snapshot = localSnapshots.get(path);
+    if (!snapshot) return;
+    selectedPaths.add(path);
+    if (isKnowledgeDocument(path) && !queuedDocuments.has(path)) {
+      queuedDocuments.add(path);
+      documentsToInspect.push(snapshot);
+    }
+  };
+
+  selectDocument(VAULT_INDEX);
+  selectDocument(VAULT_CURRENT_STATE);
+  const contextMapSnapshot = localSnapshots.get(VAULT_CONTEXT_MAP);
+  const contextMap = contextMapSnapshot ? parseContextMap(contextMapSnapshot.content) : undefined;
+  if (contextMapSnapshot) selectedPaths.add(VAULT_CONTEXT_MAP);
+  for (const path of changedFiles) {
+    if (localSnapshots.has(path)) selectedPaths.add(path);
+    if (isKnowledgeDocument(path)) selectDocument(path);
+  }
+  for (const route of contextMap?.routes ?? []) {
+    if ([...changedFiles].some((path) => route.paths.some((pattern) => matchesPattern(path, pattern)))) {
+      route.documents.forEach(selectDocument);
+    }
+  }
+
+  const catalogDocuments = new Set(contextMap?.catalogs ?? []);
+  for (let index = 0; index < documentsToInspect.length; index += 1) {
+    const document = documentsToInspect[index];
+    if (!document || catalogDocuments.has(document.path)) continue;
+    const isNavigationRoot = document.path === VAULT_INDEX || document.path === VAULT_CURRENT_STATE;
+    for (const target of markdownLinks(document.content)) {
+      const local = resolveLocalReference(document.path, target);
+      if (local && localSnapshots.has(local)) {
+        if (isNavigationRoot && isKnowledgeDocument(local)) continue;
+        selectedPaths.add(local);
+        if (isKnowledgeDocument(local)) selectDocument(local);
+      }
+      const remote = resolveGitHubEvidenceReference(target, owner, repositoryName);
+      if (remote) selectedPaths.add(`github-evidence://${remote.apiPath.replace(/^\//, '')}`);
+    }
+  }
+  return snapshots.filter(({ path }) => selectedPaths.has(path));
+}
+
 interface ChangedFile {
   filename?: unknown;
   status?: unknown;
