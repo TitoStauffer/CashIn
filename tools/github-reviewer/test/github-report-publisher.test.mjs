@@ -144,7 +144,7 @@ test('rejects a stale commit SHA without publishing a comment', async () => {
 
 test('updates an existing App-authored report marker for the same stage and SHA', async () => {
   const requests = [];
-  const existingBody = formatPullRequestReport(baseReport);
+  const existingBody = formatPullRequestReport({ ...baseReport, reportMarkdown: 'Resultado anterior.' });
   const comments = [{ id: 81, body: existingBody, updated_at: '2026-10-21T10:00:00Z', user: { login: 'cashin-devagents[bot]' } }];
   const publisher = new GitHubReportPublisher({
     appId: '5397579', privateKey: 'test-private-key', owner: 'TitoStauffer', repository: 'CashIn',
@@ -157,6 +157,40 @@ test('updates an existing App-authored report marker for the same stage and SHA'
     && JSON.parse(options.body).body === formatPullRequestReport(baseReport)));
   assert.equal(requests.filter(({ options }) => options.method === 'POST').length, 0);
   assert.equal(result.reusedComment, true);
+});
+
+test('reuses identical reports without write events, but still validates the current PR context', async () => {
+  const existing = { id: 81, html_url: 'https://example.test/comment/81', body: formatPullRequestReport(baseReport), updated_at: '2026-10-21T10:00:00Z', user: { login: 'cashin-devagents[bot]' } };
+  for (const changePrAfterFirstRead of [false, true]) {
+    const requests = [];
+    const publisher = new GitHubReportPublisher({
+      appId: '5397579', privateKey: 'test-private-key', owner: 'TitoStauffer', repository: 'CashIn',
+      installationId: '173427336', authFactory: fakeAuthFactory([]), fetchImpl: fakeGitHub(requests, { comments: [existing], changePrAfterFirstRead }),
+    });
+    if (changePrAfterFirstRead) await assert.rejects(publisher.publishReport(baseReport), /changed before/);
+    else {
+      const published = await publisher.publishReport(baseReport);
+      assert.equal(published.commentId, existing.id);
+      assert.equal(published.reusedComment, true);
+    }
+    assert.equal(requests.filter(({ options }) => ['POST', 'PATCH'].includes(options.method)).length, 0);
+  }
+});
+
+test('republishes identical Coordinator evidence to retry the final Merge Readiness evaluation', async () => {
+  const report = { ...baseReport, agentName: 'qualityGate', reportMarkdown: '**Checks verificados:**\n- CI, revisão e QA aprovados.' };
+  const existing = { id: 81, html_url: 'https://example.test/comment/81', body: formatPullRequestReport(report), updated_at: '2026-10-21T10:00:00Z', user: { login: 'cashin-devagents[bot]' } };
+  const requests = [];
+  const publisher = new GitHubReportPublisher({
+    appId: '5397579', privateKey: 'test-private-key', owner: 'TitoStauffer', repository: 'CashIn',
+    installationId: '173427336', authFactory: fakeAuthFactory([]), fetchImpl: fakeGitHub(requests, { comments: [existing] }),
+  });
+  const published = await publisher.publishReport(report);
+  assert.equal(published.reusedComment, true);
+  assert.equal(requests.filter(({ options }) => options.method === 'POST').length, 0);
+  const patches = requests.filter(({ options }) => options.method === 'PATCH');
+  assert.equal(patches.length, 1);
+  assert.equal(JSON.parse(patches[0].options.body).body, existing.body);
 });
 
 test('refuses to publish an agent report when review inputs changed after analysis', async () => {

@@ -11,12 +11,18 @@ on:
         description: Pull Request number to evaluate manually
         required: true
         type: string
+      retry_inconclusive:
+        description: Retry an unchanged INCONCLUSIVE analysis after resolving its blocker
+        required: false
+        default: false
+        type: boolean
 
 permissions: {}
 
 concurrency:
   group: codex-agent-orchestration-${{ github.event.workflow_run.pull_requests[0].number || inputs.pr_number || github.event.workflow_run.head_branch || github.run_id }}
-  cancel-in-progress: true
+  # Finish and publish a running analysis before reusing its durable evidence.
+  cancel-in-progress: false
 
 jobs:
   code-review:
@@ -43,7 +49,7 @@ jobs:
       - name: Checkout trusted default branch
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: master
+          ref: ${{ github.workflow_sha }}
           token: ${{ github.token }}
           persist-credentials: false
 
@@ -67,6 +73,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
           CASHIN_APP_BOT_LOGIN: ${{ vars.CASHIN_APP_BOT_LOGIN }}
+          AGENT_RETRY_INCONCLUSIVE: ${{ github.event_name == 'workflow_dispatch' && inputs.retry_inconclusive || false }}
           AGENT_STAGE: codeReview
         run: node dist/agent-stage-cli.js
 
@@ -98,7 +105,7 @@ jobs:
       - name: Checkout trusted default branch
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: master
+          ref: ${{ github.workflow_sha }}
           token: ${{ github.token }}
           persist-credentials: false
 
@@ -159,7 +166,7 @@ jobs:
       - name: Checkout trusted default branch
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: master
+          ref: ${{ github.workflow_sha }}
           token: ${{ github.token }}
           persist-credentials: false
 
@@ -189,6 +196,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
           CASHIN_APP_BOT_LOGIN: ${{ vars.CASHIN_APP_BOT_LOGIN }}
+          AGENT_RETRY_INCONCLUSIVE: ${{ github.event_name == 'workflow_dispatch' && inputs.retry_inconclusive || false }}
           AGENT_STAGE: qa
           CODE_REVIEW_RESULT_PATH: prior-code-review/agent-result.json
         run: node dist/agent-stage-cli.js
@@ -217,7 +225,7 @@ jobs:
       - name: Checkout trusted default branch
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: master
+          ref: ${{ github.workflow_sha }}
           token: ${{ github.token }}
           persist-credentials: false
 
@@ -260,11 +268,8 @@ jobs:
       needs.publish-code-review.result == 'success' &&
       needs.publish-code-review.outputs.decision == 'APPROVED' &&
       needs.publish-qa.result == 'success' && needs.qa.outputs.decision == 'APPROVED'
-    runs-on: [self-hosted, Windows, X64, codex-plus]
-    defaults:
-      run:
-        shell: pwsh
-    timeout-minutes: 35
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
     permissions:
       contents: read
       pull-requests: read
@@ -278,7 +283,7 @@ jobs:
       - name: Checkout trusted default branch
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: master
+          ref: ${{ github.workflow_sha }}
           token: ${{ github.token }}
           persist-credentials: false
 
@@ -307,7 +312,7 @@ jobs:
           name: codex-qa-${{ github.run_id }}
           path: tools/github-reviewer/prior-qa
 
-      - name: Run Codex Quality Gate Coordinator
+      - name: Consolidate deterministic Quality Gate
         id: stage
         continue-on-error: true
         working-directory: tools/github-reviewer
@@ -343,7 +348,7 @@ jobs:
       - name: Checkout trusted default branch
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: master
+          ref: ${{ github.workflow_sha }}
           token: ${{ github.token }}
           persist-credentials: false
 
