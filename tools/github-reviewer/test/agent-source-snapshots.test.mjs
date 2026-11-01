@@ -85,6 +85,33 @@ test('preserves a changed AGENTS snapshot that differs from the trusted base pol
   assert.match(prompt, /changed-policy-marker/);
 });
 
+test('keeps knowledge, review evidence and changed vault entries while omitting unrelated source snapshots', () => {
+  const prompt = buildPrompt('codeReview', {
+    repository: 'TitoStauffer/CashIn', pullRequestNumber: 52, commitSha: 'a'.repeat(40), executionId: 'test-run', priorResults: [],
+  }, {
+    pullRequest: { number: 52, title: 'Example', url: 'https://example.test/pull/52', body: '', headSha: 'a'.repeat(40), baseBranch: 'master', diff: '' },
+    changedFiles: ['src/changed.ts'],
+    checks: { api: 'PASSED', web: 'PASSED', githubReviewer: 'PASSED', sonarQube: 'PASSED', sonarCloud: 'PASSED' },
+    repositoryInstructions: 'Trusted project policy',
+    vaultContext: [
+      { path: 'docs/knowledge/automation/review.md', revision: 'head', content: 'knowledge-marker' },
+      { path: 'github-evidence://repos/owner/repo/pulls/1/reviews/2', revision: 'head', content: 'evidence-marker' },
+      { path: 'src/changed.ts', revision: 'head', content: 'changed-marker' },
+      { path: 'src/unrelated.ts', revision: 'head', content: 'unrelated-marker' },
+    ],
+    sourceFiles: [
+      { path: 'src/changed.ts', revision: 'head', content: 'changed-marker' },
+      { path: 'src/unrelated.ts', revision: 'head', content: 'unrelated-marker' },
+    ],
+  });
+
+  assert.match(prompt, /knowledge-marker/);
+  assert.match(prompt, /evidence-marker/);
+  assert.equal(prompt.split('changed-marker').length - 1, 1);
+  assert.equal(prompt.split('unrelated-marker').length - 1, 1);
+  assert.ok(prompt.indexOf('unrelated-marker') > prompt.indexOf('Remaining changed source files'));
+});
+
 test('fails explicitly before invoking Codex when the prompt exceeds its safe budget', () => {
   assert.doesNotThrow(() => assertCodexPromptWithinBudget('x'.repeat(MAX_CODEX_PROMPT_BYTES)));
   assert.throws(() => assertCodexPromptWithinBudget('x'.repeat(MAX_CODEX_PROMPT_BYTES + 1)), /prompt budget/);

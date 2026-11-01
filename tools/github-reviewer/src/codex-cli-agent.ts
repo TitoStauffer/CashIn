@@ -154,8 +154,10 @@ export function buildPrompt(
   context: OrchestrationContext,
   evidence: { pullRequest: PullRequestContext; changedFiles?: string[]; checks: CheckSummary; checkRuns?: AgentCheckEvidence[]; ciConfiguration?: AgentCiSnapshot[]; formalCodeReview?: FormalCodeReviewEvidence; repositoryInstructions: string; vaultContext?: Array<{ path: string; revision: 'head' | 'base'; content: string }>; sourceFiles?: Array<{ path: string; revision: 'head' | 'base'; content: string }> },
 ): string {
+  const changedFiles = new Set(evidence.changedFiles ?? []);
   const vaultContext = (evidence.vaultContext ?? []).filter(({ path, content }) => (
-    path !== 'AGENTS.md' || content !== evidence.repositoryInstructions
+    (path !== 'AGENTS.md' || content !== evidence.repositoryInstructions)
+    && isPromptVaultEntry(path, changedFiles)
   ));
   const vaultPaths = new Set(vaultContext
     .filter(({ path }) => !path.startsWith('github-evidence://'))
@@ -238,6 +240,13 @@ export function buildPrompt(
     '',
     'Output JSON fields: stage, decision, commitSha, reportMarkdown, evidence. The SHA must be the required exact SHA above. For fields not applicable to the current stage use empty arrays; never omit fields.',
   ].join('\n');
+}
+
+function isPromptVaultEntry(path: string, changedFiles: ReadonlySet<string>): boolean {
+  return changedFiles.has(path)
+    || path.startsWith('github-evidence://')
+    || path.startsWith('docs/knowledge/')
+    || path.endsWith('.md');
 }
 
 export function assertCodexPromptWithinBudget(prompt: string): void {
