@@ -28,8 +28,10 @@ test('replaces encoded review fixtures in diffs with verifiable metadata', () =>
   const sanitized = sanitizeAgentDiff(diff);
 
   assert.match(sanitized, /export const value = 2/);
-  assert.match(sanitized, /encoded test fixture omitted from model context/);
-  assert.match(sanitized, /sha256=[a-f0-9]{64}/);
+  assert.match(sanitized, /encoded test fixture diff section omitted from model context/);
+  assert.match(sanitized, /diffSectionBytes=\d+/);
+  assert.match(sanitized, /diffSectionSha256=[a-f0-9]{64}/);
+  assert.doesNotMatch(sanitized, /sourceBytes=/);
   assert.doesNotMatch(sanitized, new RegExp(fixture.slice(0, 100)));
 });
 
@@ -102,9 +104,10 @@ test('represents encoded review fixtures by hash instead of duplicating their pa
 
   assert.equal(inputs.sourceFiles.length, 1);
   assert.equal(inputs.sourceFiles[0].path, path);
-  assert.match(inputs.sourceFiles[0].content, /encoded test fixture omitted from model context/);
-  assert.match(inputs.sourceFiles[0].content, /bytes=20000/);
-  assert.match(inputs.sourceFiles[0].content, /sha256=[a-f0-9]{64}/);
+  assert.match(inputs.sourceFiles[0].content, /encoded test fixture source omitted from model context/);
+  assert.match(inputs.sourceFiles[0].content, /sourceBytes=20000/);
+  assert.match(inputs.sourceFiles[0].content, /sourceSha256=[a-f0-9]{64}/);
+  assert.doesNotMatch(inputs.sourceFiles[0].content, /diffSectionBytes=/);
   assert.doesNotMatch(inputs.sourceFiles[0].content, new RegExp(content.slice(0, 100)));
 });
 

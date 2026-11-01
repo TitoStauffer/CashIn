@@ -152,7 +152,7 @@ export function sanitizeAgentDiff(diff: string): string {
     if (!path || !isEncodedReviewFixture(path)) return section;
     const header = section.split(/\r?\n/, 1)[0];
     const bytes = Buffer.byteLength(section, 'utf8');
-    return `${header}\n[encoded test fixture omitted from model context; bytes=${bytes}; sha256=${hash(section)}]\n`;
+    return `${header}\n[encoded test fixture diff section omitted from model context; diffSectionBytes=${bytes}; diffSectionSha256=${hash(section)}]\n`;
   }).join('');
 }
 
@@ -161,7 +161,7 @@ function isEncodedReviewFixture(path: string): boolean {
 }
 
 function encodedFixtureMarker(path: string, content: string): string {
-  return `[encoded test fixture omitted from model context; path=${path}; bytes=${Buffer.byteLength(content, 'utf8')}; sha256=${hash(content)}]`;
+  return `[encoded test fixture source omitted from model context; path=${path}; sourceBytes=${Buffer.byteLength(content, 'utf8')}; sourceSha256=${hash(content)}]`;
 }
 
 function isVaultManagedDocument(path: string): boolean {
