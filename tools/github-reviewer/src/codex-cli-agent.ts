@@ -5,6 +5,7 @@ import { spawn } from 'node:child_process';
 import type { AgentStage, AgentStageResult, OrchestrationContext } from './agent-orchestrator.js';
 import type { AgentCheckEvidence } from './agent-review-inputs.js';
 import type { AgentCiSnapshot } from './agent-ci-evidence.js';
+import { selectPromptVaultContext } from './vault-context.js';
 import {
   extractAcceptanceCriteria,
   failClosedIncompleteResult,
@@ -84,7 +85,7 @@ export const CODEX_OUTPUT_SCHEMA = {
   },
 } as const;
 
-export const MAX_CODEX_PROMPT_BYTES = 500_000;
+export const MAX_CODEX_PROMPT_BYTES = 700_000;
 
 const STAGE_INSTRUCTIONS: Record<AgentStage, string> = {
   codeReview: `Atue como Code Review do projeto. Revise o diff pelos critérios em AGENTS.md. Faça uma análise completa antes de decidir: percorra todo o diff, os arquivos relacionados fornecidos, os critérios de aceitação, os contratos afetados e os testes. Encontrar um problema não encerra a revisão; continue investigando todas as áreas aplicáveis e consolide no mesmo relatório todos os achados comprovados da rodada, sem duplicá-los. Produza um relatório no formato de Code Review definido no AGENTS.md e mencione as áreas revisadas sem bloqueios relevantes. Use CHANGES_REQUESTED para problemas comprovados que bloqueiem a aprovação; use INCONCLUSIVE se faltar evidência para completar a análise. Não aprove por inferência.`,
@@ -155,10 +156,8 @@ export function buildPrompt(
   evidence: { pullRequest: PullRequestContext; changedFiles?: string[]; checks: CheckSummary; checkRuns?: AgentCheckEvidence[]; ciConfiguration?: AgentCiSnapshot[]; formalCodeReview?: FormalCodeReviewEvidence; repositoryInstructions: string; vaultContext?: Array<{ path: string; revision: 'head' | 'base'; content: string }>; sourceFiles?: Array<{ path: string; revision: 'head' | 'base'; content: string }> },
 ): string {
   const changedFiles = new Set(evidence.changedFiles ?? []);
-  const vaultContext = (evidence.vaultContext ?? []).filter(({ path, content }) => (
-    (path !== 'AGENTS.md' || content !== evidence.repositoryInstructions)
-    && isPromptVaultEntry(path, changedFiles)
-  ));
+  const vaultContext = selectPromptVaultContext(evidence.vaultContext ?? [], changedFiles, context.repository)
+    .filter(({ path, content }) => path !== 'AGENTS.md' || content !== evidence.repositoryInstructions);
   const vaultPaths = new Set(vaultContext
     .filter(({ path }) => !path.startsWith('github-evidence://'))
     .map(({ path }) => path));
@@ -240,13 +239,6 @@ export function buildPrompt(
     '',
     'Output JSON fields: stage, decision, commitSha, reportMarkdown, evidence. The SHA must be the required exact SHA above. For fields not applicable to the current stage use empty arrays; never omit fields.',
   ].join('\n');
-}
-
-function isPromptVaultEntry(path: string, changedFiles: ReadonlySet<string>): boolean {
-  return changedFiles.has(path)
-    || path.startsWith('github-evidence://')
-    || path.startsWith('docs/knowledge/')
-    || path.endsWith('.md');
 }
 
 export function assertCodexPromptWithinBudget(prompt: string): void {
