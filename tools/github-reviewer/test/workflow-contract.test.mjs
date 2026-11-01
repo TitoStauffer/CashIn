@@ -9,6 +9,11 @@ const ciWorkflow = await readFile(new URL('../../../.github/workflows/ci.yml', i
 const orchestrationWorkflow = await readFile(new URL('../../../.github/workflows/agent-orchestration.yml', import.meta.url), 'utf8');
 const recoveryWorkflow = await readFile(new URL('../../../.github/workflows/agent-report-recovery.yml', import.meta.url), 'utf8');
 
+function assertOrchestrationCheckoutsOmitRef(workflow) {
+  assert.equal([...workflow.matchAll(/uses:\s*actions\/checkout@/g)].length, 6);
+  assert.doesNotMatch(workflow, /^\s+ref\s*:/m);
+}
+
 test('serializes merge-readiness publications for the same pull request', () => {
   const concurrencyGroup = mergeReadinessWorkflow.match(/^\s+group:\s*(.+)$/m)?.[1] ?? '';
 
@@ -67,9 +72,9 @@ test('recovers only an existing agent artifact without calling Codex', () => {
 });
 
 test('pins orchestration runtime and isolates deterministic consolidation from Codex', () => {
-  const checkoutBlocks = [...orchestrationWorkflow.matchAll(/uses:\s*actions\/checkout@[^\n]+\n([\s\S]*?)(?=\n\s+- name:|\n\s+- uses:|\n\s+[a-zA-Z][\w-]*:|$)/g)];
-  assert.equal(checkoutBlocks.length, 6);
-  assert.ok(checkoutBlocks.every(([, block]) => !/^\s+ref:/m.test(block)));
+  assertOrchestrationCheckoutsOmitRef(orchestrationWorkflow);
+  const workflowWithExplicitRef = orchestrationWorkflow.replace(/^\s+token:/m, '          ref: master\n          token:');
+  assert.throws(() => assertOrchestrationCheckoutsOmitRef(workflowWithExplicitRef), { name: 'AssertionError' });
   assert.doesNotMatch(orchestrationWorkflow, /github\.workflow_sha/);
   const coordinator = orchestrationWorkflow.split('  quality-gate:')[1].split('  publish-quality-gate:')[0];
   assert.match(coordinator, /runs-on: ubuntu-24.04/);
