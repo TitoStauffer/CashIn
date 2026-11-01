@@ -105,13 +105,16 @@ export class GitHubReportPublisher {
       || (report.agentName !== 'pm' && latestContextHash !== report.contextHash)) {
       throw new Error(`Pull request #${report.pullRequestNumber} changed before the agent report could be published.`);
     }
-    const comment = existing
-      ? await requestGitHubApi(this.fetchImpl, `${repositoryPath}/issues/comments/${existing.id}`, installationToken, {
-        method: 'PATCH', body: JSON.stringify({ body: formatPullRequestReport(report) }),
-      })
-      : await requestGitHubApi(this.fetchImpl, commentsPath, installationToken, {
-        method: 'POST', body: JSON.stringify({ body: formatPullRequestReport(report) }),
-      });
+    const body = formatPullRequestReport(report);
+    // Preserve identical intermediate evidence; Coordinator publication is the final readiness retry signal.
+    const comment = report.agentName !== 'qualityGate' && existing?.body === body ? existing
+      : existing
+        ? await requestGitHubApi(this.fetchImpl, `${repositoryPath}/issues/comments/${existing.id}`, installationToken, {
+          method: 'PATCH', body: JSON.stringify({ body }),
+        })
+        : await requestGitHubApi(this.fetchImpl, commentsPath, installationToken, {
+          method: 'POST', body: JSON.stringify({ body }),
+        });
     if (typeof comment.id !== 'number' || typeof comment.html_url !== 'string') {
       throw new Error('GitHub API returned an invalid comment response.');
     }

@@ -2,6 +2,7 @@ import { appendFile, readFile } from 'node:fs/promises';
 import { evaluateMergeReadiness, type MergeReadinessResult } from './merge-readiness.js';
 import { resolveWorkflowEvent } from './workflow-event.js';
 import { formatReadinessSummary, publishCommitStatus, workflowExecutionExitCode } from './workflow-status.js';
+import { planReadinessEvaluation } from './readiness-preflight.js';
 
 const INCONCLUSIVE_STATUS: MergeReadinessResult['status'] = 'INCONCLUSIVE';
 
@@ -53,17 +54,32 @@ async function run(): Promise<void> {
     result = createInconclusive(resolution.pullRequestNumber, resolution.headSha, resolution.reason);
   } else {
     try {
-      const privateKey = await loadPrivateKey();
-      result = await evaluateMergeReadiness({
-        appId: process.env.CASHIN_APP_ID ?? '',
-        privateKey,
+      const plan = await planReadinessEvaluation({
+        eventName: process.env.GITHUB_EVENT_NAME ?? '',
+        payload,
         owner,
         repository: repositoryName,
-        installationId: process.env.CASHIN_APP_INSTALLATION_ID?.trim() || undefined,
         pullRequestNumber: resolution.pullRequestNumber,
-        requiredBaseBranch: 'master',
-        contextToken: process.env.GITHUB_TOKEN ?? '',
+        headSha: resolution.headSha ?? '',
+        botLogin: process.env.CASHIN_APP_BOT_LOGIN ?? '',
+        token: process.env.GITHUB_TOKEN ?? '',
       });
+      await writeOutput('evaluation_mode', plan.mode);
+      if (plan.mode === 'invalidate') {
+        result = createInconclusive(resolution.pullRequestNumber, resolution.headSha, plan.reason);
+      } else {
+        const privateKey = await loadPrivateKey();
+        result = await evaluateMergeReadiness({
+          appId: process.env.CASHIN_APP_ID ?? '',
+          privateKey,
+          owner,
+          repository: repositoryName,
+          installationId: process.env.CASHIN_APP_INSTALLATION_ID?.trim() || undefined,
+          pullRequestNumber: resolution.pullRequestNumber,
+          requiredBaseBranch: 'master',
+          contextToken: process.env.GITHUB_TOKEN ?? '',
+        });
+      }
     } catch {
       result = createInconclusive(resolution.pullRequestNumber, resolution.headSha, 'Credenciais do GitHub App ausentes ou indisponíveis.');
     }

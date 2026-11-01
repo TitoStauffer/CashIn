@@ -3,9 +3,10 @@ import { resolve } from 'node:path';
 import type { AgentStageResult } from './agent-orchestrator.js';
 import { requestGitHubApi } from './github-api-client.js';
 import { loadAgentReviewInputs } from './agent-review-inputs.js';
-import { extractAcceptanceCriteria, validateAgentResultCompleteness } from './agent-result-validation.js';
-import { computeAgentContextHash, hasLaterChangeRequest, latestCurrentFormalReview, parseStoredAgentComment, parseStoredFormalReview } from './agent-evidence.js';
-import { executeCodexAgent, type CheckSummary, type FormalCodeReviewEvidence, type PullRequestContext } from './codex-cli-agent.js';
+import { extractAcceptanceCriteria, isAgentStageResult, validateAgentResultCompleteness } from './agent-result-validation.js';
+import { computeAgentContextHash, hasLaterChangeRequest, latestCurrentFormalReview } from './agent-evidence.js';
+import { executeCodexAgent, type CheckSummary, type FormalCodeReviewEvidence } from './codex-cli-agent.js';
+import { evaluateDeterministicQualityGate, mayRetryInconclusive, selectReusableStageResult, type StageEvidenceContext } from './agent-stage-policy.js';
 import { resolveWorkflowEvent } from './workflow-event.js';
 import { createInjectionBlockedResult, detectPullRequestPromptInjection } from './prompt-injection-guard.js';
 
@@ -62,14 +63,14 @@ async function main(): Promise<void> {
     sourceFiles: [...vaultContext, ...sourceFiles, ...(ciConfiguration ?? []), { content: JSON.stringify(checkRuns.map(({ actions }) => actions)) }],
   })) {
     const blocked = { ...createInjectionBlockedResult(stage, resolution.headSha, changedFiles, acceptanceCriteria), contextHash };
-    await writeStageResult(blocked, prNumber);
+    await writeStageResult(blocked, prNumber, 'deterministic');
     process.exitCode = 2;
     return;
   }
 
   const priorResults = await readPriorResults(stage, contextHash, resolution.headSha, changedFiles, acceptanceCriteria);
   const formalCodeReview = stage !== 'codeReview'
-    ? await readFormalReviewEvidence(prNumber, resolution.headSha, repository, token)
+    ? await readFormalReviewEvidence(prNumber, resolution.headSha, repository, token, contextHash, changedFiles, acceptanceCriteria)
     : undefined;
   if (priorResults.some((result) => result.commitSha.toLowerCase() !== resolution.headSha?.toLowerCase())) {
     throw new Error('A previous agent result belongs to a different Pull Request SHA.');
@@ -78,12 +79,27 @@ async function main(): Promise<void> {
     throw new Error('Quality Gate Coordinator requires an approved QA result for the current SHA.');
   }
 
-  const cachedResult = await readReusableResult(stage, prNumber, resolution.headSha, repository, token, contextHash);
-  if (cachedResult && cachedResult.decision !== 'INCONCLUSIVE'
-    && validateAgentResultCompleteness(cachedResult, { stage, commitSha: resolution.headSha, changedFiles, acceptanceCriteria }).length === 0) {
+  const evidenceContext = { commitSha: resolution.headSha, contextHash, botLogin: required('CASHIN_APP_BOT_LOGIN'), changedFiles, acceptanceCriteria };
+  if (stage === 'qualityGate') {
     await verifyContextUnchanged(prNumber, repository, token, pullRequest, resolution.headSha, contextHash);
-    await writeStageResult(cachedResult, prNumber);
-    process.exitCode = cachedResult.decision === 'APPROVED' ? 0 : 1;
+    const [reviews, comments] = await Promise.all([
+      githubJsonPages<Array<Record<string, unknown>>>(`/repos/${repository}/pulls/${prNumber}/reviews`, token),
+      githubJsonPages<Array<Record<string, unknown>>>(`/repos/${repository}/issues/${prNumber}/comments`, token),
+    ]);
+    const result = evaluateDeterministicQualityGate({ ...evidenceContext, checks, reviews, comments, priorResults });
+    await writeStageResult(result, prNumber, 'deterministic');
+    process.exitCode = result.decision === 'APPROVED' ? 0 : result.decision === 'CHANGES_REQUESTED' ? 1 : 2;
+    return;
+  }
+  const cachedResult = await readReusableResult(stage, prNumber, repository, token, evidenceContext);
+  const retry = mayRetryInconclusive(process.env.GITHUB_EVENT_NAME ?? '', payload, process.env.AGENT_RETRY_INCONCLUSIVE);
+  if (cachedResult && !(cachedResult.decision === 'INCONCLUSIVE' && retry)) {
+    await verifyContextUnchanged(prNumber, repository, token, pullRequest, resolution.headSha, contextHash);
+    if (stage !== 'codeReview') await readFormalReviewEvidence(prNumber, resolution.headSha, repository, token, contextHash, changedFiles, acceptanceCriteria);
+    const currentResult = await readReusableResult(stage, prNumber, repository, token, evidenceContext);
+    if (JSON.stringify(currentResult) !== JSON.stringify(cachedResult)) throw new Error('Published agent evidence changed during reuse.');
+    await writeStageResult(cachedResult, prNumber, 'reused');
+    process.exitCode = cachedResult.decision === 'APPROVED' ? 0 : cachedResult.decision === 'CHANGES_REQUESTED' ? 1 : 2;
     return;
   }
 
@@ -94,6 +110,8 @@ async function main(): Promise<void> {
     executionId: `${process.env.GITHUB_RUN_ID ?? 'manual'}-${process.env.GITHUB_RUN_ATTEMPT ?? '1'}`,
     priorResults,
   };
+  await writeWorkflowOutput('execution_source', 'model');
+  await writeWorkflowOutput('model_calls', '1');
   const modelResult = await executeCodexAgent(stage, context, AbortSignal.timeout(20 * 60 * 1000), {
     pullRequest: {
       state: 'open',
@@ -117,35 +135,27 @@ async function main(): Promise<void> {
   const result = { ...modelResult, contextHash };
   await verifyHeadUnchanged(prNumber, resolution.headSha, repository, token);
   await verifyContextUnchanged(prNumber, repository, token, pullRequest, resolution.headSha, contextHash);
-  if (stage !== 'codeReview') await readFormalReviewEvidence(prNumber, resolution.headSha, repository, token);
-  await writeStageResult(result, prNumber);
+  if (stage !== 'codeReview') await readFormalReviewEvidence(prNumber, resolution.headSha, repository, token, contextHash, changedFiles, acceptanceCriteria);
+  await writeStageResult(result, prNumber, 'model');
   process.exitCode = result.decision === 'APPROVED' ? 0 : result.decision === 'CHANGES_REQUESTED' ? 1 : 2;
 }
 
-async function writeStageResult(result: AgentStageResult, prNumber: number): Promise<void> {
+async function writeStageResult(result: AgentStageResult, prNumber: number, source: 'model' | 'reused' | 'deterministic'): Promise<void> {
   await writeFile(resolve(required('GITHUB_WORKSPACE'), 'agent-result.json'), `${JSON.stringify(result, null, 2)}\n`, 'utf8');
   await writeWorkflowOutput('decision', result.decision);
   await writeWorkflowOutput('commit_sha', result.commitSha);
   await writeWorkflowOutput('pr_number', String(prNumber));
+  await writeWorkflowOutput('execution_source', source);
+  await writeWorkflowOutput('model_calls', source === 'model' ? '1' : '0');
+  if (process.env.GITHUB_STEP_SUMMARY) await appendFile(process.env.GITHUB_STEP_SUMMARY, `### Agent execution\n- Stage: ${result.stage}\n- Result: ${result.decision}\n- Source: ${source}\n- Model calls: ${source === 'model' ? 1 : 0}\n`);
   process.stdout.write(`Prepared ${result.stage} ${result.decision} result for PR #${prNumber} at the expected SHA.\n`);
 }
 
-async function readReusableResult(stage: 'codeReview' | 'qa' | 'qualityGate', prNumber: number, sha: string, repository: string, token: string, contextHash: string): Promise<AgentStageResult | undefined> {
-  const botLogin = process.env.CASHIN_APP_BOT_LOGIN?.trim();
-  if (!botLogin) throw new Error('CASHIN_APP_BOT_LOGIN is required to validate durable agent evidence.');
-  if (stage === 'codeReview') {
-    const reviews = await githubJsonPages<Array<Record<string, unknown>>>(`/repos/${repository}/pulls/${prNumber}/reviews`, token);
-    const latest = latestCurrentFormalReview(reviews, sha, botLogin);
-    if (!latest) return undefined;
-    return parseStoredFormalReview(latest, sha, botLogin, contextHash);
-  }
+async function readReusableResult(stage: 'codeReview' | 'qa', prNumber: number, repository: string, token: string, context: StageEvidenceContext): Promise<AgentStageResult | undefined> {
+  const reviews = stage === 'codeReview'
+    ? await githubJsonPages<Array<Record<string, unknown>>>(`/repos/${repository}/pulls/${prNumber}/reviews`, token) : [];
   const comments = await githubJsonPages<Array<Record<string, unknown>>>(`/repos/${repository}/issues/${prNumber}/comments`, token);
-  const reusable = comments
-    .filter((comment) => typeof comment.updated_at === 'string')
-    .sort((left, right) => String(right.updated_at).localeCompare(String(left.updated_at)))
-    .map((comment) => parseStoredAgentComment(comment, stage, sha, botLogin, contextHash))
-    .find((result): result is AgentStageResult => Boolean(result));
-  return reusable?.decision === 'INCONCLUSIVE' ? undefined : reusable;
+  return selectReusableStageResult(stage, context, reviews, comments);
 }
 
 async function readPriorResults(
@@ -161,11 +171,10 @@ async function readPriorResults(
       ? [required('CODE_REVIEW_RESULT_PATH'), required('QA_RESULT_PATH')]
       : [];
   const results: AgentStageResult[] = [];
-  for (const path of paths) {
-    const result = JSON.parse(await readFile(path, 'utf8')) as AgentStageResult;
-    if (!result || !['codeReview', 'qa', 'qualityGate'].includes(result.stage)
-      || !['APPROVED', 'CHANGES_REQUESTED', 'INCONCLUSIVE'].includes(result.decision)
-      || !/^[a-f0-9]{40}$/i.test(result.commitSha)
+  for (const [index, path] of paths.entries()) {
+    const result: unknown = JSON.parse(await readFile(path, 'utf8'));
+    if (!isAgentStageResult(result)
+      || result.stage !== (index === 0 ? 'codeReview' : 'qa')
       || result.contextHash !== expectedContextHash
       || typeof result.reportMarkdown !== 'string'
       || validateAgentResultCompleteness(result, {
@@ -207,7 +216,7 @@ async function verifyContextUnchanged(
   }
 }
 
-async function readFormalReviewEvidence(number: number, sha: string, repository: string, token: string): Promise<FormalCodeReviewEvidence> {
+async function readFormalReviewEvidence(number: number, sha: string, repository: string, token: string, contextHash: string, changedFiles: string[], acceptanceCriteria: string[]): Promise<FormalCodeReviewEvidence> {
   const reviews = await githubJsonPages<Array<Record<string, unknown>>>(`/repos/${repository}/pulls/${number}/reviews`, token);
   const botLogin = process.env.CASHIN_APP_BOT_LOGIN?.trim();
   const latest = botLogin ? latestCurrentFormalReview(reviews, sha, botLogin) : undefined;
@@ -217,6 +226,9 @@ async function readFormalReviewEvidence(number: number, sha: string, repository:
   if (botLogin && hasLaterChangeRequest(reviews, latest, sha, botLogin)) {
     throw new Error('A later reviewer requested changes for the current SHA after Code Review approval.');
   }
+  const comments = await githubJsonPages<Array<Record<string, unknown>>>(`/repos/${repository}/issues/${number}/comments`, token);
+  const published = selectReusableStageResult('codeReview', { commitSha: sha, contextHash, changedFiles, acceptanceCriteria, botLogin: botLogin ?? '' }, reviews, comments);
+  if (published?.decision !== 'APPROVED') throw new Error('Code Review structured approval is missing, superseded, or invalid for the current context.');
   return {
     state: 'APPROVED',
     reviewer: stringValue(asRecord(latest.user)?.login) ?? `${botLogin}[bot]`,

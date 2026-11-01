@@ -83,6 +83,11 @@
 - Ao concluir sua parte, cada Agent informa o que fez, quais arquivos alterou, quais verificações executou e se encontrou bloqueios.
 - O agente que conduz a execução integra o trabalho e verifica a História completa. As responsabilidades de Jira e Git seguem as regras definidas neste workflow.
 
+### Economia e consistência da orquestração
+- Code Review e QA continuam independentes e obrigatórios. O Quality Gate Coordinator consolida deterministicamente as evidências autenticadas e atuais; não chama um modelo nem substitui a validação comportamental de QA.
+- Reutilize resultados publicados somente quando SHA, contexto e completude continuarem válidos. `INCONCLUSIVE` com contexto inalterado exige correção do bloqueio e retry explícito; eventos repetidos não justificam nova chamada de modelo.
+- Cada execução usa a mesma revisão confiável do runtime em todas as etapas. Edições apenas de checkboxes não devem reiniciar CI. Erros ou evidências ausentes continuam impedindo merge.
+
 ### Publicação de relatórios dos Agents no GitHub
 - Na configuração com um único mantenedor, o ruleset exige `Merge Readiness` e todos os checks de CI/Sonar. A aprovação formal do GitHub App para o HEAD atual, QA e Coordinator são obrigatórios no gate; a contagem separada de revisores humanos do GitHub pode ser zero. Isso não autoriza publicar aprovação sem revisão real. O PM só integra após `READY_TO_MERGE` e checks aprovados, sem bypass.
 - Os Agents de Quality Gate, QA e Product Manager publicam seus relatórios nos comentários do Pull Request usando o publicador compartilhado em `tools/github-reviewer`; consulte o README do diretório para configuração e comando.

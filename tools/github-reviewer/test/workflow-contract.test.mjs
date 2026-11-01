@@ -28,7 +28,7 @@ test('sequences PR metadata, implementation checks, SonarQube and agent orchestr
   assert.match(orchestrationWorkflow, /^\s+workflows: \[CI\]\s*$/m);
   assert.doesNotMatch(orchestrationWorkflow, /workflows: \[[^\]]*PR title/);
   assert.doesNotMatch(orchestrationWorkflow, /workflow_run\.actor\.login != vars\.CASHIN_APP_BOT_LOGIN/);
-  assert.match(orchestrationWorkflow, /^\s+cancel-in-progress:\s*true\s*$/m);
+  assert.match(orchestrationWorkflow, /^\s+cancel-in-progress:\s*false\s*$/m);
   assert.match(ciWorkflow, /types:\s*\[opened, reopened, synchronize, ready_for_review\]/);
   assert.doesNotMatch(ciWorkflow, /types:\s*\[[^\]]*edited/);
   assert.match(titleWorkflow, /pull_request_target:/);
@@ -64,4 +64,14 @@ test('recovers only an existing agent artifact without calling Codex', () => {
   assert.match(recoveryWorkflow, /persist-credentials:\s*false/);
   assert.doesNotMatch(recoveryWorkflow, /agent-stage-cli|codex\s+exec|runs-on:\s*\[self-hosted/);
   assert.doesNotMatch(recoveryWorkflow, /git\s+(?:commit|push)|contents:\s*write/);
+});
+
+test('pins orchestration runtime and isolates deterministic consolidation from Codex', () => {
+  const refs = [...orchestrationWorkflow.matchAll(/^\s+ref: (.+)$/gm)].map(match => match[1].trim());
+  assert.equal(refs.length, 6);
+  assert.ok(refs.every(ref => ref === '${{ github.workflow_sha }}'));
+  const coordinator = orchestrationWorkflow.split('  quality-gate:')[1].split('  publish-quality-gate:')[0];
+  assert.match(coordinator, /runs-on: ubuntu-24.04/);
+  assert.doesNotMatch(coordinator, /self-hosted|secrets\./);
+  assert.match(orchestrationWorkflow, /retry_inconclusive:[\s\S]*?default: false/);
 });
