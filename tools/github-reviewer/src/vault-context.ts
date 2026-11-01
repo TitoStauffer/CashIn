@@ -51,10 +51,11 @@ export function selectPromptVaultContext(
   for (let index = 0; index < documentsToInspect.length; index += 1) {
     const document = documentsToInspect[index];
     if (!document || catalogDocuments.has(document.path)) continue;
-    if (document.path === VAULT_CURRENT_STATE || document.path.endsWith('/README.md')) continue;
+    const isNavigationRoot = document.path === VAULT_INDEX || document.path === VAULT_CURRENT_STATE;
     for (const target of markdownLinks(document.content)) {
       const local = resolveLocalReference(document.path, target);
       if (local && localSnapshots.has(local)) {
+        if (isNavigationRoot && isKnowledgeDocument(local)) continue;
         selectedPaths.add(local);
         if (isKnowledgeDocument(local)) selectDocument(local);
       }

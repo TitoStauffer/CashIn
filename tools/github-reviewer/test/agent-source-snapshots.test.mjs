@@ -85,7 +85,7 @@ test('preserves a changed AGENTS snapshot that differs from the trusted base pol
   assert.match(prompt, /changed-policy-marker/);
 });
 
-test('keeps sources cited by selected notes while omitting sources reached only through navigation roots', () => {
+test('keeps exact sources cited by selected notes and navigation roots without expanding root knowledge links', () => {
   const prompt = buildPrompt('codeReview', {
     repository: 'TitoStauffer/CashIn', pullRequestNumber: 52, commitSha: 'a'.repeat(40), executionId: 'test-run', priorResults: [],
   }, {
@@ -94,23 +94,25 @@ test('keeps sources cited by selected notes while omitting sources reached only 
     checks: { api: 'PASSED', web: 'PASSED', githubReviewer: 'PASSED', sonarQube: 'PASSED', sonarCloud: 'PASSED' },
     repositoryInstructions: 'Trusted project policy',
     vaultContext: [
-      { path: 'docs/knowledge/README.md', revision: 'head', content: '[Navigation only](../../src/unrelated.ts)' },
-      { path: 'docs/knowledge/current-state.md', revision: 'head', content: '# Current state' },
+      { path: 'docs/knowledge/README.md', revision: 'head', content: '[Navigation note](domain/unrelated.md)' },
+      { path: 'docs/knowledge/current-state.md', revision: 'head', content: '[Current source](../../src/current.ts)' },
       { path: 'docs/knowledge/context-map.json', revision: 'head', content: JSON.stringify({ version: 1, catalogs: [], routes: [{ paths: ['src/**'], documents: ['docs/knowledge/domain/rules.md'] }] }) },
       { path: 'docs/knowledge/domain/rules.md', revision: 'head', content: 'knowledge-marker\n[Exclusive source](../../../src/exclusive.ts)\n[Review](https://github.com/TitoStauffer/CashIn/pull/1#pullrequestreview-2)' },
+      { path: 'docs/knowledge/domain/unrelated.md', revision: 'head', content: 'unrelated-knowledge-marker' },
       { path: 'github-evidence://repos/TitoStauffer/CashIn/pulls/1/reviews/2', revision: 'head', content: 'evidence-marker' },
       { path: 'src/changed.ts', revision: 'head', content: 'changed-marker' },
+      { path: 'src/current.ts', revision: 'head', content: 'current-source-marker' },
       { path: 'src/exclusive.ts', revision: 'head', content: 'exclusive-source-marker' },
-      { path: 'src/unrelated.ts', revision: 'head', content: 'unrelated-source-marker' },
     ],
     sourceFiles: [{ path: 'src/changed.ts', revision: 'head', content: 'changed-marker' }],
   });
 
   assert.match(prompt, /knowledge-marker/);
   assert.match(prompt, /evidence-marker/);
+  assert.match(prompt, /current-source-marker/);
   assert.match(prompt, /exclusive-source-marker/);
   assert.equal(prompt.split('changed-marker').length - 1, 1);
-  assert.doesNotMatch(prompt, /unrelated-source-marker/);
+  assert.doesNotMatch(prompt, /unrelated-knowledge-marker/);
 });
 
 test('fails explicitly before invoking Codex when the prompt exceeds its safe budget', () => {

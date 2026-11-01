@@ -47,8 +47,6 @@ A prevenção representa fixtures geradas no diretório de testes do reviewer so
 
 Na revisão formal [#5686657727 do PR #51](https://github.com/TitoStauffer/CashIn/pull/51#pullrequestreview-5686657727), para o SHA `b446ee41f59bfed70b1399f8b25b6a2cb12b0f2e`, foi confirmado que a primeira correção ainda propagava qualquer texto escrito em `stderr`, contrariando a fronteira de diagnóstico seguro declarada. A correção substituiu `stderr` por uma mensagem genérica e passou a extrair detalhes somente do campo `error.message` (ou erro textual) de eventos JSON explicitamente identificados como `error` ou `turn.failed`. Casos negativos garantem que eventos de saída do modelo e erros em tipos não permitidos nunca sejam ecoados.
 
-No bootstrap do PR #52, filtrar o prompt apenas por extensão descartou fontes não Markdown citadas exclusivamente pelas notas selecionadas. A correção passou a reconstruir, a partir dos snapshots já autenticados, o subgrafo exato das notas roteadas, fontes locais e evidências de review, sem expandir raízes de navegação nem catálogos não selecionados. Como esse subgrafo completo produziu 631.467 bytes, o teto final foi ampliado de 500.000 para 700.000 bytes; fontes verificáveis não são truncadas para caber no orçamento. O limite isolado de fontes permanece em 500.000 bytes e o do vault em 650 KB.
-
 ## Fontes verificáveis
 
 - Histórico Git e PRs do repositório.
