@@ -85,7 +85,7 @@ export const CODEX_OUTPUT_SCHEMA = {
   },
 } as const;
 
-export const MAX_CODEX_PROMPT_BYTES = 700_000;
+export const MAX_CODEX_PROMPT_BYTES = 750_000;
 
 const STAGE_INSTRUCTIONS: Record<AgentStage, string> = {
   codeReview: `Atue como Code Review do projeto. Revise o diff pelos critérios em AGENTS.md. Faça uma análise completa antes de decidir: percorra todo o diff, os arquivos relacionados fornecidos, os critérios de aceitação, os contratos afetados e os testes. Encontrar um problema não encerra a revisão; continue investigando todas as áreas aplicáveis e consolide no mesmo relatório todos os achados comprovados da rodada, sem duplicá-los. Produza um relatório no formato de Code Review definido no AGENTS.md e mencione as áreas revisadas sem bloqueios relevantes. Use CHANGES_REQUESTED para problemas comprovados que bloqueiem a aprovação; use INCONCLUSIVE se faltar evidência para completar a análise. Não aprove por inferência.`,
