@@ -114,8 +114,9 @@ test('keeps sources cited by selected notes while omitting sources reached only 
 });
 
 test('fails explicitly before invoking Codex when the prompt exceeds its safe budget', () => {
-  assert.doesNotThrow(() => assertCodexPromptWithinBudget('x'.repeat(MAX_CODEX_PROMPT_BYTES)));
-  assert.throws(() => assertCodexPromptWithinBudget('x'.repeat(MAX_CODEX_PROMPT_BYTES + 1)), /prompt budget/);
+  assert.equal(MAX_CODEX_PROMPT_BYTES, 700_000);
+  assert.doesNotThrow(() => assertCodexPromptWithinBudget('x'.repeat(700_000)));
+  assert.throws(() => assertCodexPromptWithinBudget('x'.repeat(700_001)), /prompt budget/);
 });
 
 test('checks only newly introduced PR content for prompt injection', () => {
