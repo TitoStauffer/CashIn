@@ -458,12 +458,13 @@ export class PostgresFinancialImportsRepository implements FinancialImportReposi
       if (!session.rows[0]) return null;
 
       const currentItem = await transaction.query<{
-        signed_amount: string;
+        signed_amount: string | null;
         validation_status: FinancialImportItemStatus;
         duplicate_override_allowed: boolean;
+        is_repairable: boolean;
         accepted_duplicate_fingerprint: string | null;
       }>(
-        `SELECT signed_amount::text, validation_status, duplicate_override_allowed,
+        `SELECT signed_amount::text, validation_status, duplicate_override_allowed, is_repairable,
                 accepted_duplicate_fingerprint
          FROM import_items
          WHERE id = $1 AND import_session_id = $2 AND wallet_id = $3
@@ -471,6 +472,13 @@ export class PostgresFinancialImportsRepository implements FinancialImportReposi
         [itemId, importId, walletId],
       );
       if (!currentItem.rows[0]) return null;
+      const canEditItem = currentItem.rows[0].validation_status === "valid"
+        || currentItem.rows[0].validation_status === "uncategorized"
+        || (currentItem.rows[0].validation_status === "invalid" && currentItem.rows[0].is_repairable)
+        || (currentItem.rows[0].validation_status === "duplicate"
+          && currentItem.rows[0].duplicate_override_allowed
+          && input.includeDuplicate);
+      if (!canEditItem || currentItem.rows[0].signed_amount === null) return null;
 
       const categoryId = input.type === "transfer" ? null : input.categoryId;
       const subcategoryId = input.type === "transfer" ? null : input.subcategoryId;

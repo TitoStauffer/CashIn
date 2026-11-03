@@ -218,6 +218,21 @@ test("PostgreSQL financial import confirms exact amounts, isolates wallets, and 
       external_id: "fitid-income-1",
       record_hash: "f".repeat(64),
     });
+    const blockedNullAmountItem = preview?.items?.[3];
+    assert.ok(blockedNullAmountItem);
+    const blockedNullAmountPatch: { statusCode: number } = await app.inject({
+      method: "PATCH",
+      url: `/financial-imports/${created.id}/items/${blockedNullAmountItem.id}`,
+      headers: authenticatedHeaders,
+      payload: {
+        date: "2026-10-23",
+        description: blockedNullAmountItem.description,
+        type: "expense",
+        categoryId: expenseCategoryId,
+        subcategoryId: null,
+      },
+    });
+    assert.equal(blockedNullAmountPatch.statusCode, 409);
     assert.deepEqual(preview?.items?.[3], {
       id: preview?.items?.[3]?.id,
       sequence: 4,
