@@ -1,7 +1,7 @@
 # Aprendizados de incidentes da automação
 
 **Status:** histórico vivo
-**Última revisão:** 28/10/2026
+**Última revisão:** 03/11/2026
 
 ## Evidência sempre pertence ao SHA
 
@@ -54,6 +54,20 @@ Na revisão formal [#5686657727 do PR #51](https://github.com/TitoStauffer/CashI
 - **Impacto:** Code Review, QA e Quality Gate Coordinator ficaram sem execução mesmo com o CI do PR aprovado.
 - **Correção:** omitir `ref` nos seis checkouts para o action preservar a ref confiável e o SHA imutável do contexto do evento; o despacho manual permanece restrito à `master`.
 - **Prevenção:** o teste de contrato exige seis checkouts sem `ref` explícito e rejeita qualquer ocorrência de `github.workflow_sha` no workflow.
+
+## Falhas internas precisam tornar o job reexecutável
+
+- **Incidente:** no PR #50, o QA recebeu HTTP 503 antes de produzir seu artefato. O passo falhou, mas `continue-on-error` manteve o job verde; `rerun failed jobs` repetiu apenas o consolidado e reutilizou a ausência de QA.
+- **Impacto:** a recuperação padrão do GitHub não alcançou a etapa que precisava ser repetida e exigiu reexecução direcionada pela API.
+- **Correção:** depois da tentativa de upload, cada estágio falha o próprio job quando o comando terminou com erro sem decisão e SHA estruturados. Resultados válidos continuam disponíveis para publicação.
+- **Prevenção:** testes de contrato exigem a propagação nos três estágios e a documentação operacional distingue falha de infraestrutura de decisão do Agent.
+
+## Mergeabilidade deve ser verificada antes dos Agents
+
+- **Incidente:** Code Review, QA e Coordinator aprovaram o PR #50 antes de o Merge Readiness final detectar que a branch estava `behind` da `master`.
+- **Impacto:** atualizar a branch mudou o HEAD e invalidou toda a rodada, consumindo novamente o runner e os Agents.
+- **Correção:** cada estágio confirma pela comparação GitHub que o HEAD contém o SHA atual da base antes de carregar o contexto ou chamar o modelo.
+- **Prevenção:** estados `behind`, `diverged`, desconhecidos e referências inválidas possuem regressões fail-closed.
 
 ## Fontes verificáveis
 

@@ -9,6 +9,7 @@ import { executeCodexAgent, type CheckSummary, type FormalCodeReviewEvidence } f
 import { evaluateDeterministicQualityGate, mayRetryInconclusive, selectReusableStageResult, type StageEvidenceContext } from './agent-stage-policy.js';
 import { resolveWorkflowEvent } from './workflow-event.js';
 import { createInjectionBlockedResult, detectPullRequestPromptInjection } from './prompt-injection-guard.js';
+import { assertPullRequestContainsBase } from './branch-freshness.js';
 
 try {
   await main();
@@ -47,6 +48,7 @@ async function main(): Promise<void> {
     || stringValue(head?.sha) !== resolution.headSha) {
     throw new Error('Pull Request is not an open internal PR targeting master at the resolved SHA.');
   }
+  await assertPullRequestContainsBase(fetch, repository, pullRequest, token);
 
   const reviewInputs = await loadAgentReviewInputs(fetch, repository, prNumber, pullRequest, token);
   const { diff, changedFiles, checks, checkRuns, repositoryInstructions, sourceFiles, vaultContext, ciConfiguration } = reviewInputs;

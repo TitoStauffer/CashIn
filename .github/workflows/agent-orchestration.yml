@@ -56,6 +56,8 @@ jobs:
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: "24.22.0"
+          cache: npm
+          cache-dependency-path: tools/github-reviewer/package-lock.json
 
       - name: Install trusted orchestration dependencies
         working-directory: tools/github-reviewer
@@ -85,6 +87,10 @@ jobs:
           if-no-files-found: error
           retention-days: 1
 
+      - name: Fail when Code Review produced no structured result
+        if: always() && steps.stage.outcome == 'failure' && (steps.stage.outputs.decision == '' || steps.stage.outputs.commit_sha == '')
+        run: exit 1
+
   publish-code-review:
     name: Publish formal Code Review
     needs: code-review
@@ -111,6 +117,8 @@ jobs:
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: "24.22.0"
+          cache: npm
+          cache-dependency-path: tools/github-reviewer/package-lock.json
 
       - name: Install trusted publisher dependencies
         working-directory: tools/github-reviewer
@@ -171,6 +179,8 @@ jobs:
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: "24.22.0"
+          cache: npm
+          cache-dependency-path: tools/github-reviewer/package-lock.json
 
       - name: Install trusted orchestration dependencies
         working-directory: tools/github-reviewer
@@ -207,6 +217,10 @@ jobs:
           if-no-files-found: error
           retention-days: 1
 
+      - name: Fail when QA produced no structured result
+        if: always() && steps.stage.outcome == 'failure' && (steps.stage.outputs.decision == '' || steps.stage.outputs.commit_sha == '')
+        run: exit 1
+
   publish-qa:
     name: Publish QA report
     needs: qa
@@ -229,6 +243,8 @@ jobs:
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: "24.22.0"
+          cache: npm
+          cache-dependency-path: tools/github-reviewer/package-lock.json
 
       - name: Install trusted publisher dependencies
         working-directory: tools/github-reviewer
@@ -286,6 +302,8 @@ jobs:
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: "24.22.0"
+          cache: npm
+          cache-dependency-path: tools/github-reviewer/package-lock.json
 
       - name: Install trusted orchestration dependencies
         working-directory: tools/github-reviewer
@@ -328,6 +346,10 @@ jobs:
           if-no-files-found: error
           retention-days: 1
 
+      - name: Fail when Quality Gate produced no structured result
+        if: always() && steps.stage.outcome == 'failure' && (steps.stage.outputs.decision == '' || steps.stage.outputs.commit_sha == '')
+        run: exit 1
+
   publish-quality-gate:
     name: Publish Quality Gate report
     needs: quality-gate
@@ -350,6 +372,8 @@ jobs:
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: "24.22.0"
+          cache: npm
+          cache-dependency-path: tools/github-reviewer/package-lock.json
 
       - name: Install trusted publisher dependencies
         working-directory: tools/github-reviewer
