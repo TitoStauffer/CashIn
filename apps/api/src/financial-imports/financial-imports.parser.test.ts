@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { DefaultFinancialImportParser, OfxFinancialImportParser } from "./financial-imports.parser.js";
-import { inspectCsv, parseCsvConfiguration, parseCsvInspectionOverrides } from "./financial-imports.csv.js";
+import { inspectCsv, parseCsv, parseCsvConfiguration, parseCsvInspectionOverrides } from "./financial-imports.csv.js";
 
 const fixtures = fileURLToPath(new URL("./fixtures/", import.meta.url));
 
@@ -57,6 +57,25 @@ test("parses OFX 2.x XML statements", async () => {
   );
   assert.equal(result.sourceMetadata?.currency, "BRL");
   assert.equal(result.sourceMetadata?.bankId, "341");
+});
+
+test("uses the same transaction fingerprint for equivalent OFX and CSV movements", async () => {
+  const ofx = await new OfxFinancialImportParser().parse({
+    format: "ofx",
+    fileName: "valid-bank.ofx",
+    content: await fixture("valid-bank.ofx"),
+  });
+  const csv = parseCsv({
+    format: "csv",
+    fileName: "statement.csv",
+    content: Buffer.from("date;description;amount\n20/10/2026;SALÁRIO — PAGAMENTO   MENSAL;1.500,50\n"),
+    csvConfiguration: {
+      delimiter: ";", encoding: "utf-8", hasHeader: true, dateFormat: "dd/MM/yyyy", numberFormat: "pt-BR",
+      columns: { date: 0, description: 1, amount: 2, credit: null, debit: null, externalId: null },
+    },
+  });
+
+  assert.equal(csv.items[0]?.recordHash, ofx.items[0]?.recordHash);
 });
 
 test("ignores structural OFX tags inside XML comments", async () => {

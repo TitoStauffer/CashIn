@@ -14,10 +14,10 @@
 
 ## Idempotência e duplicidade
 
-- O arquivo possui uma impressão digital que identifica seu conteúdo, mas ainda não há consulta nem restrição de unicidade que impeça o mesmo arquivo de iniciar sessões diferentes.
-- Itens OFX preservam `FITID` e uma identidade normalizada; a sessão mantém somente uma impressão SHA-256 da conta, sem persistir o identificador bancário bruto.
-- A confirmação repetida da mesma sessão não deve criar novas movimentações; a prevenção entre sessões permanece pendente.
-- Suspeitas de duplicidade precisam ficar visíveis na prévia, sem descarte silencioso.
+- Itens usam impressão digital de data, valor assinado, tipo e descrição normalizada para detectar repetição entre OFX, CSV e importações anteriores da mesma carteira.
+- FITID já importado da mesma conta OFX é duplicidade confirmada e fica bloqueado; coincidência apenas pela impressão digital aparece como possível duplicidade, com justificativa para revisão.
+- Possíveis duplicidades só são importadas após decisão explícita do usuário. Confirmações concorrentes são serializadas por carteira e revalidadas antes de gravar.
+- O identificador bruto da conta não é persistido; a sessão conserva somente seu hash.
 
 ## Estado atual
 
@@ -25,7 +25,7 @@ A infraestrutura de upload, prévia, confirmação, histórico e desfazer existe
 
 CSV aceita vírgula ou ponto e vírgula, UTF-8, Windows-1252 e ISO-8859-1, datas brasileiras, norte-americanas ou ISO e valores `pt-BR` ou `en-US`, sempre normalizados como texto decimal. O usuário inspeciona uma amostra, pode repetir a inspeção com os cinco campos de formato corrigidos, confirma o mapeamento e pode salvar ou editar modelos reutilizáveis, sempre isolados por carteira. Linhas inválidas permanecem na prévia com número físico e motivo, mas recebem sequência ordinal independente das linhas vazias ou multilinha. Caractere nulo e sintaxe de aspas malformada são rejeitados estruturalmente, sem sanitização ou concatenação silenciosa. A configuração exige exatamente `amount` com crédito/débito nulos ou `amount` nulo com o par crédito/débito; no modo separado, vazio e zero são ausência, enquanto conteúdo monetário inválido bloqueia a linha mesmo que a outra coluna seja válida.
 
-Faturas de cartão em OFX permanecem fora desse fluxo. A prevenção de duplicidade entre sessões também permanece pendente; nesta etapa, o parser identifica apenas `FITID` repetido dentro do mesmo arquivo.
+Faturas de cartão em OFX permanecem fora desse fluxo. Sessões desfeitas não bloqueiam uma importação futura, pois somente itens ainda marcados como importados participam da detecção.
 
 ## Fontes verificáveis
 

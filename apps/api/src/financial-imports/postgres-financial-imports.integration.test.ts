@@ -8,6 +8,7 @@ import { PostgresAuthRepository } from "../auth/postgres-auth.repository.js";
 import { createOpaqueToken, hashToken } from "../auth/token.js";
 import { createDatabase, runMigrations } from "../database.js";
 import { PostgresFinancialImportsRepository } from "./postgres-financial-imports.repository.js";
+import { createFinancialImportFingerprint } from "./financial-imports.fingerprint.js";
 
 const testDatabaseUrl = process.env.TEST_DATABASE_URL;
 
@@ -229,6 +230,7 @@ test("PostgreSQL financial import confirms exact amounts, isolates wallets, and 
       validationStatus: "invalid",
       errorMessage: "Data e valor inválidos.",
       canEdit: false,
+      canIncludeDuplicate: false,
       createdAt: preview?.items?.[3]?.createdAt,
       updatedAt: preview?.items?.[3]?.updatedAt,
     });
@@ -272,6 +274,79 @@ test("PostgreSQL financial import confirms exact amounts, isolates wallets, and 
       { source: "expense", amount: "87.65" },
       { source: "income", amount: "123456789012.34" },
     ]);
+
+    const crossFormatSession = await repository.createImport(userId, walletId, {
+      format: "ofx", fileName: "repetido.ofx", fileSize: 128, fileHash: "c".repeat(64),
+    });
+    const crossFormatDescription = "  SALÁRIO  ";
+    const crossFormatFingerprint = createFinancialImportFingerprint({
+      date: "2026-10-20", signedAmount: "123456789012.34", type: "income", description: crossFormatDescription,
+    });
+    const crossFormatPreview = await repository.savePreview(userId, walletId, crossFormatSession.id, [{
+      sequence: 1,
+      date: "2026-10-20",
+      description: crossFormatDescription,
+      signedAmount: "123456789012.34",
+      type: "income",
+      categoryId: incomeCategoryId,
+      externalId: "different-fitid",
+      recordHash: crossFormatFingerprint,
+      validationStatus: "valid",
+    }], { accountReferenceHash: "d".repeat(64) });
+    assert.equal(crossFormatPreview?.summary.duplicate, 1);
+    assert.equal(crossFormatPreview?.items?.[0]?.canIncludeDuplicate, true);
+    assert.match(crossFormatPreview?.items?.[0]?.errorMessage ?? "", /possível duplicidade/i);
+
+    const separateWalletSession = await repository.createImport(otherUserId, otherWalletId, {
+      format: "ofx", fileName: "outra-carteira.ofx", fileSize: 128, fileHash: "f".repeat(64),
+    });
+    const separateWalletPreview = await repository.savePreview(otherUserId, otherWalletId, separateWalletSession.id, [{
+      sequence: 1,
+      date: "2026-10-20",
+      description: "SALÁRIO",
+      signedAmount: "123456789012.34",
+      type: "income",
+      categoryId: null,
+      recordHash: crossFormatFingerprint,
+      validationStatus: "uncategorized",
+    }]);
+    assert.equal(separateWalletPreview?.summary.duplicate, 0);
+    await repository.discardImport(otherUserId, otherWalletId, separateWalletSession.id);
+
+    const reviewedDuplicate = await repository.updateItem(userId, walletId, crossFormatSession.id, crossFormatPreview!.items![0]!.id, {
+      date: "2026-10-20",
+      description: crossFormatDescription,
+      type: "income",
+      categoryId: incomeCategoryId,
+      subcategoryId: null,
+      includeDuplicate: true,
+    });
+    assert.equal(reviewedDuplicate?.validationStatus, "valid");
+    assert.equal((await repository.confirmImport(userId, walletId, crossFormatSession.id))?.summary.imported, 1);
+    assert.equal((await repository.undoImport(userId, walletId, crossFormatSession.id))?.status, "undone");
+
+    const concurrentSessions = await Promise.all(["d", "e"].map(async (fileHash) => {
+      const session = await repository.createImport(userId, walletId, {
+        format: "csv", fileName: `${fileHash}.csv`, fileSize: 128, fileHash: fileHash.repeat(64),
+      });
+      const date = "2026-10-30";
+      const signedAmount = "-12.50";
+      const description = "Compra concorrente";
+      await repository.savePreview(userId, walletId, session.id, [{
+        sequence: 1, date, description, signedAmount, type: "expense", categoryId: expenseCategoryId,
+        recordHash: createFinancialImportFingerprint({ date, signedAmount, type: "expense", description }),
+        validationStatus: "valid",
+      }]);
+      return session;
+    }));
+    const concurrentConfirmations = await Promise.all(concurrentSessions.map((session) => (
+      repository.confirmImport(userId, walletId, session.id)
+    )));
+    assert.deepEqual(concurrentConfirmations.map((session) => session?.summary.imported).sort(), [0, 1]);
+    assert.equal(concurrentConfirmations.filter((session) => session?.summary.duplicate === 1).length, 1);
+    const concurrentWinner = concurrentConfirmations.find((session) => session?.summary.imported === 1);
+    assert.ok(concurrentWinner);
+    await repository.undoImport(userId, walletId, concurrentWinner.id);
 
     const undone = await repository.undoImport(userId, walletId, created.id);
     assert.equal(undone?.status, "undone");
@@ -551,6 +626,7 @@ test("PostgreSQL financial import confirms exact amounts, isolates wallets, and 
         type: "income",
         categoryId: incomeCategoryId,
         subcategoryId: null,
+        includeDuplicate: false,
       });
       await delay(100);
       const confirmationPromise = repository.confirmImport(userId, walletId, editSession.id);

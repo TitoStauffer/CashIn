@@ -541,7 +541,7 @@ function FinancialImportsWalletPage({ userEmail, isLoggingOut, onLogout }: Finan
     }))
   }
 
-  async function saveItem(item: FinancialImportItem) {
+  async function saveItem(item: FinancialImportItem, includeDuplicate = false) {
     const draft = drafts[item.id]
     if (!draft?.date) {
       setFormError('Informe a data da movimentação antes de salvar.')
@@ -557,6 +557,7 @@ function FinancialImportsWalletPage({ userEmail, isLoggingOut, onLogout }: Finan
         description: draft.description.trim(),
         categoryId: draft.type === 'transfer' ? null : draft.categoryId,
         subcategoryId: draft.type === 'transfer' ? null : draft.subcategoryId,
+        ...(includeDuplicate ? { includeDuplicate: true } : {}),
       })
       if (!isCurrentWalletOperation(operation)) return
       setSelectedImport((current) => current ? replaceSessionItem(current, updated) : current)
@@ -744,7 +745,7 @@ function FinancialImportsWalletPage({ userEmail, isLoggingOut, onLogout }: Finan
                     confirmableCount={confirmableCount}
                     hasPendingDraftChanges={hasPendingDraftChanges}
                     onDraftChange={updateDraft}
-                    onSaveItem={(item) => void saveItem(item)}
+                    onSaveItem={(item, includeDuplicate) => void saveItem(item, includeDuplicate)}
                     onConfirm={() => void confirmImport()}
                     onUndo={(session) => void undoImport(session)}
                     onDiscard={(session) => void discardImport(session)}
@@ -956,7 +957,7 @@ function ImportPreview({
   confirmableCount: number
   hasPendingDraftChanges: boolean
   onDraftChange: (itemId: string, changes: Partial<FinancialImportItemInput>) => void
-  onSaveItem: (item: FinancialImportItem) => void
+  onSaveItem: (item: FinancialImportItem, includeDuplicate?: boolean) => void
   onConfirm: () => void
   onUndo: (session: FinancialImportSession) => void
   onDiscard: (session: FinancialImportSession) => void
@@ -996,7 +997,7 @@ function ImportPreview({
           {confirmableCount === 0
             ? 'Nenhuma movimentação está pronta para confirmar. '
             : `${confirmableCount} ${confirmableCount === 1 ? 'movimentação válida será importada' : 'movimentações válidas serão importadas'}. `}
-          Itens sem categoria ({session.summary.uncategorized}) ficam fora até receberem uma categoria. Itens inválidos ({session.summary.invalid}) ou duplicados ({session.summary.duplicate}) não serão importados.
+          Itens sem categoria ({session.summary.uncategorized}) ficam fora até receberem uma categoria. Itens inválidos ({session.summary.invalid}) e duplicidades confirmadas não serão importados. Possíveis duplicidades só entram após sua revisão explícita.
         </p>
       )}
       {session.status === 'preview' && hasPendingDraftChanges && (
@@ -1079,6 +1080,16 @@ function ImportPreview({
                 {isEditable && (
                   <button className="imports-secondary-button" type="button" onClick={() => onSaveItem(item)} disabled={pendingAction !== null}>
                     {isSavingItem ? 'Salvando…' : 'Salvar ajuste'}
+                  </button>
+                )}
+                {session.status === 'preview' && item.validationStatus === 'duplicate' && item.canIncludeDuplicate && (
+                  <button
+                    className="imports-secondary-button"
+                    type="button"
+                    onClick={() => onSaveItem(item, true)}
+                    disabled={pendingAction !== null}
+                  >
+                    {isSavingItem ? 'Salvando…' : 'Importar mesmo assim'}
                   </button>
                 )}
               </li>

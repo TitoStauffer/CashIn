@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { TextDecoder } from "node:util";
 import { FinancialImportError } from "./financial-imports.errors.js";
+import { createFinancialImportFingerprint } from "./financial-imports.fingerprint.js";
 import { parseCsv } from "./financial-imports.csv.js";
 import type {
   FinancialImportParser,
@@ -53,7 +54,6 @@ export class OfxFinancialImportParser implements FinancialImportParser {
     const items = transactionBlocks.map((block, index) => parseTransaction(
       block,
       index + 1,
-      accountReferenceHash,
       seenExternalIds,
     ));
 
@@ -167,7 +167,6 @@ function extractTransactionBlocks(document: string): string[] {
 function parseTransaction(
   block: string,
   sequence: number,
-  accountReferenceHash: string,
   seenExternalIds: Set<string>,
 ): ParsedFinancialImportItem {
   const rawDate = optionalTag(block, "DTPOSTED");
@@ -192,9 +191,7 @@ function parseTransaction(
 
   const repeatedExternalId = externalId !== null && seenExternalIds.has(externalId);
   if (externalId) seenExternalIds.add(externalId);
-  const recordHash = date && signedAmount
-    ? sha256([accountReferenceHash, date, signedAmount, normalizeDescriptionForHash(description)].join("|"))
-    : null;
+  const recordHash = createFinancialImportFingerprint({ date, signedAmount, type, description });
 
   if (repeatedExternalId) {
     return {
@@ -254,10 +251,6 @@ function buildDescription(name?: string, memo?: string): string | null {
     values.pop();
   }
   return values.length > 0 ? values.join(" — ") : null;
-}
-
-function normalizeDescriptionForHash(value: string | null): string {
-  return value?.normalize("NFKC").toLocaleLowerCase("pt-BR").replaceAll(/\s+/g, " ").trim() ?? "";
 }
 
 function requiredTag(document: string, tag: string, message: string): string {

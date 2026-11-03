@@ -1,6 +1,6 @@
-import { createHash } from "node:crypto";
 import { TextDecoder } from "node:util";
 import { FinancialImportError } from "./financial-imports.errors.js";
+import { createFinancialImportFingerprint } from "./financial-imports.fingerprint.js";
 import {
   CSV_DATE_FORMATS,
   CSV_ENCODINGS,
@@ -168,9 +168,7 @@ function parseItem(row: CsvRow, configuration: CsvImportConfiguration, sequence:
   const externalId = optionalColumn(row, configuration.columns.externalId)?.trim() || null;
   const type = signedAmount?.startsWith("-") ? "expense" : "income";
   const normalizedAmount = signedAmount?.replace(/^-/, "") ?? null;
-  const recordHash = date && signedAmount
-    ? createHash("sha256").update([date, signedAmount, description?.normalize("NFKC").toLocaleLowerCase("pt-BR") ?? ""].join("|"), "utf8").digest("hex")
-    : null;
+  const recordHash = createFinancialImportFingerprint({ date, signedAmount, type, description });
   return {
     sequence,
     sourceLine: row.lineNumber,

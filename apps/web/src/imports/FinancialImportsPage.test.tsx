@@ -471,7 +471,7 @@ describe('FinancialImportsPage', () => {
     const firstItem = (await screen.findByText('Movimentação 1')).closest('li') as HTMLElement
     expect(within(firstItem).getAllByText('Não categorizada')[0]).toBeVisible()
     expect(screen.getByRole('button', { name: 'Confirmar 1 movimentação' })).toBeEnabled()
-    expect(screen.getByText(/Itens sem categoria \(1\) ficam fora.*Itens inválidos \(1\) ou duplicados \(0\) não serão importados/)).toBeVisible()
+    expect(screen.getByText(/Itens sem categoria \(1\) ficam fora.*Itens inválidos \(1\) e duplicidades confirmadas não serão importados/)).toBeVisible()
     await user.selectOptions(within(firstItem).getByLabelText('Categoria'), 'income-category')
     await user.selectOptions(within(firstItem).getByLabelText('Subcategoria'), 'income-subcategory')
     await user.clear(within(firstItem).getByLabelText('Descrição'))
@@ -499,7 +499,7 @@ describe('FinancialImportsPage', () => {
     await user.click(await screen.findByRole('button', { name: 'Ver detalhes' }))
 
     expect(await screen.findByText(/Nenhuma movimentação está pronta para confirmar/)).toBeVisible()
-    expect(screen.getByText(/Itens sem categoria \(2\) ficam fora.*Itens inválidos \(0\) ou duplicados \(0\) não serão importados/)).toBeVisible()
+    expect(screen.getByText(/Itens sem categoria \(2\) ficam fora.*Itens inválidos \(0\) e duplicidades confirmadas não serão importados/)).toBeVisible()
     expect(screen.getByRole('button', { name: 'Confirmar 0 movimentações' })).toBeDisabled()
     expect(importsApi.confirm).not.toHaveBeenCalled()
   })
@@ -540,6 +540,27 @@ describe('FinancialImportsPage', () => {
     await user.click(within(repairable).getByRole('button', { name: 'Salvar ajuste' }))
     await waitFor(() => expect(importsApi.updateItem).toHaveBeenCalledWith('import-1', 'item-1', expect.objectContaining({
       categoryId: 'income-category',
+    })))
+  })
+
+  it('requires explicit confirmation before importing a possible duplicate', async () => {
+    const possibleDuplicateSession: FinancialImportSession = {
+      ...repairableInvalidSession,
+      items: repairableInvalidSession.items!.map((item) => item.sequence === 2
+        ? { ...item, canIncludeDuplicate: true }
+        : item),
+    }
+    vi.mocked(importsApi.list).mockResolvedValueOnce({ items: [{ ...possibleDuplicateSession, items: undefined }] })
+    vi.mocked(importsApi.get).mockResolvedValueOnce(possibleDuplicateSession)
+    const user = userEvent.setup()
+    await renderPage()
+    await user.click(await screen.findByRole('button', { name: 'Ver detalhes' }))
+
+    const duplicate = (await screen.findByText('Movimentação 2')).closest('li') as HTMLElement
+    await user.click(within(duplicate).getByRole('button', { name: 'Importar mesmo assim' }))
+
+    await waitFor(() => expect(importsApi.updateItem).toHaveBeenCalledWith('import-1', 'item-2', expect.objectContaining({
+      includeDuplicate: true,
     })))
   })
 
