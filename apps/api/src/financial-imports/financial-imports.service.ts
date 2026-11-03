@@ -1,9 +1,14 @@
 import { createHash } from "node:crypto";
 import { FinancialImportError } from "./financial-imports.errors.js";
+import { inspectCsv, parseCsvConfiguration } from "./financial-imports.csv.js";
 import {
   FINANCIAL_IMPORT_FORMATS,
   FINANCIAL_IMPORT_ITEM_TYPES,
   type FinancialImportFormat,
+  type CreateCsvMappingInput,
+  type CsvImportConfiguration,
+  type CsvInspectionResult,
+  type CsvMapping,
   type FinancialImportParser,
   type FinancialImportRepository,
   type FinancialImportSession,
@@ -165,7 +170,7 @@ function normalizeParsedItem(item: ParsedFinancialImportItem, fallbackSequence: 
 function normalizeSourceMetadata(metadata: Record<string, string> | undefined): Record<string, string> {
   if (!metadata) return {};
   const entries = Object.entries(metadata);
-  if (entries.length > 20) throw new FinancialImportError("Os metadados do arquivo OFX são inválidos.", 422);
+  if (entries.length > 20) throw new FinancialImportError("Os metadados do arquivo são inválidos.", 422);
   const normalized: Record<string, string> = {};
   for (const [key, rawValue] of entries) {
     const value = rawValue.trim();
@@ -175,7 +180,7 @@ function normalizeSourceMetadata(metadata: Record<string, string> | undefined): 
       || value.includes("\u0000")
       || Buffer.byteLength(value, "utf8") > MAX_FINANCIAL_IMPORT_METADATA_VALUE_BYTES
     ) {
-      throw new FinancialImportError("Os metadados do arquivo OFX são inválidos.", 422);
+      throw new FinancialImportError("Os metadados do arquivo são inválidos.", 422);
     }
     normalized[key] = value;
   }
@@ -228,6 +233,7 @@ export class FinancialImportsService {
     format: FinancialImportFormat,
     rawFileName: string,
     content: Buffer,
+    csvOptions?: { configuration?: CsvImportConfiguration; mappingId?: string },
   ): Promise<FinancialImportSession> {
     if (!FINANCIAL_IMPORT_FORMATS.includes(format)) {
       throw new FinancialImportError("O formato do arquivo deve ser OFX ou CSV.", 400);
@@ -241,6 +247,22 @@ export class FinancialImportsService {
     if (!fileName.toLocaleLowerCase("pt-BR").endsWith(expectedExtension)) {
       throw new FinancialImportError(`O arquivo selecionado deve ter a extensão ${expectedExtension}.`, 400);
     }
+    let csvConfiguration: CsvImportConfiguration | undefined;
+    if (format === "csv") {
+      if (csvOptions?.configuration && csvOptions.mappingId) {
+        throw new FinancialImportError("Informe o mapeamento CSV diretamente ou por identificador, não ambos.", 400);
+      }
+      if (csvOptions?.mappingId) {
+        this.validateMappingId(csvOptions.mappingId);
+        const mapping = await this.repository.getCsvMapping(userId, walletId, csvOptions.mappingId);
+        if (!mapping) throw new FinancialImportError("O modelo CSV não foi encontrado nesta carteira.", 404);
+        csvConfiguration = parseCsvConfiguration(mapping.configuration);
+      } else if (csvOptions?.configuration) {
+        csvConfiguration = parseCsvConfiguration(csvOptions.configuration);
+      } else {
+        throw new FinancialImportError("Informe o mapeamento das colunas do arquivo CSV.", 400);
+      }
+    }
     const fileHash = createHash("sha256").update(content).digest("hex");
     const session = await this.repository.createImport(userId, walletId, {
       format,
@@ -250,7 +272,7 @@ export class FinancialImportsService {
     });
 
     try {
-      const parserOutput = await this.parser.parse({ format, fileName, content });
+      const parserOutput = await this.parser.parse({ format, fileName, content, csvConfiguration });
       const parsed = Array.isArray(parserOutput) ? { items: parserOutput } : parserOutput;
       const parsedItems = parsed.items;
       if (parsedItems.length > MAX_FINANCIAL_IMPORT_ITEMS) {
@@ -299,6 +321,26 @@ export class FinancialImportsService {
 
   listImports(userId: string, walletId: string): Promise<FinancialImportSession[]> {
     return this.repository.listImports(userId, walletId);
+  }
+
+  inspectCsv(content: Buffer): CsvInspectionResult {
+    if (content.length > MAX_FINANCIAL_IMPORT_FILE_SIZE) throw new FinancialImportError("O arquivo deve ter no máximo 10 MB.", 413);
+    return inspectCsv(content);
+  }
+
+  listCsvMappings(userId: string, walletId: string): Promise<CsvMapping[]> {
+    return this.repository.listCsvMappings(userId, walletId);
+  }
+
+  createCsvMapping(userId: string, walletId: string, input: CreateCsvMappingInput): Promise<CsvMapping> {
+    return this.repository.createCsvMapping(userId, walletId, this.normalizeCsvMappingInput(input));
+  }
+
+  async updateCsvMapping(userId: string, walletId: string, mappingId: string, input: CreateCsvMappingInput): Promise<CsvMapping> {
+    this.validateMappingId(mappingId);
+    const mapping = await this.repository.updateCsvMapping(userId, walletId, mappingId, this.normalizeCsvMappingInput(input));
+    if (!mapping) throw new FinancialImportError("O modelo CSV não foi encontrado nesta carteira.", 404);
+    return mapping;
   }
 
   async getImport(userId: string, walletId: string, importId: string): Promise<FinancialImportSession> {
@@ -362,5 +404,17 @@ export class FinancialImportsService {
 
   private validateItemId(itemId: string): void {
     if (!UUID_PATTERN.test(itemId)) throw new FinancialImportError("A movimentação da importação não foi encontrada.", 404);
+  }
+
+  private validateMappingId(mappingId: string): void {
+    if (!UUID_PATTERN.test(mappingId)) throw new FinancialImportError("O modelo CSV não foi encontrado.", 404);
+  }
+
+  private normalizeCsvMappingInput(input: CreateCsvMappingInput): CreateCsvMappingInput {
+    const name = typeof input?.name === "string" ? input.name.trim() : "";
+    if (!name || name.length > 100 || Buffer.byteLength(name, "utf8") > 200 || /[\u0000-\u001f\u007f]/.test(name)) {
+      throw new FinancialImportError("O nome do modelo CSV deve ter entre 1 e 100 caracteres.", 400);
+    }
+    return { name, configuration: parseCsvConfiguration(input.configuration) };
   }
 }

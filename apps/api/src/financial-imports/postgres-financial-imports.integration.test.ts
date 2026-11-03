@@ -68,6 +68,44 @@ test("PostgreSQL financial import confirms exact amounts, isolates wallets, and 
       "x-wallet-id": walletId,
     };
 
+    const csvConfiguration = {
+      delimiter: ";" as const,
+      encoding: "utf-8" as const,
+      hasHeader: true,
+      dateFormat: "dd/MM/yyyy" as const,
+      numberFormat: "pt-BR" as const,
+      columns: { date: 0, description: 1, amount: 2, credit: null, debit: null, externalId: null },
+    };
+    const csvMapping = await repository.createCsvMapping(userId, walletId, {
+      name: "Banco principal", configuration: csvConfiguration,
+    });
+    assert.equal(csvMapping.name, "Banco principal");
+    assert.deepEqual((await repository.listCsvMappings(otherUserId, walletId)).map((mapping) => mapping.id), [csvMapping.id]);
+    assert.equal(await repository.getCsvMapping(userId, otherWalletId, csvMapping.id), null);
+    const updatedCsvMapping = await repository.updateCsvMapping(userId, walletId, csvMapping.id, {
+      name: "Banco atualizado", configuration: csvConfiguration,
+    });
+    assert.equal(updatedCsvMapping?.name, "Banco atualizado");
+    await assert.rejects(
+      database.query(
+        `INSERT INTO financial_import_csv_mappings (wallet_id, created_by_user_id, name, configuration)
+         VALUES ($1, $2, 'Configuração ambígua', $3::jsonb)`,
+        [walletId, userId, JSON.stringify({
+          ...csvConfiguration,
+          columns: { ...csvConfiguration.columns, credit: 3, debit: 4 },
+        })],
+      ),
+      /financial_import_csv_mappings_configuration_check/,
+    );
+    await assert.rejects(
+      database.query(
+        `INSERT INTO financial_import_csv_mappings (wallet_id, created_by_user_id, name, configuration)
+         VALUES ($1, $2, 'Configuração com chave extra', $3::jsonb)`,
+        [walletId, userId, JSON.stringify({ ...csvConfiguration, unexpected: true })],
+      ),
+      /financial_import_csv_mappings_configuration_check/,
+    );
+
     const created = await repository.createImport(userId, walletId, {
       format: "csv",
       fileName: "movimentações.csv",

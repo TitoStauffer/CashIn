@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { TextDecoder } from "node:util";
 import { FinancialImportError } from "./financial-imports.errors.js";
+import { parseCsv } from "./financial-imports.csv.js";
 import type {
   FinancialImportParser,
   FinancialImportParserInput,
@@ -21,10 +22,8 @@ export class UnsupportedFinancialImportParser implements FinancialImportParser {
 
 export class DefaultFinancialImportParser implements FinancialImportParser {
   private readonly ofxParser = new OfxFinancialImportParser();
-  private readonly unsupportedParser = new UnsupportedFinancialImportParser();
-
   parse(input: FinancialImportParserInput): Promise<ParsedFinancialImport> {
-    return input.format === "ofx" ? this.ofxParser.parse(input) : this.unsupportedParser.parse(input);
+    return input.format === "ofx" ? this.ofxParser.parse(input) : Promise.resolve().then(() => parseCsv(input));
   }
 }
 

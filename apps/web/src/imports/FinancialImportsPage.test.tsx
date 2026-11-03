@@ -5,7 +5,7 @@ import { categoriesApi } from '../categories/categoriesApi'
 import { WalletProvider } from '../wallets/WalletContext'
 import { walletApi } from '../wallets/walletApi'
 import { FinancialImportsPage } from './FinancialImportsPage'
-import type { FinancialImportItem, FinancialImportSession } from './importsApi'
+import type { CsvImportConfiguration, CsvInspection, CsvMappingTemplate, FinancialImportItem, FinancialImportSession } from './importsApi'
 import { importsApi } from './importsApi'
 
 function deferred<T>() {
@@ -104,6 +104,31 @@ const confirmingSession: FinancialImportSession = {
   status: 'confirming',
 }
 
+const csvConfiguration: CsvImportConfiguration = {
+  delimiter: ';',
+  encoding: 'utf-8',
+  hasHeader: true,
+  dateFormat: 'dd/MM/yyyy',
+  numberFormat: 'pt-BR',
+  columns: { date: 0, description: 1, amount: 2, credit: null, debit: null, externalId: 3 },
+}
+
+const csvInspection: CsvInspection = {
+  detectedConfiguration: {
+    delimiter: ';', encoding: 'utf-8', hasHeader: true, dateFormat: 'dd/MM/yyyy', numberFormat: 'pt-BR',
+  },
+  suggestedMapping: csvConfiguration.columns,
+  columns: [
+    { index: 0, label: 'Data' }, { index: 1, label: 'Histórico' }, { index: 2, label: 'Valor' }, { index: 3, label: 'ID' },
+  ],
+  sample: [{ lineNumber: 2, values: ['23/10/2026', 'Mercado', '-120,50', 'bank-1'] }],
+}
+
+const csvTemplate: CsvMappingTemplate = {
+  id: 'mapping-1', name: 'Banco Exemplo', configuration: csvConfiguration,
+  createdAt: '2026-10-23T12:00:00.000Z', updatedAt: '2026-10-23T12:00:00.000Z',
+}
+
 async function renderPage() {
   const result = render(
     <WalletProvider userId="user-1">
@@ -138,6 +163,10 @@ describe('FinancialImportsPage', () => {
       id: 'expense-category', name: 'Alimentação', nature: 'expense', subcategories: [{ id: 'expense-subcategory', name: 'Mercado', categoryId: 'expense-category' }],
     }] }))
     vi.spyOn(importsApi, 'list').mockResolvedValue({ items: [] })
+    vi.spyOn(importsApi, 'listCsvMappings').mockResolvedValue({ items: [] })
+    vi.spyOn(importsApi, 'inspectCsv').mockResolvedValue(csvInspection)
+    vi.spyOn(importsApi, 'createCsvMapping').mockResolvedValue(csvTemplate)
+    vi.spyOn(importsApi, 'updateCsvMapping').mockResolvedValue(csvTemplate)
     vi.spyOn(importsApi, 'get').mockResolvedValue(previewSession)
     vi.spyOn(importsApi, 'upload').mockResolvedValue({ ...previewSession, status: 'processing', items: [] })
     vi.spyOn(importsApi, 'updateItem').mockImplementation(async (_importId, itemId, input) => ({
@@ -198,6 +227,88 @@ describe('FinancialImportsPage', () => {
     fireEvent.change(input, { target: { files: [oversized] } })
     await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('ultrapassa o limite de 10 MB'))
     expect(importsApi.upload).not.toHaveBeenCalled()
+  })
+
+  it('inspects and uploads CSV only after presenting the detected mapping and sample', async () => {
+    const user = userEvent.setup()
+    await renderPage()
+    const file = new File(['Data;Histórico;Valor;ID\n23/10/2026;Mercado;-120,50;bank-1'], 'extrato.csv', { type: 'text/csv' })
+
+    await user.upload(screen.getByLabelText('Arquivo OFX ou CSV'), file)
+
+    await waitFor(() => expect(importsApi.inspectCsv).toHaveBeenCalledWith(file, expect.any(AbortSignal)))
+    expect(await screen.findByRole('heading', { name: 'Confira como as colunas serão interpretadas' })).toBeVisible()
+    expect(screen.getByRole('table', { name: 'Amostra das primeiras linhas' })).toHaveTextContent('Mercado')
+    expect(screen.getByLabelText('Data *')).toHaveValue('0')
+    expect(screen.getByLabelText('Descrição *')).toHaveValue('1')
+
+    await user.click(screen.getByRole('button', { name: 'Enviar e preparar prévia' }))
+
+    await waitFor(() => expect(importsApi.upload).toHaveBeenCalledWith(file, 'csv', { configuration: csvConfiguration }))
+  })
+
+  it('blocks CSV upload until all required column roles are mapped', async () => {
+    vi.mocked(importsApi.inspectCsv).mockResolvedValueOnce({
+      ...csvInspection,
+      suggestedMapping: { ...csvInspection.suggestedMapping, description: null, amount: null },
+    })
+    const user = userEvent.setup()
+    await renderPage()
+    await user.upload(screen.getByLabelText('Arquivo OFX ou CSV'), new File(['csv'], 'extrato.csv', { type: 'text/csv' }))
+    await screen.findByRole('heading', { name: 'Confira como as colunas serão interpretadas' })
+    const uploadButton = screen.getByRole('button', { name: 'Enviar e preparar prévia' })
+    expect(uploadButton).toBeDisabled()
+
+    await user.selectOptions(screen.getByLabelText('Descrição *'), '1')
+    await user.selectOptions(screen.getByLabelText('Valor único'), '2')
+
+    expect(uploadButton).toBeEnabled()
+  })
+
+  it('saves and reuses a wallet-scoped CSV mapping by its identifier', async () => {
+    vi.mocked(importsApi.listCsvMappings).mockResolvedValueOnce({ items: [csvTemplate] })
+    const user = userEvent.setup()
+    await renderPage()
+    const file = new File(['csv'], 'extrato.csv', { type: 'text/csv' })
+    await user.upload(screen.getByLabelText('Arquivo OFX ou CSV'), file)
+    await screen.findByRole('heading', { name: 'Confira como as colunas serão interpretadas' })
+
+    await user.selectOptions(screen.getByLabelText('Modelo salvo'), csvTemplate.id)
+    expect(screen.getByLabelText('Nome do modelo')).toHaveValue(csvTemplate.name)
+    await user.click(screen.getByRole('button', { name: 'Enviar e preparar prévia' }))
+
+    await waitFor(() => expect(importsApi.upload).toHaveBeenCalledWith(file, 'csv', { mappingId: csvTemplate.id }))
+  })
+
+  it('creates a named CSV model from the detected configuration', async () => {
+    const user = userEvent.setup()
+    await renderPage()
+    await user.upload(screen.getByLabelText('Arquivo OFX ou CSV'), new File(['csv'], 'extrato.csv', { type: 'text/csv' }))
+    await screen.findByRole('heading', { name: 'Confira como as colunas serão interpretadas' })
+    await user.type(screen.getByLabelText('Nome do modelo'), 'Banco Exemplo')
+
+    await user.click(screen.getByRole('button', { name: 'Salvar novo modelo' }))
+
+    await waitFor(() => expect(importsApi.createCsvMapping).toHaveBeenCalledWith('Banco Exemplo', csvConfiguration))
+    expect(await screen.findByText(/Modelo “Banco Exemplo” salvo/)).toBeVisible()
+  })
+
+  it('updates an edited CSV model before reusing it', async () => {
+    vi.mocked(importsApi.listCsvMappings).mockResolvedValueOnce({ items: [csvTemplate] })
+    const user = userEvent.setup()
+    await renderPage()
+    await user.upload(screen.getByLabelText('Arquivo OFX ou CSV'), new File(['csv'], 'extrato.csv', { type: 'text/csv' }))
+    await screen.findByRole('heading', { name: 'Confira como as colunas serão interpretadas' })
+    await user.selectOptions(screen.getByLabelText('Modelo salvo'), csvTemplate.id)
+    await user.selectOptions(screen.getByLabelText('Formato monetário'), 'en-US')
+
+    await user.click(screen.getByRole('button', { name: 'Atualizar modelo' }))
+
+    await waitFor(() => expect(importsApi.updateCsvMapping).toHaveBeenCalledWith(
+      csvTemplate.id,
+      csvTemplate.name,
+      expect.objectContaining({ numberFormat: 'en-US' }),
+    ))
   })
 
   it('opens the preview, edits classification and confirms only reviewable items', async () => {
@@ -454,6 +565,25 @@ describe('FinancialImportsPage', () => {
     expect(screen.queryByText(/Arquivo recebido/)).not.toBeInTheDocument()
     expect(screen.queryByRole('heading', { name: 'conta-antiga.ofx' })).not.toBeInTheDocument()
     expect(screen.getByText((_, element) => Boolean(element?.classList.contains('imports-wallet') && element.textContent === 'Carteira: Família'))).toBeVisible()
+  })
+
+  it('discards a delayed CSV inspection after the active wallet changes', async () => {
+    const inspection = deferred<CsvInspection>()
+    vi.mocked(importsApi.inspectCsv).mockReturnValueOnce(inspection.promise)
+    const user = userEvent.setup()
+    await renderPage()
+    await user.upload(screen.getByLabelText('Arquivo OFX ou CSV'), new File(['csv'], 'conta-antiga.csv', { type: 'text/csv' }))
+    await waitFor(() => expect(importsApi.inspectCsv).toHaveBeenCalled())
+
+    await user.selectOptions(screen.getByRole('combobox', { name: /Carteira ativa/ }), 'wallet-shared')
+    await waitFor(() => expect(importsApi.list).toHaveBeenCalledTimes(2))
+    await act(async () => {
+      inspection.resolve(csvInspection)
+      await inspection.promise
+    })
+
+    expect(screen.queryByRole('heading', { name: 'Confira como as colunas serão interpretadas' })).not.toBeInTheDocument()
+    expect(screen.getByLabelText('Arquivo OFX ou CSV')).toBeEnabled()
   })
 
   it('discards delayed import details after the active wallet changes', async () => {
