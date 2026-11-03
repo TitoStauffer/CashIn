@@ -48,7 +48,7 @@
       "documents": ["docs/knowledge/automation/sonarqube.md"]
     },
     {
-      "paths": ["AGENTS.md", "docs/knowledge/**", "tools/knowledge/**"],
+      "paths": ["AGENTS.md", "docs/knowledge/learnings/**", "docs/knowledge/evidence/**", "tools/knowledge/**"],
       "documents": ["docs/knowledge/learnings/README.md", "docs/knowledge/learnings/code-review-findings.md", "docs/knowledge/learnings/agent-process.md", "docs/knowledge/evidence/README.md"]
     }
   ]
