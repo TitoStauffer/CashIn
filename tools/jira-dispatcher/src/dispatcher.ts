@@ -3,7 +3,7 @@ import { hostname } from "node:os";
 import { join } from "node:path";
 import type { CodexRunner, CodexRunResult } from "./codex.js";
 import { isValidIssueKey, type DispatcherConfig } from "./config.js";
-import { eligibilityFields, evaluateEligibility } from "./eligibility.js";
+import { eligibilityFields, epicAuthorizationProblem, evaluateEligibility } from "./eligibility.js";
 import { statusMatches, type JiraApi, type JiraTransition } from "./jira/client.js";
 import type { Logger } from "./logger.js";
 import { renderTemplateFile } from "./prompt.js";
@@ -252,11 +252,15 @@ export class Dispatcher {
       throw new Error(`${issueKey} não tem execução interrompida, com falha ou aguardando atenção para retomar.`);
     }
 
-    const issue = await jira.getIssue(issueKey, ["status"]);
+    const issue = await jira.getIssue(issueKey, ["status", "parent"]);
     if (!statusMatches(issue.fields.status, config.jira.resumableStatuses)) {
       throw new Error(
         `${issueKey} está em "${issue.fields.status?.name ?? "?"}", que não está em resumableStatuses. Verifique o Jira manualmente.`
       );
+    }
+    const epicProblem = epicAuthorizationProblem(issue, config);
+    if (epicProblem) {
+      throw new Error(`${issueKey} não pode ser retomada: ${epicProblem}.`);
     }
 
     const run = store.create({ issueKey, logDirRoot: this.logDirRoot, previousRunId: previous.runId });

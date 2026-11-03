@@ -94,13 +94,23 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
-          cache-dependency-path: tools/github-reviewer/package-lock.json
+          cache-dependency-path: |
+            tools/github-reviewer/package-lock.json
+            tools/jira-dispatcher/package-lock.json
 
       - name: Install dependencies
         run: npm ci --fetch-timeout=15000 --fetch-retries=1
 
       - name: Build and test GitHub integration tools
         run: npm test
+
+      - name: Install Jira dispatcher dependencies
+        working-directory: tools/jira-dispatcher
+        run: npm ci --fetch-timeout=15000 --fetch-retries=1
+
+      - name: Verify Jira dispatcher
+        working-directory: tools/jira-dispatcher
+        run: npm run verify
 
       - name: Validate knowledge vault
         if: hashFiles('docs/knowledge/**/*.md') != ''

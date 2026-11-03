@@ -76,7 +76,13 @@ export async function loadActionsEvidence(
 
 export async function loadCiSnapshots(fetchImpl: typeof fetch, repository: string, headSha: string, token: string): Promise<AgentCiSnapshot[]> {
   const snapshots: AgentCiSnapshot[] = [];
-  for (const path of [WORKFLOW_PATH, 'apps/api/package.json', 'apps/web/package.json', 'tools/github-reviewer/package.json']) {
+  for (const path of [
+    WORKFLOW_PATH,
+    'apps/api/package.json',
+    'apps/web/package.json',
+    'tools/github-reviewer/package.json',
+    'tools/jira-dispatcher/package.json',
+  ]) {
     const payload = await requestGitHubApi<Record<string, unknown>>(
       fetchImpl, `/repos/${repository}/contents/${path}?ref=${headSha}`, token, { maxResponseBytes: MAX_RESPONSE_BYTES },
     );

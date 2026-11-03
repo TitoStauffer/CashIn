@@ -2,7 +2,7 @@
   "name": "@saldocerto/jira-dispatcher",
   "version": "0.1.0",
   "private": true,
-  "description": "Selects eligible Jira issues and starts Codex CLI runs that follow AGENTS.md.",
+  "description": "Selects eligible Jira issues from authorized epics and starts Codex CLI runs that follow AGENTS.md.",
   "type": "module",
   "bin": {
     "jira-dispatcher": "dist/cli.js"
@@ -11,6 +11,7 @@
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.test.json",
     "test": "tsx --test test/*.test.ts",
+    "verify": "npm test && npm run typecheck && npm run build",
     "dispatcher": "node dist/cli.js",
     "post-merge": "npm run build && node dist/post-merge-cli.js"
   },

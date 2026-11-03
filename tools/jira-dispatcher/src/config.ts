@@ -37,6 +37,8 @@ export interface DispatcherConfig {
   jira: {
     baseUrl: string;
     eligibilityJql: string;
+    /** Epic keys explicitly authorized for autonomous execution. */
+    allowedEpicKeys: string[];
     maxResults: number;
     requiredFields: FieldRequirement[];
     blockingLinks: BlockingLinkRule[];
@@ -126,7 +128,8 @@ export function parseConfig(raw: unknown, configDir: string): DispatcherConfig {
     },
     jira: {
       baseUrl: httpsUrl(jira.baseUrl, "jira.baseUrl"),
-      eligibilityJql: nonEmpty(string(jira.eligibilityJql, "jira.eligibilityJql"), "jira.eligibilityJql"),
+      eligibilityJql: rankedEligibilityJql(jira.eligibilityJql, "jira.eligibilityJql"),
+      allowedEpicKeys: issueKeyList(jira.allowedEpicKeys, "jira.allowedEpicKeys"),
       maxResults: integer(jira.maxResults ?? 20, "jira.maxResults", 1),
       requiredFields: array(jira.requiredFields ?? [], "jira.requiredFields").map((item, index) =>
         fieldRequirement(item, `jira.requiredFields[${index}]`)
@@ -224,6 +227,24 @@ function stringList(value: unknown, path: string): string[] {
 function nonEmptyList(value: string[], path: string): string[] {
   if (value.length === 0) throw new ConfigError(`${path} deve ter pelo menos um item.`);
   return value;
+}
+
+function issueKeyList(value: unknown, path: string): string[] {
+  const keys = nonEmptyList(stringList(value, path), path).map((key, index) => {
+    const normalized = nonEmpty(key, `${path}[${index}]`).toUpperCase();
+    if (!isValidIssueKey(normalized)) throw new ConfigError(`${path}[${index}] não é uma chave de issue válida.`);
+    return normalized;
+  });
+  if (new Set(keys).size !== keys.length) throw new ConfigError(`${path} não pode conter chaves duplicadas.`);
+  return keys;
+}
+
+function rankedEligibilityJql(value: unknown, path: string): string {
+  const jql = nonEmpty(string(value, path), path);
+  if (!/\border\s+by\s+rank\s+asc\s*$/i.test(jql)) {
+    throw new ConfigError(`${path} deve terminar com ORDER BY Rank ASC.`);
+  }
+  return jql;
 }
 
 function integer(value: unknown, path: string, min: number): number {

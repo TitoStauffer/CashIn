@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { evaluateEligibility } from "../src/eligibility.js";
+import { eligibilityFields, evaluateEligibility } from "../src/eligibility.js";
 import { STATUS, eligibleIssue, makeConfig } from "./helpers.js";
 
 const config = makeConfig();
@@ -8,6 +8,23 @@ const config = makeConfig();
 describe("evaluateEligibility", () => {
   it("accepts an issue that satisfies every configured rule", () => {
     assert.deepEqual(evaluateEligibility(eligibleIssue("DEV-10"), config), { eligible: true, reasons: [] });
+  });
+
+  it("requests the parent field used by the epic allowlist", () => {
+    assert.ok(eligibilityFields(config).includes("parent"));
+  });
+
+  it("accepts an issue from another explicitly authorized epic", () => {
+    const multiEpic = makeConfig({ jira: { allowedEpicKeys: ["DEV-6", "DEV-50"] } });
+    assert.equal(evaluateEligibility(eligibleIssue("DEV-53", { parent: { key: "DEV-50" } }), multiEpic).eligible, true);
+  });
+
+  it("rejects an unauthorized or missing parent epic", () => {
+    const unauthorized = evaluateEligibility(eligibleIssue("DEV-68", { parent: { key: "DEV-25" } }), config);
+    assert.match(unauthorized.reasons.join(), /DEV-25.*não está autorizado/);
+
+    const missing = evaluateEligibility(eligibleIssue("DEV-69", { parent: undefined }), config);
+    assert.match(missing.reasons.join(), /épico pai não está preenchido/);
   });
 
   it("rejects issues outside the reservable statuses, even when matched by JQL", () => {

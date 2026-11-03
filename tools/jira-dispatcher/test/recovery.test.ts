@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { describe, it } from "node:test";
 import { StateStore } from "../src/state.js";
-import { ControlledCodex, FakeJira, STATUS, eligibleIssue, makeConfig, makeDispatcher } from "./helpers.js";
+import { ControlledCodex, FakeJira, FakeWorkspace, STATUS, eligibleIssue, makeConfig, makeDispatcher } from "./helpers.js";
 
 /** Writes a run that looks like it was left behind by a dispatcher process that crashed. */
 function seedCrashedRun(store: StateStore, issueKey: string, childPid: number | undefined, patch = {}) {
@@ -112,6 +112,52 @@ describe("recovery", () => {
     await assert.rejects(() => dispatcher.resume("DEV-10"), /resumableStatuses/);
     assert.equal((codex as ControlledCodex).calls.length, 0);
     assert.equal(store.forIssue("DEV-10").length, 1);
+  });
+
+  it("refuses to resume after the issue's epic authorization is revoked", async () => {
+    const config = makeConfig({ jira: { allowedEpicKeys: ["DEV-50"] } });
+    const store = new StateStore(config.stateDir);
+    seedCrashedRun(store, "DEV-10", await deadPid());
+    const jira = new FakeJira().add(eligibleIssue("DEV-10", { status: STATUS.progress, parent: { key: "DEV-6" } }));
+    const workspace = new FakeWorkspace(config.worktree.baseDir);
+    const { dispatcher, codex } = makeDispatcher({ config, store, jira, workspace });
+
+    await assert.rejects(() => dispatcher.resume("DEV-10"), /DEV-6 não está autorizado/);
+    assert.equal(store.forIssue("DEV-10").length, 1);
+    assert.equal(jira.comments.length, 0);
+    assert.equal(jira.transitionsCalled.length, 0);
+    assert.equal(workspace.reused.length, 0);
+    assert.equal((codex as ControlledCodex).calls.length, 0);
+  });
+
+  it("refuses to resume after the issue is moved to an unauthorized epic", async () => {
+    const config = makeConfig();
+    const store = new StateStore(config.stateDir);
+    seedCrashedRun(store, "DEV-10", await deadPid());
+    const jira = new FakeJira().add(eligibleIssue("DEV-10", { status: STATUS.progress, parent: { key: "DEV-25" } }));
+    const workspace = new FakeWorkspace(config.worktree.baseDir);
+    const { dispatcher, codex } = makeDispatcher({ config, store, jira, workspace });
+
+    await assert.rejects(() => dispatcher.resume("DEV-10"), /DEV-25 não está autorizado/);
+    assert.equal(store.forIssue("DEV-10").length, 1);
+    assert.equal(jira.comments.length, 0);
+    assert.equal(workspace.reused.length, 0);
+    assert.equal((codex as ControlledCodex).calls.length, 0);
+  });
+
+  it("refuses to resume an issue without a parent epic", async () => {
+    const config = makeConfig();
+    const store = new StateStore(config.stateDir);
+    seedCrashedRun(store, "DEV-10", await deadPid());
+    const jira = new FakeJira().add(eligibleIssue("DEV-10", { status: STATUS.progress, parent: undefined }));
+    const workspace = new FakeWorkspace(config.worktree.baseDir);
+    const { dispatcher, codex } = makeDispatcher({ config, store, jira, workspace });
+
+    await assert.rejects(() => dispatcher.resume("DEV-10"), /épico pai não está preenchido/);
+    assert.equal(store.forIssue("DEV-10").length, 1);
+    assert.equal(jira.comments.length, 0);
+    assert.equal(workspace.reused.length, 0);
+    assert.equal((codex as ControlledCodex).calls.length, 0);
   });
 
   it("refuses to resume an issue with an active run or nothing to resume", async () => {

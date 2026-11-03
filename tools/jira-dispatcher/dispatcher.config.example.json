@@ -13,6 +13,7 @@
   "jira": {
     "baseUrl": "https://titostauffer.atlassian.net",
     "eligibilityJql": "PREENCHA: veja a seção 'Configurar a elegibilidade' do README",
+    "allowedEpicKeys": ["DEV-6", "DEV-50"],
     "maxResults": 20,
     "requiredFields": [
       { "field": "description", "label": "Descrição" },

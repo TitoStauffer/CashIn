@@ -21,6 +21,7 @@ export interface JiraIssue {
     status?: JiraStatus;
     summary?: string;
     project?: { key?: string };
+    parent?: { key?: string };
     issuetype?: { name?: string };
     issuelinks?: JiraIssueLink[];
   };
