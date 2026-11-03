@@ -60,9 +60,11 @@ pwsh -File tools/knowledge/validate-vault.ps1
 
 ## Fontes gerais
 
-- [`AGENTS.md`](../../AGENTS.md)
-- [`README.md`](../../README.md)
-- [`docs/ci.md`](../ci.md)
-- [`docs/hosted-agent-orchestration.md`](../hosted-agent-orchestration.md)
-- [`docs/financial-imports-contract.md`](../financial-imports-contract.md)
-- [`docs/dashboard-summary-contract.md`](../dashboard-summary-contract.md)
+Estas fontes são pontos de navegação, não contexto obrigatório de toda entrega. Abra somente a fonte relacionada ao ticket:
+
+- `AGENTS.md`
+- `README.md`
+- `docs/ci.md`
+- `docs/hosted-agent-orchestration.md`
+- `docs/financial-imports-contract.md`
+- `docs/dashboard-summary-contract.md`

@@ -35,10 +35,12 @@ O fluxo ativo executa validação de título, API, Web, ferramentas de automaç�
 
 ## Fontes verificáveis
 
-- [`README.md`](../../README.md)
-- [`apps/api/src/app.ts`](../../apps/api/src/app.ts)
-- [`apps/web/src/App.tsx`](../../apps/web/src/App.tsx)
-- [`apps/api/src/financial-imports/financial-imports.parser.ts`](../../apps/api/src/financial-imports/financial-imports.parser.ts)
-- [`.github/workflows/ci.yml`](../../.github/workflows/ci.yml)
-- [`.github/workflows/agent-orchestration.yml`](../../.github/workflows/agent-orchestration.yml)
+Estas fontes comprovam o panorama, mas só devem ser abertas quando a afirmação correspondente for relevante ao ticket:
+
+- `README.md`
+- `apps/api/src/app.ts`
+- `apps/web/src/App.tsx`
+- `apps/api/src/financial-imports/financial-imports.parser.ts`
+- `.github/workflows/ci.yml`
+- `.github/workflows/agent-orchestration.yml`
 - [PR #43](https://github.com/TitoStauffer/CashIn/pull/43)
