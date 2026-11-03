@@ -586,6 +586,8 @@ function FinancialImportsWalletPage({ userEmail, isLoggingOut, onLogout }: Finan
       setHistory((current) => current.map((item) => item.id === session.id ? session : item))
       setSuccessMessage(session.status === 'confirming'
         ? 'Confirmação iniciada. Aguarde a conclusão antes de continuar.'
+        : session.status === 'preview' && session.summary.duplicate > 0
+          ? `A validação encontrou ${session.summary.duplicate} duplicidade(s). A prévia foi atualizada para revisão; nada desta tentativa foi importado.`
         : `${session.summary.imported} movimentações foram importadas com segurança.`)
     } catch (error) {
       if (!isCurrentWalletOperation(operation)) return

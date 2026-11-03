@@ -322,8 +322,76 @@ test("PostgreSQL financial import confirms exact amounts, isolates wallets, and 
       includeDuplicate: true,
     });
     assert.equal(reviewedDuplicate?.validationStatus, "valid");
+    const acceptedFingerprint = await database.query<{ accepted_duplicate_fingerprint: string | null }>(
+      "SELECT accepted_duplicate_fingerprint FROM import_items WHERE id = $1",
+      [crossFormatPreview!.items![0]!.id],
+    );
+    assert.equal(acceptedFingerprint.rows[0]?.accepted_duplicate_fingerprint, crossFormatFingerprint);
     assert.equal((await repository.confirmImport(userId, walletId, crossFormatSession.id))?.summary.imported, 1);
     assert.equal((await repository.undoImport(userId, walletId, crossFormatSession.id))?.status, "undone");
+
+    const changedConsentSession = await repository.createImport(userId, walletId, {
+      format: "csv", fileName: "consentimento.csv", fileSize: 128, fileHash: "1".repeat(64),
+    });
+    const changedConsentPreview = await repository.savePreview(userId, walletId, changedConsentSession.id, [{
+      sequence: 1,
+      date: "2026-10-20",
+      description: "Salário",
+      signedAmount: "123456789012.34",
+      type: "income",
+      categoryId: incomeCategoryId,
+      validationStatus: "valid",
+    }]);
+    const changedConsentItemId = changedConsentPreview!.items![0]!.id;
+    const acceptChangedConsent = async (description: string, includeDuplicate = false) => repository.updateItem(
+      userId,
+      walletId,
+      changedConsentSession.id,
+      changedConsentItemId,
+      { date: "2026-10-20", description, type: "income", categoryId: incomeCategoryId, subcategoryId: null, includeDuplicate },
+    );
+    assert.equal((await acceptChangedConsent("Salário", true))?.validationStatus, "valid");
+    assert.equal((await acceptChangedConsent("Salário corrigido"))?.validationStatus, "valid");
+    assert.equal((await acceptChangedConsent("Salário"))?.validationStatus, "valid");
+    const invalidatedConsentConfirmation = await repository.confirmImport(userId, walletId, changedConsentSession.id);
+    assert.equal(invalidatedConsentConfirmation?.status, "preview");
+    assert.equal(invalidatedConsentConfirmation?.summary.imported, 0);
+    assert.equal(invalidatedConsentConfirmation?.summary.duplicate, 1);
+    await repository.discardImport(userId, walletId, changedConsentSession.id);
+
+    const editedSession = await repository.createImport(userId, walletId, {
+      format: "csv", fileName: "ajustes.csv", fileSize: 128, fileHash: "2".repeat(64),
+    });
+    const editedPreview = await repository.savePreview(userId, walletId, editedSession.id, [
+      {
+        sequence: 1, date: "2026-11-01", description: "Movimento A", signedAmount: "-33.30",
+        type: "expense", categoryId: expenseCategoryId, validationStatus: "valid",
+      },
+      {
+        sequence: 2, date: "2026-11-02", description: "Movimento B", signedAmount: "-33.30",
+        type: "expense", categoryId: expenseCategoryId, validationStatus: "valid",
+      },
+    ]);
+    const secondEditedItemId = editedPreview!.items![1]!.id;
+    const editSecondItem = (includeDuplicate = false) => repository.updateItem(
+      userId,
+      walletId,
+      editedSession.id,
+      secondEditedItemId,
+      {
+        date: "2026-11-01", description: "Movimento A", type: "expense",
+        categoryId: expenseCategoryId, subcategoryId: null, includeDuplicate,
+      },
+    );
+    assert.equal((await editSecondItem())?.validationStatus, "valid");
+    const editedDuplicateConfirmation = await repository.confirmImport(userId, walletId, editedSession.id);
+    assert.equal(editedDuplicateConfirmation?.status, "preview");
+    assert.equal(editedDuplicateConfirmation?.summary.valid, 1);
+    assert.equal(editedDuplicateConfirmation?.summary.duplicate, 1);
+    assert.equal(editedDuplicateConfirmation?.summary.imported, 0);
+    assert.equal((await editSecondItem(true))?.validationStatus, "valid");
+    assert.equal((await repository.confirmImport(userId, walletId, editedSession.id))?.summary.imported, 2);
+    await repository.undoImport(userId, walletId, editedSession.id);
 
     const concurrentSessions = await Promise.all(["d", "e"].map(async (fileHash) => {
       const session = await repository.createImport(userId, walletId, {

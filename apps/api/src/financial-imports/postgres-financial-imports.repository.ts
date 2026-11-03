@@ -457,8 +457,37 @@ export class PostgresFinancialImportsRepository implements FinancialImportReposi
       );
       if (!session.rows[0]) return null;
 
+      const currentItem = await transaction.query<{
+        signed_amount: string;
+        validation_status: FinancialImportItemStatus;
+        duplicate_override_allowed: boolean;
+        accepted_duplicate_fingerprint: string | null;
+      }>(
+        `SELECT signed_amount::text, validation_status, duplicate_override_allowed,
+                accepted_duplicate_fingerprint
+         FROM import_items
+         WHERE id = $1 AND import_session_id = $2 AND wallet_id = $3
+         FOR UPDATE`,
+        [itemId, importId, walletId],
+      );
+      if (!currentItem.rows[0]) return null;
+
       const categoryId = input.type === "transfer" ? null : input.categoryId;
       const subcategoryId = input.type === "transfer" ? null : input.subcategoryId;
+      const nextFingerprint = createFinancialImportFingerprint({
+        date: input.date,
+        signedAmount: normalizeSignedAmount(currentItem.rows[0].signed_amount),
+        type: input.type,
+        description: input.description,
+      });
+      if (!nextFingerprint) throw new FinancialImportError("Não foi possível validar a identidade da movimentação.", 409);
+      const acceptedDuplicateFingerprint = input.includeDuplicate
+        && currentItem.rows[0].validation_status === "duplicate"
+        && currentItem.rows[0].duplicate_override_allowed
+        ? nextFingerprint
+        : currentItem.rows[0].accepted_duplicate_fingerprint === nextFingerprint
+          ? nextFingerprint
+          : null;
       const validationStatus = input.type === "transfer" || categoryId === null ? "uncategorized" : "valid";
       const errorMessage = input.type === "transfer"
         ? "A transferência precisa ser conciliada antes da importação."
@@ -477,6 +506,8 @@ export class PostgresFinancialImportsRepository implements FinancialImportReposi
              error_message = $10,
              is_repairable = false,
              duplicate_override_allowed = false,
+             record_hash = $12,
+             accepted_duplicate_fingerprint = $13,
              updated_at = now()
          WHERE item.id = $1
            AND item.import_session_id = $2
@@ -507,6 +538,8 @@ export class PostgresFinancialImportsRepository implements FinancialImportReposi
           validationStatus,
           errorMessage,
           input.includeDuplicate,
+          nextFingerprint,
+          acceptedDuplicateFingerprint,
         ],
       );
       const row = result.rows[0];
@@ -539,7 +572,17 @@ export class PostgresFinancialImportsRepository implements FinancialImportReposi
       if (pendingItems.rows.length === 0) {
         throw new FinancialImportError("A importação não possui movimentações válidas para confirmar.", 409);
       }
-      await this.markCurrentSessionDuplicates(transaction, walletId, importId);
+      const newlyDetectedDuplicates = await this.markCurrentSessionDuplicates(transaction, walletId, importId);
+      if (newlyDetectedDuplicates > 0) {
+        await this.refreshCounters(transaction, walletId, importId);
+        await transaction.query(
+          `UPDATE import_sessions
+           SET status = 'preview', confirmed_at = NULL, updated_at = now()
+           WHERE id = $1 AND wallet_id = $2`,
+          [importId, walletId],
+        );
+        return this.getSessionWithItems(transaction, walletId, importId);
+      }
       const items = await transaction.query<{
         id: string;
         type: FinancialImportItemType;
@@ -958,6 +1001,10 @@ export class PostgresFinancialImportsRepository implements FinancialImportReposi
     const seen = new Set<string>();
     return items.map((item) => {
       if (!item.recordHash || item.validationStatus === "duplicate" || item.validationStatus === "invalid") return item;
+      if (item.acceptedDuplicateFingerprint === item.recordHash) {
+        seen.add(item.recordHash);
+        return item;
+      }
       if (!seen.has(item.recordHash)) {
         seen.add(item.recordHash);
         return item;
@@ -1054,7 +1101,8 @@ export class PostgresFinancialImportsRepository implements FinancialImportReposi
       if (item.validationStatus === "invalid" || item.validationStatus === "duplicate") return item;
       const matchesExternalId = Boolean(item.externalId && externalIds.has(item.externalId));
       const matchesFingerprint = Boolean(item.recordHash && existingFingerprints.has(item.recordHash));
-      if (!matchesExternalId && !matchesFingerprint) return item;
+      const fingerprintWasReviewed = item.acceptedDuplicateFingerprint === item.recordHash;
+      if (!matchesExternalId && (!matchesFingerprint || fingerprintWasReviewed)) return item;
       return {
         ...item,
         validationStatus: "duplicate",
@@ -1070,7 +1118,7 @@ export class PostgresFinancialImportsRepository implements FinancialImportReposi
     executor: QueryExecutor,
     walletId: string,
     importId: string,
-  ): Promise<void> {
+  ): Promise<number> {
     const session = await executor.query<{ source_metadata: Record<string, string> }>(
       "SELECT source_metadata FROM import_sessions WHERE id = $1 AND wallet_id = $2",
       [importId, walletId],
@@ -1083,41 +1131,54 @@ export class PostgresFinancialImportsRepository implements FinancialImportReposi
       description: string | null;
       external_id: string | null;
       record_hash: string | null;
+      accepted_duplicate_fingerprint: string | null;
+      sequence: number;
     }>(
-      `SELECT id, type, transaction_date, signed_amount::text, description, external_id, record_hash
-       FROM import_items WHERE import_session_id = $1 AND wallet_id = $2 AND validation_status = 'valid'`,
+      `SELECT id, sequence, type, transaction_date, signed_amount::text, description, external_id,
+              record_hash, accepted_duplicate_fingerprint
+       FROM import_items
+       WHERE import_session_id = $1 AND wallet_id = $2 AND validation_status = 'valid'
+       ORDER BY sequence`,
       [importId, walletId],
     );
-    const candidates: ParsedFinancialImportItem[] = pending.rows.map((item, index) => ({
-      sequence: index + 1,
-      date: dateValue(item.transaction_date),
-      description: item.description,
-      signedAmount: normalizeSignedAmount(item.signed_amount),
-      type: item.type,
-      externalId: item.external_id,
-      recordHash: createFinancialImportFingerprint({
+    const candidates: ParsedFinancialImportItem[] = pending.rows.map((item) => {
+      const fingerprint = createFinancialImportFingerprint({
         date: dateValue(item.transaction_date),
         signedAmount: normalizeSignedAmount(item.signed_amount),
         type: item.type,
         description: item.description,
-      }),
-    }));
+      });
+      return {
+        sequence: item.sequence,
+        date: dateValue(item.transaction_date),
+        description: item.description,
+        signedAmount: normalizeSignedAmount(item.signed_amount),
+        type: item.type,
+        externalId: item.external_id,
+        recordHash: fingerprint,
+        acceptedDuplicateFingerprint: item.accepted_duplicate_fingerprint,
+      };
+    });
+    const inFileChecked = this.markInFileDuplicates(candidates);
     const marked = await this.markPreviouslyImportedDuplicates(
       executor,
       walletId,
-      candidates,
+      inFileChecked,
       session.rows[0]?.source_metadata ?? {},
     );
+    let duplicateCount = 0;
     for (let index = 0; index < marked.length; index += 1) {
       const item = marked[index]!;
       if (item.validationStatus !== "duplicate") continue;
+      duplicateCount += 1;
       await executor.query(
         `UPDATE import_items SET validation_status = 'duplicate', error_message = $3,
-             duplicate_override_allowed = $4, updated_at = now()
+             duplicate_override_allowed = $4, accepted_duplicate_fingerprint = NULL, updated_at = now()
          WHERE id = $1 AND import_session_id = $2 AND wallet_id = $5 AND validation_status = 'valid'`,
         [pending.rows[index]!.id, importId, item.errorMessage, item.duplicateOverrideAllowed === true, walletId],
       );
     }
+    return duplicateCount;
   }
 }
 

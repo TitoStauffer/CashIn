@@ -564,6 +564,27 @@ describe('FinancialImportsPage', () => {
     })))
   })
 
+  it('shows newly detected duplicates before importing any movement', async () => {
+    const revalidatedPreview: FinancialImportSession = {
+      ...previewSession,
+      summary: { total: 3, valid: 0, duplicate: 1, invalid: 1, uncategorized: 1, imported: 0 },
+      items: previewSession.items!.map((item) => item.sequence === 2
+        ? { ...item, validationStatus: 'duplicate', canEdit: false, canIncludeDuplicate: true }
+        : item),
+    }
+    vi.mocked(importsApi.list).mockResolvedValueOnce({ items: [{ ...previewSession, items: undefined }] })
+    vi.mocked(importsApi.get).mockResolvedValueOnce(previewSession)
+    vi.mocked(importsApi.confirm).mockResolvedValueOnce(revalidatedPreview)
+    const user = userEvent.setup()
+    await renderPage()
+    await user.click(await screen.findByRole('button', { name: 'Ver detalhes' }))
+    await user.click(screen.getByRole('button', { name: 'Confirmar 1 movimentação' }))
+
+    expect(await screen.findByText(/A validação encontrou 1 duplicidade/)).toBeVisible()
+    expect(screen.getByRole('button', { name: 'Importar mesmo assim' })).toBeVisible()
+    expect(importsApi.confirm).toHaveBeenCalledWith('import-1')
+  })
+
   it('keeps the returned items visible after confirmation and undo', async () => {
     const confirmed = {
       ...completedSession,

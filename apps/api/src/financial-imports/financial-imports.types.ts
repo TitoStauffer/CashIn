@@ -68,6 +68,7 @@ export interface ParsedFinancialImportItem {
   externalId?: string | null;
   recordHash?: string | null;
   duplicateOverrideAllowed?: boolean;
+  acceptedDuplicateFingerprint?: string | null;
 }
 
 export interface ParsedFinancialImport {

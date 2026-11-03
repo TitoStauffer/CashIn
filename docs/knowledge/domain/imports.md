@@ -16,7 +16,7 @@
 
 - Itens usam impressão digital de data, valor assinado, tipo e descrição normalizada para detectar repetição entre OFX, CSV e importações anteriores da mesma carteira.
 - FITID já importado da mesma conta OFX é duplicidade confirmada e fica bloqueado; coincidência apenas pela impressão digital aparece como possível duplicidade, com justificativa para revisão.
-- Possíveis duplicidades só são importadas após decisão explícita do usuário. Confirmações concorrentes são serializadas por carteira e revalidadas antes de gravar.
+- Possíveis duplicidades só são importadas após decisão explícita do usuário, persistida para o fingerprint revisado; mudar a identidade invalida essa decisão. A confirmação revalida duplicidades históricas e entre itens editados da sessão; ao encontrar novas, devolve a prévia sem importar parcialmente. Confirmações concorrentes são serializadas por carteira e revalidadas antes de gravar.
 - O identificador bruto da conta não é persistido; a sessão conserva somente seu hash.
 
 ## Estado atual
