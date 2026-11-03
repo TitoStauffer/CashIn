@@ -242,7 +242,7 @@ npm run post-merge -- --help
 ## Testes
 
 ```bash
-npm test          # 98 testes (node:test via tsx)
+npm test          # testes automatizados via node:test e tsx
 npm run typecheck
 ```
 
