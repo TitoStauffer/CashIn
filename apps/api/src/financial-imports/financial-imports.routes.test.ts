@@ -9,6 +9,8 @@ import type { AuthRepository, AuthUser, PendingAccount, StoredUser } from "../au
 import { WalletsTestFixture } from "../wallets/wallets-test-fixture.js";
 import { FinancialImportError } from "./financial-imports.errors.js";
 import type {
+  CreateCsvMappingInput,
+  CsvMapping,
   CreateFinancialImportInput,
   FinancialImportItem,
   FinancialImportParser,
@@ -23,6 +25,10 @@ const USER_B = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
 const CATEGORY_A = "11111111-1111-4111-8111-111111111111";
 const SESSION_A = "a".repeat(43);
 const SESSION_B = "b".repeat(43);
+const CSV_MAPPING_HEADER = encodeURIComponent(JSON.stringify({
+  delimiter: ",", encoding: "utf-8", hasHeader: true, dateFormat: "yyyy-MM-dd", numberFormat: "en-US",
+  columns: { date: 0, description: 1, amount: 2, credit: null, debit: null, externalId: null },
+}));
 
 interface StoredSession extends FinancialImportSession {
   userId: string;
@@ -32,8 +38,33 @@ interface StoredSession extends FinancialImportSession {
 
 class MemoryFinancialImportRepository implements FinancialImportRepository {
   readonly sessions = new Map<string, StoredSession>();
+  readonly csvMappings = new Map<string, CsvMapping & { userId: string; walletId: string }>();
   private nextSession = 1;
   private nextItem = 1;
+  private nextMapping = 1;
+
+  async listCsvMappings(userId: string, walletId: string): Promise<CsvMapping[]> {
+    return [...this.csvMappings.values()].filter((mapping) => mapping.userId === userId && mapping.walletId === walletId);
+  }
+
+  async getCsvMapping(userId: string, walletId: string, mappingId: string): Promise<CsvMapping | null> {
+    const mapping = this.csvMappings.get(mappingId);
+    return mapping?.userId === userId && mapping.walletId === walletId ? mapping : null;
+  }
+
+  async createCsvMapping(userId: string, walletId: string, input: CreateCsvMappingInput): Promise<CsvMapping> {
+    const now = new Date().toISOString();
+    const mapping = { id: `30000000-0000-4000-8000-${(this.nextMapping++).toString().padStart(12, "0")}`, ...input, userId, walletId, createdAt: now, updatedAt: now };
+    this.csvMappings.set(mapping.id, mapping);
+    return mapping;
+  }
+
+  async updateCsvMapping(userId: string, walletId: string, mappingId: string, input: CreateCsvMappingInput): Promise<CsvMapping | null> {
+    const mapping = this.csvMappings.get(mappingId);
+    if (!mapping || mapping.userId !== userId || mapping.walletId !== walletId) return null;
+    Object.assign(mapping, input, { updatedAt: new Date().toISOString() });
+    return mapping;
+  }
 
   async createImport(userId: string, walletId: string, input: CreateFinancialImportInput): Promise<FinancialImportSession> {
     const id = `10000000-0000-4000-8000-${this.nextSession.toString().padStart(12, "0")}`;
@@ -347,6 +378,7 @@ async function upload(app: ReturnType<typeof createApp>, session = SESSION_A) {
       "content-type": "application/octet-stream",
       "x-file-name": encodeURIComponent("extrato outubro.csv"),
       "x-file-format": "CSV",
+      "x-csv-mapping": CSV_MAPPING_HEADER,
     },
     payload: Buffer.from("date,description,amount\n2026-10-20,Salary,1000"),
   });
@@ -542,6 +574,7 @@ test("upload failures are safe, validated, and retained as failed history", asyn
       "content-type": "application/octet-stream",
       "x-file-name": "statement.txt",
       "x-file-format": "csv",
+      "x-csv-mapping": CSV_MAPPING_HEADER,
     },
     payload: Buffer.from("content"),
   });
@@ -586,6 +619,7 @@ test("upload and preview edits enforce UTF-8 byte limits before persistence", as
       "content-type": "application/octet-stream",
       "x-file-name": encodeURIComponent(fileNameAtLimit),
       "x-file-format": "csv",
+      "x-csv-mapping": CSV_MAPPING_HEADER,
     },
     payload: Buffer.from("content"),
   });
@@ -668,6 +702,67 @@ test("upload enforces the 10 MB and 10,000 movement limits", async () => {
   assert.equal(retained.json().items[0].status, "failed");
   await tooMany.app.close();
 
+  const csv = createTestApp(null);
+  const excessiveCsv = Buffer.from([
+    "Data;Descrição;Valor",
+    ...Array.from({ length: 10_001 }, (_value, index) => `31/10/2026;Linha ${index + 1};1,00`),
+  ].join("\n"));
+  const excessiveInspection = await csv.app.inject({
+    method: "POST",
+    url: "/financial-imports/csv/inspect",
+    headers: { cookie: authCookie(), "content-type": "application/octet-stream" },
+    payload: excessiveCsv,
+  });
+  assert.equal(excessiveInspection.statusCode, 413);
+  assert.equal(excessiveInspection.json().message, "O arquivo deve ter no máximo 10.000 movimentações.");
+  const excessiveUpload = await csv.app.inject({
+    method: "POST",
+    url: "/financial-imports",
+    headers: {
+      cookie: authCookie(),
+      "content-type": "application/octet-stream",
+      "x-file-name": "oversized.csv",
+      "x-file-format": "csv",
+      "x-csv-mapping": encodeURIComponent(JSON.stringify({
+        delimiter: ";", encoding: "utf-8", hasHeader: true, dateFormat: "dd/MM/yyyy", numberFormat: "pt-BR",
+        columns: { date: 0, description: 1, amount: 2, credit: null, debit: null, externalId: null },
+      })),
+    },
+    payload: excessiveCsv,
+  });
+  assert.equal(excessiveUpload.statusCode, 413);
+  assert.equal(excessiveUpload.json().message, "O arquivo deve ter no máximo 10.000 movimentações.");
+
+  const excessiveColumns = Buffer.from(
+    `${Array.from({ length: 100 }, (_value, index) => `column-${index + 1}`).join(";")};"trailing malformed`,
+  );
+  const excessiveColumnsInspection = await csv.app.inject({
+    method: "POST",
+    url: "/financial-imports/csv/inspect",
+    headers: { cookie: authCookie(), "content-type": "application/octet-stream" },
+    payload: excessiveColumns,
+  });
+  assert.equal(excessiveColumnsInspection.statusCode, 422);
+  assert.equal(excessiveColumnsInspection.json().message, "O arquivo CSV deve ter no máximo 100 colunas.");
+  const excessiveColumnsUpload = await csv.app.inject({
+    method: "POST",
+    url: "/financial-imports",
+    headers: {
+      cookie: authCookie(),
+      "content-type": "application/octet-stream",
+      "x-file-name": "too-many-columns.csv",
+      "x-file-format": "csv",
+      "x-csv-mapping": encodeURIComponent(JSON.stringify({
+        delimiter: ";", encoding: "utf-8", hasHeader: false, dateFormat: "yyyy-MM-dd", numberFormat: "pt-BR",
+        columns: { date: 0, description: 1, amount: 2, credit: null, debit: null, externalId: null },
+      })),
+    },
+    payload: excessiveColumns,
+  });
+  assert.equal(excessiveColumnsUpload.statusCode, 422);
+  assert.equal(excessiveColumnsUpload.json().message, "O arquivo CSV deve ter no máximo 100 colunas.");
+  await csv.app.close();
+
   const oversized = createTestApp();
   const oversizedResponse = await oversized.app.inject({
     method: "POST",
@@ -726,5 +821,117 @@ test("impossible dates, zero values, and repeated source sequences remain in pre
     headers: { cookie: authCookie() },
   });
   assert.equal(afterConfirmation.json().items.filter((item: FinancialImportItem) => item.validationStatus === "invalid").length, 3);
+  await app.close();
+});
+
+test("CSV inspection and reusable mappings remain scoped to the current wallet", async () => {
+  const { app } = createTestApp(null);
+  const inspection = await app.inject({
+    method: "POST", url: "/financial-imports/csv/inspect",
+    headers: { cookie: authCookie(), "content-type": "application/octet-stream" },
+    payload: Buffer.from("Data;Descrição;Valor\n31/10/2026;Mercado;-10,25\n"),
+  });
+  assert.equal(inspection.statusCode, 200);
+  assert.equal(inspection.json().detectedConfiguration.delimiter, ";");
+  assert.deepEqual(inspection.json().suggestedMapping, { date: 0, description: 1, amount: 2, credit: null, debit: null, externalId: null });
+
+  const incompleteColumns = { date: 0, description: null, amount: null, credit: null, debit: null, externalId: null };
+  const wrongInspectionConfiguration = {
+    delimiter: ",", encoding: "utf-8", hasHeader: true, dateFormat: "yyyy-MM-dd", numberFormat: "en-US",
+    columns: incompleteColumns,
+  };
+  const wrongInspection = await app.inject({
+    method: "POST", url: "/financial-imports/csv/inspect",
+    headers: { cookie: authCookie(), "content-type": "application/octet-stream", "x-csv-mapping": encodeURIComponent(JSON.stringify(wrongInspectionConfiguration)) },
+    payload: Buffer.from("Data;Descrição;Valor\n31/10/2026;Mercado;-10,25\n"),
+  });
+  assert.equal(wrongInspection.statusCode, 200);
+  assert.equal(wrongInspection.json().columns.length, 1);
+  const correctedInspection = await app.inject({
+    method: "POST", url: "/financial-imports/csv/inspect",
+    headers: { cookie: authCookie(), "content-type": "application/octet-stream", "x-csv-mapping": encodeURIComponent(JSON.stringify({ ...wrongInspectionConfiguration, delimiter: ";", dateFormat: "dd/MM/yyyy", numberFormat: "pt-BR" })) },
+    payload: Buffer.from("Data;Descrição;Valor\n31/10/2026;Mercado;-10,25\n"),
+  });
+  assert.equal(correctedInspection.statusCode, 200);
+  assert.equal(correctedInspection.json().columns.length, 3);
+  assert.deepEqual(correctedInspection.json().detectedConfiguration, {
+    delimiter: ";", encoding: "utf-8", hasHeader: true, dateFormat: "dd/MM/yyyy", numberFormat: "pt-BR",
+  });
+
+  const configuration = {
+    delimiter: ";", encoding: "utf-8", hasHeader: true, dateFormat: "dd/MM/yyyy", numberFormat: "pt-BR",
+    columns: { date: 0, description: 1, amount: 2, credit: null, debit: null, externalId: null },
+  };
+  const created = await app.inject({
+    method: "POST", url: "/financial-imports/csv-mappings", headers: { cookie: authCookie() },
+    payload: { name: "Banco principal", configuration },
+  });
+  assert.equal(created.statusCode, 201);
+  const mappingId = created.json().id as string;
+  const otherUserList = await app.inject({ method: "GET", url: "/financial-imports/csv-mappings", headers: { cookie: authCookie(SESSION_B) } });
+  assert.deepEqual(otherUserList.json(), { items: [] });
+  const crossWalletUpload = await app.inject({
+    method: "POST", url: "/financial-imports",
+    headers: { cookie: authCookie(SESSION_B), "content-type": "application/octet-stream", "x-file-name": "statement.csv", "x-file-format": "csv", "x-csv-mapping-id": mappingId },
+    payload: Buffer.from("Data;Descrição;Valor\n31/10/2026;Mercado;-10,25\n"),
+  });
+  assert.equal(crossWalletUpload.statusCode, 404);
+
+  const malformedQuoteUpload = await app.inject({
+    method: "POST", url: "/financial-imports",
+    headers: { cookie: authCookie(), "content-type": "application/octet-stream", "x-file-name": "malformed.csv", "x-file-format": "csv", "x-csv-mapping-id": mappingId },
+    payload: Buffer.from('Data;Descrição;Valor\n31/10/2026;"Mercado"alterado;-10,25\n'),
+  });
+  assert.equal(malformedQuoteUpload.statusCode, 422);
+  assert.match(malformedQuoteUpload.json().message, /conteúdo inválido após aspas/i);
+
+  const uploadResponse = await app.inject({
+    method: "POST", url: "/financial-imports",
+    headers: { cookie: authCookie(), "content-type": "application/octet-stream", "x-file-name": "statement.csv", "x-file-format": "csv", "x-csv-mapping-id": mappingId },
+    payload: Buffer.from("Data;Descrição;Valor\n31/10/2026;Mercado;-10,25\n"),
+  });
+  assert.equal(uploadResponse.statusCode, 201);
+  const detail = await app.inject({ method: "GET", url: `/financial-imports/${uploadResponse.json().id}`, headers: { cookie: authCookie() } });
+  assert.equal(detail.json().items[0].amount, "10.25");
+  assert.equal(detail.json().items[0].type, "expense");
+
+  const provenanceConfiguration = {
+    ...configuration,
+    columns: { ...configuration.columns, externalId: 3 },
+  };
+  const provenanceUpload = await app.inject({
+    method: "POST", url: "/financial-imports",
+    headers: {
+      cookie: authCookie(),
+      "content-type": "application/octet-stream",
+      "x-file-name": "provenance.csv",
+      "x-file-format": "csv",
+      "x-csv-mapping": encodeURIComponent(JSON.stringify(provenanceConfiguration)),
+    },
+    payload: Buffer.from(`Data;Descrição;Valor;ID\n\n31/10/2026;"Primeira\nlinha";1,00;ok\n\n01/11/2026;Inválida;2,00;${"x".repeat(513)}\n`),
+  });
+  assert.equal(provenanceUpload.statusCode, 201);
+  const provenanceDetail = await app.inject({
+    method: "GET", url: `/financial-imports/${provenanceUpload.json().id}`,
+    headers: { cookie: authCookie() },
+  });
+  assert.equal(provenanceDetail.statusCode, 200);
+  assert.equal(provenanceDetail.json().items[1].sequence, 2);
+  assert.equal(provenanceDetail.json().items[1].validationStatus, "invalid");
+  assert.match(provenanceDetail.json().items[1].errorMessage, /Linha 6:.*identificador externo/i);
+
+  const patched = await app.inject({
+    method: "PATCH", url: `/financial-imports/csv-mappings/${mappingId}`, headers: { cookie: authCookie() },
+    payload: { name: "Banco atualizado", configuration },
+  });
+  assert.equal(patched.statusCode, 200);
+  assert.equal(patched.json().name, "Banco atualizado");
+
+  const conflictingMappingSources = await app.inject({
+    method: "POST", url: "/financial-imports",
+    headers: { cookie: authCookie(), "content-type": "application/octet-stream", "x-file-name": "statement.csv", "x-file-format": "csv", "x-csv-mapping-id": mappingId, "x-csv-mapping": encodeURIComponent(JSON.stringify(configuration)) },
+    payload: Buffer.from("Data;Descrição;Valor\n31/10/2026;Mercado;-10,25\n"),
+  });
+  assert.equal(conflictingMappingSources.statusCode, 400);
   await app.close();
 });

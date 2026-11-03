@@ -2,6 +2,9 @@ import { randomUUID } from "node:crypto";
 import type { Database, QueryExecutor } from "../database.js";
 import { FinancialImportError } from "./financial-imports.errors.js";
 import type {
+  CreateCsvMappingInput,
+  CsvImportConfiguration,
+  CsvMapping,
   CreateFinancialImportInput,
   FinancialImportFormat,
   FinancialImportItem,
@@ -13,6 +16,14 @@ import type {
   ParsedFinancialImportItem,
   UpdateFinancialImportItemInput,
 } from "./financial-imports.types.js";
+
+interface CsvMappingRow {
+  id: string;
+  name: string;
+  configuration: CsvImportConfiguration;
+  created_at: string | Date;
+  updated_at: string | Date;
+}
 
 interface ImportSessionRow {
   id: string;
@@ -97,6 +108,16 @@ function dateValue(value: string | Date | null): string {
 function timestampValue(value: string | Date | null): string | null {
   if (value === null) return null;
   return value instanceof Date ? value.toISOString() : new Date(value).toISOString();
+}
+
+function mapCsvMapping(row: CsvMappingRow): CsvMapping {
+  return {
+    id: row.id,
+    name: row.name,
+    configuration: row.configuration,
+    createdAt: timestampValue(row.created_at)!,
+    updatedAt: timestampValue(row.updated_at)!,
+  };
 }
 
 function mapSession(row: ImportSessionRow): FinancialImportSession {
@@ -761,6 +782,65 @@ export class PostgresFinancialImportsRepository implements FinancialImportReposi
     });
   }
 
+  async listCsvMappings(userId: string, walletId: string): Promise<CsvMapping[]> {
+    const result = await this.database.query<CsvMappingRow>(
+      `SELECT mapping.id, mapping.name, mapping.configuration, mapping.created_at, mapping.updated_at
+       FROM financial_import_csv_mappings AS mapping
+       JOIN wallet_members AS member ON member.wallet_id = mapping.wallet_id
+       WHERE mapping.wallet_id = $1 AND member.user_id = $2
+       ORDER BY lower(mapping.name), mapping.id`,
+      [walletId, userId],
+    );
+    return result.rows.map(mapCsvMapping);
+  }
+
+  async getCsvMapping(userId: string, walletId: string, mappingId: string): Promise<CsvMapping | null> {
+    const result = await this.database.query<CsvMappingRow>(
+      `SELECT mapping.id, mapping.name, mapping.configuration, mapping.created_at, mapping.updated_at
+       FROM financial_import_csv_mappings AS mapping
+       JOIN wallet_members AS member ON member.wallet_id = mapping.wallet_id
+       WHERE mapping.id = $1 AND mapping.wallet_id = $2 AND member.user_id = $3`,
+      [mappingId, walletId, userId],
+    );
+    return result.rows[0] ? mapCsvMapping(result.rows[0]) : null;
+  }
+
+  async createCsvMapping(userId: string, walletId: string, input: CreateCsvMappingInput): Promise<CsvMapping> {
+    try {
+      const result = await this.database.query<CsvMappingRow>(
+        `INSERT INTO financial_import_csv_mappings (id, wallet_id, created_by_user_id, name, configuration)
+         SELECT $1, wallet.id, $2, $3, $4::jsonb
+         FROM wallets AS wallet
+         JOIN wallet_members AS member ON member.wallet_id = wallet.id
+         WHERE wallet.id = $5 AND member.user_id = $2
+         RETURNING id, name, configuration, created_at, updated_at`,
+        [randomUUID(), userId, input.name, JSON.stringify(input.configuration), walletId],
+      );
+      if (!result.rows[0]) throw new FinancialImportError("A carteira selecionada não foi encontrada.", 404);
+      return mapCsvMapping(result.rows[0]);
+    } catch (error) {
+      if (isUniqueViolation(error)) throw new FinancialImportError("Já existe um modelo CSV com esse nome nesta carteira.", 409);
+      throw error;
+    }
+  }
+
+  async updateCsvMapping(userId: string, walletId: string, mappingId: string, input: CreateCsvMappingInput): Promise<CsvMapping | null> {
+    try {
+      const result = await this.database.query<CsvMappingRow>(
+        `UPDATE financial_import_csv_mappings AS mapping
+         SET name = $1, configuration = $2::jsonb, updated_at = now()
+         WHERE mapping.id = $3 AND mapping.wallet_id = $4
+           AND EXISTS (SELECT 1 FROM wallet_members AS member WHERE member.wallet_id = mapping.wallet_id AND member.user_id = $5)
+         RETURNING id, name, configuration, created_at, updated_at`,
+        [input.name, JSON.stringify(input.configuration), mappingId, walletId, userId],
+      );
+      return result.rows[0] ? mapCsvMapping(result.rows[0]) : null;
+    } catch (error) {
+      if (isUniqueViolation(error)) throw new FinancialImportError("Já existe um modelo CSV com esse nome nesta carteira.", 409);
+      throw error;
+    }
+  }
+
   private async getSession(
     executor: QueryExecutor,
     walletId: string,
@@ -829,4 +909,8 @@ export class PostgresFinancialImportsRepository implements FinancialImportReposi
       [importId, walletId, status ?? null],
     );
   }
+}
+
+function isUniqueViolation(error: unknown): boolean {
+  return typeof error === "object" && error !== null && "code" in error && error.code === "23505";
 }

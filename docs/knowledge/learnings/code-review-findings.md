@@ -1,7 +1,7 @@
 # Aprendizados de Code Review
 
-**Status:** auditado até o PR #46
-**Última revisão:** 26/10/2026
+**Status:** auditado até o PR #46, com ocorrências confirmadas do PR #56
+**Última revisão:** 03/11/2026
 
 Esta nota converte os achados históricos do Agent de Code Review em regras preventivas. O inventário e os links das revisões estão em [`code-review-audit.md`](code-review-audit.md).
 
@@ -13,6 +13,7 @@ Esta nota converte os achados históricos do Agent de Code Review em regras prev
 - **Impacto:** 404, prévia vazia, confirmação incorreta, falhas no cliente e mensagens que escondem a causa.
 - **Regra preventiva:** toda alteração de contrato precisa de uma única definição coerente de rota, formato, nulabilidade, estado e erro em todas as camadas.
 - **Detecção:** teste de integração da rota real e, para fluxos críticos, teste Web/API com respostas reais ou fixtures derivadas do contrato da API.
+- **Ocorrência no PR #56, revisão #5756708661 (`f450e144b68d18ecea22bf09fc57d64992ff05f0`):** a API permitia descrição CSV opcional, mas a Web a marcava como obrigatória; testes PostgreSQL com parser injetado também continuavam omitindo o novo header de mapeamento obrigatório. A correção alinha validação e testes ao contrato real. A prevenção é testar tanto o contrato mínimo válido quanto consumidores antigos sempre que uma pré-condição de rota mudar.
 
 ## 2. Dados inválidos também precisam ser persistíveis
 
@@ -49,6 +50,8 @@ Esta nota converte os achados históricos do Agent de Code Review em regras prev
 - **Impacto:** dados financeiros antigos sob outra carteira, feedback contraditório e perda silenciosa de alterações.
 - **Regra preventiva:** associe cada requisição ao contexto e à versão do rascunho; descarte resposta obsoleta e bloqueie ou mescle edições concorrentes explicitamente.
 - **Detecção:** testes com promises controladas cobrindo troca A → B → A, falha seguida de recuperação e edição durante resposta pendente.
+- **Ocorrência no PR #56, revisão #5756708661 (`f450e144b68d18ecea22bf09fc57d64992ff05f0`):** alterar delimitador, encoding, cabeçalho ou formatos mantinha colunas e amostra derivadas da inspeção anterior. A correção reinspeciona de forma cancelável, descarta respostas obsoletas e bloqueia salvar modelo ou importar até a resposta da configuração atual. A prevenção é tratar toda opção que muda parsing como nova versão da mesma operação assíncrona e cobrir detecção incorreta seguida de correção manual.
+- **Ocorrência no PR #56, revisão #5757200870 (`783d78c55e7f3ed84fa973d16537a68fd4995649`):** uma falha na detecção inicial deixava a configuração nula e ocultava o próprio painel necessário à recuperação. A correção mantém um caminho manual após falha e permite nova inspeção. A prevenção é testar o estado de erro inicial como parte funcional do fluxo, não apenas a recuperação depois de uma primeira resposta válida.
 
 ## 6. Migrações devem preservar personalizações e semântica
 
@@ -130,3 +133,17 @@ Esta nota converte os achados históricos do Agent de Code Review em regras prev
 - **Correção aplicada:** a validação do épico foi extraída e `resume` passou a consultar `parent` e falhar antes de criar execução, comentar no Jira, preparar a worktree ou iniciar o Codex.
 - **Regra preventiva:** toda entrada que inicia ou retoma efeitos externos revalida as autorizações atuais; estado persistido comprova histórico, não permissão vigente.
 - **Detecção:** testes negativos por caminho de entrada, incluindo autorização revogada, recurso transferido, vínculo ausente e confirmação de que nenhum efeito externo ocorreu.
+
+## 13. Parsers devem separar presença, validade, identidade e diagnóstico
+
+- **Padrão:** `parser-presence-validity-provenance`.
+- **Evidência:** PR #56, revisão #5756708661, SHA `f450e144b68d18ecea22bf09fc57d64992ff05f0`.
+- **Problema confirmado:** o CSV tratava conteúdo monetário inválido como coluna vazia no modo crédito/débito, removia `NUL` silenciosamente e usava o número físico da linha como sequência persistida limitada a 10.000.
+- **Causa-raiz:** valores semanticamente diferentes compartilhavam `null`, a sanitização precedia a validação e a localização usada no diagnóstico também era usada como identidade do item.
+- **Impacto:** uma linha com um lado inválido e outro válido podia ser importada, data ou identificador podia mudar sem aviso, e arquivos com poucas movimentações após muitas linhas vazias ou campos multilinha geravam sequências inválidas.
+- **Regra preventiva:** parsers representam separadamente vazio, zero, válido e inválido; nunca alteram silenciosamente campos de identidade ou contrato; usam sequência ordinal para persistência e conservam a linha física apenas como proveniência diagnóstica.
+- **Detecção:** matriz de testes para ambos os lados crédito/débito, zero, vazio, sintaxe inválida e limites; casos com `NUL` em data, descrição e identificador; cabeçalho, linhas vazias, campos multilinha e linha física acima do limite com quantidade válida de itens.
+- **Ocorrência no PR #56, revisão #5757200870 (`783d78c55e7f3ed84fa973d16537a68fd4995649`):** o parser não distinguia campo sem aspas, campo entre aspas e campo já fechado; caracteres posteriores podiam ser concatenados e mudar valores silenciosamente. A mesma rodada mostrou que validar `amount` apenas contra o par completo aceitava combinações financeiras parciais. A correção usa estados explícitos de aspas e exige uma das duas formas completas em API e banco. A prevenção cobre aspas inesperadas, escapes, conteúdo após fechamento e a matriz integral de nulabilidade do formato financeiro.
+- **Ocorrência no PR #56, revisão #5757414706 (`b102de15418441fdb5e66c9d5f61ccae335e61d2`):** a Web validava somente a existência dos índices mapeados e permitia que dois campos reutilizassem a mesma coluna, embora a API recusasse a configuração; além disso, a linha física era preservada apenas nos erros produzidos pelo parser e se perdia nas validações posteriores do serviço. A correção exige unicidade global dos índices também na interface e transporta a proveniência física separadamente da sequência ordinal até a normalização. A prevenção é testar a mesma matriz de configuração em todas as camadas e propagar metadados diagnósticos por toda a cadeia, não apenas no ponto inicial de parsing.
+- **Ocorrência no PR #56, revisão #5759336883 (`89a5df147aa7de17552f945593e3452b71b34ada`):** o limite de 10.000 movimentações era verificado somente depois de materializar e transformar todos os registros; a inspeção também processava o arquivo inteiro para retornar dez amostras. Um CSV de até 10 MB com milhões de linhas curtas podia amplificar memória e bloquear o event loop. A correção conta registros durante a leitura, rejeita o 10.001º antes do conteúdo posterior, separa o cabeçalho da cota e retém apenas o necessário para inspeção ou upload. A prevenção é aplicar limites no primeiro ponto de expansão, cobrir inspeção e processamento final e testar que conteúdo posterior malformado nem chega a ser consumido.
+- **Ocorrência no PR #56, revisão #5759709787 (`fac17472100ff88ae69c055d94bac8f152011a58`):** a correção do limite de registros não auditou a outra dimensão expansível do mesmo parser: colunas continuavam acumuladas até o fim da linha antes da validação de 100. Uma única linha podia criar milhões de entradas. A correção rejeita assim que um separador comprova a existência da 101ª coluna, inclusive após campo entre aspas, antes de consumir seu conteúdo. A prevenção é inventariar todas as coleções, buffers e transformações quando surgir um problema de amplificação, aplicando cada limite no primeiro ponto em que o excesso fica comprovado.

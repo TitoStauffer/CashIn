@@ -7,6 +7,9 @@ import { FinancialSidebar } from '../layout/FinancialSidebar'
 import { formatBrazilianCurrency } from '../money/currency'
 import { useWallet } from '../wallets/useWallet'
 import type {
+  CsvColumnMapping,
+  CsvImportConfiguration,
+  CsvMappingTemplate,
   FinancialImportFormat,
   FinancialImportItem,
   FinancialImportItemInput,
@@ -29,7 +32,25 @@ type WalletOperation = {
   generation: number
 }
 
+type CsvInspectionOptions = {
+  configuration?: CsvImportConfiguration
+  columns?: CsvColumnMapping
+  resetModel?: boolean
+  rememberDetected?: boolean
+}
+
 const maxFileSize = 10 * 1024 * 1024
+
+function createDefaultCsvConfiguration(): CsvImportConfiguration {
+  return {
+    delimiter: ',',
+    encoding: 'utf-8',
+    hasHeader: true,
+    dateFormat: 'dd/MM/yyyy',
+    numberFormat: 'pt-BR',
+    columns: { date: 0, description: null, amount: null, credit: null, debit: null, externalId: null },
+  }
+}
 
 const statusLabels: Record<FinancialImportStatus, string> = {
   processing: 'Processando',
@@ -71,6 +92,20 @@ const typeLabels: Record<FinancialImportItemType, string> = {
 function getFileFormat(fileName: string): FinancialImportFormat | null {
   const extension = fileName.split('.').pop()?.toLowerCase()
   return extension === 'ofx' || extension === 'csv' ? extension : null
+}
+
+function isCsvConfigurationValid(configuration: CsvImportConfiguration | null, columns: Array<{ index: number }>) {
+  if (!configuration) return false
+  const availableIndexes = new Set(columns.map((column) => column.index))
+  const mappedIndexes = Object.values(configuration.columns).filter((index): index is number => index !== null)
+  const usesAmount = Number.isInteger(configuration.columns.amount)
+  const usesCreditAndDebit = Number.isInteger(configuration.columns.credit) && Number.isInteger(configuration.columns.debit)
+  const usesOnlyAmount = usesAmount && configuration.columns.credit === null && configuration.columns.debit === null
+  const usesOnlyCreditAndDebit = !usesAmount && usesCreditAndDebit
+  return mappedIndexes.every((index) => availableIndexes.has(index))
+    && new Set(mappedIndexes).size === mappedIndexes.length
+    && Number.isInteger(configuration.columns.date)
+    && (usesOnlyAmount || usesOnlyCreditAndDebit)
 }
 
 function formatFileSize(bytes: number) {
@@ -137,6 +172,7 @@ export function FinancialImportsPage(props: FinancialImportsPageProps) {
 function FinancialImportsWalletPage({ userEmail, isLoggingOut, onLogout }: FinancialImportsPageProps) {
   const { activeWalletId, activeWallet } = useWallet()
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const csvInspectionControllerRef = useRef<AbortController | null>(null)
   const activeWalletIdRef = useRef(activeWalletId)
   const walletGenerationRef = useRef(0)
   const [history, setHistory] = useState<FinancialImportSession[]>([])
@@ -145,6 +181,14 @@ function FinancialImportsWalletPage({ userEmail, isLoggingOut, onLogout }: Finan
   const [incomeCategories, setIncomeCategories] = useState<Category[]>([])
   const [expenseCategories, setExpenseCategories] = useState<Category[]>([])
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
+  const [csvConfiguration, setCsvConfiguration] = useState<CsvImportConfiguration | null>(null)
+  const [detectedCsvConfiguration, setDetectedCsvConfiguration] = useState<CsvImportConfiguration | null>(null)
+  const [csvColumns, setCsvColumns] = useState<Array<{ index: number; label: string }>>([])
+  const [csvSample, setCsvSample] = useState<Array<{ lineNumber: number; values: string[] }>>([])
+  const [csvMappings, setCsvMappings] = useState<CsvMappingTemplate[]>([])
+  const [selectedCsvMappingId, setSelectedCsvMappingId] = useState('')
+  const [csvMappingName, setCsvMappingName] = useState('')
+  const [isCsvMappingDirty, setIsCsvMappingDirty] = useState(false)
   const [loadedWalletId, setLoadedWalletId] = useState<string | null>(null)
   const [pendingAction, setPendingAction] = useState<string | null>(null)
   const [loadError, setLoadError] = useState('')
@@ -173,12 +217,14 @@ function FinancialImportsWalletPage({ userEmail, isLoggingOut, onLogout }: Finan
 
     Promise.all([
       importsApi.list(controller.signal),
+      importsApi.listCsvMappings(controller.signal),
       categoriesApi.list('income', controller.signal),
       categoriesApi.list('expense', controller.signal),
     ])
-      .then(([imports, incomes, expenses]) => {
+      .then(([imports, mappings, incomes, expenses]) => {
         if (controller.signal.aborted || !isCurrentWalletOperation(operation)) return
         setHistory(imports.items)
+        setCsvMappings(mappings.items)
         setIncomeCategories(incomes.items)
         setExpenseCategories(expenses.items)
         setLoadError('')
@@ -187,6 +233,13 @@ function FinancialImportsWalletPage({ userEmail, isLoggingOut, onLogout }: Finan
         setSelectedImport(null)
         setDrafts({})
         setSelectedFile(null)
+        setCsvConfiguration(null)
+        setDetectedCsvConfiguration(null)
+        setCsvColumns([])
+        setCsvSample([])
+        setSelectedCsvMappingId('')
+        setCsvMappingName('')
+        setIsCsvMappingDirty(false)
         setPendingAction(null)
         if (fileInputRef.current) fileInputRef.current.value = ''
       })
@@ -249,27 +302,171 @@ function FinancialImportsWalletPage({ userEmail, isLoggingOut, onLogout }: Finan
   const isLoading = loadedWalletId !== activeWalletId
   const isSelectedImportBusy = selectedImport ? isImportBusy(selectedImport.status) : false
 
+  useEffect(() => () => csvInspectionControllerRef.current?.abort(), [])
+
+  function clearCsvSetup() {
+    csvInspectionControllerRef.current?.abort()
+    csvInspectionControllerRef.current = null
+    setPendingAction((current) => current === 'inspect-csv' ? null : current)
+    setCsvConfiguration(null)
+    setDetectedCsvConfiguration(null)
+    setCsvColumns([])
+    setCsvSample([])
+    setSelectedCsvMappingId('')
+    setCsvMappingName('')
+    setIsCsvMappingDirty(false)
+  }
+
   function handleFileChange(event: ChangeEvent<HTMLInputElement>) {
     setFormError('')
     setSuccessMessage('')
     const file = event.target.files?.[0] ?? null
     if (!file) {
       setSelectedFile(null)
+      clearCsvSetup()
       return
     }
     if (!getFileFormat(file.name)) {
       setSelectedFile(null)
+      clearCsvSetup()
       event.target.value = ''
       setFormError('Selecione um arquivo com extensão .ofx ou .csv.')
       return
     }
     if (file.size > maxFileSize) {
       setSelectedFile(null)
+      clearCsvSetup()
       event.target.value = ''
       setFormError('O arquivo ultrapassa o limite de 10 MB.')
       return
     }
     setSelectedFile(file)
+    if (getFileFormat(file.name) === 'csv') void inspectCsv(file, { rememberDetected: true })
+    else clearCsvSetup()
+  }
+
+  async function inspectCsv(file: File, options: CsvInspectionOptions = {}) {
+    csvInspectionControllerRef.current?.abort()
+    const controller = new AbortController()
+    csvInspectionControllerRef.current = controller
+    const operation = captureWalletOperation()
+    setPendingAction('inspect-csv')
+    setFormError('')
+    setCsvColumns([])
+    setCsvSample([])
+    try {
+      const inspection = options.configuration
+        ? await importsApi.inspectCsv(file, controller.signal, options.configuration)
+        : await importsApi.inspectCsv(file, controller.signal)
+      if (controller.signal.aborted || !isCurrentWalletOperation(operation)) return
+      const inspectedConfiguration = {
+        ...inspection.detectedConfiguration,
+        columns: options.columns ?? inspection.suggestedMapping,
+      }
+      setCsvConfiguration(inspectedConfiguration)
+      if (options.rememberDetected) setDetectedCsvConfiguration(inspectedConfiguration)
+      setCsvColumns(inspection.columns)
+      setCsvSample(inspection.sample)
+      if (options.resetModel !== false) {
+        setSelectedCsvMappingId('')
+        setCsvMappingName('')
+        setIsCsvMappingDirty(false)
+      }
+    } catch (error) {
+      if (controller.signal.aborted || !isCurrentWalletOperation(operation)) return
+      if (!options.configuration) setCsvConfiguration(createDefaultCsvConfiguration())
+      if (options.rememberDetected) setDetectedCsvConfiguration(null)
+      setCsvColumns([])
+      setCsvSample([])
+      setFormError(getImportError(error, 'Não foi possível analisar o CSV. Confira o arquivo e tente novamente.'))
+    } finally {
+      if (!controller.signal.aborted && isCurrentWalletOperation(operation)) setPendingAction(null)
+      if (csvInspectionControllerRef.current === controller) csvInspectionControllerRef.current = null
+    }
+  }
+
+  function retryCsvInspection() {
+    if (!selectedFile || !csvConfiguration) return
+    void inspectCsv(selectedFile, {
+      configuration: csvConfiguration,
+      columns: selectedCsvMappingId ? csvConfiguration.columns : undefined,
+      resetModel: false,
+    })
+  }
+
+  function updateCsvConfiguration(changes: Partial<CsvImportConfiguration>, preserveColumns: boolean) {
+    if (!csvConfiguration || !selectedFile) return
+    const nextConfiguration = { ...csvConfiguration, ...changes }
+    setCsvConfiguration(nextConfiguration)
+    setIsCsvMappingDirty(Boolean(selectedCsvMappingId))
+    void inspectCsv(selectedFile, {
+      configuration: nextConfiguration,
+      columns: preserveColumns ? nextConfiguration.columns : undefined,
+      resetModel: false,
+    })
+  }
+
+  function updateCsvColumnMapping(field: keyof CsvImportConfiguration['columns'], value: string) {
+    setCsvConfiguration((current) => current ? {
+      ...current,
+      columns: { ...current.columns, [field]: value === '' ? null : Number(value) },
+    } : current)
+    setIsCsvMappingDirty(Boolean(selectedCsvMappingId))
+  }
+
+  function selectCsvMapping(mappingId: string) {
+    setSelectedCsvMappingId(mappingId)
+    const mapping = csvMappings.find((item) => item.id === mappingId)
+    if (!mapping) {
+      setCsvMappingName('')
+      setIsCsvMappingDirty(false)
+      if (detectedCsvConfiguration && selectedFile) {
+        setCsvConfiguration(detectedCsvConfiguration)
+        void inspectCsv(selectedFile, {
+          configuration: detectedCsvConfiguration,
+          columns: detectedCsvConfiguration.columns,
+          resetModel: false,
+        })
+      }
+      return
+    }
+    setCsvMappingName(mapping.name)
+    setCsvConfiguration(mapping.configuration)
+    setIsCsvMappingDirty(false)
+    if (selectedFile) {
+      void inspectCsv(selectedFile, {
+        configuration: mapping.configuration,
+        columns: mapping.configuration.columns,
+        resetModel: false,
+      })
+    }
+  }
+
+  async function saveCsvMapping() {
+    if (!csvConfiguration || !csvMappingName.trim()) {
+      setFormError('Informe um nome para salvar este modelo de CSV.')
+      return
+    }
+    const operation = captureWalletOperation()
+    setPendingAction('save-csv-mapping')
+    setFormError('')
+    try {
+      const mapping = selectedCsvMappingId
+        ? await importsApi.updateCsvMapping(selectedCsvMappingId, csvMappingName.trim(), csvConfiguration)
+        : await importsApi.createCsvMapping(csvMappingName.trim(), csvConfiguration)
+      if (!isCurrentWalletOperation(operation)) return
+      setCsvMappings((current) => [mapping, ...current.filter((item) => item.id !== mapping.id)])
+      setSelectedCsvMappingId(mapping.id)
+      setCsvMappingName(mapping.name)
+      setCsvConfiguration(mapping.configuration)
+      setIsCsvMappingDirty(false)
+      setSuccessMessage(`Modelo “${mapping.name}” salvo para esta carteira.`)
+    } catch (error) {
+      if (!isCurrentWalletOperation(operation)) return
+      setFormError(getImportError(error, 'Não foi possível salvar o modelo de CSV.'))
+    } finally {
+      if (isCurrentWalletOperation(operation)) setPendingAction(null)
+    }
   }
 
   async function handleUpload(event: FormEvent<HTMLFormElement>) {
@@ -281,13 +478,24 @@ function FinancialImportsWalletPage({ userEmail, isLoggingOut, onLogout }: Finan
     }
     const format = getFileFormat(selectedFile.name)
     if (!format) return
+    if (format === 'csv' && !isCsvConfigurationValid(csvConfiguration, csvColumns)) {
+      setFormError('Mapeie a data e o valor — ou as colunas de crédito e débito — para continuar.')
+      return
+    }
 
     const operation = captureWalletOperation()
     setPendingAction('upload')
     setFormError('')
     setSuccessMessage('')
     try {
-      const session = await importsApi.upload(selectedFile, format)
+      const csvMapping = format === 'csv' && csvConfiguration
+        ? selectedCsvMappingId && !isCsvMappingDirty
+          ? { mappingId: selectedCsvMappingId } as const
+          : { configuration: csvConfiguration } as const
+        : undefined
+      const session = csvMapping
+        ? await importsApi.upload(selectedFile, format, csvMapping)
+        : await importsApi.upload(selectedFile, format)
       if (!isCurrentWalletOperation(operation)) return
       setSelectedImport(session)
       setPollFailureCount(0)
@@ -295,6 +503,7 @@ function FinancialImportsWalletPage({ userEmail, isLoggingOut, onLogout }: Finan
       setDrafts(Object.fromEntries((session.items ?? []).map((item) => [item.id, createDraft(item)])))
       setHistory((current) => [session, ...current.filter((item) => item.id !== session.id)])
       setSelectedFile(null)
+      clearCsvSetup()
       if (fileInputRef.current) fileInputRef.current.value = ''
       setSuccessMessage('Arquivo recebido. Acompanhe o processamento e revise a prévia antes de confirmar.')
     } catch (error) {
@@ -482,7 +691,32 @@ function FinancialImportsWalletPage({ userEmail, isLoggingOut, onLogout }: Finan
                 />
                 <small>{selectedFile ? `${selectedFile.name} · ${formatFileSize(selectedFile.size)}` : 'O arquivo será processado temporariamente e não ficará armazenado.'}</small>
               </label>
-              <button className="imports-primary-button" type="submit" disabled={!selectedFile || pendingAction !== null || isLoading || Boolean(loadError) || isSelectedImportBusy}>
+              {selectedFile && getFileFormat(selectedFile.name) === 'csv' && pendingAction === 'inspect-csv' && (
+                <p className="imports-csv-loading" role="status"><span className="imports-spinner" aria-hidden="true" />Analisando estrutura do CSV…</p>
+              )}
+              {selectedFile && getFileFormat(selectedFile.name) === 'csv' && csvConfiguration && (
+                <CsvConfigurationPanel
+                  configuration={csvConfiguration}
+                  columns={csvColumns}
+                  sample={csvSample}
+                  mappings={csvMappings}
+                  selectedMappingId={selectedCsvMappingId}
+                  mappingName={csvMappingName}
+                  mappingDirty={isCsvMappingDirty}
+                  disabled={pendingAction !== null && pendingAction !== 'inspect-csv'}
+                  inspecting={pendingAction === 'inspect-csv'}
+                  onConfigurationChange={updateCsvConfiguration}
+                  onColumnChange={updateCsvColumnMapping}
+                  onMappingSelect={selectCsvMapping}
+                  onMappingNameChange={(name) => {
+                    setCsvMappingName(name)
+                    setIsCsvMappingDirty(Boolean(selectedCsvMappingId))
+                  }}
+                  onSaveMapping={() => void saveCsvMapping()}
+                  onRetryInspection={retryCsvInspection}
+                />
+              )}
+              <button className="imports-primary-button" type="submit" disabled={!selectedFile || pendingAction !== null || isLoading || Boolean(loadError) || isSelectedImportBusy || (getFileFormat(selectedFile?.name ?? '') === 'csv' && !isCsvConfigurationValid(csvConfiguration, csvColumns))}>
                 {pendingAction === 'upload' ? 'Enviando arquivo…' : 'Enviar e preparar prévia'}
               </button>
             </form>
@@ -584,6 +818,115 @@ function FinancialImportsWalletPage({ userEmail, isLoggingOut, onLogout }: Finan
         </div>
       </main>
     </>
+  )
+}
+
+type CsvConfigurationPanelProps = {
+  configuration: CsvImportConfiguration
+  columns: Array<{ index: number; label: string }>
+  sample: Array<{ lineNumber: number; values: string[] }>
+  mappings: CsvMappingTemplate[]
+  selectedMappingId: string
+  mappingName: string
+  mappingDirty: boolean
+  disabled: boolean
+  inspecting: boolean
+  onConfigurationChange: (changes: Partial<CsvImportConfiguration>, preserveColumns: boolean) => void
+  onColumnChange: (field: keyof CsvImportConfiguration['columns'], value: string) => void
+  onMappingSelect: (mappingId: string) => void
+  onMappingNameChange: (name: string) => void
+  onSaveMapping: () => void
+  onRetryInspection: () => void
+}
+
+function CsvConfigurationPanel({
+  configuration,
+  columns,
+  sample,
+  mappings,
+  selectedMappingId,
+  mappingName,
+  mappingDirty,
+  disabled,
+  inspecting,
+  onConfigurationChange,
+  onColumnChange,
+  onMappingSelect,
+  onMappingNameChange,
+  onSaveMapping,
+  onRetryInspection,
+}: CsvConfigurationPanelProps) {
+  const isMappingReady = isCsvConfigurationValid(configuration, columns)
+  const columnFields: Array<{ key: keyof CsvImportConfiguration['columns']; label: string; required?: boolean }> = [
+    { key: 'date', label: 'Data', required: true },
+    { key: 'description', label: 'Descrição' },
+    { key: 'amount', label: 'Valor único' },
+    { key: 'credit', label: 'Crédito' },
+    { key: 'debit', label: 'Débito' },
+    { key: 'externalId', label: 'Identificador externo' },
+  ]
+
+  return (
+    <section className="imports-csv-config" aria-labelledby="csv-config-title">
+      <div className="imports-csv-config__heading">
+        <div>
+          <p className="imports-eyebrow">CONFIGURAÇÃO DO CSV</p>
+          <h3 id="csv-config-title">Confira como as colunas serão interpretadas</h3>
+          <p>A detecção é apenas uma sugestão. Revise a amostra antes de enviar.</p>
+        </div>
+        <div className="imports-csv-config__actions">
+          <label>
+            <span>Modelo salvo</span>
+            <select value={selectedMappingId} onChange={(event) => onMappingSelect(event.target.value)} disabled={disabled}>
+              <option value="">Configuração detectada</option>
+              {mappings.map((mapping) => <option key={mapping.id} value={mapping.id}>{mapping.name}</option>)}
+            </select>
+          </label>
+          <button className="imports-secondary-button" type="button" onClick={onRetryInspection} disabled={disabled || inspecting}>
+            {inspecting ? 'Analisando…' : 'Analisar novamente'}
+          </button>
+        </div>
+      </div>
+
+      <fieldset className="imports-csv-grid" disabled={disabled}>
+        <legend>Formato do arquivo</legend>
+        <label><span>Delimitador</span><select value={configuration.delimiter} onChange={(event) => onConfigurationChange({ delimiter: event.target.value as CsvImportConfiguration['delimiter'] }, false)}><option value=",">Vírgula (,)</option><option value=";">Ponto e vírgula (;)</option></select></label>
+        <label><span>Codificação</span><select value={configuration.encoding} onChange={(event) => onConfigurationChange({ encoding: event.target.value as CsvImportConfiguration['encoding'] }, false)}><option value="utf-8">UTF-8</option><option value="windows-1252">Windows-1252</option><option value="iso-8859-1">ISO-8859-1</option></select></label>
+        <label><span>Formato da data</span><select value={configuration.dateFormat} onChange={(event) => onConfigurationChange({ dateFormat: event.target.value as CsvImportConfiguration['dateFormat'] }, true)}><option value="dd/MM/yyyy">DD/MM/AAAA</option><option value="MM/dd/yyyy">MM/DD/AAAA</option><option value="yyyy-MM-dd">AAAA-MM-DD</option></select></label>
+        <label><span>Formato monetário</span><select value={configuration.numberFormat} onChange={(event) => onConfigurationChange({ numberFormat: event.target.value as CsvImportConfiguration['numberFormat'] }, true)}><option value="pt-BR">1.234,56</option><option value="en-US">1,234.56</option></select></label>
+        <label className="imports-csv-checkbox"><input type="checkbox" checked={configuration.hasHeader} onChange={(event) => onConfigurationChange({ hasHeader: event.target.checked }, false)} /><span>A primeira linha contém cabeçalhos</span></label>
+      </fieldset>
+
+      <fieldset className="imports-csv-grid imports-csv-grid--mapping" disabled={disabled}>
+        <legend>Mapeamento de colunas</legend>
+        {columnFields.map((field) => (
+          <label key={field.key}>
+            <span>{field.label}{field.required ? ' *' : ''}</span>
+            <select value={configuration.columns[field.key] ?? ''} onChange={(event) => onColumnChange(field.key, event.target.value)}>
+              <option value="">Não mapear</option>
+              {columns.map((column) => <option key={column.index} value={column.index}>{column.label}</option>)}
+            </select>
+          </label>
+        ))}
+        <p className="imports-csv-grid__hint">Mapeie “Valor único” ou use “Crédito” e “Débito” em conjunto.</p>
+        {!isMappingReady && <p className="imports-csv-grid__error" role="status">Complete os campos obrigatórios com colunas disponíveis neste arquivo.</p>}
+      </fieldset>
+
+      <div className="imports-csv-model">
+        <label><span>Nome do modelo</span><input value={mappingName} maxLength={80} placeholder="Ex.: Extrato Banco X" onChange={(event) => onMappingNameChange(event.target.value)} disabled={disabled} /></label>
+        <button className="imports-secondary-button" type="button" onClick={onSaveMapping} disabled={disabled || !isMappingReady || !mappingName.trim() || (Boolean(selectedMappingId) && !mappingDirty)}>
+          {selectedMappingId ? (mappingDirty ? 'Atualizar modelo' : 'Modelo salvo') : 'Salvar novo modelo'}
+        </button>
+      </div>
+
+      <div className="imports-csv-sample" tabIndex={0} aria-label="Amostra do arquivo CSV">
+        <table>
+          <caption>Amostra das primeiras linhas</caption>
+          <thead><tr><th scope="col">Linha</th>{columns.map((column) => <th scope="col" key={column.index}>{column.label}</th>)}</tr></thead>
+          <tbody>{sample.map((row) => <tr key={row.lineNumber}><th scope="row">{row.lineNumber}</th>{columns.map((column) => <td key={column.index}>{row.values[column.index] || '—'}</td>)}</tr>)}</tbody>
+        </table>
+      </div>
+    </section>
   )
 }
 

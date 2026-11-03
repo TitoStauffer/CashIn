@@ -1,7 +1,7 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { FinancialImportError } from "./financial-imports.errors.js";
 import { MAX_FINANCIAL_IMPORT_FILE_SIZE, type FinancialImportsService } from "./financial-imports.service.js";
-import { FINANCIAL_IMPORT_FORMATS, FINANCIAL_IMPORT_ITEM_TYPES, type FinancialImportFormat, type UpdateFinancialImportItemInput } from "./financial-imports.types.js";
+import { FINANCIAL_IMPORT_FORMATS, FINANCIAL_IMPORT_ITEM_TYPES, type CreateCsvMappingInput, type CsvImportConfiguration, type FinancialImportFormat, type UpdateFinancialImportItemInput } from "./financial-imports.types.js";
 
 interface RouteOptions {
   financialImportsService: FinancialImportsService;
@@ -18,7 +18,11 @@ interface ImportItemParams extends ImportParams {
 interface ImportUploadHeaders {
   "x-file-name"?: string;
   "x-file-format"?: string;
+  "x-csv-mapping"?: string;
+  "x-csv-mapping-id"?: string;
 }
+
+interface CsvMappingParams { mappingId: string }
 
 const uuidSchema = {
   type: "string",
@@ -61,6 +65,16 @@ function decodeFileName(value: string): string {
   }
 }
 
+function decodeCsvMapping(value: string): CsvImportConfiguration {
+  if (Buffer.byteLength(value, "utf8") > 16_384) throw new FinancialImportError("O mapeamento CSV excede o limite permitido.", 400);
+  try {
+    const decoded = decodeURIComponent(value);
+    return JSON.parse(decoded) as CsvImportConfiguration;
+  } catch {
+    throw new FinancialImportError("O mapeamento CSV informado é inválido.", 400);
+  }
+}
+
 export function registerFinancialImportRoutes(app: FastifyInstance, options: RouteOptions): void {
   if (!app.hasContentTypeParser("application/octet-stream")) {
     app.addContentTypeParser("application/octet-stream", { parseAs: "buffer" }, (_request, body, done) => {
@@ -91,11 +105,71 @@ export function registerFinancialImportRoutes(app: FastifyInstance, options: Rou
           rawFormat as FinancialImportFormat,
           decodeFileName(rawFileName),
           request.body,
+          rawFormat === "csv" ? {
+            configuration: request.headers["x-csv-mapping"] ? decodeCsvMapping(request.headers["x-csv-mapping"]!) : undefined,
+            mappingId: request.headers["x-csv-mapping-id"],
+          } : undefined,
         );
         return reply.code(201).send(session);
       } catch (error) {
         return sendFinancialImportError(error, request, reply);
       }
+    },
+  );
+
+  app.post<{ Headers: ImportUploadHeaders; Body: Buffer }>(
+    "/financial-imports/csv/inspect",
+    { preHandler: [app.authenticate, app.resolveWalletContext], bodyLimit: MAX_FINANCIAL_IMPORT_FILE_SIZE },
+    async (request, reply) => {
+      try {
+        if (!Buffer.isBuffer(request.body)) throw new FinancialImportError("Envie o arquivo como application/octet-stream.", 415);
+        const rawMapping = request.headers["x-csv-mapping"];
+        return reply.code(200).send(options.financialImportsService.inspectCsv(
+          request.body,
+          rawMapping ? decodeCsvMapping(rawMapping) : undefined,
+        ));
+      } catch (error) { return sendFinancialImportError(error, request, reply); }
+    },
+  );
+
+  app.get(
+    "/financial-imports/csv-mappings",
+    { preHandler: [app.authenticate, app.resolveWalletContext] },
+    async (request, reply) => {
+      try {
+        const items = await options.financialImportsService.listCsvMappings(request.currentUser!.id, request.currentWalletId!);
+        return reply.code(200).send({ items });
+      } catch (error) { return sendFinancialImportError(error, request, reply); }
+    },
+  );
+
+  app.post<{ Body: CreateCsvMappingInput }>(
+    "/financial-imports/csv-mappings",
+    {
+      preHandler: [app.authenticate, app.resolveWalletContext],
+      preValidation: rejectUnexpectedProperties(["name", "configuration"]),
+      schema: { body: { type: "object", additionalProperties: false, required: ["name", "configuration"], properties: { name: { type: "string", minLength: 1, maxLength: 100 }, configuration: { type: "object" } } } },
+    },
+    async (request, reply) => {
+      try {
+        const mapping = await options.financialImportsService.createCsvMapping(request.currentUser!.id, request.currentWalletId!, request.body);
+        return reply.code(201).send(mapping);
+      } catch (error) { return sendFinancialImportError(error, request, reply); }
+    },
+  );
+
+  app.patch<{ Params: CsvMappingParams; Body: CreateCsvMappingInput }>(
+    "/financial-imports/csv-mappings/:mappingId",
+    {
+      preHandler: [app.authenticate, app.resolveWalletContext],
+      preValidation: rejectUnexpectedProperties(["name", "configuration"]),
+      schema: { params: { type: "object", additionalProperties: false, required: ["mappingId"], properties: { mappingId: uuidSchema } }, body: { type: "object", additionalProperties: false, required: ["name", "configuration"], properties: { name: { type: "string", minLength: 1, maxLength: 100 }, configuration: { type: "object" } } } },
+    },
+    async (request, reply) => {
+      try {
+        const mapping = await options.financialImportsService.updateCsvMapping(request.currentUser!.id, request.currentWalletId!, request.params.mappingId, request.body);
+        return reply.code(200).send(mapping);
+      } catch (error) { return sendFinancialImportError(error, request, reply); }
     },
   );
 

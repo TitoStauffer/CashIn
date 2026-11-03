@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { setRequestWalletId } from '../wallets/walletApi'
 import { FinancialImportApiError, importsApi } from './importsApi'
+import type { CsvImportConfiguration } from './importsApi'
 
 const session = {
   id: 'import-1',
@@ -79,6 +80,64 @@ describe('financial imports API', () => {
     expect(JSON.parse(fetchMock.mock.calls[2][1].body)).toMatchObject({ categoryId: 'category-1' })
     expect(fetchMock.mock.calls[3][1]).toEqual(expect.objectContaining({ method: 'POST' }))
     expect(fetchMock.mock.calls[4][1]).toEqual(expect.objectContaining({ method: 'POST' }))
+  })
+
+  it('inspects CSV files and manages wallet-scoped mapping templates', async () => {
+    const configuration: CsvImportConfiguration = {
+      delimiter: ';', encoding: 'utf-8', hasHeader: true, dateFormat: 'dd/MM/yyyy', numberFormat: 'pt-BR',
+      columns: { date: 0, description: 1, amount: 2, credit: null, debit: null, externalId: null },
+    }
+    const inspection = {
+      detectedConfiguration: { delimiter: ';', encoding: 'utf-8', hasHeader: true, dateFormat: 'dd/MM/yyyy', numberFormat: 'pt-BR' },
+      suggestedMapping: configuration.columns,
+      columns: [{ index: 0, label: 'Data' }],
+      sample: [{ lineNumber: 2, values: ['23/10/2026'] }],
+    }
+    const mapping = { id: 'mapping-1', name: 'Banco', configuration, createdAt: 'now', updatedAt: 'now' }
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify(inspection)))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ items: [mapping] })))
+      .mockResolvedValueOnce(new Response(JSON.stringify(mapping)))
+      .mockResolvedValueOnce(new Response(JSON.stringify(mapping)))
+    vi.stubGlobal('fetch', fetchMock)
+    const file = new File(['csv'], 'extrato.csv', { type: 'text/csv' })
+
+    await importsApi.inspectCsv(file, undefined, configuration)
+    await importsApi.listCsvMappings()
+    await importsApi.createCsvMapping(mapping.name, configuration)
+    await importsApi.updateCsvMapping('mapping/1', mapping.name, configuration)
+
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+      '/api/financial-imports/csv/inspect',
+      '/api/financial-imports/csv-mappings',
+      '/api/financial-imports/csv-mappings',
+      '/api/financial-imports/csv-mappings/mapping%2F1',
+    ])
+    expect(fetchMock.mock.calls[0][1]).toEqual(expect.objectContaining({ method: 'POST', body: file }))
+    const inspectHeaders = new Headers(fetchMock.mock.calls[0][1].headers)
+    expect(JSON.parse(decodeURIComponent(inspectHeaders.get('X-Csv-Mapping')!))).toEqual(configuration)
+    expect(JSON.parse(fetchMock.mock.calls[2][1].body)).toEqual({ name: mapping.name, configuration })
+    expect(fetchMock.mock.calls[3][1]).toEqual(expect.objectContaining({ method: 'PATCH' }))
+  })
+
+  it('uploads CSV with either an inline configuration or a saved mapping id', async () => {
+    const configuration: CsvImportConfiguration = {
+      delimiter: ',', encoding: 'windows-1252', hasHeader: true, dateFormat: 'yyyy-MM-dd', numberFormat: 'en-US',
+      columns: { date: 0, description: 1, amount: 2, credit: null, debit: null, externalId: 3 },
+    }
+    const fetchMock = vi.fn().mockImplementation(async () => new Response(JSON.stringify({ ...session, format: 'csv' })))
+    vi.stubGlobal('fetch', fetchMock)
+    const file = new File(['csv'], 'extrato.csv', { type: 'text/csv' })
+
+    await importsApi.upload(file, 'csv', { configuration })
+    await importsApi.upload(file, 'csv', { mappingId: 'mapping-1' })
+
+    const inlineHeaders = new Headers(fetchMock.mock.calls[0][1].headers)
+    const savedHeaders = new Headers(fetchMock.mock.calls[1][1].headers)
+    expect(JSON.parse(decodeURIComponent(inlineHeaders.get('X-Csv-Mapping')!))).toEqual(configuration)
+    expect(inlineHeaders.has('X-Csv-Mapping-Id')).toBe(false)
+    expect(savedHeaders.get('X-Csv-Mapping-Id')).toBe('mapping-1')
+    expect(savedHeaders.has('X-Csv-Mapping')).toBe(false)
   })
 
   it('preserves a safe API error status when the request fails', async () => {

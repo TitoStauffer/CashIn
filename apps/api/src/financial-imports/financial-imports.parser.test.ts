@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { DefaultFinancialImportParser, OfxFinancialImportParser } from "./financial-imports.parser.js";
+import { inspectCsv, parseCsvConfiguration, parseCsvInspectionOverrides } from "./financial-imports.csv.js";
 
 const fixtures = fileURLToPath(new URL("./fixtures/", import.meta.url));
 
@@ -254,6 +255,226 @@ test("rejects unsupported account documents, currencies, encodings and CSV dispa
   );
   await assert.rejects(
     new DefaultFinancialImportParser().parse({ format: "csv", fileName: "statement.csv", content: Buffer.from("date,amount") }),
-    /ainda não está disponível/i,
+    /mapeamento/i,
   );
+});
+
+test("inspects CSV and suggests common columns", () => {
+  const result = inspectCsv(Buffer.from("Data;Descrição;Valor;ID\n31/10/2026;Mercado;-1.234,56;abc\n", "utf8"));
+  assert.deepEqual(result.detectedConfiguration, {
+    delimiter: ";", encoding: "utf-8", hasHeader: true, dateFormat: "dd/MM/yyyy", numberFormat: "pt-BR",
+  });
+  assert.deepEqual(result.suggestedMapping, { date: 0, description: 1, amount: 2, credit: null, debit: null, externalId: 3 });
+  assert.equal(result.sample[0]?.lineNumber, 2);
+});
+
+test("rejects oversized CSV during inspection and upload before consuming trailing content", async () => {
+  const header = "date;description;amount";
+  const shortRows = Array.from(
+    { length: 10_001 },
+    (_value, index) => `2026-10-01;row ${index + 1};1,00`,
+  );
+  const content = Buffer.from([header, ...shortRows, '2026-10-01;"trailing malformed;1,00'].join("\n"));
+
+  assert.throws(
+    () => inspectCsv(content),
+    (error: unknown) => error instanceof Error
+      && error.message === "O arquivo deve ter no máximo 10.000 movimentações.",
+  );
+
+  await assert.rejects(
+    new DefaultFinancialImportParser().parse({
+      format: "csv",
+      fileName: "oversized.csv",
+      content,
+      csvConfiguration: {
+        delimiter: ";", encoding: "utf-8", hasHeader: true, dateFormat: "yyyy-MM-dd", numberFormat: "pt-BR",
+        columns: { date: 0, description: 1, amount: 2, credit: null, debit: null, externalId: null },
+      },
+    }),
+    (error: unknown) => error instanceof Error
+      && error.message === "O arquivo deve ter no máximo 10.000 movimentações.",
+  );
+});
+
+test("rejects the 101st CSV column before consuming its trailing content", async () => {
+  const configurations = [
+    `${Array.from({ length: 100 }, (_value, index) => `column-${index + 1}`).join(";")};"trailing malformed`,
+    `${Array.from({ length: 100 }, (_value, index) => `"column-${index + 1}"`).join(";")};"trailing malformed`,
+  ];
+
+  for (const csv of configurations) {
+    assert.throws(
+      () => inspectCsv(Buffer.from(csv)),
+      (error: unknown) => error instanceof Error
+        && error.message === "O arquivo CSV deve ter no máximo 100 colunas.",
+    );
+
+    await assert.rejects(
+      new DefaultFinancialImportParser().parse({
+        format: "csv",
+        fileName: "too-many-columns.csv",
+        content: Buffer.from(csv),
+        csvConfiguration: {
+          delimiter: ";", encoding: "utf-8", hasHeader: false, dateFormat: "yyyy-MM-dd", numberFormat: "pt-BR",
+          columns: { date: 0, description: 1, amount: 2, credit: null, debit: null, externalId: null },
+        },
+      }),
+      (error: unknown) => error instanceof Error
+        && error.message === "O arquivo CSV deve ter no máximo 100 colunas.",
+    );
+  }
+});
+
+test("detects legacy Western CSV and accepts explicit ISO-8859-1 decoding", async () => {
+  const content = Buffer.from("Data;Descrição;Valor\n31/10/2026;Refeição;-10,20\n", "latin1");
+  assert.equal(inspectCsv(content).detectedConfiguration.encoding, "windows-1252");
+  const result = await new DefaultFinancialImportParser().parse({
+    format: "csv", fileName: "legacy.csv", content,
+    csvConfiguration: { delimiter: ";", encoding: "iso-8859-1", hasHeader: true, dateFormat: "dd/MM/yyyy", numberFormat: "pt-BR", columns: { date: 0, description: 1, amount: 2, credit: null, debit: null, externalId: null } },
+  });
+  assert.equal(result.items[0]?.description, "Refeição");
+});
+
+test("parses CSV money without floating point and reports every invalid line", async () => {
+  const result = await new DefaultFinancialImportParser().parse({
+    format: "csv",
+    fileName: "statement.csv",
+    content: Buffer.from("date,description,amount\n10/31/2026,Salary,1000.10\n10/32/2026,Bad date,-2.25\n", "utf8"),
+    csvConfiguration: {
+      delimiter: ",", encoding: "utf-8", hasHeader: true, dateFormat: "MM/dd/yyyy", numberFormat: "en-US",
+      columns: { date: 0, description: 1, amount: 2, credit: null, debit: null, externalId: null },
+    },
+  });
+  assert.deepEqual(result.items.map((item) => ({ date: item.date, amount: item.signedAmount, type: item.type, status: item.validationStatus })), [
+    { date: "2026-10-31", amount: "1000.10", type: "income", status: undefined },
+    { date: null, amount: "-2.25", type: "expense", status: "invalid" },
+  ]);
+  assert.match(result.items[1]?.errorMessage ?? "", /Linha 3: data inválida/);
+});
+
+test("parses separate credit/debit columns and quoted delimiters", async () => {
+  const result = await new DefaultFinancialImportParser().parse({
+    format: "csv", fileName: "statement.csv",
+    content: Buffer.from('date;description;credit;debit\n2026-10-01;"Refund; card";10,50;\n2026-10-02;Purchase;;2,05\n'),
+    csvConfiguration: { delimiter: ";", encoding: "utf-8", hasHeader: true, dateFormat: "yyyy-MM-dd", numberFormat: "pt-BR", columns: { date: 0, description: 1, amount: null, credit: 2, debit: 3, externalId: null } },
+  });
+  assert.deepEqual(result.items.map((item) => [item.description, item.signedAmount, item.type]), [
+    ["Refund; card", "10.50", "income"], ["Purchase", "-2.05", "expense"],
+  ]);
+});
+
+test("separate credit/debit columns distinguish empty, zero, invalid, and out-of-range values", async () => {
+  const result = await new DefaultFinancialImportParser().parse({
+    format: "csv", fileName: "statement.csv",
+    content: Buffer.from([
+      "date;credit;debit",
+      "2026-10-01;invalid;1,00",
+      "2026-10-02;1,00;invalid",
+      "2026-10-03;1000000000000,00;",
+      "2026-10-04;;1000000000000,00",
+      "2026-10-05;0,00;2,00",
+      "2026-10-06;3,00;0,00",
+      "2026-10-07;999999999999,99;",
+      "2026-10-08;;999999999999,99",
+      "2026-10-09;;",
+    ].join("\n")),
+    csvConfiguration: { delimiter: ";", encoding: "utf-8", hasHeader: true, dateFormat: "yyyy-MM-dd", numberFormat: "pt-BR", columns: { date: 0, description: null, amount: null, credit: 1, debit: 2, externalId: null } },
+  });
+  assert.equal(result.items[0]?.signedAmount, null);
+  assert.match(result.items[0]?.errorMessage ?? "", /crédito inválido/i);
+  assert.equal(result.items[1]?.signedAmount, null);
+  assert.match(result.items[1]?.errorMessage ?? "", /débito inválido/i);
+  assert.match(result.items[2]?.errorMessage ?? "", /crédito inválido/i);
+  assert.match(result.items[3]?.errorMessage ?? "", /débito inválido/i);
+  assert.deepEqual(result.items.slice(4, 8).map((item) => [item.signedAmount, item.type, item.validationStatus]), [
+    ["-2.00", "expense", undefined],
+    ["3.00", "income", undefined],
+    ["999999999999.99", "income", undefined],
+    ["-999999999999.99", "expense", undefined],
+  ]);
+  assert.match(result.items[8]?.errorMessage ?? "", /apenas crédito ou débito/i);
+});
+
+test("rejects NUL instead of silently altering CSV date, description, or external id", async () => {
+  const parser = new DefaultFinancialImportParser();
+  const configuration = { delimiter: ";" as const, encoding: "utf-8" as const, hasHeader: true, dateFormat: "yyyy-MM-dd" as const, numberFormat: "pt-BR" as const, columns: { date: 0, description: 1, amount: 2, credit: null, debit: null, externalId: 3 } };
+  for (const row of [
+    "2026-10-\u000001;Description;1,00;id",
+    "2026-10-01;Descri\u0000ption;1,00;id",
+    "2026-10-01;Description;1,00;external\u0000id",
+  ]) {
+    await assert.rejects(
+      parser.parse({ format: "csv", fileName: "nul.csv", content: Buffer.from(`date;description;amount;id\n${row}\n`), csvConfiguration: configuration }),
+      /caractere nulo/i,
+    );
+  }
+});
+
+test("uses ordinal sequences while preserving physical lines across headers, blanks, and multiline cells", async () => {
+  const parser = new DefaultFinancialImportParser();
+  const configuration = { delimiter: ";" as const, encoding: "utf-8" as const, hasHeader: true, dateFormat: "yyyy-MM-dd" as const, numberFormat: "pt-BR" as const, columns: { date: 0, description: 1, amount: 2, credit: null, debit: null, externalId: null } };
+  const result = await parser.parse({
+    format: "csv", fileName: "lines.csv",
+    content: Buffer.from('date;description;amount\n\n2026-10-01;"first\nsecond";1,00\n\nbad;invalid;2,00\n'),
+    csvConfiguration: configuration,
+  });
+  assert.deepEqual(result.items.map((item) => item.sequence), [1, 2]);
+  assert.deepEqual(result.items.map((item) => item.sourceLine), [3, 6]);
+  assert.equal(result.items[0]?.description, "first second");
+  assert.match(result.items[1]?.errorMessage ?? "", /Linha 6: data inválida/);
+
+  const highPhysicalLine = await parser.parse({
+    format: "csv", fileName: "blank-lines.csv",
+    content: Buffer.from(`date;description;amount\n${"\n".repeat(10_001)}2026-10-01;valid;1,00\n`),
+    csvConfiguration: configuration,
+  });
+  assert.equal(highPhysicalLine.items[0]?.sequence, 1);
+  assert.equal(highPhysicalLine.items[0]?.sourceLine, 10_003);
+});
+
+test("rejects malformed CSV quotes and preserves valid escaped quotes", async () => {
+  const parser = new DefaultFinancialImportParser();
+  const configuration = { delimiter: ";" as const, encoding: "utf-8" as const, hasHeader: true, dateFormat: "yyyy-MM-dd" as const, numberFormat: "pt-BR" as const, columns: { date: 0, description: 1, amount: 2, credit: null, debit: null, externalId: null } };
+  const valid = await parser.parse({
+    format: "csv", fileName: "quotes.csv",
+    content: Buffer.from('date;description;amount\n2026-10-01;"He said ""hello"""   ;1,00\n'),
+    csvConfiguration: configuration,
+  });
+  assert.equal(valid.items[0]?.description, 'He said "hello"');
+
+  for (const [content, message] of [
+    ['date;description;amount\n2026-10-01;unexpected"quote;1,00\n', /aspas inesperadas.+linha 2/i],
+    ['date;description;amount\n2026-10-01;"closed"content;1,00\n', /conteúdo inválido após aspas.+linha 2/i],
+    ['date;description;amount\n2026-10-01;"unclosed;1,00\n', /aspas não finalizadas/i],
+  ] as const) {
+    await assert.rejects(
+      parser.parse({ format: "csv", fileName: "quotes.csv", content: Buffer.from(content), csvConfiguration: configuration }),
+      message,
+    );
+  }
+});
+
+test("strictly rejects ambiguous mappings and unexpected properties", () => {
+  const configuration = { delimiter: ",", encoding: "utf-8", hasHeader: true, dateFormat: "yyyy-MM-dd", numberFormat: "en-US" };
+  assert.doesNotThrow(() => parseCsvConfiguration({ ...configuration, columns: { date: 0, amount: 1, credit: null, debit: null } }));
+  assert.doesNotThrow(() => parseCsvConfiguration({ ...configuration, columns: { date: 0, amount: null, credit: 1, debit: 2 } }));
+  for (const columns of [
+    { date: 0, amount: 1, credit: 2, debit: 3 },
+    { date: 0, amount: 1, credit: 2, debit: null },
+    { date: 0, amount: 1, credit: null, debit: 2 },
+    { date: 0, amount: null, credit: 1, debit: null },
+    { date: 0, amount: null, credit: null, debit: 1 },
+    { date: 0, amount: null, credit: null, debit: null },
+  ]) {
+    assert.throws(() => parseCsvConfiguration({ ...configuration, columns }), /coluna de valor/i);
+  }
+  assert.throws(() => parseCsvConfiguration(JSON.parse('{"delimiter":",","encoding":"utf-8","hasHeader":true,"dateFormat":"yyyy-MM-dd","numberFormat":"en-US","columns":{"date":0,"amount":1,"__proto__":2}}')), /inválida/i);
+  assert.deepEqual(parseCsvInspectionOverrides({
+    delimiter: ";", encoding: "utf-8", hasHeader: false, dateFormat: "dd/MM/yyyy", numberFormat: "pt-BR",
+    columns: { date: 0, amount: null, credit: null, debit: null },
+  }), { delimiter: ";", encoding: "utf-8", hasHeader: false, dateFormat: "dd/MM/yyyy", numberFormat: "pt-BR" });
+  assert.throws(() => parseCsvInspectionOverrides({
+    delimiter: "|", encoding: "utf-8", hasHeader: false, dateFormat: "dd/MM/yyyy", numberFormat: "pt-BR",
+  }), /inspeção.+inválida/i);
 });

@@ -68,6 +68,60 @@ test("PostgreSQL financial import confirms exact amounts, isolates wallets, and 
       "x-wallet-id": walletId,
     };
 
+    const csvConfiguration = {
+      delimiter: ";" as const,
+      encoding: "utf-8" as const,
+      hasHeader: true,
+      dateFormat: "dd/MM/yyyy" as const,
+      numberFormat: "pt-BR" as const,
+      columns: { date: 0, description: 1, amount: 2, credit: null, debit: null, externalId: null },
+    };
+    const csvMappingHeader = encodeURIComponent(JSON.stringify(csvConfiguration));
+    const csvMapping = await repository.createCsvMapping(userId, walletId, {
+      name: "Banco principal", configuration: csvConfiguration,
+    });
+    assert.equal(csvMapping.name, "Banco principal");
+    assert.deepEqual((await repository.listCsvMappings(otherUserId, walletId)).map((mapping) => mapping.id), [csvMapping.id]);
+    assert.equal(await repository.getCsvMapping(userId, otherWalletId, csvMapping.id), null);
+    const updatedCsvMapping = await repository.updateCsvMapping(userId, walletId, csvMapping.id, {
+      name: "Banco atualizado", configuration: csvConfiguration,
+    });
+    assert.equal(updatedCsvMapping?.name, "Banco atualizado");
+    await assert.rejects(
+      database.query(
+        `INSERT INTO financial_import_csv_mappings (wallet_id, created_by_user_id, name, configuration)
+         VALUES ($1, $2, 'Configuração ambígua', $3::jsonb)`,
+        [walletId, userId, JSON.stringify({
+          ...csvConfiguration,
+          columns: { ...csvConfiguration.columns, credit: 3, debit: 4 },
+        })],
+      ),
+      /financial_import_csv_mappings_configuration_check/,
+    );
+    for (const [name, columns] of [
+      ["Valor e crédito parcial", { ...csvConfiguration.columns, credit: 3 }],
+      ["Valor e débito parcial", { ...csvConfiguration.columns, debit: 3 }],
+      ["Somente crédito", { ...csvConfiguration.columns, amount: null, credit: 2 }],
+      ["Somente débito", { ...csvConfiguration.columns, amount: null, debit: 2 }],
+    ] as const) {
+      await assert.rejects(
+        database.query(
+          `INSERT INTO financial_import_csv_mappings (wallet_id, created_by_user_id, name, configuration)
+           VALUES ($1, $2, $3, $4::jsonb)`,
+          [walletId, userId, name, JSON.stringify({ ...csvConfiguration, columns })],
+        ),
+        /financial_import_csv_mappings_configuration_check/,
+      );
+    }
+    await assert.rejects(
+      database.query(
+        `INSERT INTO financial_import_csv_mappings (wallet_id, created_by_user_id, name, configuration)
+         VALUES ($1, $2, 'Configuração com chave extra', $3::jsonb)`,
+        [walletId, userId, JSON.stringify({ ...csvConfiguration, unexpected: true })],
+      ),
+      /financial_import_csv_mappings_configuration_check/,
+    );
+
     const created = await repository.createImport(userId, walletId, {
       format: "csv",
       fileName: "movimentações.csv",
@@ -622,6 +676,7 @@ test("PostgreSQL financial import confirms exact amounts, isolates wallets, and 
         "content-type": "application/octet-stream",
         "x-file-name": "description.csv",
         "x-file-format": "csv",
+        "x-csv-mapping": csvMappingHeader,
       },
       payload: Buffer.from("description-test"),
     });
@@ -743,6 +798,7 @@ test("PostgreSQL financial import confirms exact amounts, isolates wallets, and 
         "content-type": "application/octet-stream",
         "x-file-name": "references.csv",
         "x-file-format": "csv",
+        "x-csv-mapping": csvMappingHeader,
       },
       payload: Buffer.from("reference-test"),
     });
@@ -856,6 +912,7 @@ test("PostgreSQL financial import confirms exact amounts, isolates wallets, and 
         "content-type": "application/octet-stream",
         "x-file-name": "duplicates.csv",
         "x-file-format": "csv",
+        "x-csv-mapping": csvMappingHeader,
       },
       payload: Buffer.from("duplicate-regression"),
     });

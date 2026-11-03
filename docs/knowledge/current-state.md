@@ -1,7 +1,7 @@
 # Estado atual do projeto
 
-**Status:** atualizado pela DEV-52
-**Última revisão:** 26/10/2026
+**Status:** atualizado pela DEV-53
+**Última revisão:** 03/11/2026
 **Ticket de criação:** [DEV-64](https://titostauffer.atlassian.net/browse/DEV-64)
 
 ## Produto disponível
@@ -19,7 +19,7 @@
 
 ## Estado da importação
 
-A infraestrutura e a tela existem. O parser padrão da API interpreta extratos bancários OFX 1.x e 2.x e mantém CSV como entrega separada. Consulte [`domain/imports.md`](domain/imports.md).
+A infraestrutura e a tela existem. O parser padrão da API interpreta extratos bancários OFX 1.x e 2.x e CSV configurável, com inspeção, amostra e modelos reutilizáveis por carteira. Consulte [`domain/imports.md`](domain/imports.md).
 
 ## Automação de entrega
 
@@ -30,15 +30,17 @@ O fluxo ativo executa validação de título, API, Web, ferramentas de automaç�
 - A API não possui lint configurado.
 - O envio de e-mail e os rate limiters usam mecanismos adequados ao MVP local; filas e estado compartilhado são necessários para múltiplas instâncias.
 - O runner de agentes é Windows self-hosted e depende de máquina ligada, usuário autenticado e Codex CLI disponível.
-- CSV, faturas de cartão em OFX, múltiplos extratos bancários no mesmo arquivo e detecção de duplicidade entre sessões ainda não estão implementados.
+- Faturas de cartão em OFX, múltiplos extratos bancários no mesmo arquivo e detecção de duplicidade entre sessões ainda não estão implementados.
 - Mobile e deploy em nuvem estão fora do estado atual.
 
 ## Fontes verificáveis
 
-- [`README.md`](../../README.md)
-- [`apps/api/src/app.ts`](../../apps/api/src/app.ts)
-- [`apps/web/src/App.tsx`](../../apps/web/src/App.tsx)
-- [`apps/api/src/financial-imports/financial-imports.parser.ts`](../../apps/api/src/financial-imports/financial-imports.parser.ts)
-- [`.github/workflows/ci.yml`](../../.github/workflows/ci.yml)
-- [`.github/workflows/agent-orchestration.yml`](../../.github/workflows/agent-orchestration.yml)
+Estas fontes comprovam o panorama, mas só devem ser abertas quando a afirmação correspondente for relevante ao ticket:
+
+- `README.md`
+- `apps/api/src/app.ts`
+- `apps/web/src/App.tsx`
+- `apps/api/src/financial-imports/financial-imports.parser.ts`
+- `.github/workflows/ci.yml`
+- `.github/workflows/agent-orchestration.yml`
 - [PR #43](https://github.com/TitoStauffer/CashIn/pull/43)

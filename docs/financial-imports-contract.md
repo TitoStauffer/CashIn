@@ -1,6 +1,6 @@
 # Contrato de importação financeira
 
-A API mantém sessões de importação por carteira para que o cliente possa enviar um arquivo, revisar a prévia e confirmar os lançamentos em uma única transação. Extratos bancários OFX 1.x e 2.x são interpretados diretamente; CSV e faturas de cartão permanecem entregas separadas.
+A API mantém sessões de importação por carteira para que o cliente possa enviar um arquivo, revisar a prévia e confirmar os lançamentos em uma única transação. Extratos bancários OFX 1.x e 2.x e arquivos CSV configuráveis são interpretados diretamente; faturas de cartão permanecem uma entrega separada.
 
 ## Limites e segurança
 
@@ -21,11 +21,24 @@ A API mantém sessões de importação por carteira para que o cliente possa env
 - Descrições em `NAME` e `MEMO` preservam o conteúdo multilinha e o texto literal de seções XML `CDATA`; tags aparentes dentro de `CDATA` e comentários não alteram a estrutura do extrato, e sequências de espaço são normalizadas somente na descrição exibida.
 - Faturas de cartão em OFX não fazem parte deste fluxo e são recusadas com mensagem específica.
 
+## Arquivos CSV
+
+- A inspeção detecta delimitador (vírgula ou ponto e vírgula), presença de cabeçalho, codificação, formato de data e formato monetário, e devolve até dez linhas de amostra. Para recalcular colunas e amostra após uma correção manual, o cliente pode reenviar `x-csv-mapping` com a configuração codificada; a inspeção valida e usa somente os cinco campos de formato, sem exigir que o mapeamento de colunas sugerido inicialmente já esteja completo.
+- São aceitos `utf-8`, `windows-1252` e `iso-8859-1`; datas podem usar `dd/MM/yyyy`, `MM/dd/yyyy` ou `yyyy-MM-dd`; valores podem usar a convenção `pt-BR` ou `en-US`.
+- O mapeamento usa índices de coluna iniciados em zero. `date` é obrigatório; `description` e `externalId` são opcionais. Deve existir exatamente um formato financeiro: `amount` preenchido com `credit` e `debit` nulos, ou `amount` nulo com `credit` e `debit` preenchidos.
+- O valor é normalizado como texto decimal, sem conversão por ponto flutuante. Valor positivo sugere entrada e negativo sugere saída; no modo separado, a coluna crédito gera entrada e a coluna débito gera saída.
+- Linhas inválidas permanecem na prévia e indicam o número físico da linha e o motivo, enquanto a sequência persistida é ordinal e limitada à quantidade real de movimentações. Erros estruturais que impedem uma leitura segura do arquivo, incluindo caractere nulo, aspas inesperadas ou conteúdo depois do fechamento de um campo entre aspas, recusam a importação inteira sem alterar silenciosamente o conteúdo. Depois do fechamento de aspas, somente espaços, separador ou fim do registro são aceitos; `""` continua sendo o escape válido dentro do campo.
+- Modelos reutilizáveis são escopados à carteira. O upload recebe uma configuração ad hoc em `x-csv-mapping` (JSON codificado com `encodeURIComponent`) ou o UUID de um modelo em `x-csv-mapping-id`, nunca ambos.
+
 ## Endpoints
 
 | Método | Caminho | Resultado |
 |---|---|---|
 | `POST` | `/financial-imports` | Cria a sessão, processa o arquivo em memória e devolve a prévia. |
+| `POST` | `/financial-imports/csv/inspect` | Inspeciona o CSV em memória e devolve configuração detectada, colunas, sugestão de mapeamento e amostra. |
+| `GET` | `/financial-imports/csv-mappings` | Lista os modelos CSV da carteira no envelope `{ "items": [...] }`. |
+| `POST` | `/financial-imports/csv-mappings` | Cria um modelo CSV na carteira. |
+| `PATCH` | `/financial-imports/csv-mappings/:mappingId` | Atualiza nome e configuração de um modelo da carteira. |
 | `GET` | `/financial-imports` | Lista o histórico da carteira no envelope `{ "items": [...] }`. |
 | `GET` | `/financial-imports/:importId` | Devolve a sessão e seus itens. |
 | `PATCH` | `/financial-imports/:importId/items/:itemId` | Atualiza data, descrição, tipo, categoria e subcategoria durante a prévia. |
