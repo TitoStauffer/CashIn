@@ -20,6 +20,8 @@ import {
 const MAX_COLUMNS = 100;
 const MAX_CELL_BYTES = 4_000;
 const MAX_HEADER_BYTES = 32_000;
+const MAX_DATA_ROWS = 10_000;
+const MAX_INSPECTION_SAMPLE_ROWS = 10;
 const ALLOWED_CONFIGURATION_KEYS = new Set(["delimiter", "encoding", "hasHeader", "dateFormat", "numberFormat", "columns"]);
 const ALLOWED_COLUMN_KEYS = new Set(["date", "description", "amount", "credit", "debit", "externalId"]);
 
@@ -104,18 +106,18 @@ export function inspectCsv(
   const encoding = overrides?.encoding ?? detectEncoding(content);
   const text = decodeCsv(content, encoding);
   const delimiter = overrides?.delimiter ?? detectDelimiter(text);
-  const rows = parseRows(text, delimiter);
-  if (rows.length === 0) throw new FinancialImportError("Nenhuma linha foi encontrada no arquivo CSV.", 422);
-  const hasHeader = overrides?.hasHeader ?? detectHeader(rows);
-  const header = hasHeader ? rows[0]!.values : rows[0]!.values.map((_value, index) => `Coluna ${index + 1}`);
-  const dataRows = rows.slice(hasHeader ? 1 : 0);
+  const parsed = parseRows(text, delimiter, overrides?.hasHeader, MAX_INSPECTION_SAMPLE_ROWS);
+  if (!parsed.firstRow) throw new FinancialImportError("Nenhuma linha foi encontrada no arquivo CSV.", 422);
+  const hasHeader = parsed.hasHeader;
+  const header = hasHeader ? parsed.firstRow.values : parsed.firstRow.values.map((_value, index) => `Coluna ${index + 1}`);
+  const dataRows = parsed.dataRows;
   const dateFormat = overrides?.dateFormat ?? detectDateFormat(dataRows);
   const numberFormat = overrides?.numberFormat ?? detectNumberFormat(dataRows);
   return {
     detectedConfiguration: { delimiter, encoding, hasHeader, dateFormat, numberFormat },
     suggestedMapping: suggestMapping(header),
     columns: header.map((label, index) => ({ index, label: label || `Coluna ${index + 1}` })),
-    sample: dataRows.slice(0, 10).map((row) => ({ lineNumber: row.lineNumber, values: row.values })),
+    sample: dataRows.map((row) => ({ lineNumber: row.lineNumber, values: row.values })),
   };
 }
 
@@ -124,8 +126,12 @@ export function parseCsv(input: FinancialImportParserInput): ParsedFinancialImpo
     throw new FinancialImportError("Informe o mapeamento das colunas do arquivo CSV.", 400);
   }
   const configuration = parseCsvConfiguration(input.csvConfiguration);
-  const rows = parseRows(decodeCsv(input.content, configuration.encoding), configuration.delimiter);
-  const dataRows = rows.slice(configuration.hasHeader ? 1 : 0);
+  const { dataRows } = parseRows(
+    decodeCsv(input.content, configuration.encoding),
+    configuration.delimiter,
+    configuration.hasHeader,
+    MAX_DATA_ROWS,
+  );
   if (dataRows.length === 0) throw new FinancialImportError("Nenhuma movimentação foi encontrada no arquivo CSV.", 422);
   const items = dataRows.map((row, index) => parseItem(row, configuration, index + 1));
   return { items, sourceMetadata: { csvDelimiter: configuration.delimiter === ";" ? "semicolon" : "comma", csvEncoding: configuration.encoding } };
@@ -178,14 +184,35 @@ function parseItem(row: CsvRow, configuration: CsvImportConfiguration, sequence:
   };
 }
 
-function parseRows(text: string, delimiter: CsvDelimiter): CsvRow[] {
-  const rows: CsvRow[] = [];
+function parseRows(
+  text: string,
+  delimiter: CsvDelimiter,
+  configuredHasHeader?: boolean,
+  retainedDataRows = MAX_DATA_ROWS,
+): { firstRow: CsvRow | null; hasHeader: boolean; dataRows: CsvRow[] } {
+  const dataRows: CsvRow[] = [];
+  let firstRow: CsvRow | null = null;
+  let hasHeader = configuredHasHeader ?? false;
+  let dataRowCount = 0;
   let values: string[] = [];
   let value = "";
   let quoted = false;
   let afterClosingQuote = false;
   let lineNumber = 1;
   let rowStart = 1;
+  const appendRow = (row: CsvRow) => {
+    if (row.values.every((item) => item.trim() === "")) return;
+    if (firstRow === null) {
+      firstRow = row;
+      hasHeader = configuredHasHeader ?? detectHeader(row);
+      if (hasHeader) return;
+    }
+    dataRowCount += 1;
+    if (dataRowCount > MAX_DATA_ROWS) {
+      throw new FinancialImportError("O arquivo deve ter no máximo 10.000 movimentações.", 413);
+    }
+    if (dataRows.length < retainedDataRows) dataRows.push(row);
+  };
   for (let index = 0; index <= text.length; index += 1) {
     const character = index === text.length ? "\n" : text[index]!;
     if (quoted) {
@@ -201,7 +228,7 @@ function parseRows(text: string, delimiter: CsvDelimiter): CsvRow[] {
       if (character === "\n") {
         values.push(validateCell(value));
         if (values.length > MAX_COLUMNS) throw new FinancialImportError("O arquivo CSV deve ter no máximo 100 colunas.", 422);
-        if (values.some((item) => item.trim() !== "")) rows.push({ lineNumber: rowStart, values });
+        appendRow({ lineNumber: rowStart, values });
         values = []; value = ""; afterClosingQuote = false; lineNumber += 1; rowStart = lineNumber; continue;
       }
       throw new FinancialImportError(`O arquivo CSV possui conteúdo inválido após aspas na linha ${lineNumber}.`, 422);
@@ -215,13 +242,13 @@ function parseRows(text: string, delimiter: CsvDelimiter): CsvRow[] {
     if (character === "\n") {
       values.push(validateCell(value));
       if (values.length > MAX_COLUMNS) throw new FinancialImportError("O arquivo CSV deve ter no máximo 100 colunas.", 422);
-      if (values.some((item) => item.trim() !== "")) rows.push({ lineNumber: rowStart, values });
+      appendRow({ lineNumber: rowStart, values });
       values = []; value = ""; lineNumber += 1; rowStart = lineNumber; continue;
     }
     value += character;
   }
   if (quoted) throw new FinancialImportError("O arquivo CSV possui aspas não finalizadas.", 422);
-  return rows;
+  return { firstRow, hasHeader, dataRows };
 }
 
 function validateCell(value: string): string {
@@ -257,8 +284,8 @@ function countOutsideQuotes(value: string, target: CsvDelimiter): number {
   return count;
 }
 
-function detectHeader(rows: CsvRow[]): boolean {
-  const first = rows[0]?.values ?? [];
+function detectHeader(row: CsvRow): boolean {
+  const first = row.values;
   const normalized = first.map(normalizeLabel);
   if (normalized.some((label) => /^(data|date|descricao|description|historico|valor|amount|credito|credit|debito|debit)$/.test(label))) return true;
   return first.some((value) => !parseDate(value, "dd/MM/yyyy") && !parseDate(value, "MM/dd/yyyy") && !parseDate(value, "yyyy-MM-dd") && parseMoney(value, "pt-BR") === null && parseMoney(value, "en-US") === null);
@@ -270,8 +297,7 @@ function detectDateFormat(rows: CsvRow[]): CsvDateFormat {
 }
 
 function detectNumberFormat(rows: CsvRow[]): CsvNumberFormat {
-  const values = rows.flatMap((row) => row.values);
-  if (values.some((value) => /^[-+]?\d{1,3}(?:\.\d{3})*,\d{1,2}$/.test(value.trim()))) return "pt-BR";
+  if (rows.some((row) => row.values.some((value) => /^[-+]?\d{1,3}(?:\.\d{3})*,\d{1,2}$/.test(value.trim())))) return "pt-BR";
   return "en-US";
 }
 

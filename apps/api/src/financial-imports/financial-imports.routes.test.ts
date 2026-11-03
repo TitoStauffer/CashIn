@@ -702,6 +702,38 @@ test("upload enforces the 10 MB and 10,000 movement limits", async () => {
   assert.equal(retained.json().items[0].status, "failed");
   await tooMany.app.close();
 
+  const csv = createTestApp(null);
+  const excessiveCsv = Buffer.from([
+    "Data;Descrição;Valor",
+    ...Array.from({ length: 10_001 }, (_value, index) => `31/10/2026;Linha ${index + 1};1,00`),
+  ].join("\n"));
+  const excessiveInspection = await csv.app.inject({
+    method: "POST",
+    url: "/financial-imports/csv/inspect",
+    headers: { cookie: authCookie(), "content-type": "application/octet-stream" },
+    payload: excessiveCsv,
+  });
+  assert.equal(excessiveInspection.statusCode, 413);
+  assert.equal(excessiveInspection.json().message, "O arquivo deve ter no máximo 10.000 movimentações.");
+  const excessiveUpload = await csv.app.inject({
+    method: "POST",
+    url: "/financial-imports",
+    headers: {
+      cookie: authCookie(),
+      "content-type": "application/octet-stream",
+      "x-file-name": "oversized.csv",
+      "x-file-format": "csv",
+      "x-csv-mapping": encodeURIComponent(JSON.stringify({
+        delimiter: ";", encoding: "utf-8", hasHeader: true, dateFormat: "dd/MM/yyyy", numberFormat: "pt-BR",
+        columns: { date: 0, description: 1, amount: 2, credit: null, debit: null, externalId: null },
+      })),
+    },
+    payload: excessiveCsv,
+  });
+  assert.equal(excessiveUpload.statusCode, 413);
+  assert.equal(excessiveUpload.json().message, "O arquivo deve ter no máximo 10.000 movimentações.");
+  await csv.app.close();
+
   const oversized = createTestApp();
   const oversizedResponse = await oversized.app.inject({
     method: "POST",

@@ -268,6 +268,35 @@ test("inspects CSV and suggests common columns", () => {
   assert.equal(result.sample[0]?.lineNumber, 2);
 });
 
+test("rejects oversized CSV during inspection and upload before consuming trailing content", async () => {
+  const header = "date;description;amount";
+  const shortRows = Array.from(
+    { length: 10_001 },
+    (_value, index) => `2026-10-01;row ${index + 1};1,00`,
+  );
+  const content = Buffer.from([header, ...shortRows, '2026-10-01;"trailing malformed;1,00'].join("\n"));
+
+  assert.throws(
+    () => inspectCsv(content),
+    (error: unknown) => error instanceof Error
+      && error.message === "O arquivo deve ter no máximo 10.000 movimentações.",
+  );
+
+  await assert.rejects(
+    new DefaultFinancialImportParser().parse({
+      format: "csv",
+      fileName: "oversized.csv",
+      content,
+      csvConfiguration: {
+        delimiter: ";", encoding: "utf-8", hasHeader: true, dateFormat: "yyyy-MM-dd", numberFormat: "pt-BR",
+        columns: { date: 0, description: 1, amount: 2, credit: null, debit: null, externalId: null },
+      },
+    }),
+    (error: unknown) => error instanceof Error
+      && error.message === "O arquivo deve ter no máximo 10.000 movimentações.",
+  );
+});
+
 test("detects legacy Western CSV and accepts explicit ISO-8859-1 decoding", async () => {
   const content = Buffer.from("Data;Descrição;Valor\n31/10/2026;Refeição;-10,20\n", "latin1");
   assert.equal(inspectCsv(content).detectedConfiguration.encoding, "windows-1252");
