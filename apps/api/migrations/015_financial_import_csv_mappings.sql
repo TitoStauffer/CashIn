@@ -83,10 +83,16 @@ CREATE TABLE financial_import_csv_mappings (
         )
       )
       AND (
-        jsonb_typeof(configuration -> 'columns' -> 'amount') = 'number'
-      ) <> (
-        jsonb_typeof(configuration -> 'columns' -> 'credit') = 'number'
-        AND jsonb_typeof(configuration -> 'columns' -> 'debit') = 'number'
+        (
+          jsonb_typeof(configuration -> 'columns' -> 'amount') = 'number'
+          AND jsonb_typeof(configuration -> 'columns' -> 'credit') = 'null'
+          AND jsonb_typeof(configuration -> 'columns' -> 'debit') = 'null'
+        )
+        OR (
+          jsonb_typeof(configuration -> 'columns' -> 'amount') = 'null'
+          AND jsonb_typeof(configuration -> 'columns' -> 'credit') = 'number'
+          AND jsonb_typeof(configuration -> 'columns' -> 'debit') = 'number'
+        )
       )
     )
 );

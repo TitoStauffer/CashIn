@@ -283,6 +283,33 @@ describe('FinancialImportsPage', () => {
     expect(screen.getByRole('button', { name: 'Enviar e preparar prévia' })).toBeEnabled()
   })
 
+  it('keeps manual configuration and saved models available after the initial inspection fails', async () => {
+    vi.mocked(importsApi.listCsvMappings).mockResolvedValueOnce({ items: [csvTemplate] })
+    vi.mocked(importsApi.inspectCsv)
+      .mockRejectedValueOnce(new Error('detection failed'))
+      .mockResolvedValueOnce(csvInspection)
+    const user = userEvent.setup()
+    await renderPage()
+    const file = new File(['\nData;Valor\n23/10/2026;-120,50'], 'extrato.csv', { type: 'text/csv' })
+
+    await user.upload(screen.getByLabelText('Arquivo OFX ou CSV'), file)
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Não foi possível analisar o CSV')
+    expect(screen.getByRole('heading', { name: 'Confira como as colunas serão interpretadas' })).toBeVisible()
+    expect(screen.getByLabelText('Delimitador')).toBeEnabled()
+    expect(screen.getByRole('option', { name: csvTemplate.name })).toBeVisible()
+
+    await user.selectOptions(screen.getByLabelText('Modelo salvo'), csvTemplate.id)
+
+    await waitFor(() => expect(importsApi.inspectCsv).toHaveBeenLastCalledWith(
+      file,
+      expect.any(AbortSignal),
+      csvTemplate.configuration,
+    ))
+    expect(await screen.findByText('Mercado')).toBeVisible()
+    expect(screen.getByRole('button', { name: 'Enviar e preparar prévia' })).toBeEnabled()
+  })
+
   it('ignores an obsolete reinspection response when adjustments happen in sequence', async () => {
     const firstCorrection = deferred<CsvInspection>()
     const latestCorrection = deferred<CsvInspection>()
@@ -339,6 +366,22 @@ describe('FinancialImportsPage', () => {
       'csv',
       { configuration: expect.objectContaining({ columns: expect.objectContaining({ date: 0, description: null, amount: 2 }) }) },
     ))
+  })
+
+  it('accepts either amount or the complete credit and debit pair, never a partial combination', async () => {
+    const user = userEvent.setup()
+    await renderPage()
+    await user.upload(screen.getByLabelText('Arquivo OFX ou CSV'), new File(['csv'], 'extrato.csv', { type: 'text/csv' }))
+    await screen.findByRole('heading', { name: 'Confira como as colunas serão interpretadas' })
+    const uploadButton = screen.getByRole('button', { name: 'Enviar e preparar prévia' })
+    expect(uploadButton).toBeEnabled()
+
+    await user.selectOptions(screen.getByLabelText('Crédito'), '2')
+    expect(uploadButton).toBeDisabled()
+    await user.selectOptions(screen.getByLabelText('Valor único'), '')
+    expect(uploadButton).toBeDisabled()
+    await user.selectOptions(screen.getByLabelText('Débito'), '3')
+    expect(uploadButton).toBeEnabled()
   })
 
   it('saves and reuses a wallet-scoped CSV mapping by its identifier', async () => {

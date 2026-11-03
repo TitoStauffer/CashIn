@@ -98,6 +98,21 @@ test("PostgreSQL financial import confirms exact amounts, isolates wallets, and 
       ),
       /financial_import_csv_mappings_configuration_check/,
     );
+    for (const [name, columns] of [
+      ["Valor e crédito parcial", { ...csvConfiguration.columns, credit: 3 }],
+      ["Valor e débito parcial", { ...csvConfiguration.columns, debit: 3 }],
+      ["Somente crédito", { ...csvConfiguration.columns, amount: null, credit: 2 }],
+      ["Somente débito", { ...csvConfiguration.columns, amount: null, debit: 2 }],
+    ] as const) {
+      await assert.rejects(
+        database.query(
+          `INSERT INTO financial_import_csv_mappings (wallet_id, created_by_user_id, name, configuration)
+           VALUES ($1, $2, $3, $4::jsonb)`,
+          [walletId, userId, name, JSON.stringify({ ...csvConfiguration, columns })],
+        ),
+        /financial_import_csv_mappings_configuration_check/,
+      );
+    }
     await assert.rejects(
       database.query(
         `INSERT INTO financial_import_csv_mappings (wallet_id, created_by_user_id, name, configuration)

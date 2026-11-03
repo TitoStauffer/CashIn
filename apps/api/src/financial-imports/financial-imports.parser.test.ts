@@ -373,8 +373,42 @@ test("uses ordinal sequences while preserving physical lines across headers, bla
   assert.equal(highPhysicalLine.items[0]?.sequence, 1);
 });
 
+test("rejects malformed CSV quotes and preserves valid escaped quotes", async () => {
+  const parser = new DefaultFinancialImportParser();
+  const configuration = { delimiter: ";" as const, encoding: "utf-8" as const, hasHeader: true, dateFormat: "yyyy-MM-dd" as const, numberFormat: "pt-BR" as const, columns: { date: 0, description: 1, amount: 2, credit: null, debit: null, externalId: null } };
+  const valid = await parser.parse({
+    format: "csv", fileName: "quotes.csv",
+    content: Buffer.from('date;description;amount\n2026-10-01;"He said ""hello"""   ;1,00\n'),
+    csvConfiguration: configuration,
+  });
+  assert.equal(valid.items[0]?.description, 'He said "hello"');
+
+  for (const [content, message] of [
+    ['date;description;amount\n2026-10-01;unexpected"quote;1,00\n', /aspas inesperadas.+linha 2/i],
+    ['date;description;amount\n2026-10-01;"closed"content;1,00\n', /conteúdo inválido após aspas.+linha 2/i],
+    ['date;description;amount\n2026-10-01;"unclosed;1,00\n', /aspas não finalizadas/i],
+  ] as const) {
+    await assert.rejects(
+      parser.parse({ format: "csv", fileName: "quotes.csv", content: Buffer.from(content), csvConfiguration: configuration }),
+      message,
+    );
+  }
+});
+
 test("strictly rejects ambiguous mappings and unexpected properties", () => {
-  assert.throws(() => parseCsvConfiguration({ delimiter: ",", encoding: "utf-8", hasHeader: true, dateFormat: "yyyy-MM-dd", numberFormat: "en-US", columns: { date: 0, amount: 1, credit: 2, debit: 3 } }), /coluna de valor/i);
+  const configuration = { delimiter: ",", encoding: "utf-8", hasHeader: true, dateFormat: "yyyy-MM-dd", numberFormat: "en-US" };
+  assert.doesNotThrow(() => parseCsvConfiguration({ ...configuration, columns: { date: 0, amount: 1, credit: null, debit: null } }));
+  assert.doesNotThrow(() => parseCsvConfiguration({ ...configuration, columns: { date: 0, amount: null, credit: 1, debit: 2 } }));
+  for (const columns of [
+    { date: 0, amount: 1, credit: 2, debit: 3 },
+    { date: 0, amount: 1, credit: 2, debit: null },
+    { date: 0, amount: 1, credit: null, debit: 2 },
+    { date: 0, amount: null, credit: 1, debit: null },
+    { date: 0, amount: null, credit: null, debit: 1 },
+    { date: 0, amount: null, credit: null, debit: null },
+  ]) {
+    assert.throws(() => parseCsvConfiguration({ ...configuration, columns }), /coluna de valor/i);
+  }
   assert.throws(() => parseCsvConfiguration(JSON.parse('{"delimiter":",","encoding":"utf-8","hasHeader":true,"dateFormat":"yyyy-MM-dd","numberFormat":"en-US","columns":{"date":0,"amount":1,"__proto__":2}}')), /inválida/i);
   assert.deepEqual(parseCsvInspectionOverrides({
     delimiter: ";", encoding: "utf-8", hasHeader: false, dateFormat: "dd/MM/yyyy", numberFormat: "pt-BR",

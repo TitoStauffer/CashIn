@@ -41,6 +41,17 @@ type CsvInspectionOptions = {
 
 const maxFileSize = 10 * 1024 * 1024
 
+function createDefaultCsvConfiguration(): CsvImportConfiguration {
+  return {
+    delimiter: ',',
+    encoding: 'utf-8',
+    hasHeader: true,
+    dateFormat: 'dd/MM/yyyy',
+    numberFormat: 'pt-BR',
+    columns: { date: 0, description: null, amount: null, credit: null, debit: null, externalId: null },
+  }
+}
+
 const statusLabels: Record<FinancialImportStatus, string> = {
   processing: 'Processando',
   preview: 'Aguardando confirmação',
@@ -87,10 +98,13 @@ function isCsvConfigurationValid(configuration: CsvImportConfiguration | null, c
   if (!configuration) return false
   const availableIndexes = new Set(columns.map((column) => column.index))
   const mappedIndexes = Object.values(configuration.columns).filter((index): index is number => index !== null)
+  const usesAmount = Number.isInteger(configuration.columns.amount)
+  const usesCreditAndDebit = Number.isInteger(configuration.columns.credit) && Number.isInteger(configuration.columns.debit)
+  const usesOnlyAmount = usesAmount && configuration.columns.credit === null && configuration.columns.debit === null
+  const usesOnlyCreditAndDebit = !usesAmount && usesCreditAndDebit
   return mappedIndexes.every((index) => availableIndexes.has(index))
     && Number.isInteger(configuration.columns.date)
-    && (Number.isInteger(configuration.columns.amount)
-      || (Number.isInteger(configuration.columns.credit) && Number.isInteger(configuration.columns.debit)))
+    && (usesOnlyAmount || usesOnlyCreditAndDebit)
 }
 
 function formatFileSize(bytes: number) {
@@ -359,7 +373,7 @@ function FinancialImportsWalletPage({ userEmail, isLoggingOut, onLogout }: Finan
       }
     } catch (error) {
       if (controller.signal.aborted || !isCurrentWalletOperation(operation)) return
-      if (!options.configuration) setCsvConfiguration(null)
+      if (!options.configuration) setCsvConfiguration(createDefaultCsvConfiguration())
       if (options.rememberDetected) setDetectedCsvConfiguration(null)
       setCsvColumns([])
       setCsvSample([])
@@ -368,6 +382,15 @@ function FinancialImportsWalletPage({ userEmail, isLoggingOut, onLogout }: Finan
       if (!controller.signal.aborted && isCurrentWalletOperation(operation)) setPendingAction(null)
       if (csvInspectionControllerRef.current === controller) csvInspectionControllerRef.current = null
     }
+  }
+
+  function retryCsvInspection() {
+    if (!selectedFile || !csvConfiguration) return
+    void inspectCsv(selectedFile, {
+      configuration: csvConfiguration,
+      columns: selectedCsvMappingId ? csvConfiguration.columns : undefined,
+      resetModel: false,
+    })
   }
 
   function updateCsvConfiguration(changes: Partial<CsvImportConfiguration>, preserveColumns: boolean) {
@@ -680,6 +703,7 @@ function FinancialImportsWalletPage({ userEmail, isLoggingOut, onLogout }: Finan
                   mappingName={csvMappingName}
                   mappingDirty={isCsvMappingDirty}
                   disabled={pendingAction !== null && pendingAction !== 'inspect-csv'}
+                  inspecting={pendingAction === 'inspect-csv'}
                   onConfigurationChange={updateCsvConfiguration}
                   onColumnChange={updateCsvColumnMapping}
                   onMappingSelect={selectCsvMapping}
@@ -688,6 +712,7 @@ function FinancialImportsWalletPage({ userEmail, isLoggingOut, onLogout }: Finan
                     setIsCsvMappingDirty(Boolean(selectedCsvMappingId))
                   }}
                   onSaveMapping={() => void saveCsvMapping()}
+                  onRetryInspection={retryCsvInspection}
                 />
               )}
               <button className="imports-primary-button" type="submit" disabled={!selectedFile || pendingAction !== null || isLoading || Boolean(loadError) || isSelectedImportBusy || (getFileFormat(selectedFile?.name ?? '') === 'csv' && !isCsvConfigurationValid(csvConfiguration, csvColumns))}>
@@ -804,11 +829,13 @@ type CsvConfigurationPanelProps = {
   mappingName: string
   mappingDirty: boolean
   disabled: boolean
+  inspecting: boolean
   onConfigurationChange: (changes: Partial<CsvImportConfiguration>, preserveColumns: boolean) => void
   onColumnChange: (field: keyof CsvImportConfiguration['columns'], value: string) => void
   onMappingSelect: (mappingId: string) => void
   onMappingNameChange: (name: string) => void
   onSaveMapping: () => void
+  onRetryInspection: () => void
 }
 
 function CsvConfigurationPanel({
@@ -820,11 +847,13 @@ function CsvConfigurationPanel({
   mappingName,
   mappingDirty,
   disabled,
+  inspecting,
   onConfigurationChange,
   onColumnChange,
   onMappingSelect,
   onMappingNameChange,
   onSaveMapping,
+  onRetryInspection,
 }: CsvConfigurationPanelProps) {
   const isMappingReady = isCsvConfigurationValid(configuration, columns)
   const columnFields: Array<{ key: keyof CsvImportConfiguration['columns']; label: string; required?: boolean }> = [
@@ -844,13 +873,18 @@ function CsvConfigurationPanel({
           <h3 id="csv-config-title">Confira como as colunas serão interpretadas</h3>
           <p>A detecção é apenas uma sugestão. Revise a amostra antes de enviar.</p>
         </div>
-        <label>
-          <span>Modelo salvo</span>
-          <select value={selectedMappingId} onChange={(event) => onMappingSelect(event.target.value)} disabled={disabled}>
-            <option value="">Configuração detectada</option>
-            {mappings.map((mapping) => <option key={mapping.id} value={mapping.id}>{mapping.name}</option>)}
-          </select>
-        </label>
+        <div className="imports-csv-config__actions">
+          <label>
+            <span>Modelo salvo</span>
+            <select value={selectedMappingId} onChange={(event) => onMappingSelect(event.target.value)} disabled={disabled}>
+              <option value="">Configuração detectada</option>
+              {mappings.map((mapping) => <option key={mapping.id} value={mapping.id}>{mapping.name}</option>)}
+            </select>
+          </label>
+          <button className="imports-secondary-button" type="button" onClick={onRetryInspection} disabled={disabled || inspecting}>
+            {inspecting ? 'Analisando…' : 'Analisar novamente'}
+          </button>
+        </div>
       </div>
 
       <fieldset className="imports-csv-grid" disabled={disabled}>

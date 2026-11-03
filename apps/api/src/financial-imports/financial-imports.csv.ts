@@ -53,8 +53,11 @@ export function parseCsvConfiguration(value: unknown): CsvImportConfiguration {
     if (columns[key] !== undefined && columns[key] !== null) normalizedColumns[key] = validateColumnIndex(columns[key], key);
   }
   const usesAmount = normalizedColumns.amount !== null;
-  const usesCreditAndDebit = normalizedColumns.credit !== null && normalizedColumns.debit !== null;
-  if (usesAmount === usesCreditAndDebit) {
+  const usesCredit = normalizedColumns.credit !== null;
+  const usesDebit = normalizedColumns.debit !== null;
+  const usesSingleAmount = usesAmount && !usesCredit && !usesDebit;
+  const usesSeparatedAmounts = !usesAmount && usesCredit && usesDebit;
+  if (!usesSingleAmount && !usesSeparatedAmounts) {
     throw new FinancialImportError("Mapeie uma coluna de valor ou as colunas separadas de crédito e débito.", 400);
   }
   const indexes = Object.values(normalizedColumns).filter((item): item is number => typeof item === "number");
@@ -179,17 +182,33 @@ function parseRows(text: string, delimiter: CsvDelimiter): CsvRow[] {
   let values: string[] = [];
   let value = "";
   let quoted = false;
+  let afterClosingQuote = false;
   let lineNumber = 1;
   let rowStart = 1;
   for (let index = 0; index <= text.length; index += 1) {
     const character = index === text.length ? "\n" : text[index]!;
     if (quoted) {
       if (character === '"' && text[index + 1] === '"') { value += '"'; index += 1; }
-      else if (character === '"') quoted = false;
+      else if (character === '"') { quoted = false; afterClosingQuote = true; }
       else { value += character; if (character === "\n") lineNumber += 1; }
       continue;
     }
+    if (afterClosingQuote) {
+      if (character === " " || character === "\t") continue;
+      if (character === delimiter) { values.push(validateCell(value)); value = ""; afterClosingQuote = false; continue; }
+      if (character === "\r" && text[index + 1] === "\n") continue;
+      if (character === "\n") {
+        values.push(validateCell(value));
+        if (values.length > MAX_COLUMNS) throw new FinancialImportError("O arquivo CSV deve ter no máximo 100 colunas.", 422);
+        if (values.some((item) => item.trim() !== "")) rows.push({ lineNumber: rowStart, values });
+        values = []; value = ""; afterClosingQuote = false; lineNumber += 1; rowStart = lineNumber; continue;
+      }
+      throw new FinancialImportError(`O arquivo CSV possui conteúdo inválido após aspas na linha ${lineNumber}.`, 422);
+    }
     if (character === '"' && value.length === 0) { quoted = true; continue; }
+    if (character === '"') {
+      throw new FinancialImportError(`O arquivo CSV possui aspas inesperadas na linha ${lineNumber}.`, 422);
+    }
     if (character === delimiter) { values.push(validateCell(value)); value = ""; continue; }
     if (character === "\r" && text[index + 1] === "\n") continue;
     if (character === "\n") {

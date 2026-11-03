@@ -816,6 +816,14 @@ test("CSV inspection and reusable mappings remain scoped to the current wallet",
   });
   assert.equal(crossWalletUpload.statusCode, 404);
 
+  const malformedQuoteUpload = await app.inject({
+    method: "POST", url: "/financial-imports",
+    headers: { cookie: authCookie(), "content-type": "application/octet-stream", "x-file-name": "malformed.csv", "x-file-format": "csv", "x-csv-mapping-id": mappingId },
+    payload: Buffer.from('Data;Descrição;Valor\n31/10/2026;"Mercado"alterado;-10,25\n'),
+  });
+  assert.equal(malformedQuoteUpload.statusCode, 422);
+  assert.match(malformedQuoteUpload.json().message, /conteúdo inválido após aspas/i);
+
   const uploadResponse = await app.inject({
     method: "POST", url: "/financial-imports",
     headers: { cookie: authCookie(), "content-type": "application/octet-stream", "x-file-name": "statement.csv", "x-file-format": "csv", "x-csv-mapping-id": mappingId },
