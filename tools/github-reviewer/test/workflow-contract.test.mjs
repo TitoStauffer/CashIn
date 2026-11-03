@@ -47,7 +47,11 @@ test('sequences PR metadata, implementation checks, SonarQube and agent orchestr
   assert.match(titleWorkflow, /ref:\s*master/);
   assert.match(titleWorkflow, /persist-credentials:\s*false/);
   assert.match(ciWorkflow, /gh api "repos\/\$\{GITHUB_REPOSITORY\}\/pulls\/\$\{PR_NUMBER\}"/);
-  assert.match(mergeReadinessWorkflow, /workflows:\s*\[CI, PR title, PR Review Signal\]/);
+  assert.match(mergeReadinessWorkflow, /workflows:\s*\[CI, PR Review Signal\]/);
+  assert.doesNotMatch(mergeReadinessWorkflow, /workflows:\s*\[[^\]]*PR title/);
+  assert.doesNotMatch(mergeReadinessWorkflow, /pull_request_target:/);
+  assert.match(mergeReadinessWorkflow, /### Codex — Quality Gate Coordinator/);
+  assert.doesNotMatch(mergeReadinessWorkflow, /### Codex — QA Agent|### Code Review —|### Code Review -/);
 });
 
 test('formal review relay listens to review changes and has no permissions or privileged steps', () => {
@@ -80,4 +84,9 @@ test('pins orchestration runtime and isolates deterministic consolidation from C
   assert.match(coordinator, /runs-on: ubuntu-24.04/);
   assert.doesNotMatch(coordinator, /self-hosted|secrets\./);
   assert.match(orchestrationWorkflow, /retry_inconclusive:[\s\S]*?default: false/);
+  assert.equal([...orchestrationWorkflow.matchAll(/cache-dependency-path:\s*tools\/github-reviewer\/package-lock\.json/g)].length, 6);
+  assert.match(orchestrationWorkflow, /Fail when Code Review produced no structured result/);
+  assert.match(orchestrationWorkflow, /Fail when QA produced no structured result/);
+  assert.match(orchestrationWorkflow, /Fail when Quality Gate produced no structured result/);
+  assert.equal([...orchestrationWorkflow.matchAll(/steps\.stage\.outcome == 'failure'[\s\S]*?steps\.stage\.outputs\.decision == ''/g)].length, 3);
 });

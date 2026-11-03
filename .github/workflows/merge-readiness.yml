@@ -1,13 +1,10 @@
 name: Merge Readiness
 
 on:
-  pull_request_target: # zizmor: ignore[dangerous-triggers] — required for fork PR events; this job uses trusted master code only and never checks out or runs PR code.
-    branches: [master]
-    types: [opened, edited, reopened, synchronize, ready_for_review]
-  workflow_run:
-    workflows: [CI, PR title, PR Review Signal]
+  workflow_run: # zizmor: ignore[dangerous-triggers] — evaluates only trusted master code and never checks out or executes PR code.
+    workflows: [CI, PR Review Signal]
     types: [completed]
-  issue_comment:
+  issue_comment: # zizmor: ignore[dangerous-triggers] — accepts only signed report markers from the configured App and executes trusted master code.
     types: [created, edited]
   workflow_dispatch:
     inputs:
@@ -32,10 +29,7 @@ jobs:
       (github.event.issue.pull_request &&
       github.event.comment.user.login == vars.CASHIN_APP_BOT_LOGIN &&
       (contains(github.event.comment.body, '### Codex — Quality Gate Coordinator') ||
-      contains(github.event.comment.body, '### Codex — QA Agent') ||
-      contains(github.event.comment.body, '### Codex — PM Agent') ||
-      contains(github.event.comment.body, '### Code Review —') ||
-      contains(github.event.comment.body, '### Code Review -')))
+      contains(github.event.comment.body, '### Codex — PM Agent')))
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
