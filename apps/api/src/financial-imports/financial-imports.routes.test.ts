@@ -732,6 +732,35 @@ test("upload enforces the 10 MB and 10,000 movement limits", async () => {
   });
   assert.equal(excessiveUpload.statusCode, 413);
   assert.equal(excessiveUpload.json().message, "O arquivo deve ter no máximo 10.000 movimentações.");
+
+  const excessiveColumns = Buffer.from(
+    `${Array.from({ length: 100 }, (_value, index) => `column-${index + 1}`).join(";")};"trailing malformed`,
+  );
+  const excessiveColumnsInspection = await csv.app.inject({
+    method: "POST",
+    url: "/financial-imports/csv/inspect",
+    headers: { cookie: authCookie(), "content-type": "application/octet-stream" },
+    payload: excessiveColumns,
+  });
+  assert.equal(excessiveColumnsInspection.statusCode, 422);
+  assert.equal(excessiveColumnsInspection.json().message, "O arquivo CSV deve ter no máximo 100 colunas.");
+  const excessiveColumnsUpload = await csv.app.inject({
+    method: "POST",
+    url: "/financial-imports",
+    headers: {
+      cookie: authCookie(),
+      "content-type": "application/octet-stream",
+      "x-file-name": "too-many-columns.csv",
+      "x-file-format": "csv",
+      "x-csv-mapping": encodeURIComponent(JSON.stringify({
+        delimiter: ";", encoding: "utf-8", hasHeader: false, dateFormat: "yyyy-MM-dd", numberFormat: "pt-BR",
+        columns: { date: 0, description: 1, amount: 2, credit: null, debit: null, externalId: null },
+      })),
+    },
+    payload: excessiveColumns,
+  });
+  assert.equal(excessiveColumnsUpload.statusCode, 422);
+  assert.equal(excessiveColumnsUpload.json().message, "O arquivo CSV deve ter no máximo 100 colunas.");
   await csv.app.close();
 
   const oversized = createTestApp();

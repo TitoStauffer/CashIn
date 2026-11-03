@@ -297,6 +297,35 @@ test("rejects oversized CSV during inspection and upload before consuming traili
   );
 });
 
+test("rejects the 101st CSV column before consuming its trailing content", async () => {
+  const configurations = [
+    `${Array.from({ length: 100 }, (_value, index) => `column-${index + 1}`).join(";")};"trailing malformed`,
+    `${Array.from({ length: 100 }, (_value, index) => `"column-${index + 1}"`).join(";")};"trailing malformed`,
+  ];
+
+  for (const csv of configurations) {
+    assert.throws(
+      () => inspectCsv(Buffer.from(csv)),
+      (error: unknown) => error instanceof Error
+        && error.message === "O arquivo CSV deve ter no máximo 100 colunas.",
+    );
+
+    await assert.rejects(
+      new DefaultFinancialImportParser().parse({
+        format: "csv",
+        fileName: "too-many-columns.csv",
+        content: Buffer.from(csv),
+        csvConfiguration: {
+          delimiter: ";", encoding: "utf-8", hasHeader: false, dateFormat: "yyyy-MM-dd", numberFormat: "pt-BR",
+          columns: { date: 0, description: 1, amount: 2, credit: null, debit: null, externalId: null },
+        },
+      }),
+      (error: unknown) => error instanceof Error
+        && error.message === "O arquivo CSV deve ter no máximo 100 colunas.",
+    );
+  }
+});
+
 test("detects legacy Western CSV and accepts explicit ISO-8859-1 decoding", async () => {
   const content = Buffer.from("Data;Descrição;Valor\n31/10/2026;Refeição;-10,20\n", "latin1");
   assert.equal(inspectCsv(content).detectedConfiguration.encoding, "windows-1252");

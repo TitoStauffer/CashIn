@@ -200,6 +200,13 @@ function parseRows(
   let afterClosingQuote = false;
   let lineNumber = 1;
   let rowStart = 1;
+  const appendCell = (hasFollowingColumn: boolean) => {
+    values.push(validateCell(value));
+    if (values.length > MAX_COLUMNS || (hasFollowingColumn && values.length >= MAX_COLUMNS)) {
+      throw new FinancialImportError("O arquivo CSV deve ter no máximo 100 colunas.", 422);
+    }
+    value = "";
+  };
   const appendRow = (row: CsvRow) => {
     if (row.values.every((item) => item.trim() === "")) return;
     if (firstRow === null) {
@@ -223,11 +230,10 @@ function parseRows(
     }
     if (afterClosingQuote) {
       if (character === " " || character === "\t") continue;
-      if (character === delimiter) { values.push(validateCell(value)); value = ""; afterClosingQuote = false; continue; }
+      if (character === delimiter) { appendCell(true); afterClosingQuote = false; continue; }
       if (character === "\r" && text[index + 1] === "\n") continue;
       if (character === "\n") {
-        values.push(validateCell(value));
-        if (values.length > MAX_COLUMNS) throw new FinancialImportError("O arquivo CSV deve ter no máximo 100 colunas.", 422);
+        appendCell(false);
         appendRow({ lineNumber: rowStart, values });
         values = []; value = ""; afterClosingQuote = false; lineNumber += 1; rowStart = lineNumber; continue;
       }
@@ -237,11 +243,10 @@ function parseRows(
     if (character === '"') {
       throw new FinancialImportError(`O arquivo CSV possui aspas inesperadas na linha ${lineNumber}.`, 422);
     }
-    if (character === delimiter) { values.push(validateCell(value)); value = ""; continue; }
+    if (character === delimiter) { appendCell(true); continue; }
     if (character === "\r" && text[index + 1] === "\n") continue;
     if (character === "\n") {
-      values.push(validateCell(value));
-      if (values.length > MAX_COLUMNS) throw new FinancialImportError("O arquivo CSV deve ter no máximo 100 colunas.", 422);
+      appendCell(false);
       appendRow({ lineNumber: rowStart, values });
       values = []; value = ""; lineNumber += 1; rowStart = lineNumber; continue;
     }
