@@ -26,7 +26,7 @@ const run = {
 const workflow = 'jobs:\n  api:\n    services:\n      postgres:\n        image: postgres:17-alpine\n        env:\n          POSTGRES_PASSWORD: ci-placeholder\n    env:\n      TEST_DATABASE_URL: postgresql://ci-placeholder@localhost/test\n    steps:\n      - name: Test with coverage (unit + integration)\n        run: npm run test:coverage\n      - name: Ensure no test was skipped\n        run: test "$skipped" = "0"\n';
 const scripts = { 'test:coverage': 'tsx --test "src/**/*.test.ts"' };
 const reviewerScripts = { build: 'tsc -p tsconfig.json', test: 'npm run build && node --test test/*.test.mjs' };
-const dispatcherScripts = { build: 'tsc -p tsconfig.json', typecheck: 'tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.test.json', test: 'tsx --test test/*.test.ts' };
+const dispatcherScripts = { build: 'tsc -p tsconfig.json', typecheck: 'tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.test.json', test: 'tsx --test test/*.test.ts', verify: 'npm test && npm run typecheck && npm run build' };
 
 function fakeFetch({ checkValue = check, jobValue = job, checkValues, jobValues, runValue = run, workflowValue = workflow, requests = [], failure } = {}) {
   return async (url, options) => {
@@ -100,9 +100,7 @@ test('verifies all three CI jobs and supplies Automation Tools test steps and fi
     ...(entry.name === 'Automation Tools' ? { steps: [
       'Build and test GitHub integration tools',
       'Install Jira dispatcher dependencies',
-      'Test Jira dispatcher',
-      'Typecheck Jira dispatcher',
-      'Build Jira dispatcher',
+      'Verify Jira dispatcher',
     ].map((name, index) => ({ number: index + 1, name, status: 'completed', conclusion: 'success' })) } : {}),
   }));
   const inputs = await loadAgentReviewInputs(fakeFetch({ checkValues, jobValues }), 'owner/repo', 7, { head: { sha }, base: { sha: baseSha } }, 'not-a-real-token');
@@ -112,7 +110,7 @@ test('verifies all three CI jobs and supplies Automation Tools test steps and fi
   assert.equal(inputs.ciConfiguration.length, 5);
   assert.deepEqual(
     inputs.checkRuns.find(({ name }) => name === 'Automation Tools').actions.steps.map(({ name }) => name),
-    ['Build and test GitHub integration tools', 'Install Jira dispatcher dependencies', 'Test Jira dispatcher', 'Typecheck Jira dispatcher', 'Build Jira dispatcher'],
+    ['Build and test GitHub integration tools', 'Install Jira dispatcher dependencies', 'Verify Jira dispatcher'],
   );
   const originalFingerprint = JSON.stringify(fingerprintAgentReviewInputs(inputs));
   inputs.checkRuns.find(({ name }) => name === 'Automation Tools').actions.steps[0].conclusion = 'failure';

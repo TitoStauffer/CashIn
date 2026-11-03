@@ -108,17 +108,9 @@ jobs:
         working-directory: tools/jira-dispatcher
         run: npm ci --fetch-timeout=15000 --fetch-retries=1
 
-      - name: Test Jira dispatcher
+      - name: Verify Jira dispatcher
         working-directory: tools/jira-dispatcher
-        run: npm test
-
-      - name: Typecheck Jira dispatcher
-        working-directory: tools/jira-dispatcher
-        run: npm run typecheck
-
-      - name: Build Jira dispatcher
-        working-directory: tools/jira-dispatcher
-        run: npm run build
+        run: npm run verify
 
       - name: Validate knowledge vault
         if: hashFiles('docs/knowledge/**/*.md') != ''
