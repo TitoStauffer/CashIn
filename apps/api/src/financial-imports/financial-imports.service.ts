@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { FinancialImportError } from "./financial-imports.errors.js";
+import { createFinancialImportFingerprint } from "./financial-imports.fingerprint.js";
 import { inspectCsv, parseCsvConfiguration, parseCsvInspectionOverrides } from "./financial-imports.csv.js";
 import {
   FINANCIAL_IMPORT_FORMATS,
@@ -176,7 +177,12 @@ function normalizeParsedItem(item: ParsedFinancialImportItem, fallbackSequence: 
       && nonRepairableReasons.length === 0
       && (repairableReasons.length > 0 || parserMarkedInvalid),
     externalId: hasValidExternalId ? rawExternalId : null,
-    recordHash: hasValidRecordHash ? rawRecordHash : null,
+    recordHash: createFinancialImportFingerprint({
+      date: hasValidDate ? item.date : null,
+      signedAmount: hasValidAmount ? item.signedAmount : null,
+      type,
+      description,
+    }) ?? (hasValidRecordHash ? rawRecordHash : null),
   };
 }
 
@@ -218,6 +224,9 @@ function normalizeUpdateInput(input: UpdateFinancialImportItemInput): Required<U
   if (subcategoryId !== null && categoryId === null) {
     throw new FinancialImportError("Selecione uma categoria para usar a subcategoria.", 400);
   }
+  if (input.includeDuplicate !== undefined && typeof input.includeDuplicate !== "boolean") {
+    throw new FinancialImportError("A decisão sobre a possível duplicidade é inválida.", 400);
+  }
   const description = input.description?.trim() || null;
   if (description?.includes("\u0000")) {
     throw new FinancialImportError("A descrição da movimentação não pode conter caractere nulo.", 400);
@@ -231,6 +240,7 @@ function normalizeUpdateInput(input: UpdateFinancialImportItemInput): Required<U
     type: input.type,
     categoryId,
     subcategoryId,
+    includeDuplicate: input.includeDuplicate === true,
   };
 }
 

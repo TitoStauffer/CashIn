@@ -28,6 +28,7 @@ export interface FinancialImportItem {
   validationStatus: FinancialImportItemStatus;
   errorMessage: string | null;
   canEdit: boolean;
+  canIncludeDuplicate?: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -66,6 +67,8 @@ export interface ParsedFinancialImportItem {
   isRepairable?: boolean;
   externalId?: string | null;
   recordHash?: string | null;
+  duplicateOverrideAllowed?: boolean;
+  acceptedDuplicateFingerprint?: string | null;
 }
 
 export interface ParsedFinancialImport {
@@ -143,6 +146,7 @@ export interface UpdateFinancialImportItemInput {
   type: FinancialImportItemType;
   categoryId?: string | null;
   subcategoryId?: string | null;
+  includeDuplicate?: boolean;
 }
 
 export interface FinancialImportRepository {

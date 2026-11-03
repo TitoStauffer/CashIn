@@ -68,6 +68,7 @@ export type FinancialImportItem = {
   validationStatus: FinancialImportItemStatus
   errorMessage: string | null
   canEdit: boolean
+  canIncludeDuplicate?: boolean
 }
 
 export type FinancialImportSession = {
@@ -93,6 +94,7 @@ export type FinancialImportItemInput = {
   type: FinancialImportItemType
   categoryId: string | null
   subcategoryId: string | null
+  includeDuplicate?: boolean
 }
 
 type FinancialImportListResponse = { items: FinancialImportSession[] }

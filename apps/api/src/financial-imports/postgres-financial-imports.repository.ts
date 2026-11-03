@@ -1,6 +1,12 @@
 import { randomUUID } from "node:crypto";
 import type { Database, QueryExecutor } from "../database.js";
 import { FinancialImportError } from "./financial-imports.errors.js";
+import {
+  createFinancialImportFingerprint,
+  createLegacyFinancialImportFingerprint,
+  createLegacyOfxFinancialImportFingerprint,
+  normalizeSignedAmount,
+} from "./financial-imports.fingerprint.js";
 import type {
   CreateCsvMappingInput,
   CsvImportConfiguration,
@@ -61,6 +67,7 @@ interface ImportItemRow {
   validation_status: FinancialImportItemStatus;
   error_message: string | null;
   is_repairable: boolean;
+  duplicate_override_allowed: boolean;
   created_at: string | Date;
   updated_at: string | Date;
 }
@@ -163,6 +170,7 @@ function mapItem(row: ImportItemRow): FinancialImportItem {
     canEdit: row.validation_status === "valid"
       || row.validation_status === "uncategorized"
       || (row.validation_status === "invalid" && row.is_repairable),
+    canIncludeDuplicate: row.validation_status === "duplicate" && row.duplicate_override_allowed,
     createdAt: timestampValue(row.created_at)!,
     updatedAt: timestampValue(row.updated_at)!,
   };
@@ -252,6 +260,7 @@ const itemColumns = `
   item.validation_status,
   item.error_message,
   item.is_repairable,
+  item.duplicate_override_allowed,
   item.created_at,
   item.updated_at`;
 
@@ -288,6 +297,7 @@ export class PostgresFinancialImportsRepository implements FinancialImportReposi
         [importId, walletId],
       );
       if (!locked.rows[0]) return null;
+      await this.lockWalletImports(transaction, walletId);
 
       const categoryIds = [...new Set(items.flatMap((item) => item.categoryId ? [item.categoryId] : []))];
       const subcategoryIds = [...new Set(items.flatMap((item) => item.subcategoryId ? [item.subcategoryId] : []))];
@@ -336,7 +346,14 @@ export class PostgresFinancialImportsRepository implements FinancialImportReposi
         return item;
       });
 
-      for (const batch of chunks(validatedItems)) {
+      const itemsWithFileDuplicates = this.markInFileDuplicates(validatedItems);
+      const itemsWithHistoryDuplicates = await this.markPreviouslyImportedDuplicates(
+        transaction,
+        walletId,
+        itemsWithFileDuplicates,
+        sourceMetadata,
+      );
+      for (const batch of chunks(itemsWithHistoryDuplicates)) {
         const payload = batch.map((item) => ({
           sequence: item.sequence,
           transaction_date: item.date,
@@ -351,18 +368,20 @@ export class PostgresFinancialImportsRepository implements FinancialImportReposi
           is_repairable: item.isRepairable ?? false,
           external_id: item.externalId ?? null,
           record_hash: item.recordHash ?? null,
+          duplicate_override_allowed: item.duplicateOverrideAllowed === true,
         }));
         await transaction.query(
           `INSERT INTO import_items (
              import_session_id, wallet_id, sequence, transaction_date, description,
              signed_amount, type, category_id, subcategory_id, category_nature,
-             validation_status, error_message, is_repairable, external_id, record_hash
+             validation_status, error_message, is_repairable, external_id, record_hash,
+             duplicate_override_allowed
            )
            SELECT $1, $2, item.sequence, item.transaction_date::date, item.description,
                   item.signed_amount::numeric, item.type, item.category_id::uuid,
                   item.subcategory_id::uuid, item.category_nature,
                   item.validation_status, item.error_message, item.is_repairable,
-                  item.external_id, item.record_hash
+                  item.external_id, item.record_hash, item.duplicate_override_allowed
            FROM jsonb_to_recordset($3::jsonb) AS item(
              sequence integer,
              transaction_date text,
@@ -376,7 +395,8 @@ export class PostgresFinancialImportsRepository implements FinancialImportReposi
              error_message text,
              is_repairable boolean,
              external_id text,
-             record_hash text
+             record_hash text,
+             duplicate_override_allowed boolean
            )`,
           [importId, walletId, JSON.stringify(payload)],
         );
@@ -437,8 +457,45 @@ export class PostgresFinancialImportsRepository implements FinancialImportReposi
       );
       if (!session.rows[0]) return null;
 
+      const currentItem = await transaction.query<{
+        signed_amount: string | null;
+        validation_status: FinancialImportItemStatus;
+        duplicate_override_allowed: boolean;
+        is_repairable: boolean;
+        accepted_duplicate_fingerprint: string | null;
+      }>(
+        `SELECT signed_amount::text, validation_status, duplicate_override_allowed, is_repairable,
+                accepted_duplicate_fingerprint
+         FROM import_items
+         WHERE id = $1 AND import_session_id = $2 AND wallet_id = $3
+         FOR UPDATE`,
+        [itemId, importId, walletId],
+      );
+      if (!currentItem.rows[0]) return null;
+      const canEditItem = currentItem.rows[0].validation_status === "valid"
+        || currentItem.rows[0].validation_status === "uncategorized"
+        || (currentItem.rows[0].validation_status === "invalid" && currentItem.rows[0].is_repairable)
+        || (currentItem.rows[0].validation_status === "duplicate"
+          && currentItem.rows[0].duplicate_override_allowed
+          && input.includeDuplicate);
+      if (!canEditItem || currentItem.rows[0].signed_amount === null) return null;
+
       const categoryId = input.type === "transfer" ? null : input.categoryId;
       const subcategoryId = input.type === "transfer" ? null : input.subcategoryId;
+      const nextFingerprint = createFinancialImportFingerprint({
+        date: input.date,
+        signedAmount: normalizeSignedAmount(currentItem.rows[0].signed_amount),
+        type: input.type,
+        description: input.description,
+      });
+      if (!nextFingerprint) throw new FinancialImportError("Não foi possível validar a identidade da movimentação.", 409);
+      const acceptedDuplicateFingerprint = input.includeDuplicate
+        && currentItem.rows[0].validation_status === "duplicate"
+        && currentItem.rows[0].duplicate_override_allowed
+        ? nextFingerprint
+        : currentItem.rows[0].accepted_duplicate_fingerprint === nextFingerprint
+          ? nextFingerprint
+          : null;
       const validationStatus = input.type === "transfer" || categoryId === null ? "uncategorized" : "valid";
       const errorMessage = input.type === "transfer"
         ? "A transferência precisa ser conciliada antes da importação."
@@ -456,6 +513,9 @@ export class PostgresFinancialImportsRepository implements FinancialImportReposi
              validation_status = $9,
              error_message = $10,
              is_repairable = false,
+             duplicate_override_allowed = false,
+             record_hash = $12,
+             accepted_duplicate_fingerprint = $13,
              updated_at = now()
          WHERE item.id = $1
            AND item.import_session_id = $2
@@ -463,6 +523,7 @@ export class PostgresFinancialImportsRepository implements FinancialImportReposi
            AND (
              item.validation_status IN ('valid', 'uncategorized')
              OR (item.validation_status = 'invalid' AND item.is_repairable)
+             OR (item.validation_status = 'duplicate' AND item.duplicate_override_allowed AND $11::boolean)
            )
            AND ($7::uuid IS NULL OR EXISTS (
              SELECT 1 FROM categories AS category
@@ -484,6 +545,9 @@ export class PostgresFinancialImportsRepository implements FinancialImportReposi
           subcategoryId,
           validationStatus,
           errorMessage,
+          input.includeDuplicate,
+          nextFingerprint,
+          acceptedDuplicateFingerprint,
         ],
       );
       const row = result.rows[0];
@@ -499,6 +563,7 @@ export class PostgresFinancialImportsRepository implements FinancialImportReposi
     importId: string,
   ): Promise<FinancialImportSession | null> {
     return this.database.transaction(async (transaction) => {
+      await this.lockWalletImports(transaction, walletId);
       const session = await transaction.query<{ id: string }>(
         `UPDATE import_sessions
          SET status = 'confirming', confirmed_at = now(), failure_message = NULL, updated_at = now()
@@ -507,6 +572,25 @@ export class PostgresFinancialImportsRepository implements FinancialImportReposi
         [importId, walletId],
       );
       if (!session.rows[0]) return null;
+      const pendingItems = await transaction.query<{ id: string }>(
+        `SELECT id FROM import_items
+         WHERE import_session_id = $1 AND wallet_id = $2 AND validation_status = 'valid'`,
+        [importId, walletId],
+      );
+      if (pendingItems.rows.length === 0) {
+        throw new FinancialImportError("A importação não possui movimentações válidas para confirmar.", 409);
+      }
+      const newlyDetectedDuplicates = await this.markCurrentSessionDuplicates(transaction, walletId, importId);
+      if (newlyDetectedDuplicates > 0) {
+        await this.refreshCounters(transaction, walletId, importId);
+        await transaction.query(
+          `UPDATE import_sessions
+           SET status = 'preview', confirmed_at = NULL, updated_at = now()
+           WHERE id = $1 AND wallet_id = $2`,
+          [importId, walletId],
+        );
+        return this.getSessionWithItems(transaction, walletId, importId);
+      }
       const items = await transaction.query<{
         id: string;
         type: FinancialImportItemType;
@@ -525,7 +609,14 @@ export class PostgresFinancialImportsRepository implements FinancialImportReposi
         [importId, walletId],
       );
       if (items.rows.length === 0) {
-        throw new FinancialImportError("A importação não possui movimentações válidas para confirmar.", 409);
+        await this.refreshCounters(transaction, walletId, importId);
+        await transaction.query(
+          `UPDATE import_sessions
+           SET status = 'preview', confirmed_at = NULL, updated_at = now()
+           WHERE id = $1 AND wallet_id = $2`,
+          [importId, walletId],
+        );
+        return this.getSessionWithItems(transaction, walletId, importId);
       }
 
       if (items.rows.some((item) => item.type === "transfer")) {
@@ -908,6 +999,194 @@ export class PostgresFinancialImportsRepository implements FinancialImportReposi
        WHERE session.id = $1 AND session.wallet_id = $2`,
       [importId, walletId, status ?? null],
     );
+  }
+
+  private async lockWalletImports(executor: QueryExecutor, walletId: string): Promise<void> {
+    await executor.query("SELECT pg_advisory_xact_lock(hashtextextended($1::text, 0))", [walletId]);
+  }
+
+  private markInFileDuplicates(items: ParsedFinancialImportItem[]): ParsedFinancialImportItem[] {
+    const seen = new Set<string>();
+    return items.map((item) => {
+      if (!item.recordHash || item.validationStatus === "duplicate" || item.validationStatus === "invalid") return item;
+      if (item.acceptedDuplicateFingerprint === item.recordHash) {
+        seen.add(item.recordHash);
+        return item;
+      }
+      if (!seen.has(item.recordHash)) {
+        seen.add(item.recordHash);
+        return item;
+      }
+      return {
+        ...item,
+        validationStatus: "duplicate",
+        errorMessage: "Possível duplicidade no mesmo arquivo (data, valor, tipo e descrição coincidem). Revise antes de importar.",
+        duplicateOverrideAllowed: true,
+      };
+    });
+  }
+
+  private async markPreviouslyImportedDuplicates(
+    executor: QueryExecutor,
+    walletId: string,
+    items: ParsedFinancialImportItem[],
+    sourceMetadata: Record<string, string>,
+  ): Promise<ParsedFinancialImportItem[]> {
+    const candidates = items.filter((item) => (
+      item.recordHash && item.date && item.signedAmount
+      && item.validationStatus !== "invalid" && item.validationStatus !== "duplicate"
+    ));
+    if (candidates.length === 0) return items;
+
+    const accountReferenceHash = sourceMetadata.accountReferenceHash ?? null;
+    const existingFingerprints = new Set<string>();
+    const externalIds = new Set<string>();
+    for (const batch of chunks(candidates)) {
+      const hashes = new Set<string>();
+      const candidatesPayload = batch.map((item) => {
+        const date = item.date!;
+        const signedAmount = item.signedAmount!;
+        const description = item.description ?? null;
+        const hash = createFinancialImportFingerprint({ date, signedAmount, type: item.type, description });
+        if (hash) hashes.add(hash);
+        hashes.add(createLegacyFinancialImportFingerprint({ date, signedAmount, description }));
+        if (accountReferenceHash) {
+          hashes.add(createLegacyOfxFinancialImportFingerprint({ accountReferenceHash, date, signedAmount, description }));
+        }
+        return { transaction_date: date, signed_amount: signedAmount, type: item.type };
+      });
+      const externalIdBatch = [...new Set(batch.flatMap((item) => item.externalId ? [item.externalId] : []))];
+      const existing = await executor.query<{
+        external_id: string | null;
+        record_hash: string | null;
+        transaction_date: string | Date;
+        signed_amount: string;
+        type: FinancialImportItemType;
+        description: string | null;
+        account_reference_hash: string | null;
+      }>(
+        `WITH candidates AS (
+           SELECT * FROM jsonb_to_recordset($2::jsonb) AS candidate(
+             transaction_date date, signed_amount numeric, type text
+           )
+         )
+         SELECT DISTINCT item.external_id, item.record_hash,
+                item.transaction_date, item.signed_amount::text, item.type, item.description,
+                session.source_metadata->>'accountReferenceHash' AS account_reference_hash
+         FROM import_items AS item
+         JOIN import_sessions AS session ON session.id = item.import_session_id AND session.wallet_id = item.wallet_id
+         WHERE item.wallet_id = $1
+           AND item.validation_status = 'imported'
+           AND (
+             item.record_hash = ANY($3::text[])
+             OR EXISTS (
+               SELECT 1 FROM candidates
+               WHERE candidates.transaction_date = item.transaction_date
+                 AND candidates.signed_amount = item.signed_amount
+                 AND candidates.type = item.type
+             )
+             OR ($4::text IS NOT NULL AND session.format = 'ofx'
+                 AND session.source_metadata->>'accountReferenceHash' = $4
+                 AND item.external_id = ANY($5::text[]))
+           )`,
+        [walletId, JSON.stringify(candidatesPayload), [...hashes], accountReferenceHash, externalIdBatch],
+      );
+      for (const row of existing.rows) {
+        const fingerprint = createFinancialImportFingerprint({
+          date: dateValue(row.transaction_date),
+          signedAmount: normalizeSignedAmount(row.signed_amount),
+          type: row.type,
+          description: row.description,
+        });
+        if (fingerprint) existingFingerprints.add(fingerprint);
+        if (accountReferenceHash && row.account_reference_hash === accountReferenceHash && row.external_id) {
+          externalIds.add(row.external_id);
+        }
+      }
+    }
+
+    return items.map((item) => {
+      if (item.validationStatus === "invalid" || item.validationStatus === "duplicate") return item;
+      const matchesExternalId = Boolean(item.externalId && externalIds.has(item.externalId));
+      const matchesFingerprint = Boolean(item.recordHash && existingFingerprints.has(item.recordHash));
+      const fingerprintWasReviewed = item.acceptedDuplicateFingerprint === item.recordHash;
+      if (!matchesExternalId && (!matchesFingerprint || fingerprintWasReviewed)) return item;
+      return {
+        ...item,
+        validationStatus: "duplicate",
+        duplicateOverrideAllowed: !matchesExternalId,
+        errorMessage: matchesExternalId
+          ? "Esta movimentação já foi importada: o FITID coincide na mesma conta bancária."
+          : "Possível duplicidade: já existe uma importação nesta carteira com mesma data, valor, tipo e descrição. Revise antes de importar.",
+      };
+    });
+  }
+
+  private async markCurrentSessionDuplicates(
+    executor: QueryExecutor,
+    walletId: string,
+    importId: string,
+  ): Promise<number> {
+    const session = await executor.query<{ source_metadata: Record<string, string> }>(
+      "SELECT source_metadata FROM import_sessions WHERE id = $1 AND wallet_id = $2",
+      [importId, walletId],
+    );
+    const pending = await executor.query<{
+      id: string;
+      type: FinancialImportItemType;
+      transaction_date: string | Date;
+      signed_amount: string;
+      description: string | null;
+      external_id: string | null;
+      record_hash: string | null;
+      accepted_duplicate_fingerprint: string | null;
+      sequence: number;
+    }>(
+      `SELECT id, sequence, type, transaction_date, signed_amount::text, description, external_id,
+              record_hash, accepted_duplicate_fingerprint
+       FROM import_items
+       WHERE import_session_id = $1 AND wallet_id = $2 AND validation_status = 'valid'
+       ORDER BY sequence`,
+      [importId, walletId],
+    );
+    const candidates: ParsedFinancialImportItem[] = pending.rows.map((item) => {
+      const fingerprint = createFinancialImportFingerprint({
+        date: dateValue(item.transaction_date),
+        signedAmount: normalizeSignedAmount(item.signed_amount),
+        type: item.type,
+        description: item.description,
+      });
+      return {
+        sequence: item.sequence,
+        date: dateValue(item.transaction_date),
+        description: item.description,
+        signedAmount: normalizeSignedAmount(item.signed_amount),
+        type: item.type,
+        externalId: item.external_id,
+        recordHash: fingerprint,
+        acceptedDuplicateFingerprint: item.accepted_duplicate_fingerprint,
+      };
+    });
+    const inFileChecked = this.markInFileDuplicates(candidates);
+    const marked = await this.markPreviouslyImportedDuplicates(
+      executor,
+      walletId,
+      inFileChecked,
+      session.rows[0]?.source_metadata ?? {},
+    );
+    let duplicateCount = 0;
+    for (let index = 0; index < marked.length; index += 1) {
+      const item = marked[index]!;
+      if (item.validationStatus !== "duplicate") continue;
+      duplicateCount += 1;
+      await executor.query(
+        `UPDATE import_items SET validation_status = 'duplicate', error_message = $3,
+             duplicate_override_allowed = $4, accepted_duplicate_fingerprint = NULL, updated_at = now()
+         WHERE id = $1 AND import_session_id = $2 AND wallet_id = $5 AND validation_status = 'valid'`,
+        [pending.rows[index]!.id, importId, item.errorMessage, item.duplicateOverrideAllowed === true, walletId],
+      );
+    }
+    return duplicateCount;
   }
 }
 
