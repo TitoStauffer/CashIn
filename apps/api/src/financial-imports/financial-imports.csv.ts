@@ -167,6 +167,7 @@ function parseItem(row: CsvRow, configuration: CsvImportConfiguration, sequence:
     : null;
   return {
     sequence,
+    sourceLine: row.lineNumber,
     date,
     description,
     signedAmount: normalizedAmount ? (type === "expense" ? `-${normalizedAmount}` : normalizedAmount) : null,

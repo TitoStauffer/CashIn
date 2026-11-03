@@ -376,11 +376,31 @@ describe('FinancialImportsPage', () => {
     const uploadButton = screen.getByRole('button', { name: 'Enviar e preparar prévia' })
     expect(uploadButton).toBeEnabled()
 
+    await user.selectOptions(screen.getByLabelText('Identificador externo'), '')
     await user.selectOptions(screen.getByLabelText('Crédito'), '2')
     expect(uploadButton).toBeDisabled()
     await user.selectOptions(screen.getByLabelText('Valor único'), '')
     expect(uploadButton).toBeDisabled()
     await user.selectOptions(screen.getByLabelText('Débito'), '3')
+    expect(uploadButton).toBeEnabled()
+  })
+
+  it('blocks repeated column indexes across required and optional CSV fields', async () => {
+    const user = userEvent.setup()
+    await renderPage()
+    await user.upload(screen.getByLabelText('Arquivo OFX ou CSV'), new File(['csv'], 'extrato.csv', { type: 'text/csv' }))
+    await screen.findByRole('heading', { name: 'Confira como as colunas serão interpretadas' })
+    const uploadButton = screen.getByRole('button', { name: 'Enviar e preparar prévia' })
+    expect(uploadButton).toBeEnabled()
+
+    await user.selectOptions(screen.getByLabelText('Valor único'), '0')
+    expect(uploadButton).toBeDisabled()
+
+    await user.selectOptions(screen.getByLabelText('Valor único'), '2')
+    await user.selectOptions(screen.getByLabelText('Identificador externo'), '2')
+    expect(uploadButton).toBeDisabled()
+
+    await user.selectOptions(screen.getByLabelText('Identificador externo'), '3')
     expect(uploadButton).toBeEnabled()
   })
 

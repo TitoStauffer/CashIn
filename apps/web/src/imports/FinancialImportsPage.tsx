@@ -103,6 +103,7 @@ function isCsvConfigurationValid(configuration: CsvImportConfiguration | null, c
   const usesOnlyAmount = usesAmount && configuration.columns.credit === null && configuration.columns.debit === null
   const usesOnlyCreditAndDebit = !usesAmount && usesCreditAndDebit
   return mappedIndexes.every((index) => availableIndexes.has(index))
+    && new Set(mappedIndexes).size === mappedIndexes.length
     && Number.isInteger(configuration.columns.date)
     && (usesOnlyAmount || usesOnlyCreditAndDebit)
 }

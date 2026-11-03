@@ -362,6 +362,7 @@ test("uses ordinal sequences while preserving physical lines across headers, bla
     csvConfiguration: configuration,
   });
   assert.deepEqual(result.items.map((item) => item.sequence), [1, 2]);
+  assert.deepEqual(result.items.map((item) => item.sourceLine), [3, 6]);
   assert.equal(result.items[0]?.description, "first second");
   assert.match(result.items[1]?.errorMessage ?? "", /Linha 6: data inválida/);
 
@@ -371,6 +372,7 @@ test("uses ordinal sequences while preserving physical lines across headers, bla
     csvConfiguration: configuration,
   });
   assert.equal(highPhysicalLine.items[0]?.sequence, 1);
+  assert.equal(highPhysicalLine.items[0]?.sourceLine, 10_003);
 });
 
 test("rejects malformed CSV quotes and preserves valid escaped quotes", async () => {

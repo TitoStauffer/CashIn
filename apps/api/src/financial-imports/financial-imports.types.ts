@@ -54,6 +54,7 @@ export interface FinancialImportSession {
 
 export interface ParsedFinancialImportItem {
   sequence: number;
+  sourceLine?: number;
   date: string | null;
   description?: string | null;
   signedAmount: string | null;

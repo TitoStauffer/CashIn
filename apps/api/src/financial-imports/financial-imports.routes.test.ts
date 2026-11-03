@@ -834,6 +834,31 @@ test("CSV inspection and reusable mappings remain scoped to the current wallet",
   assert.equal(detail.json().items[0].amount, "10.25");
   assert.equal(detail.json().items[0].type, "expense");
 
+  const provenanceConfiguration = {
+    ...configuration,
+    columns: { ...configuration.columns, externalId: 3 },
+  };
+  const provenanceUpload = await app.inject({
+    method: "POST", url: "/financial-imports",
+    headers: {
+      cookie: authCookie(),
+      "content-type": "application/octet-stream",
+      "x-file-name": "provenance.csv",
+      "x-file-format": "csv",
+      "x-csv-mapping": encodeURIComponent(JSON.stringify(provenanceConfiguration)),
+    },
+    payload: Buffer.from(`Data;Descrição;Valor;ID\n\n31/10/2026;"Primeira\nlinha";1,00;ok\n\n01/11/2026;Inválida;2,00;${"x".repeat(513)}\n`),
+  });
+  assert.equal(provenanceUpload.statusCode, 201);
+  const provenanceDetail = await app.inject({
+    method: "GET", url: `/financial-imports/${provenanceUpload.json().id}`,
+    headers: { cookie: authCookie() },
+  });
+  assert.equal(provenanceDetail.statusCode, 200);
+  assert.equal(provenanceDetail.json().items[1].sequence, 2);
+  assert.equal(provenanceDetail.json().items[1].validationStatus, "invalid");
+  assert.match(provenanceDetail.json().items[1].errorMessage, /Linha 6:.*identificador externo/i);
+
   const patched = await app.inject({
     method: "PATCH", url: `/financial-imports/csv-mappings/${mappingId}`, headers: { cookie: authCookie() },
     payload: { name: "Banco atualizado", configuration },

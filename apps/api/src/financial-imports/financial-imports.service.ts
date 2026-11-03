@@ -68,6 +68,11 @@ function truncateUtf8(value: string, maxBytes: number): string {
 }
 
 function normalizeParsedItem(item: ParsedFinancialImportItem, fallbackSequence: number): ParsedFinancialImportItem {
+  const sourceLine = typeof item.sourceLine === "number"
+    && Number.isSafeInteger(item.sourceLine)
+    && item.sourceLine > 0
+    ? item.sourceLine
+    : null;
   const hasValidSourceSequence = Number.isSafeInteger(item.sequence)
     && item.sequence > 0
     && item.sequence <= MAX_FINANCIAL_IMPORT_ITEMS;
@@ -147,6 +152,14 @@ function normalizeParsedItem(item: ParsedFinancialImportItem, fallbackSequence: 
       validationStatus = "valid";
       errorMessage = null;
     }
+  }
+  if (
+    sourceLine !== null
+    && errorMessage !== null
+    && (validationStatus === "invalid" || validationStatus === "duplicate")
+    && !errorMessage.startsWith(`Linha ${sourceLine}:`)
+  ) {
+    errorMessage = `Linha ${sourceLine}: ${errorMessage}`;
   }
 
   return {
