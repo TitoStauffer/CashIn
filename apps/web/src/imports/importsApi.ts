@@ -159,7 +159,7 @@ export const importsApi = {
     })
   },
 
-  inspectCsv(file: File, signal?: AbortSignal) {
+  inspectCsv(file: File, signal?: AbortSignal, configuration?: CsvImportConfiguration) {
     return request<CsvInspection>('/financial-imports/csv/inspect', {
       method: 'POST',
       body: file,
@@ -167,6 +167,7 @@ export const importsApi = {
       headers: {
         'Content-Type': 'application/octet-stream',
         'X-File-Name': encodeURIComponent(file.name),
+        ...(configuration ? { 'X-Csv-Mapping': encodeURIComponent(JSON.stringify(configuration)) } : {}),
       },
     })
   },

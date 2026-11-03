@@ -774,6 +774,29 @@ test("CSV inspection and reusable mappings remain scoped to the current wallet",
   assert.equal(inspection.json().detectedConfiguration.delimiter, ";");
   assert.deepEqual(inspection.json().suggestedMapping, { date: 0, description: 1, amount: 2, credit: null, debit: null, externalId: null });
 
+  const incompleteColumns = { date: 0, description: null, amount: null, credit: null, debit: null, externalId: null };
+  const wrongInspectionConfiguration = {
+    delimiter: ",", encoding: "utf-8", hasHeader: true, dateFormat: "yyyy-MM-dd", numberFormat: "en-US",
+    columns: incompleteColumns,
+  };
+  const wrongInspection = await app.inject({
+    method: "POST", url: "/financial-imports/csv/inspect",
+    headers: { cookie: authCookie(), "content-type": "application/octet-stream", "x-csv-mapping": encodeURIComponent(JSON.stringify(wrongInspectionConfiguration)) },
+    payload: Buffer.from("Data;Descrição;Valor\n31/10/2026;Mercado;-10,25\n"),
+  });
+  assert.equal(wrongInspection.statusCode, 200);
+  assert.equal(wrongInspection.json().columns.length, 1);
+  const correctedInspection = await app.inject({
+    method: "POST", url: "/financial-imports/csv/inspect",
+    headers: { cookie: authCookie(), "content-type": "application/octet-stream", "x-csv-mapping": encodeURIComponent(JSON.stringify({ ...wrongInspectionConfiguration, delimiter: ";", dateFormat: "dd/MM/yyyy", numberFormat: "pt-BR" })) },
+    payload: Buffer.from("Data;Descrição;Valor\n31/10/2026;Mercado;-10,25\n"),
+  });
+  assert.equal(correctedInspection.statusCode, 200);
+  assert.equal(correctedInspection.json().columns.length, 3);
+  assert.deepEqual(correctedInspection.json().detectedConfiguration, {
+    delimiter: ";", encoding: "utf-8", hasHeader: true, dateFormat: "dd/MM/yyyy", numberFormat: "pt-BR",
+  });
+
   const configuration = {
     delimiter: ";", encoding: "utf-8", hasHeader: true, dateFormat: "dd/MM/yyyy", numberFormat: "pt-BR",
     columns: { date: 0, description: 1, amount: 2, credit: null, debit: null, externalId: null },

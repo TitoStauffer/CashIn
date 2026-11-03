@@ -23,11 +23,11 @@ A API mantém sessões de importação por carteira para que o cliente possa env
 
 ## Arquivos CSV
 
-- A inspeção detecta delimitador (vírgula ou ponto e vírgula), presença de cabeçalho, codificação, formato de data e formato monetário, e devolve até dez linhas de amostra. O usuário confirma ou corrige essa configuração antes do upload.
+- A inspeção detecta delimitador (vírgula ou ponto e vírgula), presença de cabeçalho, codificação, formato de data e formato monetário, e devolve até dez linhas de amostra. Para recalcular colunas e amostra após uma correção manual, o cliente pode reenviar `x-csv-mapping` com a configuração codificada; a inspeção valida e usa somente os cinco campos de formato, sem exigir que o mapeamento de colunas sugerido inicialmente já esteja completo.
 - São aceitos `utf-8`, `windows-1252` e `iso-8859-1`; datas podem usar `dd/MM/yyyy`, `MM/dd/yyyy` ou `yyyy-MM-dd`; valores podem usar a convenção `pt-BR` ou `en-US`.
 - O mapeamento usa índices de coluna iniciados em zero. `date` é obrigatório; `description` e `externalId` são opcionais; deve ser informada uma única coluna `amount` ou o par `credit` e `debit`.
 - O valor é normalizado como texto decimal, sem conversão por ponto flutuante. Valor positivo sugere entrada e negativo sugere saída; no modo separado, a coluna crédito gera entrada e a coluna débito gera saída.
-- Linhas inválidas permanecem na prévia e indicam o número da linha e o motivo. Erros estruturais que impedem uma leitura segura do arquivo recusam a importação inteira.
+- Linhas inválidas permanecem na prévia e indicam o número físico da linha e o motivo, enquanto a sequência persistida é ordinal e limitada à quantidade real de movimentações. Erros estruturais que impedem uma leitura segura do arquivo, incluindo caractere nulo, recusam a importação inteira sem alterar silenciosamente o conteúdo.
 - Modelos reutilizáveis são escopados à carteira. O upload recebe uma configuração ad hoc em `x-csv-mapping` (JSON codificado com `encodeURIComponent`) ou o UUID de um modelo em `x-csv-mapping-id`, nunca ambos.
 
 ## Endpoints

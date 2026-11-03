@@ -117,13 +117,17 @@ export function registerFinancialImportRoutes(app: FastifyInstance, options: Rou
     },
   );
 
-  app.post<{ Body: Buffer }>(
+  app.post<{ Headers: ImportUploadHeaders; Body: Buffer }>(
     "/financial-imports/csv/inspect",
     { preHandler: [app.authenticate, app.resolveWalletContext], bodyLimit: MAX_FINANCIAL_IMPORT_FILE_SIZE },
     async (request, reply) => {
       try {
         if (!Buffer.isBuffer(request.body)) throw new FinancialImportError("Envie o arquivo como application/octet-stream.", 415);
-        return reply.code(200).send(options.financialImportsService.inspectCsv(request.body));
+        const rawMapping = request.headers["x-csv-mapping"];
+        return reply.code(200).send(options.financialImportsService.inspectCsv(
+          request.body,
+          rawMapping ? decodeCsvMapping(rawMapping) : undefined,
+        ));
       } catch (error) { return sendFinancialImportError(error, request, reply); }
     },
   );

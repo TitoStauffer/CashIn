@@ -24,6 +24,9 @@ const ALLOWED_CONFIGURATION_KEYS = new Set(["delimiter", "encoding", "hasHeader"
 const ALLOWED_COLUMN_KEYS = new Set(["date", "description", "amount", "credit", "debit", "externalId"]);
 
 interface CsvRow { lineNumber: number; values: string[] }
+type OptionalMoney =
+  | { kind: "empty" | "zero" | "invalid" }
+  | { kind: "value"; value: string };
 
 export function parseCsvConfiguration(value: unknown): CsvImportConfiguration {
   if (!isPlainRecord(value) || Object.keys(value).some((key) => !ALLOWED_CONFIGURATION_KEYS.has(key))) {
@@ -61,18 +64,50 @@ export function parseCsvConfiguration(value: unknown): CsvImportConfiguration {
   return { delimiter, encoding: encoding as CsvEncoding, hasHeader, dateFormat: dateFormat as CsvDateFormat, numberFormat: numberFormat as CsvNumberFormat, columns: normalizedColumns };
 }
 
-export function inspectCsv(content: Buffer): CsvInspectionResult {
+export function parseCsvInspectionOverrides(value: unknown): Omit<CsvImportConfiguration, "columns"> {
+  if (!isPlainRecord(value) || Object.keys(value).some((key) => !ALLOWED_CONFIGURATION_KEYS.has(key))) {
+    throw new FinancialImportError("A configuração de inspeção do arquivo CSV é inválida.", 400);
+  }
+  const { delimiter, encoding, hasHeader, dateFormat, numberFormat, columns } = value;
+  const hasValidIgnoredColumns = columns === undefined || (
+    isPlainRecord(columns)
+    && Object.keys(columns).every((key) => ALLOWED_COLUMN_KEYS.has(key))
+    && Object.values(columns).every((index) => index === null || (
+      Number.isSafeInteger(index) && (index as number) >= 0 && (index as number) < MAX_COLUMNS
+    ))
+  );
+  if ((delimiter !== "," && delimiter !== ";")
+    || typeof encoding !== "string" || !CSV_ENCODINGS.includes(encoding as CsvEncoding)
+    || typeof hasHeader !== "boolean"
+    || typeof dateFormat !== "string" || !CSV_DATE_FORMATS.includes(dateFormat as CsvDateFormat)
+    || typeof numberFormat !== "string" || !CSV_NUMBER_FORMATS.includes(numberFormat as CsvNumberFormat)
+    || !hasValidIgnoredColumns) {
+    throw new FinancialImportError("A configuração de inspeção do arquivo CSV é inválida.", 400);
+  }
+  return {
+    delimiter,
+    encoding: encoding as CsvEncoding,
+    hasHeader,
+    dateFormat: dateFormat as CsvDateFormat,
+    numberFormat: numberFormat as CsvNumberFormat,
+  };
+}
+
+export function inspectCsv(
+  content: Buffer,
+  overrides?: Omit<CsvImportConfiguration, "columns">,
+): CsvInspectionResult {
   if (content.length === 0) throw new FinancialImportError("O arquivo está vazio.", 400);
-  const encoding = detectEncoding(content);
+  const encoding = overrides?.encoding ?? detectEncoding(content);
   const text = decodeCsv(content, encoding);
-  const delimiter = detectDelimiter(text);
+  const delimiter = overrides?.delimiter ?? detectDelimiter(text);
   const rows = parseRows(text, delimiter);
   if (rows.length === 0) throw new FinancialImportError("Nenhuma linha foi encontrada no arquivo CSV.", 422);
-  const hasHeader = detectHeader(rows);
+  const hasHeader = overrides?.hasHeader ?? detectHeader(rows);
   const header = hasHeader ? rows[0]!.values : rows[0]!.values.map((_value, index) => `Coluna ${index + 1}`);
   const dataRows = rows.slice(hasHeader ? 1 : 0);
-  const dateFormat = detectDateFormat(dataRows);
-  const numberFormat = detectNumberFormat(dataRows);
+  const dateFormat = overrides?.dateFormat ?? detectDateFormat(dataRows);
+  const numberFormat = overrides?.numberFormat ?? detectNumberFormat(dataRows);
   return {
     detectedConfiguration: { delimiter, encoding, hasHeader, dateFormat, numberFormat },
     suggestedMapping: suggestMapping(header),
@@ -89,11 +124,11 @@ export function parseCsv(input: FinancialImportParserInput): ParsedFinancialImpo
   const rows = parseRows(decodeCsv(input.content, configuration.encoding), configuration.delimiter);
   const dataRows = rows.slice(configuration.hasHeader ? 1 : 0);
   if (dataRows.length === 0) throw new FinancialImportError("Nenhuma movimentação foi encontrada no arquivo CSV.", 422);
-  const items = dataRows.map((row) => parseItem(row, configuration));
+  const items = dataRows.map((row, index) => parseItem(row, configuration, index + 1));
   return { items, sourceMetadata: { csvDelimiter: configuration.delimiter === ";" ? "semicolon" : "comma", csvEncoding: configuration.encoding } };
 }
 
-function parseItem(row: CsvRow, configuration: CsvImportConfiguration): ParsedFinancialImportItem {
+function parseItem(row: CsvRow, configuration: CsvImportConfiguration, sequence: number): ParsedFinancialImportItem {
   const errors: string[] = [];
   const date = parseDate(readColumn(row, configuration.columns.date), configuration.dateFormat);
   if (!date) errors.push("data inválida");
@@ -105,12 +140,19 @@ function parseItem(row: CsvRow, configuration: CsvImportConfiguration): ParsedFi
   } else {
     const credit = parseOptionalMoney(readColumn(row, configuration.columns.credit!), configuration.numberFormat);
     const debit = parseOptionalMoney(readColumn(row, configuration.columns.debit!), configuration.numberFormat);
-    if ((credit === null) === (debit === null)) {
+    if (credit.kind === "invalid") errors.push("valor de crédito inválido");
+    if (debit.kind === "invalid") errors.push("valor de débito inválido");
+    const creditValue = credit.kind === "value" ? credit.value : null;
+    const debitValue = debit.kind === "value" ? debit.value : null;
+    if (credit.kind === "invalid" || debit.kind === "invalid") {
+      signedAmount = null;
+      amountIsRepairable = false;
+    } else if ((creditValue === null) === (debitValue === null)) {
       signedAmount = null;
       errors.push("preencha apenas crédito ou débito com valor diferente de zero");
       amountIsRepairable = false;
     } else {
-      signedAmount = credit ?? `-${debit}`;
+      signedAmount = creditValue ?? `-${debitValue}`;
     }
   }
   const description = optionalColumn(row, configuration.columns.description)?.replaceAll(/\s+/g, " ").trim() || null;
@@ -121,7 +163,7 @@ function parseItem(row: CsvRow, configuration: CsvImportConfiguration): ParsedFi
     ? createHash("sha256").update([date, signedAmount, description?.normalize("NFKC").toLocaleLowerCase("pt-BR") ?? ""].join("|"), "utf8").digest("hex")
     : null;
   return {
-    sequence: row.lineNumber,
+    sequence,
     date,
     description,
     signedAmount: normalizedAmount ? (type === "expense" ? `-${normalizedAmount}` : normalizedAmount) : null,
@@ -163,7 +205,10 @@ function parseRows(text: string, delimiter: CsvDelimiter): CsvRow[] {
 }
 
 function validateCell(value: string): string {
-  const normalized = value.replaceAll("\u0000", "").trim();
+  if (value.includes("\u0000")) {
+    throw new FinancialImportError("O arquivo CSV contém caractere nulo e não pode ser processado com segurança.", 422);
+  }
+  const normalized = value.trim();
   if (Buffer.byteLength(normalized, "utf8") > MAX_CELL_BYTES) throw new FinancialImportError("Uma célula do arquivo CSV excede o limite permitido.", 422);
   return normalized;
 }
@@ -251,10 +296,12 @@ function parseMoney(value: string, format: CsvNumberFormat): string | null {
   const result = `${integer}.${fractionPart.padEnd(2, "0")}`; return negative && result !== "0.00" ? `-${result}` : result;
 }
 
-function parseOptionalMoney(value: string, format: CsvNumberFormat): string | null {
-  if (!value.trim()) return null;
+function parseOptionalMoney(value: string, format: CsvNumberFormat): OptionalMoney {
+  if (!value.trim()) return { kind: "empty" };
   const result = parseMoney(value, format);
-  return result === "0.00" ? null : result?.replace(/^-/, "") ?? null;
+  if (result === null) return { kind: "invalid" };
+  if (result === "0.00") return { kind: "zero" };
+  return { kind: "value", value: result.replace(/^-/, "") };
 }
 function readColumn(row: CsvRow, index: number): string { return row.values[index] ?? ""; }
 function optionalColumn(row: CsvRow, index?: number | null): string | undefined { return index === undefined || index === null ? undefined : readColumn(row, index); }

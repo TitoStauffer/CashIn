@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { FinancialImportError } from "./financial-imports.errors.js";
-import { inspectCsv, parseCsvConfiguration } from "./financial-imports.csv.js";
+import { inspectCsv, parseCsvConfiguration, parseCsvInspectionOverrides } from "./financial-imports.csv.js";
 import {
   FINANCIAL_IMPORT_FORMATS,
   FINANCIAL_IMPORT_ITEM_TYPES,
@@ -323,9 +323,9 @@ export class FinancialImportsService {
     return this.repository.listImports(userId, walletId);
   }
 
-  inspectCsv(content: Buffer): CsvInspectionResult {
+  inspectCsv(content: Buffer, configuration?: unknown): CsvInspectionResult {
     if (content.length > MAX_FINANCIAL_IMPORT_FILE_SIZE) throw new FinancialImportError("O arquivo deve ter no máximo 10 MB.", 413);
-    return inspectCsv(content);
+    return inspectCsv(content, configuration ? parseCsvInspectionOverrides(configuration) : undefined);
   }
 
   listCsvMappings(userId: string, walletId: string): Promise<CsvMapping[]> {

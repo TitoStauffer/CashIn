@@ -7,6 +7,7 @@ import { FinancialSidebar } from '../layout/FinancialSidebar'
 import { formatBrazilianCurrency } from '../money/currency'
 import { useWallet } from '../wallets/useWallet'
 import type {
+  CsvColumnMapping,
   CsvImportConfiguration,
   CsvMappingTemplate,
   FinancialImportFormat,
@@ -29,6 +30,13 @@ type FinancialImportsPageProps = {
 type WalletOperation = {
   walletId: string | null
   generation: number
+}
+
+type CsvInspectionOptions = {
+  configuration?: CsvImportConfiguration
+  columns?: CsvColumnMapping
+  resetModel?: boolean
+  rememberDetected?: boolean
 }
 
 const maxFileSize = 10 * 1024 * 1024
@@ -81,7 +89,6 @@ function isCsvConfigurationValid(configuration: CsvImportConfiguration | null, c
   const mappedIndexes = Object.values(configuration.columns).filter((index): index is number => index !== null)
   return mappedIndexes.every((index) => availableIndexes.has(index))
     && Number.isInteger(configuration.columns.date)
-    && Number.isInteger(configuration.columns.description)
     && (Number.isInteger(configuration.columns.amount)
       || (Number.isInteger(configuration.columns.credit) && Number.isInteger(configuration.columns.debit)))
 }
@@ -319,32 +326,41 @@ function FinancialImportsWalletPage({ userEmail, isLoggingOut, onLogout }: Finan
       return
     }
     setSelectedFile(file)
-    if (getFileFormat(file.name) === 'csv') void inspectCsv(file)
+    if (getFileFormat(file.name) === 'csv') void inspectCsv(file, { rememberDetected: true })
     else clearCsvSetup()
   }
 
-  async function inspectCsv(file: File) {
+  async function inspectCsv(file: File, options: CsvInspectionOptions = {}) {
     csvInspectionControllerRef.current?.abort()
     const controller = new AbortController()
     csvInspectionControllerRef.current = controller
     const operation = captureWalletOperation()
     setPendingAction('inspect-csv')
     setFormError('')
+    setCsvColumns([])
+    setCsvSample([])
     try {
-      const inspection = await importsApi.inspectCsv(file, controller.signal)
+      const inspection = options.configuration
+        ? await importsApi.inspectCsv(file, controller.signal, options.configuration)
+        : await importsApi.inspectCsv(file, controller.signal)
       if (controller.signal.aborted || !isCurrentWalletOperation(operation)) return
-      const detectedConfiguration = { ...inspection.detectedConfiguration, columns: inspection.suggestedMapping }
-      setCsvConfiguration(detectedConfiguration)
-      setDetectedCsvConfiguration(detectedConfiguration)
+      const inspectedConfiguration = {
+        ...inspection.detectedConfiguration,
+        columns: options.columns ?? inspection.suggestedMapping,
+      }
+      setCsvConfiguration(inspectedConfiguration)
+      if (options.rememberDetected) setDetectedCsvConfiguration(inspectedConfiguration)
       setCsvColumns(inspection.columns)
       setCsvSample(inspection.sample)
-      setSelectedCsvMappingId('')
-      setCsvMappingName('')
-      setIsCsvMappingDirty(false)
+      if (options.resetModel !== false) {
+        setSelectedCsvMappingId('')
+        setCsvMappingName('')
+        setIsCsvMappingDirty(false)
+      }
     } catch (error) {
       if (controller.signal.aborted || !isCurrentWalletOperation(operation)) return
-      setCsvConfiguration(null)
-      setDetectedCsvConfiguration(null)
+      if (!options.configuration) setCsvConfiguration(null)
+      if (options.rememberDetected) setDetectedCsvConfiguration(null)
       setCsvColumns([])
       setCsvSample([])
       setFormError(getImportError(error, 'Não foi possível analisar o CSV. Confira o arquivo e tente novamente.'))
@@ -354,9 +370,16 @@ function FinancialImportsWalletPage({ userEmail, isLoggingOut, onLogout }: Finan
     }
   }
 
-  function updateCsvConfiguration(changes: Partial<CsvImportConfiguration>) {
-    setCsvConfiguration((current) => current ? { ...current, ...changes } : current)
+  function updateCsvConfiguration(changes: Partial<CsvImportConfiguration>, preserveColumns: boolean) {
+    if (!csvConfiguration || !selectedFile) return
+    const nextConfiguration = { ...csvConfiguration, ...changes }
+    setCsvConfiguration(nextConfiguration)
     setIsCsvMappingDirty(Boolean(selectedCsvMappingId))
+    void inspectCsv(selectedFile, {
+      configuration: nextConfiguration,
+      columns: preserveColumns ? nextConfiguration.columns : undefined,
+      resetModel: false,
+    })
   }
 
   function updateCsvColumnMapping(field: keyof CsvImportConfiguration['columns'], value: string) {
@@ -372,13 +395,27 @@ function FinancialImportsWalletPage({ userEmail, isLoggingOut, onLogout }: Finan
     const mapping = csvMappings.find((item) => item.id === mappingId)
     if (!mapping) {
       setCsvMappingName('')
-      setCsvConfiguration(detectedCsvConfiguration)
       setIsCsvMappingDirty(false)
+      if (detectedCsvConfiguration && selectedFile) {
+        setCsvConfiguration(detectedCsvConfiguration)
+        void inspectCsv(selectedFile, {
+          configuration: detectedCsvConfiguration,
+          columns: detectedCsvConfiguration.columns,
+          resetModel: false,
+        })
+      }
       return
     }
     setCsvMappingName(mapping.name)
     setCsvConfiguration(mapping.configuration)
     setIsCsvMappingDirty(false)
+    if (selectedFile) {
+      void inspectCsv(selectedFile, {
+        configuration: mapping.configuration,
+        columns: mapping.configuration.columns,
+        resetModel: false,
+      })
+    }
   }
 
   async function saveCsvMapping() {
@@ -418,7 +455,7 @@ function FinancialImportsWalletPage({ userEmail, isLoggingOut, onLogout }: Finan
     const format = getFileFormat(selectedFile.name)
     if (!format) return
     if (format === 'csv' && !isCsvConfigurationValid(csvConfiguration, csvColumns)) {
-      setFormError('Mapeie data, descrição e valor — ou as colunas de crédito e débito — para continuar.')
+      setFormError('Mapeie a data e o valor — ou as colunas de crédito e débito — para continuar.')
       return
     }
 
@@ -642,7 +679,7 @@ function FinancialImportsWalletPage({ userEmail, isLoggingOut, onLogout }: Finan
                   selectedMappingId={selectedCsvMappingId}
                   mappingName={csvMappingName}
                   mappingDirty={isCsvMappingDirty}
-                  disabled={pendingAction !== null}
+                  disabled={pendingAction !== null && pendingAction !== 'inspect-csv'}
                   onConfigurationChange={updateCsvConfiguration}
                   onColumnChange={updateCsvColumnMapping}
                   onMappingSelect={selectCsvMapping}
@@ -767,7 +804,7 @@ type CsvConfigurationPanelProps = {
   mappingName: string
   mappingDirty: boolean
   disabled: boolean
-  onConfigurationChange: (changes: Partial<CsvImportConfiguration>) => void
+  onConfigurationChange: (changes: Partial<CsvImportConfiguration>, preserveColumns: boolean) => void
   onColumnChange: (field: keyof CsvImportConfiguration['columns'], value: string) => void
   onMappingSelect: (mappingId: string) => void
   onMappingNameChange: (name: string) => void
@@ -792,7 +829,7 @@ function CsvConfigurationPanel({
   const isMappingReady = isCsvConfigurationValid(configuration, columns)
   const columnFields: Array<{ key: keyof CsvImportConfiguration['columns']; label: string; required?: boolean }> = [
     { key: 'date', label: 'Data', required: true },
-    { key: 'description', label: 'Descrição', required: true },
+    { key: 'description', label: 'Descrição' },
     { key: 'amount', label: 'Valor único' },
     { key: 'credit', label: 'Crédito' },
     { key: 'debit', label: 'Débito' },
@@ -818,11 +855,11 @@ function CsvConfigurationPanel({
 
       <fieldset className="imports-csv-grid" disabled={disabled}>
         <legend>Formato do arquivo</legend>
-        <label><span>Delimitador</span><select value={configuration.delimiter} onChange={(event) => onConfigurationChange({ delimiter: event.target.value as CsvImportConfiguration['delimiter'] })}><option value=",">Vírgula (,)</option><option value=";">Ponto e vírgula (;)</option></select></label>
-        <label><span>Codificação</span><select value={configuration.encoding} onChange={(event) => onConfigurationChange({ encoding: event.target.value as CsvImportConfiguration['encoding'] })}><option value="utf-8">UTF-8</option><option value="windows-1252">Windows-1252</option><option value="iso-8859-1">ISO-8859-1</option></select></label>
-        <label><span>Formato da data</span><select value={configuration.dateFormat} onChange={(event) => onConfigurationChange({ dateFormat: event.target.value as CsvImportConfiguration['dateFormat'] })}><option value="dd/MM/yyyy">DD/MM/AAAA</option><option value="MM/dd/yyyy">MM/DD/AAAA</option><option value="yyyy-MM-dd">AAAA-MM-DD</option></select></label>
-        <label><span>Formato monetário</span><select value={configuration.numberFormat} onChange={(event) => onConfigurationChange({ numberFormat: event.target.value as CsvImportConfiguration['numberFormat'] })}><option value="pt-BR">1.234,56</option><option value="en-US">1,234.56</option></select></label>
-        <label className="imports-csv-checkbox"><input type="checkbox" checked={configuration.hasHeader} onChange={(event) => onConfigurationChange({ hasHeader: event.target.checked })} /><span>A primeira linha contém cabeçalhos</span></label>
+        <label><span>Delimitador</span><select value={configuration.delimiter} onChange={(event) => onConfigurationChange({ delimiter: event.target.value as CsvImportConfiguration['delimiter'] }, false)}><option value=",">Vírgula (,)</option><option value=";">Ponto e vírgula (;)</option></select></label>
+        <label><span>Codificação</span><select value={configuration.encoding} onChange={(event) => onConfigurationChange({ encoding: event.target.value as CsvImportConfiguration['encoding'] }, false)}><option value="utf-8">UTF-8</option><option value="windows-1252">Windows-1252</option><option value="iso-8859-1">ISO-8859-1</option></select></label>
+        <label><span>Formato da data</span><select value={configuration.dateFormat} onChange={(event) => onConfigurationChange({ dateFormat: event.target.value as CsvImportConfiguration['dateFormat'] }, true)}><option value="dd/MM/yyyy">DD/MM/AAAA</option><option value="MM/dd/yyyy">MM/DD/AAAA</option><option value="yyyy-MM-dd">AAAA-MM-DD</option></select></label>
+        <label><span>Formato monetário</span><select value={configuration.numberFormat} onChange={(event) => onConfigurationChange({ numberFormat: event.target.value as CsvImportConfiguration['numberFormat'] }, true)}><option value="pt-BR">1.234,56</option><option value="en-US">1,234.56</option></select></label>
+        <label className="imports-csv-checkbox"><input type="checkbox" checked={configuration.hasHeader} onChange={(event) => onConfigurationChange({ hasHeader: event.target.checked }, false)} /><span>A primeira linha contém cabeçalhos</span></label>
       </fieldset>
 
       <fieldset className="imports-csv-grid imports-csv-grid--mapping" disabled={disabled}>

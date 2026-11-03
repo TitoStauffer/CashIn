@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { DefaultFinancialImportParser, OfxFinancialImportParser } from "./financial-imports.parser.js";
-import { inspectCsv, parseCsvConfiguration } from "./financial-imports.csv.js";
+import { inspectCsv, parseCsvConfiguration, parseCsvInspectionOverrides } from "./financial-imports.csv.js";
 
 const fixtures = fileURLToPath(new URL("./fixtures/", import.meta.url));
 
@@ -306,7 +306,81 @@ test("parses separate credit/debit columns and quoted delimiters", async () => {
   ]);
 });
 
+test("separate credit/debit columns distinguish empty, zero, invalid, and out-of-range values", async () => {
+  const result = await new DefaultFinancialImportParser().parse({
+    format: "csv", fileName: "statement.csv",
+    content: Buffer.from([
+      "date;credit;debit",
+      "2026-10-01;invalid;1,00",
+      "2026-10-02;1,00;invalid",
+      "2026-10-03;1000000000000,00;",
+      "2026-10-04;;1000000000000,00",
+      "2026-10-05;0,00;2,00",
+      "2026-10-06;3,00;0,00",
+      "2026-10-07;999999999999,99;",
+      "2026-10-08;;999999999999,99",
+      "2026-10-09;;",
+    ].join("\n")),
+    csvConfiguration: { delimiter: ";", encoding: "utf-8", hasHeader: true, dateFormat: "yyyy-MM-dd", numberFormat: "pt-BR", columns: { date: 0, description: null, amount: null, credit: 1, debit: 2, externalId: null } },
+  });
+  assert.equal(result.items[0]?.signedAmount, null);
+  assert.match(result.items[0]?.errorMessage ?? "", /crédito inválido/i);
+  assert.equal(result.items[1]?.signedAmount, null);
+  assert.match(result.items[1]?.errorMessage ?? "", /débito inválido/i);
+  assert.match(result.items[2]?.errorMessage ?? "", /crédito inválido/i);
+  assert.match(result.items[3]?.errorMessage ?? "", /débito inválido/i);
+  assert.deepEqual(result.items.slice(4, 8).map((item) => [item.signedAmount, item.type, item.validationStatus]), [
+    ["-2.00", "expense", undefined],
+    ["3.00", "income", undefined],
+    ["999999999999.99", "income", undefined],
+    ["-999999999999.99", "expense", undefined],
+  ]);
+  assert.match(result.items[8]?.errorMessage ?? "", /apenas crédito ou débito/i);
+});
+
+test("rejects NUL instead of silently altering CSV date, description, or external id", async () => {
+  const parser = new DefaultFinancialImportParser();
+  const configuration = { delimiter: ";" as const, encoding: "utf-8" as const, hasHeader: true, dateFormat: "yyyy-MM-dd" as const, numberFormat: "pt-BR" as const, columns: { date: 0, description: 1, amount: 2, credit: null, debit: null, externalId: 3 } };
+  for (const row of [
+    "2026-10-\u000001;Description;1,00;id",
+    "2026-10-01;Descri\u0000ption;1,00;id",
+    "2026-10-01;Description;1,00;external\u0000id",
+  ]) {
+    await assert.rejects(
+      parser.parse({ format: "csv", fileName: "nul.csv", content: Buffer.from(`date;description;amount;id\n${row}\n`), csvConfiguration: configuration }),
+      /caractere nulo/i,
+    );
+  }
+});
+
+test("uses ordinal sequences while preserving physical lines across headers, blanks, and multiline cells", async () => {
+  const parser = new DefaultFinancialImportParser();
+  const configuration = { delimiter: ";" as const, encoding: "utf-8" as const, hasHeader: true, dateFormat: "yyyy-MM-dd" as const, numberFormat: "pt-BR" as const, columns: { date: 0, description: 1, amount: 2, credit: null, debit: null, externalId: null } };
+  const result = await parser.parse({
+    format: "csv", fileName: "lines.csv",
+    content: Buffer.from('date;description;amount\n\n2026-10-01;"first\nsecond";1,00\n\nbad;invalid;2,00\n'),
+    csvConfiguration: configuration,
+  });
+  assert.deepEqual(result.items.map((item) => item.sequence), [1, 2]);
+  assert.equal(result.items[0]?.description, "first second");
+  assert.match(result.items[1]?.errorMessage ?? "", /Linha 6: data inválida/);
+
+  const highPhysicalLine = await parser.parse({
+    format: "csv", fileName: "blank-lines.csv",
+    content: Buffer.from(`date;description;amount\n${"\n".repeat(10_001)}2026-10-01;valid;1,00\n`),
+    csvConfiguration: configuration,
+  });
+  assert.equal(highPhysicalLine.items[0]?.sequence, 1);
+});
+
 test("strictly rejects ambiguous mappings and unexpected properties", () => {
   assert.throws(() => parseCsvConfiguration({ delimiter: ",", encoding: "utf-8", hasHeader: true, dateFormat: "yyyy-MM-dd", numberFormat: "en-US", columns: { date: 0, amount: 1, credit: 2, debit: 3 } }), /coluna de valor/i);
   assert.throws(() => parseCsvConfiguration(JSON.parse('{"delimiter":",","encoding":"utf-8","hasHeader":true,"dateFormat":"yyyy-MM-dd","numberFormat":"en-US","columns":{"date":0,"amount":1,"__proto__":2}}')), /inválida/i);
+  assert.deepEqual(parseCsvInspectionOverrides({
+    delimiter: ";", encoding: "utf-8", hasHeader: false, dateFormat: "dd/MM/yyyy", numberFormat: "pt-BR",
+    columns: { date: 0, amount: null, credit: null, debit: null },
+  }), { delimiter: ";", encoding: "utf-8", hasHeader: false, dateFormat: "dd/MM/yyyy", numberFormat: "pt-BR" });
+  assert.throws(() => parseCsvInspectionOverrides({
+    delimiter: "|", encoding: "utf-8", hasHeader: false, dateFormat: "dd/MM/yyyy", numberFormat: "pt-BR",
+  }), /inspeção.+inválida/i);
 });

@@ -76,6 +76,7 @@ test("PostgreSQL financial import confirms exact amounts, isolates wallets, and 
       numberFormat: "pt-BR" as const,
       columns: { date: 0, description: 1, amount: 2, credit: null, debit: null, externalId: null },
     };
+    const csvMappingHeader = encodeURIComponent(JSON.stringify(csvConfiguration));
     const csvMapping = await repository.createCsvMapping(userId, walletId, {
       name: "Banco principal", configuration: csvConfiguration,
     });
@@ -660,6 +661,7 @@ test("PostgreSQL financial import confirms exact amounts, isolates wallets, and 
         "content-type": "application/octet-stream",
         "x-file-name": "description.csv",
         "x-file-format": "csv",
+        "x-csv-mapping": csvMappingHeader,
       },
       payload: Buffer.from("description-test"),
     });
@@ -781,6 +783,7 @@ test("PostgreSQL financial import confirms exact amounts, isolates wallets, and 
         "content-type": "application/octet-stream",
         "x-file-name": "references.csv",
         "x-file-format": "csv",
+        "x-csv-mapping": csvMappingHeader,
       },
       payload: Buffer.from("reference-test"),
     });
@@ -894,6 +897,7 @@ test("PostgreSQL financial import confirms exact amounts, isolates wallets, and 
         "content-type": "application/octet-stream",
         "x-file-name": "duplicates.csv",
         "x-file-format": "csv",
+        "x-csv-mapping": csvMappingHeader,
       },
       payload: Buffer.from("duplicate-regression"),
     });

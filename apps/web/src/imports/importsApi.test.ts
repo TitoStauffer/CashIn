@@ -102,7 +102,7 @@ describe('financial imports API', () => {
     vi.stubGlobal('fetch', fetchMock)
     const file = new File(['csv'], 'extrato.csv', { type: 'text/csv' })
 
-    await importsApi.inspectCsv(file)
+    await importsApi.inspectCsv(file, undefined, configuration)
     await importsApi.listCsvMappings()
     await importsApi.createCsvMapping(mapping.name, configuration)
     await importsApi.updateCsvMapping('mapping/1', mapping.name, configuration)
@@ -114,6 +114,8 @@ describe('financial imports API', () => {
       '/api/financial-imports/csv-mappings/mapping%2F1',
     ])
     expect(fetchMock.mock.calls[0][1]).toEqual(expect.objectContaining({ method: 'POST', body: file }))
+    const inspectHeaders = new Headers(fetchMock.mock.calls[0][1].headers)
+    expect(JSON.parse(decodeURIComponent(inspectHeaders.get('X-Csv-Mapping')!))).toEqual(configuration)
     expect(JSON.parse(fetchMock.mock.calls[2][1].body)).toEqual({ name: mapping.name, configuration })
     expect(fetchMock.mock.calls[3][1]).toEqual(expect.objectContaining({ method: 'PATCH' }))
   })

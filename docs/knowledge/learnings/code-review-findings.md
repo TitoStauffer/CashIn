@@ -1,7 +1,7 @@
 # Aprendizados de Code Review
 
-**Status:** auditado até o PR #46
-**Última revisão:** 26/10/2026
+**Status:** auditado até o PR #46, com ocorrências confirmadas do PR #56
+**Última revisão:** 03/11/2026
 
 Esta nota converte os achados históricos do Agent de Code Review em regras preventivas. O inventário e os links das revisões estão em [`code-review-audit.md`](code-review-audit.md).
 
@@ -13,6 +13,7 @@ Esta nota converte os achados históricos do Agent de Code Review em regras prev
 - **Impacto:** 404, prévia vazia, confirmação incorreta, falhas no cliente e mensagens que escondem a causa.
 - **Regra preventiva:** toda alteração de contrato precisa de uma única definição coerente de rota, formato, nulabilidade, estado e erro em todas as camadas.
 - **Detecção:** teste de integração da rota real e, para fluxos críticos, teste Web/API com respostas reais ou fixtures derivadas do contrato da API.
+- **Ocorrência no PR #56 (`f450e144b68d18ecea22bf09fc57d64992ff05f0`):** a API permitia descrição CSV opcional, mas a Web a marcava como obrigatória; testes PostgreSQL com parser injetado também continuavam omitindo o novo header de mapeamento obrigatório. A correção alinha validação e testes ao contrato real. A prevenção é testar tanto o contrato mínimo válido quanto consumidores antigos sempre que uma pré-condição de rota mudar. [Revisão](https://github.com/TitoStauffer/CashIn/pull/56#pullrequestreview-5756708661).
 
 ## 2. Dados inválidos também precisam ser persistíveis
 
@@ -49,6 +50,7 @@ Esta nota converte os achados históricos do Agent de Code Review em regras prev
 - **Impacto:** dados financeiros antigos sob outra carteira, feedback contraditório e perda silenciosa de alterações.
 - **Regra preventiva:** associe cada requisição ao contexto e à versão do rascunho; descarte resposta obsoleta e bloqueie ou mescle edições concorrentes explicitamente.
 - **Detecção:** testes com promises controladas cobrindo troca A → B → A, falha seguida de recuperação e edição durante resposta pendente.
+- **Ocorrência no PR #56 (`f450e144b68d18ecea22bf09fc57d64992ff05f0`):** alterar delimitador, encoding, cabeçalho ou formatos mantinha colunas e amostra derivadas da inspeção anterior. A correção reinspeciona de forma cancelável, descarta respostas obsoletas e bloqueia salvar modelo ou importar até a resposta da configuração atual. A prevenção é tratar toda opção que muda parsing como nova versão da mesma operação assíncrona e cobrir detecção incorreta seguida de correção manual. [Revisão](https://github.com/TitoStauffer/CashIn/pull/56#pullrequestreview-5756708661).
 
 ## 6. Migrações devem preservar personalizações e semântica
 
@@ -130,3 +132,13 @@ Esta nota converte os achados históricos do Agent de Code Review em regras prev
 - **Correção aplicada:** a validação do épico foi extraída e `resume` passou a consultar `parent` e falhar antes de criar execução, comentar no Jira, preparar a worktree ou iniciar o Codex.
 - **Regra preventiva:** toda entrada que inicia ou retoma efeitos externos revalida as autorizações atuais; estado persistido comprova histórico, não permissão vigente.
 - **Detecção:** testes negativos por caminho de entrada, incluindo autorização revogada, recurso transferido, vínculo ausente e confirmação de que nenhum efeito externo ocorreu.
+
+## 13. Parsers devem separar presença, validade, identidade e diagnóstico
+
+- **Padrão:** `parser-presence-validity-provenance`.
+- **Evidência:** [PR #56, revisão #5756708661](https://github.com/TitoStauffer/CashIn/pull/56#pullrequestreview-5756708661), SHA `f450e144b68d18ecea22bf09fc57d64992ff05f0`.
+- **Problema confirmado:** o CSV tratava conteúdo monetário inválido como coluna vazia no modo crédito/débito, removia `NUL` silenciosamente e usava o número físico da linha como sequência persistida limitada a 10.000.
+- **Causa-raiz:** valores semanticamente diferentes compartilhavam `null`, a sanitização precedia a validação e a localização usada no diagnóstico também era usada como identidade do item.
+- **Impacto:** uma linha com um lado inválido e outro válido podia ser importada, data ou identificador podia mudar sem aviso, e arquivos com poucas movimentações após muitas linhas vazias ou campos multilinha geravam sequências inválidas.
+- **Regra preventiva:** parsers representam separadamente vazio, zero, válido e inválido; nunca alteram silenciosamente campos de identidade ou contrato; usam sequência ordinal para persistência e conservam a linha física apenas como proveniência diagnóstica.
+- **Detecção:** matriz de testes para ambos os lados crédito/débito, zero, vazio, sintaxe inválida e limites; casos com `NUL` em data, descrição e identificador; cabeçalho, linhas vazias, campos multilinha e linha física acima do limite com quantidade válida de itens.

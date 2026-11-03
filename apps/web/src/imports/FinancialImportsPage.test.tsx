@@ -240,14 +240,85 @@ describe('FinancialImportsPage', () => {
     expect(await screen.findByRole('heading', { name: 'Confira como as colunas serão interpretadas' })).toBeVisible()
     expect(screen.getByRole('table', { name: 'Amostra das primeiras linhas' })).toHaveTextContent('Mercado')
     expect(screen.getByLabelText('Data *')).toHaveValue('0')
-    expect(screen.getByLabelText('Descrição *')).toHaveValue('1')
+    expect(screen.getByLabelText('Descrição')).toHaveValue('1')
 
     await user.click(screen.getByRole('button', { name: 'Enviar e preparar prévia' }))
 
     await waitFor(() => expect(importsApi.upload).toHaveBeenCalledWith(file, 'csv', { configuration: csvConfiguration }))
   })
 
-  it('blocks CSV upload until all required column roles are mapped', async () => {
+  it('reinspects columns and sample after manually correcting an incorrect delimiter', async () => {
+    const incorrectInspection: CsvInspection = {
+      ...csvInspection,
+      detectedConfiguration: { ...csvInspection.detectedConfiguration, delimiter: ';' },
+      suggestedMapping: { date: 0, description: null, amount: null, credit: null, debit: null, externalId: null },
+      columns: [{ index: 0, label: 'Data,Valor' }],
+      sample: [{ lineNumber: 2, values: ['23/10/2026,-120,50'] }],
+    }
+    const correctedInspection: CsvInspection = {
+      ...csvInspection,
+      detectedConfiguration: { ...csvInspection.detectedConfiguration, delimiter: ',' },
+      suggestedMapping: { date: 0, description: null, amount: 1, credit: null, debit: null, externalId: null },
+      columns: [{ index: 0, label: 'Data' }, { index: 1, label: 'Valor' }],
+      sample: [{ lineNumber: 2, values: ['23/10/2026', '-120,50'] }],
+    }
+    vi.mocked(importsApi.inspectCsv)
+      .mockResolvedValueOnce(incorrectInspection)
+      .mockResolvedValueOnce(correctedInspection)
+    const user = userEvent.setup()
+    await renderPage()
+    const file = new File(['Data,Valor\n23/10/2026,-120,50'], 'extrato.csv', { type: 'text/csv' })
+    await user.upload(screen.getByLabelText('Arquivo OFX ou CSV'), file)
+    expect(await screen.findByRole('columnheader', { name: 'Data,Valor' })).toBeVisible()
+
+    await user.selectOptions(screen.getByLabelText('Delimitador'), ',')
+
+    await waitFor(() => expect(importsApi.inspectCsv).toHaveBeenLastCalledWith(
+      file,
+      expect.any(AbortSignal),
+      expect.objectContaining({ delimiter: ',' }),
+    ))
+    expect(await screen.findByRole('columnheader', { name: 'Valor' })).toBeVisible()
+    expect(screen.queryByRole('columnheader', { name: 'Data,Valor' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Enviar e preparar prévia' })).toBeEnabled()
+  })
+
+  it('ignores an obsolete reinspection response when adjustments happen in sequence', async () => {
+    const firstCorrection = deferred<CsvInspection>()
+    const latestCorrection = deferred<CsvInspection>()
+    vi.mocked(importsApi.inspectCsv)
+      .mockResolvedValueOnce(csvInspection)
+      .mockReturnValueOnce(firstCorrection.promise)
+      .mockReturnValueOnce(latestCorrection.promise)
+    const user = userEvent.setup()
+    await renderPage()
+    await user.upload(screen.getByLabelText('Arquivo OFX ou CSV'), new File(['csv'], 'extrato.csv', { type: 'text/csv' }))
+    await screen.findByRole('heading', { name: 'Confira como as colunas serão interpretadas' })
+
+    await user.selectOptions(screen.getByLabelText('Delimitador'), ',')
+    await user.selectOptions(screen.getByLabelText('Codificação'), 'windows-1252')
+    await act(async () => {
+      latestCorrection.resolve({
+        ...csvInspection,
+        detectedConfiguration: { ...csvInspection.detectedConfiguration, delimiter: ',', encoding: 'windows-1252' },
+        sample: [{ lineNumber: 2, values: ['ATUAL', 'Mercado', '-120,50', 'bank-1'] }],
+      })
+      await latestCorrection.promise
+    })
+    expect(await screen.findByText('ATUAL')).toBeVisible()
+
+    await act(async () => {
+      firstCorrection.resolve({
+        ...csvInspection,
+        sample: [{ lineNumber: 2, values: ['OBSOLETA', 'Mercado', '-120,50', 'bank-1'] }],
+      })
+      await firstCorrection.promise
+    })
+    expect(screen.queryByText('OBSOLETA')).not.toBeInTheDocument()
+    expect(screen.getByLabelText('Codificação')).toHaveValue('windows-1252')
+  })
+
+  it('accepts CSV with only date and amount mapped because description is optional', async () => {
     vi.mocked(importsApi.inspectCsv).mockResolvedValueOnce({
       ...csvInspection,
       suggestedMapping: { ...csvInspection.suggestedMapping, description: null, amount: null },
@@ -259,10 +330,15 @@ describe('FinancialImportsPage', () => {
     const uploadButton = screen.getByRole('button', { name: 'Enviar e preparar prévia' })
     expect(uploadButton).toBeDisabled()
 
-    await user.selectOptions(screen.getByLabelText('Descrição *'), '1')
     await user.selectOptions(screen.getByLabelText('Valor único'), '2')
 
     expect(uploadButton).toBeEnabled()
+    await user.click(uploadButton)
+    await waitFor(() => expect(importsApi.upload).toHaveBeenCalledWith(
+      expect.any(File),
+      'csv',
+      { configuration: expect.objectContaining({ columns: expect.objectContaining({ date: 0, description: null, amount: 2 }) }) },
+    ))
   })
 
   it('saves and reuses a wallet-scoped CSV mapping by its identifier', async () => {
@@ -274,6 +350,8 @@ describe('FinancialImportsPage', () => {
     await screen.findByRole('heading', { name: 'Confira como as colunas serão interpretadas' })
 
     await user.selectOptions(screen.getByLabelText('Modelo salvo'), csvTemplate.id)
+    await waitFor(() => expect(importsApi.inspectCsv).toHaveBeenCalledTimes(2))
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Enviar e preparar prévia' })).toBeEnabled())
     expect(screen.getByLabelText('Nome do modelo')).toHaveValue(csvTemplate.name)
     await user.click(screen.getByRole('button', { name: 'Enviar e preparar prévia' }))
 
@@ -295,12 +373,22 @@ describe('FinancialImportsPage', () => {
 
   it('updates an edited CSV model before reusing it', async () => {
     vi.mocked(importsApi.listCsvMappings).mockResolvedValueOnce({ items: [csvTemplate] })
+    vi.mocked(importsApi.inspectCsv)
+      .mockResolvedValueOnce(csvInspection)
+      .mockResolvedValueOnce(csvInspection)
+      .mockResolvedValueOnce({
+        ...csvInspection,
+        detectedConfiguration: { ...csvInspection.detectedConfiguration, numberFormat: 'en-US' },
+      })
     const user = userEvent.setup()
     await renderPage()
     await user.upload(screen.getByLabelText('Arquivo OFX ou CSV'), new File(['csv'], 'extrato.csv', { type: 'text/csv' }))
     await screen.findByRole('heading', { name: 'Confira como as colunas serão interpretadas' })
     await user.selectOptions(screen.getByLabelText('Modelo salvo'), csvTemplate.id)
+    await waitFor(() => expect(importsApi.inspectCsv).toHaveBeenCalledTimes(2))
     await user.selectOptions(screen.getByLabelText('Formato monetário'), 'en-US')
+    await waitFor(() => expect(importsApi.inspectCsv).toHaveBeenCalledTimes(3))
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Atualizar modelo' })).toBeEnabled())
 
     await user.click(screen.getByRole('button', { name: 'Atualizar modelo' }))
 
