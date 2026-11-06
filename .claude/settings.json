@@ -5,7 +5,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File \"$CLAUDE_PROJECT_DIR/tools/github-runner/ensure-runner.ps1\"",
+            "command": "[ -n \"$LOCALAPPDATA\" ] && command -v powershell >/dev/null 2>&1 || exit 0; f=\"$LOCALAPPDATA/CashInGithubRunner/scripts/ensure-runner.ps1\"; if [ -f \"$f\" ]; then powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File \"$f\"; else echo '[github-runner] Os scripts instalados do runner não foram encontrados em %LOCALAPPDATA%\\CashInGithubRunner\\scripts; Code Review e QA do CI podem ficar na fila. Para instalar ou atualizar (com confirmação do usuário, a partir de um checkout atualizado da master): powershell -NoProfile -ExecutionPolicy Bypass -File tools/github-runner/install-runner.ps1'; fi; exit 0",
             "timeout": 30,
             "statusMessage": "Verificando o runner do Code Review e QA"
           }

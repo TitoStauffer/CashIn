@@ -1,6 +1,7 @@
-﻿# Lightweight check used by the Claude Code SessionStart hook. It never downloads or registers
-# anything and always exits 0 so a runner problem cannot block a session; its output becomes
-# session context, so it only prints when something needs attention.
+﻿# Lightweight check used by the Claude Code SessionStart hook. The hook runs only the copy installed
+# in %LOCALAPPDATA%\CashInGithubRunner\scripts, never this file from a working tree. It never
+# downloads or registers anything and always exits 0 so a runner problem cannot block a session;
+# its output becomes session context, so it only prints when something needs attention.
 $ErrorActionPreference = 'Stop'
 try { [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false) } catch {}
 try {
@@ -13,6 +14,8 @@ try {
   $result = Start-RunnerProcess -WaitSeconds 10
   if ($result -eq 'started') {
     Write-Output "[github-runner] Runner $RunnerName estava parado e foi iniciado."
+  } elseif ($result -eq 'foreign-listener') {
+    Write-Output "[github-runner] Há um processo Runner.Listener de outra instalação em execução; $RunnerName não foi iniciado para evitar um segundo listener. Encerre o processo antigo."
   } elseif ($result -eq 'starting') {
     Write-Output "[github-runner] Runner $RunnerName estava parado; a inicialização foi disparada, mas o processo ainda não foi confirmado. Consulte $LogDir\runner.log."
   }
