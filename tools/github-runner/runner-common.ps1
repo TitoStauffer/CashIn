@@ -64,6 +64,11 @@ function Set-RunnerEnvironment {
   }
   $uniquePath = ($pathEntries | Select-Object -Unique) -join ';'
   [System.IO.File]::WriteAllText((Join-Path $script:RunnerDir '.path'), $uniquePath, $utf8)
+
+  # The Windows runner does not apply ".path" to job steps, so the same values are also set on
+  # this process; Runner.Listener and its job workers inherit them.
+  $env:Path = $uniquePath
+  $env:CODEX_EXECUTABLE = $codex
   return $codex
 }
 
