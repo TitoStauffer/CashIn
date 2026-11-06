@@ -82,8 +82,12 @@ if (@(Get-RunnerProcess).Count -gt 0 -and $Reregister) {
   throw 'O runner está em execução. Encerre o processo Runner.Listener antes de usar -Reregister.'
 }
 
+# The agents run with Claude Code by default; Codex is only an optional fallback (AGENT_RUNTIME=codex).
+if (-not (Get-Command claude -ErrorAction SilentlyContinue)) {
+  Write-Warning 'Claude Code CLI não encontrado no PATH. Instale e faça login no Claude Code; sem ele os agentes de Code Review e QA falharão.'
+}
 if (-not (Get-LatestCodexExecutable)) {
-  Write-Warning "Codex CLI não encontrado em $CodexBinRoot. Instale o app Codex e faça login; o runner não executará os jobs sem ele."
+  Write-Output "Codex CLI não encontrado em $CodexBinRoot; ele só é necessário com AGENT_RUNTIME=codex."
 }
 
 Install-VerifiedArchive `

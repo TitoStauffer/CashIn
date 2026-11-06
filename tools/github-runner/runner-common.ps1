@@ -46,10 +46,9 @@ function Get-LatestCodexExecutable {
 # Job steps inherit the environment of the process that starts the runner. The Windows runner
 # does not apply a ".path" file to job steps, so PATH and CODEX_EXECUTABLE are set on this process.
 function Set-RunnerEnvironment {
+  # Claude Code is the default agent runtime; the Codex CLI is optional and only used when
+  # AGENT_RUNTIME=codex, so its absence must not prevent the runner from starting.
   $codex = Get-LatestCodexExecutable
-  if (-not $codex) {
-    throw "Codex CLI não encontrado em $script:CodexBinRoot. Abra o app Codex e faça login antes de iniciar o runner."
-  }
   $pwshPath = Join-Path $script:PwshDir 'pwsh.exe'
   if (-not (Test-Path $pwshPath)) {
     throw "PowerShell 7 portátil não encontrado em $script:PwshDir. Rode install-runner.ps1 novamente."
@@ -61,7 +60,7 @@ function Set-RunnerEnvironment {
     if ($value) { $pathEntries += $value.Split(';') | Where-Object { $_ } }
   }
   $env:Path = ($pathEntries | Select-Object -Unique) -join ';'
-  $env:CODEX_EXECUTABLE = $codex
+  if ($codex) { $env:CODEX_EXECUTABLE = $codex }
   return $codex
 }
 

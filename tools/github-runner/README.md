@@ -1,6 +1,6 @@
-# Runner self-hosted local (Codex Code Review e QA)
+# Runner self-hosted local (Code Review e QA dos Agents)
 
-Os jobs **Codex Code Review** e **Codex QA** do workflow `agent-orchestration.yml` rodam no runner self-hosted `cashin-codex-plus-windows` (labels `self-hosted, Windows, X64, codex-plus`), porque o Codex CLI usa a assinatura ChatGPT já autenticada nesta máquina. Sem esse runner online, a orquestração fica na fila e o `Merge Readiness` permanece `INCONCLUSIVE`. Veja [`docs/hosted-agent-orchestration.md`](../../docs/hosted-agent-orchestration.md).
+Os jobs de Code Review e QA do workflow `agent-orchestration.yml` rodam no runner self-hosted `cashin-codex-plus-windows` (labels `self-hosted, Windows, X64, codex-plus`), porque os CLIs dos modelos usam as assinaturas já autenticadas nesta máquina: o Claude Code por padrão e o Codex como alternativa (`AGENT_RUNTIME=codex`). Sem esse runner online, a orquestração fica na fila e o `Merge Readiness` permanece `INCONCLUSIVE`. Veja [`docs/hosted-agent-orchestration.md`](../../docs/hosted-agent-orchestration.md).
 
 Estes scripts tornam a instalação reproduzível e não exigem administrador. Tudo fica em `%LOCALAPPDATA%\CashInGithubRunner`:
 
@@ -13,7 +13,8 @@ Estes scripts tornam a instalação reproduzível e não exigem administrador. T
 
 ## Pré-requisitos
 
-- Windows x64 com o app Codex instalado e logado (o CLI fica em `%LOCALAPPDATA%\OpenAI\Codex\bin\<hash>\codex.exe`).
+- Windows x64 com o Claude Code CLI instalado e logado (`claude` no `PATH`).
+- Opcional: app Codex instalado e logado, usado apenas com `AGENT_RUNTIME=codex` (o CLI fica em `%LOCALAPPDATA%\OpenAI\Codex\bin\<hash>\codex.exe`).
 - GitHub CLI autenticado (`gh auth status`) com uma conta administradora do repositório.
 
 ## Instalar ou reparar
@@ -29,7 +30,11 @@ O script baixa o runner e o PowerShell das releases oficiais, confere o SHA-256 
 - **Login no Windows:** o atalho de inicialização executa `scripts/start-runner.ps1`.
 - **Sessões do Claude Code:** o hook `SessionStart` em `.claude/settings.json` executa `ensure-runner.ps1`, que inicia o runner se estiver parado. Ele nunca baixa nem registra nada, sempre termina com sucesso e só escreve algo quando o runner precisa de atenção.
 
-A cada início, o `codex.exe` mais recente é localizado novamente e o processo que inicia o runner recebe `CODEX_EXECUTABLE` e um `PATH` com o PowerShell portátil à frente; os jobs herdam esse ambiente. O runner no Windows não aplica um arquivo `.path` aos jobs, por isso o ambiente do processo é o mecanismo usado. Assim, atualizações do app Codex não quebram o runner.
+A cada início, o processo que inicia o runner recebe um `PATH` com o PowerShell portátil à frente e, se o app Codex existir, `CODEX_EXECUTABLE` apontando para o `codex.exe` mais recente; os jobs herdam esse ambiente. O runner no Windows não aplica um arquivo `.path` aos jobs, por isso o ambiente do processo é o mecanismo usado. Assim, atualizações do app Codex não quebram o runner.
+
+## Verificação automatizada
+
+`tools/github-runner/test-runner-scripts.ps1` roda no job `GitHub Reviewer` do CI e localmente. Ele valida sintaxe e codificação dos scripts, confirma que o hook termina com código 0 e orienta a instalação quando não há runner, e exercita os helpers em uma pasta temporária, sem baixar, registrar ou iniciar nada. A instalação real e o hook religando o runner parado são verificações operacionais na máquina do runner, registradas no PR da DEV-74.
 
 ## Atualizar versões
 

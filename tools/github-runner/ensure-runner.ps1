@@ -9,9 +9,12 @@ try {
     Write-Output "[github-runner] O runner $RunnerName não está instalado nesta máquina; Code Review e QA do CI ficarão na fila. Para instalar (com confirmação do usuário): powershell -NoProfile -ExecutionPolicy Bypass -File tools/github-runner/install-runner.ps1"
     exit 0
   }
-  $result = Start-RunnerProcess -WaitSeconds 0
-  if ($result -ne 'already-running') {
+  # Waits briefly so the message reflects whether the listener process really came up.
+  $result = Start-RunnerProcess -WaitSeconds 10
+  if ($result -eq 'started') {
     Write-Output "[github-runner] Runner $RunnerName estava parado e foi iniciado."
+  } elseif ($result -eq 'starting') {
+    Write-Output "[github-runner] Runner $RunnerName estava parado; a inicialização foi disparada, mas o processo ainda não foi confirmado. Consulte $LogDir\runner.log."
   }
 } catch {
   Write-Output "[github-runner] Não foi possível verificar ou iniciar o runner: $($_.Exception.Message)"
