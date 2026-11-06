@@ -1013,7 +1013,7 @@ describe('FinancialImportsPage', () => {
     await waitFor(() => expect(deleteRule).toHaveBeenCalledWith('rule-stale'))
     await waitFor(() => expect(within(rules).queryByText('Padaria')).not.toBeInTheDocument())
   })
-describe('credit card statements', () => {
+  describe('credit card statements', () => {
     const cardPreview: FinancialImportSession = {
       ...previewSession,
       id: 'card-import-1',
@@ -1131,6 +1131,53 @@ describe('credit card statements', () => {
       })))
       await waitFor(() => expect(importsApi.get).toHaveBeenCalledWith('card-import-1'))
     })
+
+    it('marks statements that were already paid in the statement options', async () => {
+      const user = userEvent.setup()
+      const withPaidStatement: FinancialImportSession = {
+        ...cardPreview,
+        statements: [
+          { closingDate: '2026-10-10', dueDate: '2026-10-20', purchasesAmount: '0.00', creditsAmount: '0.00', totalAmount: '0.00', isPaid: true },
+          ...cardPreview.statements!,
+        ],
+      }
+      vi.spyOn(importsApi, 'upload').mockResolvedValue(withPaidStatement)
+      vi.spyOn(importsApi, 'get').mockResolvedValue(withPaidStatement)
+      await renderPage()
+      await user.click(screen.getByRole('radio', { name: 'Fatura de cartão' }))
+      await user.selectOptions(await screen.findByRole('combobox', { name: 'Cartão da fatura' }), 'card-1')
+      await user.upload(screen.getByLabelText('Arquivo OFX ou CSV'), new File(['OFXDATA'], 'fatura.ofx', { type: 'application/x-ofx' }))
+      await user.click(screen.getByRole('button', { name: 'Enviar e preparar prévia' }))
+
+      const purchase = (await screen.findByText('Movimentação 1')).closest('li')!
+      const options = within(within(purchase).getByRole('combobox', { name: 'Fatura' })).getAllByRole('option')
+      expect(options.map((option) => option.textContent)).toEqual([
+        'Fecha 10/10/2026 · vence 20/10/2026 · já paga',
+        'Fecha 10/11/2026 · vence 20/11/2026',
+        'Fecha 10/12/2026 · vence 20/12/2026',
+      ])
+    })
+
+    it('reports a failed reload without claiming the saved item failed', async () => {
+      const user = userEvent.setup()
+      vi.spyOn(importsApi, 'upload').mockResolvedValue(cardPreview)
+      vi.spyOn(importsApi, 'get').mockRejectedValue(new FinancialImportApiError('', 500))
+      vi.spyOn(importsApi, 'updateItem').mockImplementation(async (_importId, itemId, input) => ({
+        ...cardPreview.items!.find((item) => item.id === itemId)!,
+        ...input,
+      }))
+      await renderPage()
+      await user.click(screen.getByRole('radio', { name: 'Fatura de cartão' }))
+      await user.selectOptions(await screen.findByRole('combobox', { name: 'Cartão da fatura' }), 'card-1')
+      await user.upload(screen.getByLabelText('Arquivo OFX ou CSV'), new File(['OFXDATA'], 'fatura.ofx', { type: 'application/x-ofx' }))
+      await user.click(screen.getByRole('button', { name: 'Enviar e preparar prévia' }))
+
+      const purchase = (await screen.findByText('Movimentação 1')).closest('li')!
+      await user.click(within(purchase).getByRole('button', { name: 'Salvar ajuste' }))
+
+      expect(await screen.findByText(/foi salva, mas os totais das faturas não puderam ser atualizados/)).toBeVisible()
+      expect(screen.queryByText('Não foi possível atualizar a movimentação.')).not.toBeInTheDocument()
+      expect(screen.getByText(/Movimentação 1 atualizada na prévia/)).toBeVisible()
+    })
   })
 })
-

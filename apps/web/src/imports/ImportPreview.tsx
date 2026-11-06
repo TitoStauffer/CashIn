@@ -64,6 +64,8 @@ export function ImportPreview({
   const closingDay = session.creditCardClosingDay ?? null
   const dueDay = session.creditCardDueDay ?? null
   const typeOptions = isCard ? cardTypeOptions : bankTypeOptions
+  // Paid statements are shown as such, so the user does not discover it only after saving.
+  const paidClosingDates = new Set((session.statements ?? []).filter((statement) => statement.isPaid).map((statement) => statement.closingDate))
   const labelForType = (type: FinancialImportItemType) => (isCard ? cardTypeLabels[type] : undefined) ?? typeLabels[type]
   return (
     <section className="imports-preview" aria-labelledby="imports-preview-title">
@@ -188,6 +190,7 @@ export function ImportPreview({
                         {adjacentClosingDates(draft.date, closingDay!).map((closingDate) => (
                           <option key={closingDate} value={closingDate}>
                             Fecha {formatIsoDate(closingDate)} · vence {formatIsoDate(calculateDueDate(closingDate, closingDay!, dueDay!))}
+                            {paidClosingDates.has(closingDate) ? ' · já paga' : ''}
                           </option>
                         ))}
                       </select>

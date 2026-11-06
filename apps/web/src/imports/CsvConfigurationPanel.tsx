@@ -1,18 +1,5 @@
 import type { CsvImportConfiguration, CsvMappingTemplate } from './importsApi'
-
-export function isCsvConfigurationValid(configuration: CsvImportConfiguration | null, columns: Array<{ index: number }>) {
-  if (!configuration) return false
-  const availableIndexes = new Set(columns.map((column) => column.index))
-  const mappedIndexes = Object.values(configuration.columns).filter((index): index is number => index !== null)
-  const usesAmount = Number.isInteger(configuration.columns.amount)
-  const usesCreditAndDebit = Number.isInteger(configuration.columns.credit) && Number.isInteger(configuration.columns.debit)
-  const usesOnlyAmount = usesAmount && configuration.columns.credit === null && configuration.columns.debit === null
-  const usesOnlyCreditAndDebit = !usesAmount && usesCreditAndDebit
-  return mappedIndexes.every((index) => availableIndexes.has(index))
-    && new Set(mappedIndexes).size === mappedIndexes.length
-    && Number.isInteger(configuration.columns.date)
-    && (usesOnlyAmount || usesOnlyCreditAndDebit)
-}
+import { isCsvConfigurationValid } from './importsModel'
 
 export type CsvConfigurationPanelProps = {
   configuration: CsvImportConfiguration

@@ -21,9 +21,10 @@ import type {
   FinancialCategorizationRuleInput,
 } from './importsApi'
 import { importsApi } from './importsApi'
-import { CsvConfigurationPanel, isCsvConfigurationValid } from './CsvConfigurationPanel'
+import { CsvConfigurationPanel } from './CsvConfigurationPanel'
 import { ImportPreview } from './ImportPreview'
 import {
+  isCsvConfigurationValid,
   maxAutomaticPollFailures,
   isImportBusy,
   getSessionStatusLabel,
@@ -558,12 +559,22 @@ function FinancialImportsWalletPage({ userEmail, isLoggingOut, onLogout }: Finan
         ...(isCardItem ? { statementClosingDate: statementClosingDate ?? null } : {}),
         ...(includeDuplicate ? { includeDuplicate: true } : {}),
       })
-      // Statement totals are computed by the API; reload the session so they reflect the change.
-      const refreshed = isCardItem ? await importsApi.get(selectedImport!.id) : null
       if (!isCurrentWalletOperation(operation)) return
-      setSelectedImport((current) => refreshed ?? (current ? replaceSessionItem(current, updated) : current))
+      // The item is already persisted here, so a failed reload must not be reported as a failed save.
+      setSelectedImport((current) => current ? replaceSessionItem(current, updated) : current)
       setDrafts((current) => ({ ...current, [updated.id]: createDraft(updated) }))
       setSuccessMessage(`Movimentação ${item.sequence} atualizada na prévia.`)
+      if (!isCardItem) return
+      // Statement totals are computed by the API; reload the session so they reflect the change.
+      try {
+        const refreshed = await importsApi.get(selectedImport!.id)
+        if (!isCurrentWalletOperation(operation)) return
+        setSelectedImport(refreshed)
+        setDrafts(Object.fromEntries((refreshed.items ?? []).map((current) => [current.id, createDraft(current)])))
+      } catch {
+        if (!isCurrentWalletOperation(operation)) return
+        setFormError(`A movimentação ${item.sequence} foi salva, mas os totais das faturas não puderam ser atualizados. Recarregue a importação.`)
+      }
     } catch (error) {
       if (!isCurrentWalletOperation(operation)) return
       setFormError(getImportError(error, 'Não foi possível atualizar a movimentação.'))

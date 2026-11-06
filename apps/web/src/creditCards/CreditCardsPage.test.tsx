@@ -247,7 +247,7 @@ describe('CreditCardsPage', () => {
     expect(await screen.findByRole('heading', { name: 'Nenhum cartão cadastrado' })).toBeVisible()
     expect(screen.queryByLabelText('Apelido')).not.toBeInTheDocument()
   })
-it('lists refunds as statement credits and blocks payment when credits cover the purchases', async () => {
+  it('lists refunds as statement credits and blocks payment when credits cover the purchases', async () => {
     vi.spyOn(creditCardsApi, 'list').mockResolvedValue({ items: [card] })
     vi.spyOn(creditCardsApi, 'statements').mockResolvedValue({ items: [
       {
@@ -275,4 +275,3 @@ it('lists refunds as statement credits and blocks payment when credits cover the
     expect(screen.getByText(/os estornos e créditos cobrem as compras/i)).toBeVisible()
   })
 })
-
