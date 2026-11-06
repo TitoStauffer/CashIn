@@ -144,4 +144,34 @@ describe('financial imports API', () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({ message: 'Arquivo inválido.' }), { status: 422 })))
     await expect(importsApi.list()).rejects.toEqual(new FinancialImportApiError('Arquivo inválido.', 422))
   })
+
+  it('lists, creates, updates and deletes wallet categorization rules', async () => {
+    const rule = {
+      id: 'rule/1', type: 'expense' as const, description: 'Mercado', categoryId: 'category-1', categoryName: 'Alimentação',
+      subcategoryId: null, subcategoryName: null, isActive: true, isStale: false,
+      createdAt: '2026-11-05T12:00:00.000Z', updatedAt: '2026-11-05T12:00:00.000Z',
+    }
+    const input = { type: 'expense' as const, description: 'Mercado', categoryId: 'category-1', subcategoryId: null }
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ items: [rule] })))
+      .mockResolvedValueOnce(new Response(JSON.stringify(rule), { status: 201 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ ...rule, isActive: false })))
+      .mockResolvedValueOnce(new Response(null, { status: 204 }))
+    vi.stubGlobal('fetch', fetchMock)
+    setRequestWalletId('wallet-1')
+
+    await expect(importsApi.listCategorizationRules()).resolves.toEqual({ items: [rule] })
+    await expect(importsApi.createCategorizationRule(input)).resolves.toEqual(rule)
+    await expect(importsApi.updateCategorizationRule('rule/1', { ...input, isActive: false })).resolves.toMatchObject({ isActive: false })
+    await expect(importsApi.deleteCategorizationRule('rule/1')).resolves.toBeUndefined()
+
+    expect(fetchMock.mock.calls.map(([url, init]) => [url, init.method ?? 'GET'])).toEqual([
+      ['/api/financial-imports/rules', 'GET'],
+      ['/api/financial-imports/rules', 'POST'],
+      ['/api/financial-imports/rules/rule%2F1', 'PATCH'],
+      ['/api/financial-imports/rules/rule%2F1', 'DELETE'],
+    ])
+    expect(JSON.parse(fetchMock.mock.calls[1][1].body)).toEqual(input)
+    expect(new Headers(fetchMock.mock.calls[1][1].headers).get('X-Wallet-Id')).toBe('wallet-1')
+  })
 })

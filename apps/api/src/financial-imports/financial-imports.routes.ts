@@ -1,7 +1,7 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { FinancialImportError } from "./financial-imports.errors.js";
 import { MAX_FINANCIAL_IMPORT_FILE_SIZE, type FinancialImportsService } from "./financial-imports.service.js";
-import { FINANCIAL_IMPORT_FORMATS, FINANCIAL_IMPORT_ITEM_TYPES, type CreateCsvMappingInput, type CsvImportConfiguration, type FinancialImportFormat, type UpdateFinancialImportItemInput } from "./financial-imports.types.js";
+import { FINANCIAL_IMPORT_FORMATS, FINANCIAL_IMPORT_ITEM_TYPES, type CreateCsvMappingInput, type CsvImportConfiguration, type FinancialCategorizationRuleInput, type FinancialImportFormat, type UpdateFinancialImportItemInput } from "./financial-imports.types.js";
 
 interface RouteOptions {
   financialImportsService: FinancialImportsService;
@@ -23,6 +23,7 @@ interface ImportUploadHeaders {
 }
 
 interface CsvMappingParams { mappingId: string }
+interface RuleParams { ruleId: string }
 
 const uuidSchema = {
   type: "string",
@@ -34,6 +35,19 @@ const importParamsSchema = {
   additionalProperties: false,
   required: ["importId"],
   properties: { importId: uuidSchema },
+};
+
+const categorizationRuleBodySchema = {
+  type: "object",
+  additionalProperties: false,
+  required: ["type", "description", "categoryId"],
+  properties: {
+    type: { type: "string", enum: ["income", "expense"] },
+    description: { type: "string", minLength: 1, maxLength: 512 },
+    categoryId: uuidSchema,
+    subcategoryId: { anyOf: [uuidSchema, { type: "null" }] },
+    isActive: { type: "boolean" },
+  },
 };
 
 function sendFinancialImportError(error: unknown, request: FastifyRequest, reply: FastifyReply) {
@@ -170,6 +184,80 @@ export function registerFinancialImportRoutes(app: FastifyInstance, options: Rou
         const mapping = await options.financialImportsService.updateCsvMapping(request.currentUser!.id, request.currentWalletId!, request.params.mappingId, request.body);
         return reply.code(200).send(mapping);
       } catch (error) { return sendFinancialImportError(error, request, reply); }
+    },
+  );
+
+  app.get(
+    "/financial-imports/rules",
+    { preHandler: [app.authenticate, app.resolveWalletContext] },
+    async (request, reply) => {
+      try {
+        const items = await options.financialImportsService.listCategorizationRules(request.currentWalletId!);
+        return reply.code(200).send({ items });
+      } catch (error) {
+        return sendFinancialImportError(error, request, reply);
+      }
+    },
+  );
+
+  app.post<{ Body: FinancialCategorizationRuleInput }>(
+    "/financial-imports/rules",
+    {
+      preHandler: [app.authenticate, app.resolveWalletContext],
+      preValidation: rejectUnexpectedProperties(["type", "description", "categoryId", "subcategoryId", "isActive"]),
+      schema: { body: categorizationRuleBodySchema },
+    },
+    async (request, reply) => {
+      try {
+        const item = await options.financialImportsService.createCategorizationRule(
+          request.currentUser!.id,
+          request.currentWalletId!,
+          request.body,
+        );
+        return reply.code(201).send(item);
+      } catch (error) {
+        return sendFinancialImportError(error, request, reply);
+      }
+    },
+  );
+
+  app.patch<{ Params: RuleParams; Body: FinancialCategorizationRuleInput }>(
+    "/financial-imports/rules/:ruleId",
+    {
+      preHandler: [app.authenticate, app.resolveWalletContext],
+      preValidation: rejectUnexpectedProperties(["type", "description", "categoryId", "subcategoryId", "isActive"]),
+      schema: {
+        params: { type: "object", additionalProperties: false, required: ["ruleId"], properties: { ruleId: uuidSchema } },
+        body: categorizationRuleBodySchema,
+      },
+    },
+    async (request, reply) => {
+      try {
+        const item = await options.financialImportsService.updateCategorizationRule(
+          request.currentWalletId!,
+          request.params.ruleId,
+          request.body,
+        );
+        return reply.code(200).send(item);
+      } catch (error) {
+        return sendFinancialImportError(error, request, reply);
+      }
+    },
+  );
+
+  app.delete<{ Params: RuleParams }>(
+    "/financial-imports/rules/:ruleId",
+    {
+      preHandler: [app.authenticate, app.resolveWalletContext],
+      schema: { params: { type: "object", additionalProperties: false, required: ["ruleId"], properties: { ruleId: uuidSchema } } },
+    },
+    async (request, reply) => {
+      try {
+        await options.financialImportsService.deleteCategorizationRule(request.currentWalletId!, request.params.ruleId);
+        return reply.code(204).send();
+      } catch (error) {
+        return sendFinancialImportError(error, request, reply);
+      }
     },
   );
 

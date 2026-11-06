@@ -1,7 +1,7 @@
 # Importação financeira OFX e CSV
 
-**Status:** importação OFX e CSV implementada
-**Última revisão:** 03/11/2026
+**Status:** importação OFX e CSV com regras de categorização por carteira (DEV-55)
+**Última revisão:** 05/11/2026
 
 ## Fluxo definido
 
@@ -19,6 +19,15 @@
 - Possíveis duplicidades só são importadas após decisão explícita do usuário, persistida para o fingerprint revisado; mudar a identidade invalida essa decisão. A confirmação revalida duplicidades históricas e entre itens editados da sessão; ao encontrar novas, devolve a prévia sem importar parcialmente. Confirmações concorrentes são serializadas por carteira e revalidadas antes de gravar.
 - O identificador bruto da conta não é persistido; a sessão conserva somente seu hash.
 
+## Classificação e regras por carteira
+
+- Itens sem categoria ficam visíveis como "Não categorizada" e não são importados até receberem uma categoria.
+- Regras associam tipo (`income`/`expense`) e descrição normalizada a categoria e subcategoria; há no máximo uma por carteira, tipo e descrição normalizada, sem prioridade entre regras porque a correspondência é exata.
+- Uma regra só nasce de ação explícita: gestão de regras ou confirmação a partir de um item salvo com categoria manual. Nada é aprendido silenciosamente.
+- Regras ativas classificam, ao gerar a prévia, apenas itens sem categoria, válidos e não duplicados; a origem fica em `import_items.categorization_source` (`rule`/`manual`). A escolha do usuário sempre prevalece.
+- Regras são compartilhadas pelos membros da carteira e isoladas de outras carteiras.
+- A regra não tem FK para categoria: se a categoria ou subcategoria for removida, ela fica `isStale`, deixa de classificar e exige reclassificação.
+
 ## Estado atual
 
 A infraestrutura de upload, prévia, confirmação, histórico e desfazer existe. O parser padrão é `DefaultFinancialImportParser`: extratos bancários OFX 1.x (SGML) e 2.x (XML) em BRL são interpretados em UTF-8, UTF-16, Windows-1252 e ISO-8859-1. Cada arquivo deve conter um único bloco bancário `STMTRS`; múltiplos extratos são recusados antes da prévia para não misturar contas, moedas ou `FITID`. Valores positivos sugerem entrada, negativos sugerem saída e `XFER` permanece pendente de conciliação. Linhas malformadas ficam visíveis com motivo explícito quando podem ser armazenadas com segurança. `NAME` e `MEMO` multilinha são preservados e normalizados na descrição exibida; conteúdo XML `CDATA` permanece literal, e tags aparentes dentro de `CDATA` ou comentários não participam da estrutura do extrato.
@@ -35,4 +44,6 @@ Faturas de cartão em OFX permanecem fora desse fluxo. Sessões desfeitas não b
 - [`apps/api/src/financial-imports/financial-imports.csv.ts`](../../../apps/api/src/financial-imports/financial-imports.csv.ts)
 - [`apps/api/src/financial-imports/financial-imports.parser.test.ts`](../../../apps/api/src/financial-imports/financial-imports.parser.test.ts)
 - [`apps/api/src/financial-imports/postgres-financial-imports.repository.ts`](../../../apps/api/src/financial-imports/postgres-financial-imports.repository.ts)
+- [`apps/api/src/financial-imports/financial-categorization-rules.service.ts`](../../../apps/api/src/financial-imports/financial-categorization-rules.service.ts)
+- [`apps/api/src/financial-imports/postgres-financial-categorization-rules.repository.ts`](../../../apps/api/src/financial-imports/postgres-financial-categorization-rules.repository.ts)
 - [`apps/web/src/imports/FinancialImportsPage.tsx`](../../../apps/web/src/imports/FinancialImportsPage.tsx)

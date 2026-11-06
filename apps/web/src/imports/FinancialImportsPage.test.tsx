@@ -6,7 +6,7 @@ import { WalletProvider } from '../wallets/WalletContext'
 import { walletApi } from '../wallets/walletApi'
 import { FinancialImportsPage } from './FinancialImportsPage'
 import type { CsvImportConfiguration, CsvInspection, CsvMappingTemplate, FinancialImportItem, FinancialImportSession } from './importsApi'
-import { importsApi } from './importsApi'
+import { FinancialImportApiError, importsApi } from './importsApi'
 
 function deferred<T>() {
   let resolve!: (value: T) => void
@@ -907,5 +907,109 @@ describe('FinancialImportsPage', () => {
     expect(screen.getByRole('button', { name: 'Confirmar 2 movimentações' })).toBeEnabled()
     await user.click(screen.getByRole('button', { name: 'Confirmar 2 movimentações' }))
     await waitFor(() => expect(importsApi.confirm).toHaveBeenCalledWith('import-1'))
+  })
+
+  it('marks rule suggestions and learns a rule from a saved manual classification only after confirmation', async () => {
+    const ruleSession: FinancialImportSession = {
+      ...previewSession,
+      items: previewSession.items!.map((item) => item.id === 'item-2' ? { ...item, categorizationSource: 'rule' as const } : item),
+    }
+    vi.mocked(importsApi.list).mockResolvedValueOnce({ items: [{ ...ruleSession, items: undefined }] })
+    vi.mocked(importsApi.get).mockResolvedValue(ruleSession)
+    vi.mocked(importsApi.updateItem).mockImplementation(async (_importId, itemId, input) => ({
+      ...ruleSession.items!.find((item) => item.id === itemId)!,
+      ...input,
+      validationStatus: input.categoryId ? 'valid' : 'uncategorized',
+      categorizationSource: input.categoryId ? 'manual' : null,
+    }))
+    const createRule = vi.spyOn(importsApi, 'createCategorizationRule').mockResolvedValue({
+      id: 'rule-1', type: 'income', description: 'Salário', categoryId: 'income-category', categoryName: 'Salário',
+      subcategoryId: 'income-subcategory', subcategoryName: 'Mensal', isActive: true, isStale: false,
+      createdAt: '2026-11-05T12:00:00.000Z', updatedAt: '2026-11-05T12:00:00.000Z',
+    })
+    const user = userEvent.setup()
+    await renderPage()
+    await user.click(await screen.findByRole('button', { name: 'Ver detalhes' }))
+
+    const suggestedItem = (await screen.findByText('Movimentação 2')).closest('li') as HTMLElement
+    expect(within(suggestedItem).getByText('Categoria sugerida por regra desta carteira')).toBeVisible()
+    expect(within(suggestedItem).queryByRole('button', { name: 'Criar regra para esta descrição' })).not.toBeInTheDocument()
+
+    const firstItem = screen.getByText('Movimentação 1').closest('li') as HTMLElement
+    expect(within(firstItem).queryByRole('button', { name: 'Criar regra para esta descrição' })).not.toBeInTheDocument()
+    await user.selectOptions(within(firstItem).getByLabelText('Categoria'), 'income-category')
+    await user.selectOptions(within(firstItem).getByLabelText('Subcategoria'), 'income-subcategory')
+    expect(within(firstItem).queryByRole('button', { name: 'Criar regra para esta descrição' })).not.toBeInTheDocument()
+    await user.click(within(firstItem).getByRole('button', { name: 'Salvar ajuste' }))
+    const learnButton = await within(firstItem).findByRole('button', { name: 'Criar regra para esta descrição' })
+
+    vi.mocked(window.confirm).mockReturnValueOnce(false)
+    await user.click(learnButton)
+    expect(createRule).not.toHaveBeenCalled()
+
+    await user.click(learnButton)
+    expect(window.confirm).toHaveBeenLastCalledWith(expect.stringContaining('“Salário” como Salário / Mensal'))
+    await waitFor(() => expect(createRule).toHaveBeenCalledWith({
+      type: 'income', description: 'Salário', categoryId: 'income-category', subcategoryId: 'income-subcategory',
+    }))
+    expect(await screen.findByText('Regra criada. Ela será aplicada às próximas importações desta carteira.')).toBeVisible()
+  })
+
+  it('manages wallet rules, flags removed categories, and keeps errors visible', async () => {
+    vi.spyOn(importsApi, 'listCategorizationRules').mockResolvedValue({ items: [{
+      id: 'rule-stale', type: 'expense', description: 'Padaria', categoryId: 'removed-category', categoryName: null,
+      subcategoryId: null, subcategoryName: null, isActive: false, isStale: true,
+      createdAt: '2026-11-05T12:00:00.000Z', updatedAt: '2026-11-05T12:00:00.000Z',
+    }] })
+    const createRule = vi.spyOn(importsApi, 'createCategorizationRule')
+      .mockRejectedValueOnce(new FinancialImportApiError('Já existe uma regra para esta descrição e tipo nesta carteira.', 409))
+      .mockResolvedValueOnce({
+        id: 'rule-new', type: 'expense', description: 'Mercado', categoryId: 'expense-category', categoryName: 'Alimentação',
+        subcategoryId: 'expense-subcategory', subcategoryName: 'Mercado', isActive: true, isStale: false,
+        createdAt: '2026-11-05T12:00:00.000Z', updatedAt: '2026-11-05T12:00:00.000Z',
+      })
+    const updateRule = vi.spyOn(importsApi, 'updateCategorizationRule').mockImplementation(async (ruleId, input) => ({
+      id: ruleId, ...input, subcategoryId: input.subcategoryId ?? null, isActive: input.isActive ?? true,
+      categoryName: 'Alimentação', subcategoryName: null, isStale: false,
+      createdAt: '2026-11-05T12:00:00.000Z', updatedAt: '2026-11-05T12:10:00.000Z',
+    }))
+    const deleteRule = vi.spyOn(importsApi, 'deleteCategorizationRule').mockResolvedValue(undefined)
+    const user = userEvent.setup()
+    await renderPage()
+
+    await user.click(screen.getByRole('button', { name: 'Gerenciar regras' }))
+    const rules = screen.getByRole('region', { name: 'Regras por carteira' })
+    expect(await within(rules).findByText('Padaria')).toBeVisible()
+    expect(within(rules).getByText(/Categoria removida\. Edite a regra/)).toBeVisible()
+    expect(within(rules).getByText('Regra desativada')).toBeVisible()
+
+    await user.type(within(rules).getByLabelText('Descrição exata da movimentação'), 'Mercado')
+    await user.selectOptions(within(rules).getByLabelText('Categoria'), 'expense-category')
+    await user.selectOptions(within(rules).getByLabelText('Subcategoria'), 'expense-subcategory')
+    await user.click(within(rules).getByRole('button', { name: 'Confirmar e criar regra' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('Já existe uma regra para esta descrição e tipo nesta carteira.')
+    await user.click(within(rules).getByRole('button', { name: 'Confirmar e criar regra' }))
+    await waitFor(() => expect(createRule).toHaveBeenLastCalledWith({
+      type: 'expense', description: 'Mercado', categoryId: 'expense-category', subcategoryId: 'expense-subcategory', isActive: true,
+    }))
+    expect(await within(within(rules).getByRole('list')).findByText('Mercado')).toBeVisible()
+
+    const staleRule = within(rules).getByText('Padaria').closest('li') as HTMLElement
+    await user.click(within(staleRule).getByRole('button', { name: 'Editar' }))
+    await user.selectOptions(within(rules).getByLabelText('Categoria'), 'expense-category')
+    await user.click(within(rules).getByLabelText('Regra ativa'))
+    await user.click(within(rules).getByRole('button', { name: 'Salvar alterações' }))
+    await waitFor(() => expect(updateRule).toHaveBeenCalledWith('rule-stale', {
+      type: 'expense', description: 'Padaria', categoryId: 'expense-category', subcategoryId: null, isActive: true,
+    }))
+    await waitFor(() => expect(within(rules).queryByText(/Categoria removida\. Edite a regra/)).not.toBeInTheDocument())
+
+    const updatedRule = within(rules).getByText('Padaria').closest('li') as HTMLElement
+    vi.mocked(window.confirm).mockReturnValueOnce(false)
+    await user.click(within(updatedRule).getByRole('button', { name: 'Excluir' }))
+    expect(deleteRule).not.toHaveBeenCalled()
+    await user.click(within(updatedRule).getByRole('button', { name: 'Excluir' }))
+    await waitFor(() => expect(deleteRule).toHaveBeenCalledWith('rule-stale'))
+    await waitFor(() => expect(within(rules).queryByText('Padaria')).not.toBeInTheDocument())
   })
 })

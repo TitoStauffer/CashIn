@@ -1,7 +1,7 @@
 # Estado atual do projeto
 
-**Status:** atualizado pela DEV-53
-**Última revisão:** 03/11/2026
+**Status:** atualizado pela DEV-55
+**Última revisão:** 05/11/2026
 **Ticket de criação:** [DEV-64](https://titostauffer.atlassian.net/browse/DEV-64)
 
 ## Produto disponível
@@ -16,10 +16,11 @@
 - Metas de investimento, aportes, encerramento e progresso calculado.
 - Dashboard financeiro com resumo, comparação, metas e categorias de maior gasto.
 - Fundação de importação financeira com upload, prévia, edição, confirmação atômica, histórico e desfazer.
+- Regras de categorização por carteira, criadas só com confirmação do usuário e aplicadas às novas prévias.
 
 ## Estado da importação
 
-A infraestrutura e a tela existem. O parser padrão da API interpreta extratos bancários OFX 1.x e 2.x e CSV configurável, com inspeção, amostra e modelos reutilizáveis por carteira. Consulte [`domain/imports.md`](domain/imports.md).
+A infraestrutura e a tela existem. O parser padrão da API interpreta extratos bancários OFX 1.x e 2.x e CSV configurável, com inspeção, amostra e modelos reutilizáveis por carteira. Itens sem categoria podem receber sugestão de regras explícitas da carteira. Consulte [`domain/imports.md`](domain/imports.md).
 
 ## Automação de entrega
 
