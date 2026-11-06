@@ -153,6 +153,7 @@ function FinancialImportsWalletPage({ userEmail, isLoggingOut, onLogout }: Finan
   const [importKind, setImportKind] = useState<FinancialImportKind>('bank_statement')
   const [creditCards, setCreditCards] = useState<CreditCard[]>([])
   const [areCreditCardsLoading, setAreCreditCardsLoading] = useState(false)
+  const [creditCardsError, setCreditCardsError] = useState('')
   const [selectedCreditCardId, setSelectedCreditCardId] = useState('')
   const [cardAmountSign, setCardAmountSign] = useState<CardAmountSign | ''>('')
   const [pollFailureCount, setPollFailureCount] = useState(0)
@@ -195,6 +196,7 @@ function FinancialImportsWalletPage({ userEmail, isLoggingOut, onLogout }: Finan
         setSelectedFile(null)
         setImportKind('bank_statement')
         setCreditCards([])
+        setCreditCardsError('')
         setSelectedCreditCardId('')
         setCardAmountSign('')
         setCsvConfiguration(null)
@@ -440,12 +442,14 @@ function FinancialImportsWalletPage({ userEmail, isLoggingOut, onLogout }: Finan
     if (kind !== 'credit_card_statement' || creditCards.length > 0) return
     const operation = captureWalletOperation()
     setAreCreditCardsLoading(true)
+    setCreditCardsError('')
     try {
       const result = await creditCardsApi.list()
       if (!isCurrentWalletOperation(operation)) return
       setCreditCards(result.items.filter((card) => card.isActive))
     } catch {
       if (!isCurrentWalletOperation(operation)) return
+      setCreditCardsError('Não foi possível carregar os cartões desta carteira. Tente novamente.')
       setFormError('Não foi possível carregar os cartões desta carteira. Tente novamente.')
     } finally {
       if (isCurrentWalletOperation(operation)) setAreCreditCardsLoading(false)
@@ -570,7 +574,11 @@ function FinancialImportsWalletPage({ userEmail, isLoggingOut, onLogout }: Finan
         const refreshed = await importsApi.get(selectedImport!.id)
         if (!isCurrentWalletOperation(operation)) return
         setSelectedImport(refreshed)
-        setDrafts(Object.fromEntries((refreshed.items ?? []).map((current) => [current.id, createDraft(current)])))
+        // Only the saved item is refreshed from the server; unsaved edits to the other items stay.
+        setDrafts((current) => Object.fromEntries((refreshed.items ?? []).map((reloaded) => [
+          reloaded.id,
+          reloaded.id === updated.id ? createDraft(reloaded) : current[reloaded.id] ?? createDraft(reloaded),
+        ])))
       } catch {
         if (!isCurrentWalletOperation(operation)) return
         setFormError(`A movimentação ${item.sequence} foi salva, mas os totais das faturas não puderam ser atualizados. Recarregue a importação.`)
@@ -858,7 +866,7 @@ function FinancialImportsWalletPage({ userEmail, isLoggingOut, onLogout }: Finan
                       {creditCards.map((card) => <option key={card.id} value={card.id}>{card.nickname}</option>)}
                     </select>
                   </label>
-                  {!areCreditCardsLoading && creditCards.length === 0 && <small>Cadastre um cartão ativo nesta carteira para importar a fatura.</small>}
+                  {!areCreditCardsLoading && creditCards.length === 0 && !creditCardsError && <small>Cadastre um cartão ativo nesta carteira para importar a fatura.</small>}
                   {selectedFile && getFileFormat(selectedFile.name) === 'csv' && (
                     <label>
                       <span>Como o CSV mostra as compras</span>

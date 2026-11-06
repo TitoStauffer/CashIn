@@ -481,9 +481,14 @@ describe('FinancialImportsPage', () => {
     expect(screen.getByText(/Existem ajustes não salvos/)).toBeVisible()
     await user.click(within(firstItem).getByRole('button', { name: 'Salvar ajuste' }))
 
-    await waitFor(() => expect(importsApi.updateItem).toHaveBeenCalledWith('import-1', 'item-1', expect.objectContaining({
-      description: 'Salário mensal', categoryId: 'income-category', subcategoryId: 'income-subcategory',
-    })))
+    await waitFor(() => expect(importsApi.updateItem).toHaveBeenCalledWith('import-1', 'item-1', {
+      date: '2026-10-01',
+      description: 'Salário mensal',
+      type: 'income',
+      categoryId: 'income-category',
+      subcategoryId: 'income-subcategory',
+    }))
+    expect(within(firstItem).queryByRole('combobox', { name: 'Fatura' })).not.toBeInTheDocument()
     const confirmButton = screen.getByRole('button', { name: 'Confirmar 2 movimentações' })
     expect(confirmButton).toBeEnabled()
     expect(screen.queryByText(/Existem ajustes não salvos/)).not.toBeInTheDocument()
@@ -1178,6 +1183,72 @@ describe('FinancialImportsPage', () => {
       expect(await screen.findByText(/foi salva, mas os totais das faturas não puderam ser atualizados/)).toBeVisible()
       expect(screen.queryByText('Não foi possível atualizar a movimentação.')).not.toBeInTheDocument()
       expect(screen.getByText(/Movimentação 1 atualizada na prévia/)).toBeVisible()
+    })
+
+    it('keeps unsaved edits of the other items when the session is reloaded', async () => {
+      const user = userEvent.setup()
+      vi.spyOn(importsApi, 'upload').mockResolvedValue(cardPreview)
+      vi.spyOn(importsApi, 'get').mockResolvedValue(cardPreview)
+      vi.spyOn(importsApi, 'updateItem').mockImplementation(async (_importId, itemId, input) => ({
+        ...cardPreview.items!.find((item) => item.id === itemId)!,
+        ...input,
+      }))
+      await renderPage()
+      await user.click(screen.getByRole('radio', { name: 'Fatura de cartão' }))
+      await user.selectOptions(await screen.findByRole('combobox', { name: 'Cartão da fatura' }), 'card-1')
+      await user.upload(screen.getByLabelText('Arquivo OFX ou CSV'), new File(['OFXDATA'], 'fatura.ofx', { type: 'application/x-ofx' }))
+      await user.click(screen.getByRole('button', { name: 'Enviar e preparar prévia' }))
+
+      // Edit item 2 without saving, then save item 1 and let the reload run.
+      const credit = (await screen.findByText('Movimentação 2')).closest('li')!
+      const creditDescription = within(credit).getByRole('textbox', { name: 'Descrição' })
+      await user.clear(creditDescription)
+      await user.type(creditDescription, 'Estorno revisado')
+      const purchase = screen.getByText('Movimentação 1').closest('li')!
+      await user.click(within(purchase).getByRole('button', { name: 'Salvar ajuste' }))
+
+      await waitFor(() => expect(importsApi.get).toHaveBeenCalledWith('card-import-1'))
+      expect(within(screen.getByText('Movimentação 2').closest('li')!).getByRole('textbox', { name: 'Descrição' })).toHaveValue('Estorno revisado')
+    })
+
+    it('does not suggest a missing card when the card list fails to load', async () => {
+      const user = userEvent.setup()
+      vi.spyOn(creditCardsApi, 'list').mockRejectedValue(new Error('offline'))
+      await renderPage()
+      await user.click(screen.getByRole('radio', { name: 'Fatura de cartão' }))
+
+      expect(await screen.findByText('Não foi possível carregar os cartões desta carteira. Tente novamente.')).toBeVisible()
+      expect(screen.queryByText(/Cadastre um cartão ativo/)).not.toBeInTheDocument()
+    })
+
+    it('drops the chosen statement when the item becomes a statement payment', async () => {
+      const user = userEvent.setup()
+      vi.spyOn(importsApi, 'upload').mockResolvedValue(cardPreview)
+      vi.spyOn(importsApi, 'get').mockResolvedValue(cardPreview)
+      vi.spyOn(importsApi, 'updateItem').mockImplementation(async (_importId, itemId, input) => ({
+        ...cardPreview.items!.find((item) => item.id === itemId)!,
+        ...input,
+      }))
+      await renderPage()
+      await user.click(screen.getByRole('radio', { name: 'Fatura de cartão' }))
+      await user.selectOptions(await screen.findByRole('combobox', { name: 'Cartão da fatura' }), 'card-1')
+      await user.upload(screen.getByLabelText('Arquivo OFX ou CSV'), new File(['OFXDATA'], 'fatura.ofx', { type: 'application/x-ofx' }))
+      await user.click(screen.getByRole('button', { name: 'Enviar e preparar prévia' }))
+
+      const purchase = (await screen.findByText('Movimentação 1')).closest('li')!
+      await user.selectOptions(within(purchase).getByRole('combobox', { name: 'Fatura' }), '2026-12-10')
+      await user.selectOptions(within(purchase).getByRole('combobox', { name: 'Tipo' }), 'transfer')
+      expect(within(purchase).queryByRole('combobox', { name: 'Fatura' })).not.toBeInTheDocument()
+      await user.click(within(purchase).getByRole('button', { name: 'Salvar ajuste' }))
+
+      await waitFor(() => expect(importsApi.updateItem).toHaveBeenCalledWith('card-import-1', 'card-item-1', {
+        date: '2026-10-11',
+        description: 'LIVRARIA',
+        type: 'transfer',
+        categoryId: null,
+        subcategoryId: null,
+        statementClosingDate: null,
+      }))
     })
   })
 })

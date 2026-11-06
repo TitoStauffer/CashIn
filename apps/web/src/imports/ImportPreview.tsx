@@ -173,7 +173,7 @@ export function ImportPreview({
                     Tipo
                     <select
                       value={draft.type}
-                      onChange={(event) => onDraftChange(item.id, { type: event.target.value as FinancialImportItemType, categoryId: null, subcategoryId: null })}
+                      onChange={(event) => onDraftChange(item.id, { type: event.target.value as FinancialImportItemType, categoryId: null, subcategoryId: null, ...(event.target.value === 'transfer' ? { statementClosingDate: null } : {}) })}
                       disabled={areItemControlsDisabled}
                     >
                       {typeOptions.map((type) => <option key={type} value={type}>{labelForType(type)}</option>)}
