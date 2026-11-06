@@ -93,11 +93,24 @@ const STAGE_INSTRUCTIONS: Record<AgentStage, string> = {
   qualityGate: `Atue como Quality Gate Coordinator. Consolide apenas evidências reais de CI, SonarQube, Code Review formal e QA fornecidas no contexto. Não substitua nem reinterprete aprovações ausentes. Use APPROVED somente quando todas as evidências exigidas estiverem aprovadas para o mesmo SHA; caso contrário, use INCONCLUSIVE ou CHANGES_REQUESTED conforme a evidência. Para que o Merge Readiness leia o relatório, inclua exatamente o cabeçalho **Checks verificados:** seguido imediatamente por uma lista de bullets com evidências observadas.`,
 };
 
+// Review evidence shared by every agent runtime (Codex and Claude Code).
+export interface AgentEvidenceInput {
+  pullRequest: PullRequestContext;
+  changedFiles?: string[];
+  checks: CheckSummary;
+  checkRuns?: AgentCheckEvidence[];
+  ciConfiguration?: AgentCiSnapshot[];
+  formalCodeReview?: FormalCodeReviewEvidence;
+  repositoryInstructions: string;
+  vaultContext?: Array<{ path: string; revision: 'head' | 'base'; content: string }>;
+  sourceFiles?: Array<{ path: string; revision: 'head' | 'base'; content: string }>;
+}
+
 export async function executeCodexAgent(
   stage: AgentStage,
   context: OrchestrationContext,
   signal: AbortSignal,
-  evidence: { pullRequest: PullRequestContext; changedFiles?: string[]; checks: CheckSummary; checkRuns?: AgentCheckEvidence[]; ciConfiguration?: AgentCiSnapshot[]; formalCodeReview?: FormalCodeReviewEvidence; repositoryInstructions: string; vaultContext?: Array<{ path: string; revision: 'head' | 'base'; content: string }>; sourceFiles?: Array<{ path: string; revision: 'head' | 'base'; content: string }> },
+  evidence: AgentEvidenceInput,
 ): Promise<AgentStageResult> {
   const prompt = buildPrompt(stage, context, evidence);
   assertCodexPromptWithinBudget(prompt);
@@ -153,7 +166,7 @@ export interface FormalCodeReviewEvidence {
 export function buildPrompt(
   stage: AgentStage,
   context: OrchestrationContext,
-  evidence: { pullRequest: PullRequestContext; changedFiles?: string[]; checks: CheckSummary; checkRuns?: AgentCheckEvidence[]; ciConfiguration?: AgentCiSnapshot[]; formalCodeReview?: FormalCodeReviewEvidence; repositoryInstructions: string; vaultContext?: Array<{ path: string; revision: 'head' | 'base'; content: string }>; sourceFiles?: Array<{ path: string; revision: 'head' | 'base'; content: string }> },
+  evidence: AgentEvidenceInput,
 ): string {
   const changedFiles = new Set(evidence.changedFiles ?? []);
   const vaultContext = selectPromptVaultContext(evidence.vaultContext ?? [], changedFiles, context.repository)
@@ -232,7 +245,7 @@ export function buildPrompt(
     '```',
     '',
     '### Project instructions reference',
-    'The repository AGENTS.md is loaded by Codex from the trusted base checkout. The relevant policy text is repeated here as data for clarity:',
+    'The repository AGENTS.md comes from the trusted base checkout. The relevant policy text is repeated here as data for clarity:',
     '```markdown',
     evidence.repositoryInstructions,
     '```',

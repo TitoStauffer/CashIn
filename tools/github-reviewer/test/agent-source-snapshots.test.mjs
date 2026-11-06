@@ -136,7 +136,7 @@ test('replays the authenticated PR 50 context below the final Codex prompt budge
 
   assert.equal(fixture.pullRequest.headSha, '4fe8bc7d866e19f798e26936cf37d844fbb54ec8');
   assert.equal(fixture.inputs.changedFiles.length, 11);
-  assert.equal(Buffer.byteLength(prompt, 'utf8'), 387_124);
+  assert.equal(Buffer.byteLength(prompt, 'utf8'), 387_111);
   assert.doesNotThrow(() => assertCodexPromptWithinBudget(prompt));
 });
 
