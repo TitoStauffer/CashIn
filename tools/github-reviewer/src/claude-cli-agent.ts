@@ -10,7 +10,23 @@ import { buildPrompt, CODEX_OUTPUT_SCHEMA, type AgentEvidenceInput } from './cod
 // The Claude models used by Claude Code expose a 1M-token window; this byte budget keeps the
 // prompt far below it while allowing PRs that exceed the Codex budget.
 export const MAX_CLAUDE_PROMPT_BYTES = 2_000_000;
-const MAX_CAPTURED_STDOUT = 4_000_000;
+const MAX_STREAM_LINE_BYTES = 8_000_000;
+
+// Replaces Claude Code's default system prompt, which describes generic tools and environment
+// features that are not available in this session.
+export const CLAUDE_SYSTEM_PROMPT = [
+  'You are a deterministic pull request quality agent.',
+  'You have no tools: you cannot run commands, read or write files, browse, or call external services.',
+  'Work only from the text supplied in the user message and return the structured result requested there.',
+].join(' ');
+
+// Parity with Codex --ignore-user-config: only the (empty) project scope is loaded, user and
+// plugin hooks never run, auto-memory is off and no CLAUDE.md or rules file is read.
+export const CLAUDE_ISOLATION_SETTINGS = {
+  disableAllHooks: true,
+  autoMemoryEnabled: false,
+  claudeMdExcludes: ['**/CLAUDE.md', '**/CLAUDE.local.md', '**/.claude/rules/**'],
+} as const;
 
 interface ClaudeAgentResult {
   stage: AgentStage;
@@ -18,6 +34,13 @@ interface ClaudeAgentResult {
   commitSha: string;
   reportMarkdown: string;
   evidence: AgentStageResult['evidence'];
+}
+
+// Facts observed in the CLI event stream; only these are retained, never model text.
+export interface ClaudeStreamObservation {
+  init?: { tools: unknown; mcpServers: unknown };
+  hookEvents: number;
+  result?: Record<string, unknown>;
 }
 
 export async function executeClaudeAgent(
@@ -31,8 +54,8 @@ export async function executeClaudeAgent(
   // An empty temporary directory keeps project instructions, settings and hooks out of the session.
   const workDirectory = await mkdtemp(join(tmpdir(), 'cashin-claude-agent-'));
   try {
-    const output = await runClaude(prompt, workDirectory, signal);
-    const parsed = parseClaudeOutput(output);
+    const observation = await runClaude(prompt, workDirectory, signal);
+    const parsed = parseClaudeObservation(observation);
     if (parsed.stage !== stage || parsed.commitSha.toLowerCase() !== context.commitSha.toLowerCase()) {
       throw new Error('Claude result does not match the requested stage and current SHA.');
     }
@@ -54,15 +77,20 @@ export function assertClaudePromptWithinBudget(prompt: string): void {
   }
 }
 
-// No tools (so PR-controlled text cannot run commands or read runner files), no MCP servers,
-// no persisted session, and the output validated against the same schema used for Codex.
+// No tools, no MCP servers, no user/plugin configuration, no persisted session, and the output
+// validated against the same schema used for Codex. The stream is checked at runtime
+// (assertIsolatedSession) instead of trusting these flags alone.
 export function createClaudeArgs(): string[] {
   return [
     '-p',
-    '--output-format', 'json',
+    '--output-format', 'stream-json',
+    '--verbose',
     '--tools', '',
     '--strict-mcp-config',
     '--no-session-persistence',
+    '--setting-sources', 'project',
+    '--settings', JSON.stringify(CLAUDE_ISOLATION_SETTINGS),
+    '--system-prompt', CLAUDE_SYSTEM_PROMPT,
     '--json-schema', JSON.stringify(CODEX_OUTPUT_SCHEMA),
   ];
 }
@@ -82,7 +110,67 @@ export function resolveClaudeExecutable(env: NodeJS.ProcessEnv = process.env, pl
   throw new Error('Claude Code CLI was not found. Install it or set CLAUDE_EXECUTABLE.');
 }
 
-function runClaude(prompt: string, workDirectory: string, signal: AbortSignal): Promise<string> {
+export class ClaudeStreamReader {
+  private buffer = '';
+  readonly observation: ClaudeStreamObservation = { hookEvents: 0 };
+
+  push(chunk: string): void {
+    this.buffer += chunk;
+    let newline = this.buffer.indexOf('\n');
+    while (newline >= 0) {
+      this.consume(this.buffer.slice(0, newline));
+      this.buffer = this.buffer.slice(newline + 1);
+      newline = this.buffer.indexOf('\n');
+    }
+    if (this.buffer.length > MAX_STREAM_LINE_BYTES) throw new Error('Claude Code CLI produced an oversized stream event.');
+  }
+
+  end(): ClaudeStreamObservation {
+    if (this.buffer.trim()) this.consume(this.buffer);
+    this.buffer = '';
+    return this.observation;
+  }
+
+  private consume(line: string): void {
+    if (!line.trim()) return;
+    let event: unknown;
+    try {
+      event = JSON.parse(line);
+    } catch {
+      return;
+    }
+    if (!isRecord(event)) return;
+    if (event.type === 'system' && event.subtype === 'init') {
+      this.observation.init = { tools: event.tools, mcpServers: event.mcp_servers };
+    } else if (event.type === 'system' && typeof event.subtype === 'string' && event.subtype.startsWith('hook_')) {
+      this.observation.hookEvents += 1;
+    } else if (event.type === 'result') {
+      this.observation.result = event;
+    }
+  }
+}
+
+// --json-schema is implemented by a CLI-internal tool that only returns the structured result;
+// it grants no shell, file, network or MCP access. Any other tool is rejected.
+export const CLAUDE_ALLOWED_SESSION_TOOLS: readonly string[] = ['StructuredOutput'];
+
+// Fails closed unless the CLI reported a session with no tools beyond the structured-output
+// mechanism, zero MCP servers and no hooks.
+export function assertIsolatedSession(observation: ClaudeStreamObservation): void {
+  const init = observation.init;
+  if (!init) throw new Error('Claude Code CLI did not report its session configuration.');
+  if (!Array.isArray(init.tools) || init.tools.some((tool) => !CLAUDE_ALLOWED_SESSION_TOOLS.includes(String(tool)))) {
+    throw new Error('Claude session started with tools available; refusing to use its result.');
+  }
+  if (!Array.isArray(init.mcpServers) || init.mcpServers.length > 0) {
+    throw new Error('Claude session started with MCP servers available; refusing to use its result.');
+  }
+  if (observation.hookEvents > 0) {
+    throw new Error('Claude session executed hooks; refusing to use its result.');
+  }
+}
+
+function runClaude(prompt: string, workDirectory: string, signal: AbortSignal): Promise<ClaudeStreamObservation> {
   const executable = resolveClaudeExecutable();
   return new Promise((resolve, reject) => {
     const child = spawn(executable, createClaudeArgs(), {
@@ -91,15 +179,15 @@ function runClaude(prompt: string, workDirectory: string, signal: AbortSignal): 
       stdio: ['pipe', 'pipe', 'pipe'],
       windowsHide: true,
     });
-    let stdout = '';
+    const reader = new ClaudeStreamReader();
     let stderr = '';
     let settled = false;
-    const finish = (error?: Error, value?: string) => {
+    const finish = (error?: Error, value?: ClaudeStreamObservation) => {
       if (settled) return;
       settled = true;
       signal.removeEventListener('abort', abort);
       if (error) reject(error);
-      else resolve(value ?? '');
+      else resolve(value ?? reader.observation);
     };
     const abort = () => {
       child.kill();
@@ -109,45 +197,44 @@ function runClaude(prompt: string, workDirectory: string, signal: AbortSignal): 
     signal.addEventListener('abort', abort, { once: true });
     child.once('error', () => finish(new Error('Could not start the Claude Code CLI.')));
     child.stdout?.on('data', (chunk: Buffer) => {
-      stdout = `${stdout}${chunk.toString('utf8')}`.slice(-MAX_CAPTURED_STDOUT);
+      try {
+        reader.push(chunk.toString('utf8'));
+      } catch (error) {
+        child.kill();
+        finish(error instanceof Error ? error : new Error('Claude Code CLI stream could not be read.'));
+      }
     });
     child.stderr?.on('data', (chunk: Buffer) => {
       stderr = `${stderr}${chunk.toString('utf8')}`.slice(-4_000);
     });
     child.once('close', (code) => {
+      const observation = reader.end();
       if (code !== 0) {
-        const detail = claudeFailureDetail(stdout, stderr);
+        const detail = claudeFailureDetail(observation, stderr);
         return finish(new Error(`Claude Code CLI exited with code ${code ?? 'unknown'}${detail ? `: ${detail}` : '.'}`));
       }
-      finish(undefined, stdout);
+      finish(undefined, observation);
     });
     child.stdin.end(prompt, 'utf8');
   });
 }
 
 // Only structured error fields are surfaced; model output and stderr content are never echoed.
-export function claudeFailureDetail(stdout: string, stderr: string): string {
-  try {
-    const envelope = JSON.parse(stdout.trim()) as Record<string, unknown>;
-    if (envelope.is_error === true) {
-      const status = typeof envelope.api_error_status === 'number' ? ` (HTTP ${envelope.api_error_status})` : '';
-      const subtype = typeof envelope.subtype === 'string' ? envelope.subtype : 'error';
-      return `${subtype}${status}`.slice(0, 200);
-    }
-  } catch {
-    // Fall through to the generic stderr message.
+export function claudeFailureDetail(observation: ClaudeStreamObservation, stderr: string): string {
+  const result = observation.result;
+  if (result?.is_error === true) {
+    const status = typeof result.api_error_status === 'number' ? ` (HTTP ${result.api_error_status})` : '';
+    const subtype = typeof result.subtype === 'string' ? result.subtype : 'error';
+    const terminal = typeof result.terminal_reason === 'string' ? `, ${result.terminal_reason}` : '';
+    return `${subtype}${status}${terminal}`.slice(0, 200);
   }
   return stderr.trim() ? 'Claude Code CLI reported an execution error.' : '';
 }
 
-export function parseClaudeOutput(stdout: string): ClaudeAgentResult {
-  let envelope: unknown;
-  try {
-    envelope = JSON.parse(stdout.trim());
-  } catch {
-    throw new Error('Claude Code CLI returned malformed JSON.');
-  }
-  if (!isRecord(envelope) || envelope.is_error === true || envelope.subtype !== 'success') {
+export function parseClaudeObservation(observation: ClaudeStreamObservation): ClaudeAgentResult {
+  assertIsolatedSession(observation);
+  const envelope = observation.result;
+  if (!envelope || envelope.is_error === true || envelope.subtype !== 'success') {
     throw new Error('Claude Code CLI did not complete successfully.');
   }
   const result = envelope.structured_output;
