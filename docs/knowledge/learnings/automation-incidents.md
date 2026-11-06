@@ -1,7 +1,7 @@
 # Aprendizados de incidentes da automação
 
 **Status:** histórico vivo
-**Última revisão:** 03/11/2026
+**Última revisão:** 06/11/2026
 
 ## Evidência sempre pertence ao SHA
 
@@ -74,3 +74,7 @@ Na revisão formal [#5686657727 do PR #51](https://github.com/TitoStauffer/CashI
 - Histórico Git e PRs do repositório.
 - [`docs/hosted-agent-orchestration.md`](../../hosted-agent-orchestration.md)
 - [`tools/github-reviewer/src/codex-cli-agent.ts`](../../../tools/github-reviewer/src/codex-cli-agent.ts)
+
+## Fontes citadas pelo vault precisam caber no loader
+
+No PR #62 (DEV-56, SHA `a1c9c0a`), o Code Review hospedado falhou antes de chamar o modelo com "GitHub evidence response exceeds the supported size". O motivo: `postgres-financial-imports.repository.ts` e `FinancialImportsPage.tsx`, citados em `domain/imports.md`, cresceram para ~74,6 KB, e a API de conteúdo do GitHub devolve o arquivo em base64. Com isso, a resposta passou do limite de 100 KB por resposta do loader do vault (`vault-context.ts`). Na prática, um arquivo citado precisa ficar abaixo de ~73 KB de fonte. A correção extraiu a lógica de fatura para `postgres-card-statement-imports.ts` e dividiu a página em `ImportPreview.tsx`, `CsvConfigurationPanel.tsx` e `importsModel.ts`, sem afrouxar o limite. Ao fazer crescer um arquivo citado no vault, confira o tamanho dele antes do push.

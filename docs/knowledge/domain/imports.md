@@ -62,4 +62,5 @@ Sessões desfeitas não bloqueiam uma importação futura, pois somente itens ai
 - [`apps/api/src/financial-imports/postgres-financial-categorization-rules.repository.ts`](../../../apps/api/src/financial-imports/postgres-financial-categorization-rules.repository.ts)
 - [`apps/web/src/imports/FinancialImportsPage.tsx`](../../../apps/web/src/imports/FinancialImportsPage.tsx)
 - [`apps/api/migrations/018_credit_card_statement_imports.sql`](../../../apps/api/migrations/018_credit_card_statement_imports.sql)
+- [`apps/api/src/financial-imports/postgres-card-statement-imports.ts`](../../../apps/api/src/financial-imports/postgres-card-statement-imports.ts)
 - [`apps/api/src/financial-imports/postgres-credit-card-statement-imports.integration.test.ts`](../../../apps/api/src/financial-imports/postgres-credit-card-statement-imports.integration.test.ts)
