@@ -121,3 +121,12 @@
 - **Prevenção:** decodificar com um `StringDecoder` mantido por todo o stream e descarregá-lo no fim. Limites declarados em bytes devem ser medidos com `Buffer.byteLength`, não com `string.length`.
 - **Detecção:** a regressão divide o evento `result` em todos os pontos internos de cada caractere multibyte e entrega o stream byte a byte, conferindo o texto final. Outra regressão garante que o limite do stream conta bytes UTF-8.
 - **Evidência:** PR #60, revisão [`5799386919`](https://github.com/TitoStauffer/CashIn/pull/60#pullrequestreview-5799386919), SHA `75ba56541093680b4d5a7820f810334b631e0703`.
+
+## Hooks locais executam apenas cópias instaladas
+
+- **Padrão:** `local-hook-runs-installed-copy`
+- **Causa:** o hook `SessionStart` versionado em `.claude/settings.json` executava `ensure-runner.ps1` a partir de `$CLAUDE_PROJECT_DIR`, ou seja, da árvore de trabalho da branch aberta, com `-ExecutionPolicy Bypass`.
+- **Impacto:** abrir uma sessão do Claude Code numa branch não confiável executaria o script dessa branch na máquina que guarda as credenciais dos agentes, sem qualquer revisão. Uma mudança discreta num `.ps1` do PR bastaria.
+- **Prevenção:** hooks e atalhos executam apenas a cópia que o instalador grava em `%LOCALAPPDATA%\CashInGithubRunner\scripts`. O instalador é rodado explicitamente, a partir de um checkout atualizado da `master`. Sem cópia instalada, o hook só orienta; sem `powershell`, termina em silêncio.
+- **Detecção:** `tools/github-runner/test-runner-scripts.ps1` recusa um hook que referencie `$CLAUDE_PROJECT_DIR`. Ele também executa o comando real do hook com um `powershell` falso e confirma que só o caminho instalado é chamado.
+- **Evidência:** PR #59, revisões [`5794488063`](https://github.com/TitoStauffer/CashIn/pull/59#pullrequestreview-5794488063) (SHA `b630254cb23ff73aa05d0479ce09bd8b3a86e911`) e [`5794654024`](https://github.com/TitoStauffer/CashIn/pull/59#pullrequestreview-5794654024) (SHA `1240b5b2650d700eb196805fe972eb8c62fdac75`). Corrigido na DEV-77.
