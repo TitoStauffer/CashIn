@@ -3,6 +3,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { delimiter, join } from 'node:path';
 import { spawn } from 'node:child_process';
+import { StringDecoder } from 'node:string_decoder';
 import type { AgentStage, AgentStageResult, OrchestrationContext } from './agent-orchestrator.js';
 import { extractAcceptanceCriteria, failClosedIncompleteResult, isAgentEvaluationEvidence } from './agent-result-validation.js';
 import { buildPrompt, CODEX_OUTPUT_SCHEMA, type AgentEvidenceInput } from './codex-cli-agent.js';
@@ -112,20 +113,27 @@ export function resolveClaudeExecutable(env: NodeJS.ProcessEnv = process.env, pl
 
 export class ClaudeStreamReader {
   private buffer = '';
+  // Decodes UTF-8 across chunk boundaries: a multibyte character split between two stdout
+  // chunks must not turn into U+FFFD inside the structured result.
+  private readonly decoder = new StringDecoder('utf8');
   readonly observation: ClaudeStreamObservation = { hookEvents: 0 };
 
-  push(chunk: string): void {
-    this.buffer += chunk;
+  push(chunk: Buffer): void {
+    this.buffer += this.decoder.write(chunk);
     let newline = this.buffer.indexOf('\n');
     while (newline >= 0) {
       this.consume(this.buffer.slice(0, newline));
       this.buffer = this.buffer.slice(newline + 1);
       newline = this.buffer.indexOf('\n');
     }
-    if (this.buffer.length > MAX_STREAM_LINE_BYTES) throw new Error('Claude Code CLI produced an oversized stream event.');
+    // A UTF-16 unit encodes to at most 3 UTF-8 bytes, so the exact count is only needed near the limit.
+    if (this.buffer.length * 3 > MAX_STREAM_LINE_BYTES && Buffer.byteLength(this.buffer, 'utf8') > MAX_STREAM_LINE_BYTES) {
+      throw new Error('Claude Code CLI produced an oversized stream event.');
+    }
   }
 
   end(): ClaudeStreamObservation {
+    this.buffer += this.decoder.end();
     if (this.buffer.trim()) this.consume(this.buffer);
     this.buffer = '';
     return this.observation;
@@ -198,7 +206,7 @@ function runClaude(prompt: string, workDirectory: string, signal: AbortSignal): 
     child.once('error', () => finish(new Error('Could not start the Claude Code CLI.')));
     child.stdout?.on('data', (chunk: Buffer) => {
       try {
-        reader.push(chunk.toString('utf8'));
+        reader.push(chunk);
       } catch (error) {
         child.kill();
         finish(error instanceof Error ? error : new Error('Claude Code CLI stream could not be read.'));

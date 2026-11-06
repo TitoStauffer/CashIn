@@ -38,11 +38,11 @@ const resultEvent = (overrides = {}) => ({
 
 function observe(...events) {
   const reader = new ClaudeStreamReader();
-  const stream = events.map((event) => typeof event === 'string' ? event : JSON.stringify(event)).join('\n');
+  const stream = Buffer.from(events.map((event) => typeof event === 'string' ? event : JSON.stringify(event)).join('\n'), 'utf8');
   // Split arbitrarily to prove events spanning chunks are reassembled.
   const middle = Math.floor(stream.length / 2);
-  reader.push(stream.slice(0, middle));
-  reader.push(stream.slice(middle));
+  reader.push(stream.subarray(0, middle));
+  reader.push(stream.subarray(middle));
   return reader.end();
 }
 
@@ -95,6 +95,41 @@ test('reads only the schema-validated structured output from an isolated success
     () => parseClaudeObservation(observe(initEvent(), resultEvent({ structured_output: { stage: 'codeReview', decision: 'APPROVED', commitSha: 'short', reportMarkdown: 'x', evidence } }))),
     /invalid structured result/,
   );
+});
+
+test('multibyte characters split across stdout chunks reach the structured result intact', () => {
+  const report = '### Code Review — APPROVED\n\n**Verificações de QA:** ação concluída 💡';
+  const stream = Buffer.from(`${JSON.stringify(initEvent())}\n${JSON.stringify(resultEvent({
+    structured_output: { stage: 'codeReview', decision: 'APPROVED', commitSha: SHA, reportMarkdown: report, evidence },
+  }))}\n`, 'utf8');
+  // Every split point inside each multibyte character, including the 4-byte emoji, must decode cleanly.
+  const multibyteStarts = [];
+  for (let index = 0; index < stream.length; index += 1) {
+    if (stream[index] >= 0xc0) multibyteStarts.push(index);
+  }
+  assert.ok(multibyteStarts.length >= 5);
+  for (const start of multibyteStarts) {
+    const width = stream[start] >= 0xf0 ? 4 : stream[start] >= 0xe0 ? 3 : 2;
+    for (let offset = 1; offset < width; offset += 1) {
+      const reader = new ClaudeStreamReader();
+      reader.push(stream.subarray(0, start + offset));
+      reader.push(stream.subarray(start + offset));
+      const result = parseClaudeObservation(reader.end());
+      assert.equal(result.reportMarkdown, report);
+    }
+  }
+  // Byte-at-a-time delivery is the extreme case of the same boundary.
+  const reader = new ClaudeStreamReader();
+  for (let index = 0; index < stream.length; index += 1) reader.push(stream.subarray(index, index + 1));
+  assert.equal(parseClaudeObservation(reader.end()).reportMarkdown, report);
+});
+
+test('the oversized stream guard counts UTF-8 bytes, not UTF-16 characters', () => {
+  // 2.7M three-byte characters are 8.1 MB of UTF-8 but only 2.7M string units.
+  const reader = new ClaudeStreamReader();
+  assert.throws(() => reader.push(Buffer.from('€'.repeat(2_700_000), 'utf8')), /oversized stream event/);
+  const within = new ClaudeStreamReader();
+  assert.doesNotThrow(() => within.push(Buffer.from('€'.repeat(2_600_000), 'utf8')));
 });
 
 test('Claude prompt budget allows PRs above the Codex budget but still fails closed', () => {
