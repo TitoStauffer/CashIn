@@ -4,23 +4,37 @@ import type { Category } from '../categories/categoriesApi'
 import { categoriesApi } from '../categories/categoriesApi'
 import { getApiErrorFeedback } from '../feedback/apiErrorFeedback'
 import { FinancialSidebar } from '../layout/FinancialSidebar'
-import { formatBrazilianCurrency } from '../money/currency'
 import { useWallet } from '../wallets/useWallet'
+import type { CreditCard } from '../creditCards/creditCardsApi'
+import { creditCardsApi } from '../creditCards/creditCardsApi'
 import type {
+  CardAmountSign,
   CsvColumnMapping,
   CsvImportConfiguration,
   CsvMappingTemplate,
   FinancialImportFormat,
   FinancialImportItem,
   FinancialImportItemInput,
-  FinancialImportItemStatus,
-  FinancialImportItemType,
+  FinancialImportKind,
   FinancialImportSession,
-  FinancialImportStatus,
   FinancialCategorizationRule,
   FinancialCategorizationRuleInput,
 } from './importsApi'
 import { importsApi } from './importsApi'
+import { CsvConfigurationPanel } from './CsvConfigurationPanel'
+import { ImportPreview } from './ImportPreview'
+import {
+  isCsvConfigurationValid,
+  maxAutomaticPollFailures,
+  isImportBusy,
+  getSessionStatusLabel,
+  typeLabels,
+  isCardSession,
+  hasCategory,
+  formatFileSize,
+  createDraft,
+  hasDraftChanged,
+} from './importsModel'
 import './FinancialImportsPage.css'
 
 type FinancialImportsPageProps = {
@@ -54,78 +68,14 @@ function createDefaultCsvConfiguration(): CsvImportConfiguration {
   }
 }
 
-const statusLabels: Record<FinancialImportStatus, string> = {
-  processing: 'Processando',
-  preview: 'Aguardando confirmação',
-  confirming: 'Confirmando',
-  completed: 'Concluída',
-  failed: 'Falhou',
-  undone: 'Desfeita',
-}
-
-const busyImportStatuses = new Set<FinancialImportStatus>(['processing', 'confirming'])
-const importItemsPerPage = 100
-const maxAutomaticPollFailures = 3
-
-function isImportBusy(status: FinancialImportStatus) {
-  return busyImportStatuses.has(status)
-}
-
-function getSessionStatusLabel(session: FinancialImportSession) {
-  return session.status === 'failed' && session.failureMessage === 'Importação descartada pelo usuário.'
-    ? 'Descartada'
-    : statusLabels[session.status]
-}
-
-const itemStatusLabels: Record<FinancialImportItemStatus, string> = {
-  valid: 'Pronta para importar',
-  duplicate: 'Duplicada',
-  invalid: 'Inválida',
-  uncategorized: 'Não categorizada',
-  imported: 'Importada',
-}
-
-const typeLabels: Record<FinancialImportItemType, string> = {
-  income: 'Entrada',
-  expense: 'Saída',
-  transfer: 'Transferência',
-}
-
 type RuleDraft = FinancialCategorizationRuleInput & { id: string | null }
 
 const emptyRuleDraft: RuleDraft = { id: null, type: 'expense', description: '', categoryId: '', subcategoryId: null, isActive: true }
 
 // A rule may only be learned from a saved, manually categorized income or expense.
-function canLearnRuleFromItem(item: FinancialImportItem, draft: FinancialImportItemInput | undefined) {
-  return item.categorizationSource === 'manual'
-    && item.type !== 'transfer'
-    && Boolean(item.categoryId)
-    && !hasDraftChanged(item, draft)
-}
-
 function getFileFormat(fileName: string): FinancialImportFormat | null {
   const extension = fileName.split('.').pop()?.toLowerCase()
   return extension === 'ofx' || extension === 'csv' ? extension : null
-}
-
-function isCsvConfigurationValid(configuration: CsvImportConfiguration | null, columns: Array<{ index: number }>) {
-  if (!configuration) return false
-  const availableIndexes = new Set(columns.map((column) => column.index))
-  const mappedIndexes = Object.values(configuration.columns).filter((index): index is number => index !== null)
-  const usesAmount = Number.isInteger(configuration.columns.amount)
-  const usesCreditAndDebit = Number.isInteger(configuration.columns.credit) && Number.isInteger(configuration.columns.debit)
-  const usesOnlyAmount = usesAmount && configuration.columns.credit === null && configuration.columns.debit === null
-  const usesOnlyCreditAndDebit = !usesAmount && usesCreditAndDebit
-  return mappedIndexes.every((index) => availableIndexes.has(index))
-    && new Set(mappedIndexes).size === mappedIndexes.length
-    && Number.isInteger(configuration.columns.date)
-    && (usesOnlyAmount || usesOnlyCreditAndDebit)
-}
-
-function formatFileSize(bytes: number) {
-  if (bytes < 1024) return `${bytes} B`
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1).replace('.', ',')} KB`
-  return `${(bytes / (1024 * 1024)).toFixed(1).replace('.', ',')} MB`
 }
 
 function formatDateTime(value: string | null | undefined) {
@@ -148,16 +98,6 @@ function getRuleError(error: unknown, fallback: string) {
   })
 }
 
-function createDraft(item: FinancialImportItem): FinancialImportItemInput {
-  return {
-    date: item.date,
-    description: item.description ?? '',
-    type: item.type,
-    categoryId: item.categoryId,
-    subcategoryId: item.subcategoryId,
-  }
-}
-
 function replaceSessionItem(session: FinancialImportSession, updated: FinancialImportItem): FinancialImportSession {
   const items = (session.items ?? []).map((item) => item.id === updated.id ? updated : item)
   return {
@@ -172,16 +112,6 @@ function replaceSessionItem(session: FinancialImportSession, updated: FinancialI
       imported: items.filter((item) => item.validationStatus === 'imported').length,
     },
   }
-}
-
-function hasDraftChanged(item: FinancialImportItem, draft: FinancialImportItemInput | undefined) {
-  if (!draft) return false
-  const original = createDraft(item)
-  return original.date !== draft.date
-    || original.description !== draft.description
-    || original.type !== draft.type
-    || original.categoryId !== draft.categoryId
-    || original.subcategoryId !== draft.subcategoryId
 }
 
 export function FinancialImportsPage(props: FinancialImportsPageProps) {
@@ -220,6 +150,12 @@ function FinancialImportsWalletPage({ userEmail, isLoggingOut, onLogout }: Finan
   const [formError, setFormError] = useState('')
   const [successMessage, setSuccessMessage] = useState('')
   const [reloadKey, setReloadKey] = useState(0)
+  const [importKind, setImportKind] = useState<FinancialImportKind>('bank_statement')
+  const [creditCards, setCreditCards] = useState<CreditCard[]>([])
+  const [areCreditCardsLoading, setAreCreditCardsLoading] = useState(false)
+  const [creditCardsError, setCreditCardsError] = useState('')
+  const [selectedCreditCardId, setSelectedCreditCardId] = useState('')
+  const [cardAmountSign, setCardAmountSign] = useState<CardAmountSign | ''>('')
   const [pollFailureCount, setPollFailureCount] = useState(0)
   const [isPollingPaused, setIsPollingPaused] = useState(false)
 
@@ -258,6 +194,11 @@ function FinancialImportsWalletPage({ userEmail, isLoggingOut, onLogout }: Finan
         setSelectedImport(null)
         setDrafts({})
         setSelectedFile(null)
+        setImportKind('bank_statement')
+        setCreditCards([])
+        setCreditCardsError('')
+        setSelectedCreditCardId('')
+        setCardAmountSign('')
         setCsvConfiguration(null)
         setDetectedCsvConfiguration(null)
         setCsvColumns([])
@@ -494,6 +435,27 @@ function FinancialImportsWalletPage({ userEmail, isLoggingOut, onLogout }: Finan
     }
   }
 
+  // Cards are loaded only when a card statement import is chosen, scoped to the active wallet.
+  async function selectImportKind(kind: FinancialImportKind) {
+    setImportKind(kind)
+    setFormError('')
+    if (kind !== 'credit_card_statement' || creditCards.length > 0) return
+    const operation = captureWalletOperation()
+    setAreCreditCardsLoading(true)
+    setCreditCardsError('')
+    try {
+      const result = await creditCardsApi.list()
+      if (!isCurrentWalletOperation(operation)) return
+      setCreditCards(result.items.filter((card) => card.isActive))
+    } catch {
+      if (!isCurrentWalletOperation(operation)) return
+      setCreditCardsError('Não foi possível carregar os cartões desta carteira. Tente novamente.')
+      setFormError('Não foi possível carregar os cartões desta carteira. Tente novamente.')
+    } finally {
+      if (isCurrentWalletOperation(operation)) setAreCreditCardsLoading(false)
+    }
+  }
+
   async function handleUpload(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     if (loadError || isSelectedImportBusy) return
@@ -507,6 +469,15 @@ function FinancialImportsWalletPage({ userEmail, isLoggingOut, onLogout }: Finan
       setFormError('Mapeie a data e o valor — ou as colunas de crédito e débito — para continuar.')
       return
     }
+    const isCardImport = importKind === 'credit_card_statement'
+    if (isCardImport && !selectedCreditCardId) {
+      setFormError('Selecione o cartão da fatura antes de enviar o arquivo.')
+      return
+    }
+    if (isCardImport && format === 'csv' && !cardAmountSign) {
+      setFormError('Informe como o CSV da fatura representa as compras.')
+      return
+    }
 
     const operation = captureWalletOperation()
     setPendingAction('upload')
@@ -518,9 +489,14 @@ function FinancialImportsWalletPage({ userEmail, isLoggingOut, onLogout }: Finan
           ? { mappingId: selectedCsvMappingId } as const
           : { configuration: csvConfiguration } as const
         : undefined
-      const session = csvMapping
-        ? await importsApi.upload(selectedFile, format, csvMapping)
-        : await importsApi.upload(selectedFile, format)
+      const card = isCardImport
+        ? { creditCardId: selectedCreditCardId, ...(format === 'csv' && cardAmountSign ? { amountSign: cardAmountSign } : {}) }
+        : undefined
+      const session = card
+        ? await importsApi.upload(selectedFile, format, csvMapping, card)
+        : csvMapping
+          ? await importsApi.upload(selectedFile, format, csvMapping)
+          : await importsApi.upload(selectedFile, format)
       if (!isCurrentWalletOperation(operation)) return
       setSelectedImport(session)
       setPollFailureCount(0)
@@ -577,17 +553,36 @@ function FinancialImportsWalletPage({ userEmail, isLoggingOut, onLogout }: Finan
     setFormError('')
     setSuccessMessage('')
     try {
+      const isCardItem = isCardSession(selectedImport!)
+      const { statementClosingDate, ...itemDraft } = draft
       const updated = await importsApi.updateItem(selectedImport!.id, item.id, {
-        ...draft,
+        ...itemDraft,
         description: draft.description.trim(),
-        categoryId: draft.type === 'transfer' ? null : draft.categoryId,
-        subcategoryId: draft.type === 'transfer' ? null : draft.subcategoryId,
+        categoryId: hasCategory(draft.type) ? draft.categoryId : null,
+        subcategoryId: hasCategory(draft.type) ? draft.subcategoryId : null,
+        ...(isCardItem ? { statementClosingDate: statementClosingDate ?? null } : {}),
         ...(includeDuplicate ? { includeDuplicate: true } : {}),
       })
       if (!isCurrentWalletOperation(operation)) return
+      // The item is already persisted here, so a failed reload must not be reported as a failed save.
       setSelectedImport((current) => current ? replaceSessionItem(current, updated) : current)
       setDrafts((current) => ({ ...current, [updated.id]: createDraft(updated) }))
       setSuccessMessage(`Movimentação ${item.sequence} atualizada na prévia.`)
+      if (!isCardItem) return
+      // Statement totals are computed by the API; reload the session so they reflect the change.
+      try {
+        const refreshed = await importsApi.get(selectedImport!.id)
+        if (!isCurrentWalletOperation(operation)) return
+        setSelectedImport(refreshed)
+        // Only the saved item is refreshed from the server; unsaved edits to the other items stay.
+        setDrafts((current) => Object.fromEntries((refreshed.items ?? []).map((reloaded) => [
+          reloaded.id,
+          reloaded.id === updated.id ? createDraft(reloaded) : current[reloaded.id] ?? createDraft(reloaded),
+        ])))
+      } catch {
+        if (!isCurrentWalletOperation(operation)) return
+        setFormError(`A movimentação ${item.sequence} foi salva, mas os totais das faturas não puderam ser atualizados. Recarregue a importação.`)
+      }
     } catch (error) {
       if (!isCurrentWalletOperation(operation)) return
       setFormError(getImportError(error, 'Não foi possível atualizar a movimentação.'))
@@ -660,7 +655,7 @@ function FinancialImportsWalletPage({ userEmail, isLoggingOut, onLogout }: Finan
   }
 
   async function createRuleFromItem(item: FinancialImportItem) {
-    if (item.type === 'transfer' || !item.categoryId) return
+    if (item.type === 'transfer' || item.type === 'card_credit' || !item.categoryId) return
     const description = item.description?.trim() ?? ''
     if (!description) {
       setFormError('Informe uma descrição na movimentação antes de criar uma regra.')
@@ -851,6 +846,40 @@ function FinancialImportsWalletPage({ userEmail, isLoggingOut, onLogout }: Finan
                 <h2>Novo arquivo</h2>
                 <p>Formatos aceitos: OFX ou CSV. Limite de 10 MB e 10.000 movimentações.</p>
               </div>
+              <fieldset className="imports-kind-field" disabled={pendingAction !== null || isLoading || Boolean(loadError) || isSelectedImportBusy}>
+                <legend>Tipo de arquivo</legend>
+                <label>
+                  <input type="radio" name="financial-import-kind" value="bank_statement" checked={importKind === 'bank_statement'} onChange={() => void selectImportKind('bank_statement')} />
+                  Extrato bancário
+                </label>
+                <label>
+                  <input type="radio" name="financial-import-kind" value="credit_card_statement" checked={importKind === 'credit_card_statement'} onChange={() => void selectImportKind('credit_card_statement')} />
+                  Fatura de cartão
+                </label>
+              </fieldset>
+              {importKind === 'credit_card_statement' && (
+                <div className="imports-card-fields">
+                  <label>
+                    <span>Cartão da fatura</span>
+                    <select value={selectedCreditCardId} onChange={(event) => setSelectedCreditCardId(event.target.value)} disabled={pendingAction !== null || areCreditCardsLoading}>
+                      <option value="">{areCreditCardsLoading ? 'Carregando cartões…' : 'Selecione o cartão'}</option>
+                      {creditCards.map((card) => <option key={card.id} value={card.id}>{card.nickname}</option>)}
+                    </select>
+                  </label>
+                  {!areCreditCardsLoading && creditCards.length === 0 && !creditCardsError && <small>Cadastre um cartão ativo nesta carteira para importar a fatura.</small>}
+                  {selectedFile && getFileFormat(selectedFile.name) === 'csv' && (
+                    <label>
+                      <span>Como o CSV mostra as compras</span>
+                      <select value={cardAmountSign} onChange={(event) => setCardAmountSign(event.target.value as CardAmountSign | '')} disabled={pendingAction !== null}>
+                        <option value="">Selecione</option>
+                        <option value="purchases_positive">Compras com valor positivo</option>
+                        <option value="purchases_negative">Compras com valor negativo</option>
+                      </select>
+                    </label>
+                  )}
+                  <small>Compras entram na fatura pelo fechamento do cartão e não reduzem o saldo até o pagamento. Estornos e reembolsos abatem a fatura.</small>
+                </div>
+              )}
               <label className="imports-file-field" htmlFor="financial-import-file">
                 <span>Arquivo OFX ou CSV</span>
                 <input
@@ -889,7 +918,7 @@ function FinancialImportsWalletPage({ userEmail, isLoggingOut, onLogout }: Finan
                   onRetryInspection={retryCsvInspection}
                 />
               )}
-              <button className="imports-primary-button" type="submit" disabled={!selectedFile || pendingAction !== null || isLoading || Boolean(loadError) || isSelectedImportBusy || (getFileFormat(selectedFile?.name ?? '') === 'csv' && !isCsvConfigurationValid(csvConfiguration, csvColumns))}>
+              <button className="imports-primary-button" type="submit" disabled={!selectedFile || pendingAction !== null || isLoading || Boolean(loadError) || isSelectedImportBusy || (getFileFormat(selectedFile?.name ?? '') === 'csv' && !isCsvConfigurationValid(csvConfiguration, csvColumns)) || (importKind === 'credit_card_statement' && (!selectedCreditCardId || (getFileFormat(selectedFile?.name ?? '') === 'csv' && !cardAmountSign)))}>
                 {pendingAction === 'upload' ? 'Enviando arquivo…' : 'Enviar e preparar prévia'}
               </button>
             </form>
@@ -946,7 +975,7 @@ function FinancialImportsWalletPage({ userEmail, isLoggingOut, onLogout }: Finan
                             <span className={`imports-status imports-status--${session.status}`}>{getSessionStatusLabel(session)}</span>
                             <div>
                               <h3>{session.fileName}</h3>
-                              <p>{session.format.toUpperCase()} · {formatFileSize(session.fileSize)} · iniciado em {formatDateTime(session.createdAt)}</p>
+                              <p>{isCardSession(session) ? `Fatura · ${session.creditCardName ?? 'cartão'} · ` : ''}{session.format.toUpperCase()} · {formatFileSize(session.fileSize)} · iniciado em {formatDateTime(session.createdAt)}</p>
                             </div>
                           </div>
                           <div className="imports-history-summary">
@@ -992,324 +1021,5 @@ function FinancialImportsWalletPage({ userEmail, isLoggingOut, onLogout }: Finan
         </div>
       </main>
     </>
-  )
-}
-
-type CsvConfigurationPanelProps = {
-  configuration: CsvImportConfiguration
-  columns: Array<{ index: number; label: string }>
-  sample: Array<{ lineNumber: number; values: string[] }>
-  mappings: CsvMappingTemplate[]
-  selectedMappingId: string
-  mappingName: string
-  mappingDirty: boolean
-  disabled: boolean
-  inspecting: boolean
-  onConfigurationChange: (changes: Partial<CsvImportConfiguration>, preserveColumns: boolean) => void
-  onColumnChange: (field: keyof CsvImportConfiguration['columns'], value: string) => void
-  onMappingSelect: (mappingId: string) => void
-  onMappingNameChange: (name: string) => void
-  onSaveMapping: () => void
-  onRetryInspection: () => void
-}
-
-function CsvConfigurationPanel({
-  configuration,
-  columns,
-  sample,
-  mappings,
-  selectedMappingId,
-  mappingName,
-  mappingDirty,
-  disabled,
-  inspecting,
-  onConfigurationChange,
-  onColumnChange,
-  onMappingSelect,
-  onMappingNameChange,
-  onSaveMapping,
-  onRetryInspection,
-}: CsvConfigurationPanelProps) {
-  const isMappingReady = isCsvConfigurationValid(configuration, columns)
-  const columnFields: Array<{ key: keyof CsvImportConfiguration['columns']; label: string; required?: boolean }> = [
-    { key: 'date', label: 'Data', required: true },
-    { key: 'description', label: 'Descrição' },
-    { key: 'amount', label: 'Valor único' },
-    { key: 'credit', label: 'Crédito' },
-    { key: 'debit', label: 'Débito' },
-    { key: 'externalId', label: 'Identificador externo' },
-  ]
-
-  return (
-    <section className="imports-csv-config" aria-labelledby="csv-config-title">
-      <div className="imports-csv-config__heading">
-        <div>
-          <p className="imports-eyebrow">CONFIGURAÇÃO DO CSV</p>
-          <h3 id="csv-config-title">Confira como as colunas serão interpretadas</h3>
-          <p>A detecção é apenas uma sugestão. Revise a amostra antes de enviar.</p>
-        </div>
-        <div className="imports-csv-config__actions">
-          <label>
-            <span>Modelo salvo</span>
-            <select value={selectedMappingId} onChange={(event) => onMappingSelect(event.target.value)} disabled={disabled}>
-              <option value="">Configuração detectada</option>
-              {mappings.map((mapping) => <option key={mapping.id} value={mapping.id}>{mapping.name}</option>)}
-            </select>
-          </label>
-          <button className="imports-secondary-button" type="button" onClick={onRetryInspection} disabled={disabled || inspecting}>
-            {inspecting ? 'Analisando…' : 'Analisar novamente'}
-          </button>
-        </div>
-      </div>
-
-      <fieldset className="imports-csv-grid" disabled={disabled}>
-        <legend>Formato do arquivo</legend>
-        <label><span>Delimitador</span><select value={configuration.delimiter} onChange={(event) => onConfigurationChange({ delimiter: event.target.value as CsvImportConfiguration['delimiter'] }, false)}><option value=",">Vírgula (,)</option><option value=";">Ponto e vírgula (;)</option></select></label>
-        <label><span>Codificação</span><select value={configuration.encoding} onChange={(event) => onConfigurationChange({ encoding: event.target.value as CsvImportConfiguration['encoding'] }, false)}><option value="utf-8">UTF-8</option><option value="windows-1252">Windows-1252</option><option value="iso-8859-1">ISO-8859-1</option></select></label>
-        <label><span>Formato da data</span><select value={configuration.dateFormat} onChange={(event) => onConfigurationChange({ dateFormat: event.target.value as CsvImportConfiguration['dateFormat'] }, true)}><option value="dd/MM/yyyy">DD/MM/AAAA</option><option value="MM/dd/yyyy">MM/DD/AAAA</option><option value="yyyy-MM-dd">AAAA-MM-DD</option></select></label>
-        <label><span>Formato monetário</span><select value={configuration.numberFormat} onChange={(event) => onConfigurationChange({ numberFormat: event.target.value as CsvImportConfiguration['numberFormat'] }, true)}><option value="pt-BR">1.234,56</option><option value="en-US">1,234.56</option></select></label>
-        <label className="imports-csv-checkbox"><input type="checkbox" checked={configuration.hasHeader} onChange={(event) => onConfigurationChange({ hasHeader: event.target.checked }, false)} /><span>A primeira linha contém cabeçalhos</span></label>
-      </fieldset>
-
-      <fieldset className="imports-csv-grid imports-csv-grid--mapping" disabled={disabled}>
-        <legend>Mapeamento de colunas</legend>
-        {columnFields.map((field) => (
-          <label key={field.key}>
-            <span>{field.label}{field.required ? ' *' : ''}</span>
-            <select value={configuration.columns[field.key] ?? ''} onChange={(event) => onColumnChange(field.key, event.target.value)}>
-              <option value="">Não mapear</option>
-              {columns.map((column) => <option key={column.index} value={column.index}>{column.label}</option>)}
-            </select>
-          </label>
-        ))}
-        <p className="imports-csv-grid__hint">Mapeie “Valor único” ou use “Crédito” e “Débito” em conjunto.</p>
-        {!isMappingReady && <p className="imports-csv-grid__error" role="status">Complete os campos obrigatórios com colunas disponíveis neste arquivo.</p>}
-      </fieldset>
-
-      <div className="imports-csv-model">
-        <label><span>Nome do modelo</span><input value={mappingName} maxLength={80} placeholder="Ex.: Extrato Banco X" onChange={(event) => onMappingNameChange(event.target.value)} disabled={disabled} /></label>
-        <button className="imports-secondary-button" type="button" onClick={onSaveMapping} disabled={disabled || !isMappingReady || !mappingName.trim() || (Boolean(selectedMappingId) && !mappingDirty)}>
-          {selectedMappingId ? (mappingDirty ? 'Atualizar modelo' : 'Modelo salvo') : 'Salvar novo modelo'}
-        </button>
-      </div>
-
-      <div className="imports-csv-sample" tabIndex={0} aria-label="Amostra do arquivo CSV">
-        <table>
-          <caption>Amostra das primeiras linhas</caption>
-          <thead><tr><th scope="col">Linha</th>{columns.map((column) => <th scope="col" key={column.index}>{column.label}</th>)}</tr></thead>
-          <tbody>{sample.map((row) => <tr key={row.lineNumber}><th scope="row">{row.lineNumber}</th>{columns.map((column) => <td key={column.index}>{row.values[column.index] || '—'}</td>)}</tr>)}</tbody>
-        </table>
-      </div>
-    </section>
-  )
-}
-
-function ImportPreview({
-  session,
-  drafts,
-  incomeCategories,
-  expenseCategories,
-  pendingAction,
-  pollFailureCount,
-  isPollingPaused,
-  confirmableCount,
-  hasPendingDraftChanges,
-  onDraftChange,
-  onSaveItem,
-  onCreateRule,
-  onConfirm,
-  onUndo,
-  onDiscard,
-}: {
-  session: FinancialImportSession
-  drafts: Record<string, FinancialImportItemInput>
-  incomeCategories: Category[]
-  expenseCategories: Category[]
-  pendingAction: string | null
-  pollFailureCount: number
-  isPollingPaused: boolean
-  confirmableCount: number
-  hasPendingDraftChanges: boolean
-  onDraftChange: (itemId: string, changes: Partial<FinancialImportItemInput>) => void
-  onSaveItem: (item: FinancialImportItem, includeDuplicate?: boolean) => void
-  onCreateRule: (item: FinancialImportItem) => void
-  onConfirm: () => void
-  onUndo: (session: FinancialImportSession) => void
-  onDiscard: (session: FinancialImportSession) => void
-}) {
-  const items = session.items ?? []
-  const [requestedPage, setRequestedPage] = useState(1)
-  const pageCount = Math.max(1, Math.ceil(items.length / importItemsPerPage))
-  const currentPage = Math.min(requestedPage, pageCount)
-  const firstVisibleIndex = (currentPage - 1) * importItemsPerPage
-  const visibleItems = items.slice(firstVisibleIndex, firstVisibleIndex + importItemsPerPage)
-  return (
-    <section className="imports-preview" aria-labelledby="imports-preview-title">
-      <div className="imports-section-heading">
-        <div>
-          <p className="imports-eyebrow">REVISÃO OBRIGATÓRIA</p>
-          <h2 id="imports-preview-title">{session.fileName}</h2>
-          <p>{session.format.toUpperCase()} · {formatFileSize(session.fileSize)} · {getSessionStatusLabel(session)}</p>
-        </div>
-        <span className={`imports-status imports-status--${session.status}`}>{getSessionStatusLabel(session)}</span>
-      </div>
-
-      <dl className="imports-summary" aria-label="Resumo da importação">
-        <div><dt>Total</dt><dd>{session.summary.total}</dd></div>
-        <div><dt>Válidas</dt><dd>{session.summary.valid}</dd></div>
-        <div><dt>Duplicadas</dt><dd>{session.summary.duplicate}</dd></div>
-        <div><dt>Inválidas</dt><dd>{session.summary.invalid}</dd></div>
-        <div><dt>Sem categoria</dt><dd>{session.summary.uncategorized}</dd></div>
-        <div><dt>Importadas</dt><dd>{session.summary.imported}</dd></div>
-      </dl>
-
-      {session.status === 'failed' && session.failureMessage && (
-        <p className="imports-alert imports-alert--error" role="alert">{session.failureMessage}</p>
-      )}
-
-      {session.status === 'preview' && (
-        <p className="imports-confirmation-note">
-          {confirmableCount === 0
-            ? 'Nenhuma movimentação está pronta para confirmar. '
-            : `${confirmableCount} ${confirmableCount === 1 ? 'movimentação válida será importada' : 'movimentações válidas serão importadas'}. `}
-          Itens sem categoria ({session.summary.uncategorized}) ficam fora até receberem uma categoria. Itens inválidos ({session.summary.invalid}) e duplicidades confirmadas não serão importados. Possíveis duplicidades só entram após sua revisão explícita.
-        </p>
-      )}
-      {session.status === 'preview' && hasPendingDraftChanges && (
-        <p className="imports-unsaved-note" role="status">Existem ajustes não salvos. Salve cada movimentação alterada antes de confirmar a importação.</p>
-      )}
-
-      {isImportBusy(session.status) ? (
-        <p className="imports-loading" role="status">
-          {!isPollingPaused && <span className="imports-spinner" aria-hidden="true" />}
-          {isPollingPaused
-            ? 'O acompanhamento automático foi pausado. Tente novamente para consultar o estado atual.'
-            : pollFailureCount > 0
-            ? `A atualização falhou temporariamente. Nova tentativa automática ${pollFailureCount + 1} de ${maxAutomaticPollFailures}…`
-            : session.status === 'confirming'
-              ? 'Confirmando os lançamentos. Aguarde a conclusão antes de continuar…'
-              : 'Processando o arquivo. Esta tela será atualizada automaticamente…'}
-        </p>
-      ) : items.length === 0 ? (
-        <div className="imports-state-card">
-          <h3>Nenhuma movimentação disponível</h3>
-          <p>{session.status === 'failed' ? 'O arquivo não pôde ser processado. Consulte o erro informado e envie um novo arquivo.' : 'O processador não encontrou movimentações para revisar neste arquivo.'}</p>
-        </div>
-      ) : (
-        <ol className="imports-item-list">
-          {visibleItems.map((item) => {
-            const draft = drafts[item.id] ?? createDraft(item)
-            const categories = draft.type === 'income' ? incomeCategories : draft.type === 'expense' ? expenseCategories : []
-            const selectedCategory = categories.find((category) => category.id === draft.categoryId)
-            const isEditable = session.status === 'preview' && item.canEdit
-            const isSavingItem = pendingAction === `item:${item.id}`
-            const areItemControlsDisabled = !isEditable || isSavingItem
-            return (
-              <li className={`imports-item imports-item--${item.validationStatus}`} key={item.id}>
-                <div className="imports-item-heading">
-                  <div>
-                    <span>Movimentação {item.sequence}</span>
-                    <strong>{formatBrazilianCurrency(item.amount)}</strong>
-                  </div>
-                  <span className={`imports-item-status imports-item-status--${item.validationStatus}`}>{itemStatusLabels[item.validationStatus]}</span>
-                </div>
-                {item.categorizationSource === 'rule' && <p className="imports-rule-suggestion">Categoria sugerida por regra desta carteira</p>}
-                {item.errorMessage && <p className="imports-item-error" role="note">{item.errorMessage}</p>}
-                <div className="imports-item-grid">
-                  <label>
-                    Data
-                    <input type="date" value={draft.date} onChange={(event) => onDraftChange(item.id, { date: event.target.value })} disabled={areItemControlsDisabled} />
-                  </label>
-                  <label>
-                    Tipo
-                    <select
-                      value={draft.type}
-                      onChange={(event) => onDraftChange(item.id, { type: event.target.value as FinancialImportItemType, categoryId: null, subcategoryId: null })}
-                      disabled={areItemControlsDisabled}
-                    >
-                      {Object.entries(typeLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
-                    </select>
-                  </label>
-                  <label className="imports-item-description">
-                    Descrição
-                    <input type="text" maxLength={500} value={draft.description} onChange={(event) => onDraftChange(item.id, { description: event.target.value })} disabled={areItemControlsDisabled} />
-                  </label>
-                  {draft.type !== 'transfer' && (
-                    <>
-                      <label>
-                        Categoria
-                        <select value={draft.categoryId ?? ''} onChange={(event) => onDraftChange(item.id, { categoryId: event.target.value || null, subcategoryId: null })} disabled={areItemControlsDisabled}>
-                          <option value="">Não categorizada</option>
-                          {categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}
-                        </select>
-                      </label>
-                      <label>
-                        Subcategoria
-                        <select value={draft.subcategoryId ?? ''} onChange={(event) => onDraftChange(item.id, { subcategoryId: event.target.value || null })} disabled={areItemControlsDisabled || !selectedCategory}>
-                          <option value="">Sem subcategoria</option>
-                          {selectedCategory?.subcategories.map((subcategory) => <option key={subcategory.id} value={subcategory.id}>{subcategory.name}</option>)}
-                        </select>
-                      </label>
-                    </>
-                  )}
-                </div>
-                {isEditable && (
-                  <button className="imports-secondary-button" type="button" onClick={() => onSaveItem(item)} disabled={pendingAction !== null}>
-                    {isSavingItem ? 'Salvando…' : 'Salvar ajuste'}
-                  </button>
-                )}
-                {session.status === 'preview' && canLearnRuleFromItem(item, drafts[item.id]) && (
-                  <button className="imports-text-button" type="button" onClick={() => onCreateRule(item)} disabled={pendingAction !== null}>
-                    {pendingAction === `rule-from-item:${item.id}` ? 'Criando regra…' : 'Criar regra para esta descrição'}
-                  </button>
-                )}
-                {session.status === 'preview' && item.validationStatus === 'duplicate' && item.canIncludeDuplicate && (
-                  <button
-                    className="imports-secondary-button"
-                    type="button"
-                    onClick={() => onSaveItem(item, true)}
-                    disabled={pendingAction !== null}
-                  >
-                    {isSavingItem ? 'Salvando…' : 'Importar mesmo assim'}
-                  </button>
-                )}
-              </li>
-            )
-          })}
-        </ol>
-      )}
-
-      {!isImportBusy(session.status) && items.length > importItemsPerPage && (
-        <nav className="imports-pagination" aria-label="Paginação da prévia">
-          <span>Mostrando {firstVisibleIndex + 1}–{Math.min(firstVisibleIndex + importItemsPerPage, items.length)} de {items.length}</span>
-          <div>
-            <button className="imports-text-button" type="button" onClick={() => setRequestedPage(1)} disabled={currentPage === 1}>Primeira</button>
-            <button className="imports-text-button" type="button" onClick={() => setRequestedPage(currentPage - 1)} disabled={currentPage === 1}>Anterior</button>
-            <span>Página {currentPage} de {pageCount}</span>
-            <button className="imports-text-button" type="button" onClick={() => setRequestedPage(currentPage + 1)} disabled={currentPage === pageCount}>Próxima</button>
-            <button className="imports-text-button" type="button" onClick={() => setRequestedPage(pageCount)} disabled={currentPage === pageCount}>Última</button>
-          </div>
-        </nav>
-      )}
-
-      <div className="imports-preview-actions">
-        {session.status === 'preview' && (
-          <>
-            <button className="imports-primary-button" type="button" onClick={onConfirm} disabled={pendingAction !== null || confirmableCount === 0 || hasPendingDraftChanges}>
-              {pendingAction === 'confirm' ? 'Confirmando importação…' : `Confirmar ${confirmableCount} ${confirmableCount === 1 ? 'movimentação' : 'movimentações'}`}
-            </button>
-            <button className="imports-secondary-button imports-secondary-button--danger" type="button" onClick={() => onDiscard(session)} disabled={pendingAction !== null}>
-              {pendingAction === `discard:${session.id}` ? 'Descartando prévia…' : 'Descartar prévia'}
-            </button>
-          </>
-        )}
-        {session.status === 'completed' && (
-          <button className="imports-secondary-button imports-secondary-button--danger" type="button" onClick={() => onUndo(session)} disabled={pendingAction !== null || !session.canUndo}>
-            {pendingAction === `undo:${session.id}` ? 'Desfazendo…' : 'Desfazer importação'}
-          </button>
-        )}
-      </div>
-      {session.status === 'completed' && !session.canUndo && session.undoBlockedReason && <p className="imports-undo-reason">{session.undoBlockedReason}</p>}
-    </section>
   )
 }

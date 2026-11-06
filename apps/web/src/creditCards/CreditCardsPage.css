@@ -89,3 +89,7 @@
   .statement-card__footer { align-items: stretch; flex-direction: column; }
 }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; scroll-behavior: auto !important; transition-duration: .01ms !important; } }
+
+/* Credits reduce the statement, so they are not shown in the same colour as purchases. */
+.statement-credits-title { margin: 14px 19px 0; color: #405b49; font-size: 10px; font-weight: 650; text-transform: uppercase; letter-spacing: 0.04em; }
+.statement-credits b { color: #35734b; }

@@ -247,4 +247,31 @@ describe('CreditCardsPage', () => {
     expect(await screen.findByRole('heading', { name: 'Nenhum cartão cadastrado' })).toBeVisible()
     expect(screen.queryByLabelText('Apelido')).not.toBeInTheDocument()
   })
+  it('lists refunds as statement credits and blocks payment when credits cover the purchases', async () => {
+    vi.spyOn(creditCardsApi, 'list').mockResolvedValue({ items: [card] })
+    vi.spyOn(creditCardsApi, 'statements').mockResolvedValue({ items: [
+      {
+        ...statement,
+        purchasesAmount: '123.45', creditsAmount: '23.45', totalAmount: '100.00',
+        credits: [{ id: 'credit-1', amount: '23.45', date: '2026-10-05', description: 'Estorno Mercado', originalExpenseId: 'purchase-1' }],
+      },
+      {
+        ...statement,
+        id: 'statement-2', closingDate: '2026-11-10', dueDate: '2026-11-17',
+        purchasesAmount: '30.00', creditsAmount: '30.00', totalAmount: '0.00',
+        purchases: [{ id: 'purchase-2', amount: '30.00', date: '2026-10-20', description: 'Cinema', categoryName: 'Lazer', subcategoryName: null }],
+        credits: [{ id: 'credit-2', amount: '30.00', date: '2026-10-21', description: 'Estorno Cinema', originalExpenseId: 'purchase-2' }],
+      },
+    ] })
+    render(<CreditCardsPage userEmail="user@example.com" isLoggingOut={false} onLogout={vi.fn()} />)
+
+    expect(await screen.findByText('Estorno Mercado')).toBeVisible()
+    expect(screen.getByText('− R$ 23,45')).toBeVisible()
+    expect(screen.getByText('R$ 100,00')).toBeVisible()
+    expect(screen.getAllByText(/vinculado à compra original/)).toHaveLength(2)
+    const payButtons = screen.getAllByRole('button', { name: 'Pagar fatura integral' })
+    expect(payButtons[0]).toBeEnabled()
+    expect(payButtons[1]).toBeDisabled()
+    expect(screen.getByText(/os estornos e créditos cobrem as compras/i)).toBeVisible()
+  })
 })

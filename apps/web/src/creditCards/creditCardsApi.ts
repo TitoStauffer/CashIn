@@ -23,6 +23,15 @@ export type CreditCardPurchase = {
   subcategoryName: string | null
 }
 
+// Refunds and chargebacks reduce the statement total; they are never income.
+export type CreditCardStatementCredit = {
+  id: string
+  amount: string
+  date: string
+  description: string | null
+  originalExpenseId: string | null
+}
+
 export type CreditCardStatement = {
   id: string
   creditCardId: string
@@ -31,8 +40,12 @@ export type CreditCardStatement = {
   dueDate: string
   paidDate: string | null
   paidAmount: string | null
+  purchasesAmount?: string
+  creditsAmount?: string
+  // Purchases minus credits.
   totalAmount: string
   purchases: CreditCardPurchase[]
+  credits?: CreditCardStatementCredit[]
 }
 
 type ErrorResponse = { message?: string }
