@@ -1,6 +1,12 @@
 import type { Database, QueryExecutor } from "../database.js";
 import { CreditCardError } from "./credit-cards.errors.js";
-import type { CreditCard, CreditCardPurchase, CreditCardRepository, CreditCardStatement } from "./credit-cards.types.js";
+import type {
+  CreditCard,
+  CreditCardPurchase,
+  CreditCardRepository,
+  CreditCardStatement,
+  CreditCardStatementCredit,
+} from "./credit-cards.types.js";
 
 interface CreditCardRow {
   id: string;
@@ -18,8 +24,11 @@ interface StatementRow {
   due_date: string | Date;
   paid_date: string | Date | null;
   paid_amount: string | null;
+  purchases_amount: string;
+  credits_amount: string;
   total_amount: string;
   purchases: CreditCardPurchase[] | null;
+  credits: CreditCardStatementCredit[] | null;
 }
 
 function dateValue(value: string | Date | null): string | null {
@@ -46,11 +55,15 @@ function mapStatement(row: StatementRow): CreditCardStatement {
     dueDate: dateValue(row.due_date)!,
     paidDate: dateValue(row.paid_date),
     paidAmount: row.paid_amount,
+    purchasesAmount: row.purchases_amount,
+    creditsAmount: row.credits_amount,
     totalAmount: row.total_amount,
     purchases: row.purchases ?? [],
+    credits: row.credits ?? [],
   };
 }
 
+// Purchases and credits are aggregated in separate lateral subqueries so neither multiplies the other.
 const statementSelect = `
   SELECT statement.id,
          statement.credit_card_id,
@@ -59,34 +72,59 @@ const statementSelect = `
          statement.due_date,
          statement.paid_date,
          statement.paid_amount::text AS paid_amount,
-         COALESCE(SUM(expense.amount), 0.00)::text AS total_amount,
-         COALESCE(
-           json_agg(
-             json_build_object(
-               'id', expense.id,
-               'amount', expense.amount::text,
-               'date', expense.date::text,
-               'description', expense.description,
-               'categoryName', category.name,
-               'subcategoryName', subcategory.name
-             ) ORDER BY expense.date, expense.created_at, expense.id
-           ) FILTER (WHERE expense.id IS NOT NULL),
-           '[]'::json
-         ) AS purchases
+         purchase_summary.amount::text AS purchases_amount,
+         credit_summary.amount::text AS credits_amount,
+         (purchase_summary.amount - credit_summary.amount)::numeric(14, 2)::text AS total_amount,
+         purchase_summary.items AS purchases,
+         credit_summary.items AS credits
   FROM credit_card_statements AS statement
   JOIN credit_cards AS card
     ON card.id = statement.credit_card_id
    AND card.wallet_id = statement.wallet_id
-  LEFT JOIN expenses AS expense
-    ON expense.credit_card_statement_id = statement.id
-   AND expense.wallet_id = statement.wallet_id
-  LEFT JOIN categories AS category
-    ON category.id = expense.category_id
-   AND category.wallet_id = expense.wallet_id
-  LEFT JOIN subcategories AS subcategory
-    ON subcategory.id = expense.subcategory_id
-   AND subcategory.wallet_id = expense.wallet_id
-   AND subcategory.category_id = expense.category_id`;
+  CROSS JOIN LATERAL (
+    SELECT COALESCE(SUM(expense.amount), 0.00)::numeric(14, 2) AS amount,
+           COALESCE(
+             json_agg(
+               json_build_object(
+                 'id', expense.id,
+                 'amount', expense.amount::text,
+                 'date', expense.date::text,
+                 'description', expense.description,
+                 'categoryName', category.name,
+                 'subcategoryName', subcategory.name
+               ) ORDER BY expense.date, expense.created_at, expense.id
+             ) FILTER (WHERE expense.id IS NOT NULL),
+             '[]'::json
+           ) AS items
+    FROM expenses AS expense
+    LEFT JOIN categories AS category
+      ON category.id = expense.category_id
+     AND category.wallet_id = expense.wallet_id
+    LEFT JOIN subcategories AS subcategory
+      ON subcategory.id = expense.subcategory_id
+     AND subcategory.wallet_id = expense.wallet_id
+     AND subcategory.category_id = expense.category_id
+    WHERE expense.credit_card_statement_id = statement.id
+      AND expense.wallet_id = statement.wallet_id
+  ) AS purchase_summary
+  CROSS JOIN LATERAL (
+    SELECT COALESCE(SUM(credit.amount), 0.00)::numeric(14, 2) AS amount,
+           COALESCE(
+             json_agg(
+               json_build_object(
+                 'id', credit.id,
+                 'amount', credit.amount::text,
+                 'date', credit.date::text,
+                 'description', credit.description,
+                 'originalExpenseId', credit.original_expense_id
+               ) ORDER BY credit.date, credit.created_at, credit.id
+             ) FILTER (WHERE credit.id IS NOT NULL),
+             '[]'::json
+           ) AS items
+    FROM credit_card_statement_credits AS credit
+    WHERE credit.credit_card_statement_id = statement.id
+      AND credit.wallet_id = statement.wallet_id
+  ) AS credit_summary`;
 
 export class PostgresCreditCardsRepository implements CreditCardRepository {
   constructor(private readonly database: Database) {}
@@ -146,7 +184,6 @@ export class PostgresCreditCardsRepository implements CreditCardRepository {
          AND statement.credit_card_id = $2
          AND ($3::date IS NULL OR statement.closing_date >= $3::date)
          AND ($4::date IS NULL OR statement.closing_date <= $4::date)
-       GROUP BY statement.id, card.alias
        ORDER BY statement.closing_date DESC, statement.id DESC`,
       [walletId, creditCardId, from ?? null, to ?? null],
     );
@@ -166,14 +203,26 @@ export class PostgresCreditCardsRepository implements CreditCardRepository {
       if (!current) return null;
       if (current.paid_date !== null) throw new CreditCardError("Esta fatura já foi paga.", 409);
 
-      const total = await transaction.query<{ amount: string }>(
-        `SELECT COALESCE(SUM(amount), 0.00)::text AS amount
-         FROM expenses
-         WHERE credit_card_statement_id = $1 AND wallet_id = $2`,
+      // The amount paid is the net statement balance: purchases minus refunds and chargebacks.
+      const total = await transaction.query<{ amount: string; has_purchases: boolean; is_positive: boolean }>(
+        `WITH balance AS (
+           SELECT ((SELECT COALESCE(SUM(amount), 0.00) FROM expenses
+                    WHERE credit_card_statement_id = $1 AND wallet_id = $2)
+                 - (SELECT COALESCE(SUM(amount), 0.00) FROM credit_card_statement_credits
+                    WHERE credit_card_statement_id = $1 AND wallet_id = $2))::numeric(14, 2) AS amount
+         )
+         SELECT balance.amount::text AS amount,
+                balance.amount > 0 AS is_positive,
+                EXISTS (SELECT 1 FROM expenses WHERE credit_card_statement_id = $1 AND wallet_id = $2) AS has_purchases
+         FROM balance`,
         [statementId, walletId],
       );
-      const amount = total.rows[0]?.amount ?? "0.00";
-      if (amount === "0.00") throw new CreditCardError("Não é possível pagar uma fatura sem compras.", 409);
+      const balance = total.rows[0];
+      if (!balance?.has_purchases) throw new CreditCardError("Não é possível pagar uma fatura sem compras.", 409);
+      if (!balance.is_positive) {
+        throw new CreditCardError("Não é possível pagar uma fatura sem saldo devedor: os créditos cobrem as compras.", 409);
+      }
+      const amount = balance.amount;
 
       await transaction.query(
         `UPDATE credit_card_statements
@@ -193,8 +242,7 @@ export class PostgresCreditCardsRepository implements CreditCardRepository {
   ): Promise<CreditCardStatement | null> {
     const result = await executor.query<StatementRow>(
       `${statementSelect}
-       WHERE statement.wallet_id = $1 AND statement.credit_card_id = $2 AND statement.id = $3
-       GROUP BY statement.id, card.alias`,
+       WHERE statement.wallet_id = $1 AND statement.credit_card_id = $2 AND statement.id = $3`,
       [walletId, creditCardId, statementId],
     );
     const row = result.rows[0];

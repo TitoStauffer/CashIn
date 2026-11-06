@@ -1,6 +1,6 @@
 # Contrato de importação financeira
 
-A API mantém sessões de importação por carteira para que o cliente possa enviar um arquivo, revisar a prévia e confirmar os lançamentos em uma única transação. Extratos bancários OFX 1.x e 2.x e arquivos CSV configuráveis são interpretados diretamente; faturas de cartão permanecem uma entrega separada.
+A API mantém sessões de importação por carteira para que o cliente possa enviar um arquivo, revisar a prévia e confirmar os lançamentos em uma única transação. Extratos bancários OFX 1.x e 2.x, faturas de cartão em OFX e arquivos CSV configuráveis são interpretados diretamente. A importação de fatura é descrita em [Faturas de cartão](#faturas-de-cartão).
 
 ## Limites e segurança
 
@@ -20,7 +20,7 @@ A API mantém sessões de importação por carteira para que o cliente possa env
 - O identificador bruto da conta não é exposto nem persistido como metadado. A sessão armazena somente sua impressão SHA-256, banco, tipo de conta e moeda.
 - Registros malformados permanecem na prévia com motivo explícito quando isso é seguro. Data inválida pode ser corrigida; valor ou `FITID` inválido bloqueiam a linha.
 - Descrições em `NAME` e `MEMO` preservam o conteúdo multilinha e o texto literal de seções XML `CDATA`; tags aparentes dentro de `CDATA` e comentários não alteram a estrutura do extrato, e sequências de espaço são normalizadas somente na descrição exibida.
-- Faturas de cartão em OFX não fazem parte deste fluxo e são recusadas com mensagem específica.
+- Uma fatura de cartão em OFX enviada como extrato bancário é recusada com mensagem que orienta a escolher a importação de fatura; o inverso também é recusado.
 
 ## Arquivos CSV
 
@@ -42,7 +42,7 @@ A API mantém sessões de importação por carteira para que o cliente possa env
 | `PATCH` | `/financial-imports/csv-mappings/:mappingId` | Atualiza nome e configuração de um modelo da carteira. |
 | `GET` | `/financial-imports` | Lista o histórico da carteira no envelope `{ "items": [...] }`. |
 | `GET` | `/financial-imports/:importId` | Devolve a sessão e seus itens. |
-| `PATCH` | `/financial-imports/:importId/items/:itemId` | Atualiza data, descrição, tipo, categoria e subcategoria durante a prévia. |
+| `PATCH` | `/financial-imports/:importId/items/:itemId` | Atualiza data, descrição, tipo, categoria, subcategoria e, em faturas, a fatura de destino durante a prévia. |
 | `POST` | `/financial-imports/:importId/confirm` | Cria todas as movimentações válidas atomicamente. |
 | `POST` | `/financial-imports/:importId/undo` | Remove os lançamentos gerados se nenhum deles tiver sido alterado. |
 | `DELETE` | `/financial-imports/:importId` | Descarta uma prévia ainda não confirmada e libera suas referências de classificação. |
@@ -55,9 +55,27 @@ As sessões usam os estados `processing`, `preview`, `confirming`, `completed`, 
 
 Linhas inválidas permanecem na prévia com motivo explícito. `canEdit` identifica as linhas que podem ser corrigidas pelo usuário; valor inválido, sequência de origem inválida, duplicidade confirmada ou sequência repetida não podem ser reparados manualmente. `canIncludeDuplicate` permite importar explicitamente somente possíveis duplicidades. A posição persistida é sempre única e os campos inválidos são armazenados de forma nula internamente, evitando que uma linha defeituosa descarte as demais.
 
+## Faturas de cartão
+
+O upload de fatura envia `x-credit-card-id` com o UUID de um cartão **ativo da carteira selecionada**; cartão de outra carteira, inexistente ou inativo devolve `404`. Em CSV, `x-card-amount-sign` é obrigatório e informa como o arquivo representa as compras: `purchases_positive` ou `purchases_negative`. Em OFX ele é recusado, porque o OFX já informa compras como débitos. Sem `x-credit-card-id`, `x-card-amount-sign` é recusado.
+
+- **OFX:** o arquivo deve conter exatamente um bloco `CCSTMTRS` com `CCACCTFROM`, em `BRL`. O FITID é comparado entre importações do mesmo cartão.
+- **Sinais:** todos os formatos são normalizados para compras negativas (`type: "expense"`) e créditos positivos (`type: "card_credit"`). Assim, a mesma compra tem a mesma impressão em OFX e CSV, e a duplicidade é detectada entre os dois formatos.
+- **Tipos:** uma fatura aceita `expense` (compra), `card_credit` (estorno ou reembolso) e `transfer`. Uma linha positiva com `TRNTYPE=PAYMENT` ou descrição contendo "pagamento"/"pgto" é sugerida como `transfer`: é o pagamento da fatura anterior, conciliado com o extrato bancário e não importado. `income` é recusado em faturas, e `card_credit` é recusado em extratos bancários.
+- **Fatura do item:** cada item recebe `statementClosingDate` e `statementDueDate` pelo fechamento do cartão (compra no dia do fechamento entra naquela fatura; no dia seguinte, na próxima; dias inexistentes usam o último dia do mês). O usuário pode mover o item para a fatura anterior ou a seguinte enviando `statementClosingDate` no `PATCH`; `null` volta ao cálculo pela data. Outra data devolve `400`.
+- **Fatura paga:** item cuja fatura já foi paga fica `invalid` e reparável, com a data de fechamento no motivo. A confirmação revalida isso e devolve a sessão à prévia se uma fatura tiver sido paga depois.
+- **Prévia:** a sessão expõe `kind` (`bank_statement` ou `credit_card_statement`), `creditCardId`, `creditCardName`, `creditCardClosingDay`, `creditCardDueDay` e `statements`. Este último lista, por fatura, `purchasesAmount`, `creditsAmount`, `totalAmount` (compras menos créditos) e `isPaid`, calculados sobre os itens válidos ou importados.
+- **Confirmação:** compras viram despesas com a forma de pagamento de natureza `credit_card` mais antiga e ativa da carteira (sem ela, `409`) e entram na fatura do item. Elas só saem do saldo quando a fatura é paga. Créditos viram abatimentos da fatura, nunca receitas. Um crédito é vinculado à compra original (`originalExpenseId`) somente quando exatamente uma compra do mesmo cartão tem a mesma descrição (ignorando prefixos como "Estorno de"), data anterior ou igual e saldo estornável suficiente; caso contrário, fica sem vínculo. Estornos parciais e totais são aceitos, sem perda de precisão.
+- **Desfazer:** remove as compras e os créditos da sessão e as faturas que ficarem vazias. É recusado se algum lançamento tiver sido alterado ou se alguma fatura afetada já tiver sido paga (`undoBlockedReason` explica o motivo).
+- **Duplicidade:** é procurada apenas entre importações do mesmo cartão. Extratos bancários só se comparam com extratos bancários.
+
+As faturas em `GET /credit-cards/:creditCardId/statements` passam a expor `purchasesAmount`, `creditsAmount` e `credits`, e `totalAmount` passa a ser o saldo líquido. O pagamento integral cobra esse saldo líquido e é recusado com `409` quando os créditos cobrem as compras.
+
+Limitação conhecida: estornos abatem a fatura e o valor pago, mas não reduzem `expenseTotal`, `creditPurchaseTotal` nem o gasto por categoria do dashboard, que continuam somando as compras pelo valor bruto.
+
 ## Regras de categorização
 
-Uma regra associa um tipo (`income` ou `expense`) e uma descrição a uma categoria e, opcionalmente, a uma subcategoria da mesma carteira e natureza. A descrição é comparada de forma exata após normalização (NFKC, minúsculas e espaços colapsados), a mesma usada na detecção de duplicidades. Há no máximo uma regra por carteira, tipo e descrição normalizada; tentativas repetidas devolvem `409`. Transferências não recebem regras.
+Uma regra associa um tipo (`income` ou `expense`) e uma descrição a uma categoria e, opcionalmente, a uma subcategoria da mesma carteira e natureza. A descrição é comparada de forma exata após normalização (NFKC, minúsculas e espaços colapsados), a mesma usada na detecção de duplicidades. Há no máximo uma regra por carteira, tipo e descrição normalizada; tentativas repetidas devolvem `409`. Transferências e créditos de fatura não recebem regras.
 
 As regras nunca são aprendidas silenciosamente: só existem quando o usuário as cria pela gestão de regras ou confirma a criação a partir de um item salvo na prévia com categoria escolhida manualmente. Elas pertencem à carteira e são compartilhadas por todos os seus membros; regras de uma carteira não afetam outra.
 

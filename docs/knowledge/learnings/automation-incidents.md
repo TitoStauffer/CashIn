@@ -1,7 +1,7 @@
 # Aprendizados de incidentes da automação
 
 **Status:** histórico vivo
-**Última revisão:** 03/11/2026
+**Última revisão:** 06/11/2026
 
 ## Evidência sempre pertence ao SHA
 
@@ -74,3 +74,15 @@ Na revisão formal [#5686657727 do PR #51](https://github.com/TitoStauffer/CashI
 - Histórico Git e PRs do repositório.
 - [`docs/hosted-agent-orchestration.md`](../../hosted-agent-orchestration.md)
 - [`tools/github-reviewer/src/codex-cli-agent.ts`](../../../tools/github-reviewer/src/codex-cli-agent.ts)
+
+## Fontes citadas pelo vault precisam caber no loader
+
+No PR #62 (DEV-56, SHA `a1c9c0a`), o Code Review hospedado falhou antes de chamar o modelo com "GitHub evidence response exceeds the supported size". O motivo: `postgres-financial-imports.repository.ts` e `FinancialImportsPage.tsx`, citados em `domain/imports.md`, cresceram para ~74,6 KB, e a API de conteúdo do GitHub devolve o arquivo em base64. Com isso, a resposta passou do limite de 100 KB por resposta do loader do vault (`vault-context.ts`). Na prática, um arquivo citado precisa ficar abaixo de ~73 KB de fonte. A correção extraiu a lógica de fatura para `postgres-card-statement-imports.ts` e dividiu a página de importação em componentes menores, sem afrouxar o limite. Ao fazer crescer um arquivo citado no vault, confira o tamanho dele antes do push.
+
+## Uma entrega grande vira PRs revisáveis
+
+Depois da divisão em módulos, o mesmo PR #62 passou a alterar 37 arquivos, e o Code Review hospedado recusou com "Pull Request changes too many files for a complete agent review context": o limite é de 32 arquivos (`MAX_SOURCE_FILES` em `agent-review-inputs.ts`). A entrega foi dividida em duas partes, cada uma revisada por completo:
+- a Tarefa DEV-82, com API, banco e documentação, compatível com o Web existente;
+- o PR da DEV-56, só com o Web, que fecha a história.
+
+Planeje histórias grandes como uma sequência de PRs independentes desde o início, em vez de reduzir o contexto da revisão.

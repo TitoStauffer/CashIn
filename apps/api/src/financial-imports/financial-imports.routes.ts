@@ -20,9 +20,22 @@ interface ImportUploadHeaders {
   "x-file-format"?: string;
   "x-csv-mapping"?: string;
   "x-csv-mapping-id"?: string;
+  // Credit card statement imports: the card that owns the statement and, for CSV, the purchase sign.
+  "x-credit-card-id"?: string;
+  "x-card-amount-sign"?: string;
 }
 
 interface CsvMappingParams { mappingId: string }
+
+function cardUploadOptions(headers: ImportUploadHeaders): { creditCardId: string; amountSign?: string } | undefined {
+  const creditCardId = headers["x-credit-card-id"]?.trim();
+  const amountSign = headers["x-card-amount-sign"]?.trim();
+  if (!creditCardId) {
+    if (amountSign) throw new FinancialImportError("O sinal das compras só se aplica a faturas de cartão.", 400);
+    return undefined;
+  }
+  return amountSign ? { creditCardId, amountSign } : { creditCardId };
+}
 interface RuleParams { ruleId: string }
 
 const uuidSchema = {
@@ -123,6 +136,7 @@ export function registerFinancialImportRoutes(app: FastifyInstance, options: Rou
             configuration: request.headers["x-csv-mapping"] ? decodeCsvMapping(request.headers["x-csv-mapping"]!) : undefined,
             mappingId: request.headers["x-csv-mapping-id"],
           } : undefined,
+          cardUploadOptions(request.headers),
         );
         return reply.code(201).send(session);
       } catch (error) {
@@ -301,7 +315,7 @@ export function registerFinancialImportRoutes(app: FastifyInstance, options: Rou
     "/financial-imports/:importId/items/:itemId",
     {
       preHandler: [app.authenticate, app.resolveWalletContext],
-      preValidation: rejectUnexpectedProperties(["date", "description", "type", "categoryId", "subcategoryId", "includeDuplicate"]),
+      preValidation: rejectUnexpectedProperties(["date", "description", "type", "categoryId", "subcategoryId", "includeDuplicate", "statementClosingDate"]),
       schema: {
         params: {
           type: "object",
@@ -320,6 +334,7 @@ export function registerFinancialImportRoutes(app: FastifyInstance, options: Rou
             categoryId: { anyOf: [uuidSchema, { type: "null" }] },
             subcategoryId: { anyOf: [uuidSchema, { type: "null" }] },
             includeDuplicate: { type: "boolean" },
+            statementClosingDate: { anyOf: [{ type: "string", pattern: "^\\d{4}-\\d{2}-\\d{2}$" }, { type: "null" }] },
           },
         },
       },

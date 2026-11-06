@@ -23,9 +23,46 @@ export class UnsupportedFinancialImportParser implements FinancialImportParser {
 
 export class DefaultFinancialImportParser implements FinancialImportParser {
   private readonly ofxParser = new OfxFinancialImportParser();
-  parse(input: FinancialImportParserInput): Promise<ParsedFinancialImport> {
-    return input.format === "ofx" ? this.ofxParser.parse(input) : Promise.resolve().then(() => parseCsv(input));
+  async parse(input: FinancialImportParserInput): Promise<ParsedFinancialImport> {
+    const parsed = input.format === "ofx" ? await this.ofxParser.parse(input) : parseCsv(input);
+    return input.statementKind === "credit_card_statement"
+      ? toCreditCardStatementImport(parsed, input.format === "csv" && input.cardAmountSign === "purchases_positive")
+      : parsed;
   }
+}
+
+// Positive lines in a card statement that pay the previous statement are bank-to-card transfers,
+// reconciled with the bank statement instead of being imported as refunds.
+const INVOICE_PAYMENT_PATTERN = /\b(pagamento|pgto)\b/i;
+
+// Normalizes a card statement to one sign convention, so the same purchase has the same fingerprint
+// in OFX and CSV: purchases are negative expenses, refunds and chargebacks are positive card credits.
+export function toCreditCardStatementImport(
+  parsed: ParsedFinancialImport,
+  purchasesArePositive: boolean,
+): ParsedFinancialImport {
+  return {
+    ...parsed,
+    items: parsed.items.map((item) => {
+      if (item.signedAmount === null) return { ...item, type: "expense" };
+      const signedAmount = purchasesArePositive ? negateAmount(item.signedAmount) : item.signedAmount;
+      const isCredit = !signedAmount.startsWith("-");
+      const isInvoicePayment = isCredit && (
+        item.sourceTransactionType === "PAYMENT" || INVOICE_PAYMENT_PATTERN.test(item.description ?? "")
+      );
+      const type = isInvoicePayment ? "transfer" : isCredit ? "card_credit" : "expense";
+      return {
+        ...item,
+        signedAmount,
+        type,
+        recordHash: createFinancialImportFingerprint({ date: item.date, signedAmount, type, description: item.description }),
+      };
+    }),
+  };
+}
+
+function negateAmount(value: string): string {
+  return value.startsWith("-") ? value.slice(1) : `-${value}`;
 }
 
 export class OfxFinancialImportParser implements FinancialImportParser {
@@ -35,8 +72,9 @@ export class OfxFinancialImportParser implements FinancialImportParser {
     }
 
     const document = decodeOfx(input.content);
-    validateDocumentShape(document);
-    const statement = extractSingleBankStatement(document);
+    const isCardStatement = input.statementKind === "credit_card_statement";
+    validateDocumentShape(document, isCardStatement);
+    const statement = isCardStatement ? extractSingleCardStatement(document) : extractSingleBankStatement(document);
     const currency = requiredTag(statement, "CURDEF", "O arquivo OFX não informa a moeda da conta.").toUpperCase();
     if (currency !== "BRL") {
       throw new FinancialImportError("Somente extratos OFX em reais (BRL) podem ser importados.", 422);
@@ -124,11 +162,37 @@ function resolveOfxDecoderEncoding(
   return null;
 }
 
-function validateDocumentShape(document: string): void {
+function validateDocumentShape(document: string, isCardStatement: boolean): void {
   const structure = maskXmlOpaqueRegions(document);
-  if (/<CCSTMTTRNRS\b/i.test(structure) || /<CCACCTFROM\b/i.test(structure)) {
-    throw new FinancialImportError("Faturas de cartão em OFX ainda não são suportadas nesta importação.", 422);
+  const hasCardStatement = /<CCSTMTTRNRS\b/i.test(structure) || /<CCACCTFROM\b/i.test(structure);
+  const hasBankStatement = /<STMTTRNRS\b/i.test(structure) || /<BANKACCTFROM\b/i.test(structure);
+  if (!isCardStatement && hasCardStatement) {
+    throw new FinancialImportError("Este arquivo é uma fatura de cartão. Selecione a importação de fatura e o cartão correspondente.", 422);
   }
+  if (isCardStatement && hasBankStatement) {
+    throw new FinancialImportError("Este arquivo é um extrato bancário. Selecione a importação de extrato bancário.", 422);
+  }
+}
+
+function extractSingleCardStatement(document: string): string {
+  const structure = maskXmlOpaqueRegions(document);
+  const statements = [...structure.matchAll(/<CCSTMTRS\b[^>]*>/gi)];
+  if (statements.length === 0) {
+    throw new FinancialImportError("O arquivo não contém uma fatura de cartão OFX válida.", 422);
+  }
+  if (statements.length > 1) {
+    throw new FinancialImportError("Importe apenas uma fatura de cartão por arquivo OFX.", 422);
+  }
+  const opening = statements[0]!;
+  const start = (opening.index ?? 0) + opening[0].length;
+  const tail = document.slice(start);
+  const closing = structure.slice(start).search(/<\/CCSTMTRS\s*>/i);
+  const statement = closing >= 0 ? tail.slice(0, closing) : tail;
+  const statementStructure = maskXmlOpaqueRegions(statement);
+  if (!/<CCACCTFROM\b/i.test(statementStructure) || !/<BANKTRANLIST\b/i.test(statementStructure)) {
+    throw new FinancialImportError("O arquivo não contém uma fatura de cartão OFX válida.", 422);
+  }
+  return statement;
 }
 
 function extractSingleBankStatement(document: string): string {
@@ -200,6 +264,7 @@ function parseTransaction(
       description,
       signedAmount,
       type,
+      sourceTransactionType: transactionType,
       validationStatus: "duplicate",
       errorMessage: "O FITID está repetido no arquivo OFX.",
       isRepairable: false,
@@ -214,6 +279,7 @@ function parseTransaction(
     description,
     signedAmount,
     type,
+    sourceTransactionType: transactionType,
     ...(reasons.length === 0 ? {} : {
       validationStatus: "invalid" as const,
       errorMessage: reasons.join(" "),

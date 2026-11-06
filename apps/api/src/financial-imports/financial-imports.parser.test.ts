@@ -242,7 +242,7 @@ test("rejects unsupported account documents, currencies, encodings and CSV dispa
   );
   await assert.rejects(
     parser.parse({ format: "ofx", fileName: "card.ofx", content: base("<CURDEF>BRL<CCSTMTTRNRS><CCACCTFROM><ACCTID>1</CCACCTFROM><BANKTRANLIST></BANKTRANLIST></CCSTMTTRNRS>") }),
-    /faturas de cartão/i,
+    /fatura de cartão. Selecione a importação de fatura/i,
   );
   await assert.rejects(
     parser.parse({ format: "ofx", fileName: "encoding.ofx", content: base("", "ENCODING:EBCDIC\n") }),
@@ -496,4 +496,84 @@ test("strictly rejects ambiguous mappings and unexpected properties", () => {
   assert.throws(() => parseCsvInspectionOverrides({
     delimiter: "|", encoding: "utf-8", hasHeader: false, dateFormat: "dd/MM/yyyy", numberFormat: "pt-BR",
   }), /inspeção.+inválida/i);
+});
+
+function cardStatementOfx(transactions: string): Buffer {
+  return Buffer.from([
+    "OFXHEADER:100", "DATA:OFXSGML", "VERSION:102", "ENCODING:UTF-8", "CHARSET:UTF-8", "",
+    "<OFX><CREDITCARDMSGSRSV1><CCSTMTTRNRS><CCSTMTRS><CURDEF>BRL<CCACCTFROM><ACCTID>9999</CCACCTFROM><BANKTRANLIST>",
+    transactions,
+    "</BANKTRANLIST></CCSTMTRS></CCSTMTTRNRS></CREDITCARDMSGSRSV1></OFX>",
+  ].join("\n"), "utf8");
+}
+
+test("credit card OFX statements become purchases, card credits and invoice payments", async () => {
+  const result = await new DefaultFinancialImportParser().parse({
+    format: "ofx",
+    fileName: "fatura.ofx",
+    statementKind: "credit_card_statement",
+    content: cardStatementOfx([
+      "<STMTTRN><TRNTYPE>DEBIT<DTPOSTED>20261010<TRNAMT>-100.10<FITID>p1<NAME>MERCADO</STMTTRN>",
+      "<STMTTRN><TRNTYPE>CREDIT<DTPOSTED>20261012<TRNAMT>20.25<FITID>r1<NAME>Estorno MERCADO</STMTTRN>",
+      "<STMTTRN><TRNTYPE>PAYMENT<DTPOSTED>20261015<TRNAMT>500.00<FITID>pay1<NAME>Obrigado</STMTTRN>",
+      "<STMTTRN><TRNTYPE>CREDIT<DTPOSTED>20261016<TRNAMT>80.00<FITID>pay2<NAME>Pagamento recebido</STMTTRN>",
+    ].join("\n")),
+  });
+  assert.deepEqual(result.items.map((item) => [item.signedAmount, item.type]), [
+    ["-100.10", "expense"],
+    ["20.25", "card_credit"],
+    ["500.00", "transfer"],
+    ["80.00", "transfer"],
+  ]);
+  assert.match(result.sourceMetadata?.accountReferenceHash ?? "", /^[0-9a-f]{64}$/);
+});
+
+test("statement kind and OFX document must match", async () => {
+  const parser = new DefaultFinancialImportParser();
+  const card = cardStatementOfx("<STMTTRN><TRNTYPE>DEBIT<DTPOSTED>20261010<TRNAMT>-1.00<FITID>p1<NAME>X</STMTTRN>");
+  await assert.rejects(parser.parse({ format: "ofx", fileName: "fatura.ofx", content: card }), /fatura de cartão/);
+  await assert.rejects(
+    parser.parse({ format: "ofx", fileName: "extrato.ofx", content: await fixture("valid-bank.ofx"), statementKind: "credit_card_statement" }),
+    /extrato bancário/,
+  );
+  await assert.rejects(
+    parser.parse({ format: "ofx", fileName: "duas.ofx", statementKind: "credit_card_statement", content: Buffer.concat([card, card]) }),
+    /apenas uma fatura/,
+  );
+});
+
+test("card CSV signs are normalized so OFX and CSV purchases share the same fingerprint", async () => {
+  const parser = new DefaultFinancialImportParser();
+  const configuration = parseCsvConfiguration({
+    delimiter: ";", encoding: "utf-8", hasHeader: true, dateFormat: "dd/MM/yyyy", numberFormat: "pt-BR",
+    columns: { date: 0, description: 1, amount: 2, credit: null, debit: null, externalId: null },
+  });
+  const csv = await parser.parse({
+    format: "csv",
+    fileName: "fatura.csv",
+    statementKind: "credit_card_statement",
+    cardAmountSign: "purchases_positive",
+    csvConfiguration: configuration,
+    content: Buffer.from("Data;Descrição;Valor\n10/10/2026;MERCADO;100,10\n12/10/2026;Estorno MERCADO;-20,25\n", "utf8"),
+  });
+  const ofx = await parser.parse({
+    format: "ofx",
+    fileName: "fatura.ofx",
+    statementKind: "credit_card_statement",
+    content: cardStatementOfx([
+      "<STMTTRN><TRNTYPE>DEBIT<DTPOSTED>20261010<TRNAMT>-100.10<FITID>p1<NAME>MERCADO</STMTTRN>",
+      "<STMTTRN><TRNTYPE>CREDIT<DTPOSTED>20261012<TRNAMT>20.25<FITID>r1<NAME>Estorno MERCADO</STMTTRN>",
+    ].join("\n")),
+  });
+  assert.deepEqual(csv.items.map((item) => [item.signedAmount, item.type]), [["-100.10", "expense"], ["20.25", "card_credit"]]);
+  assert.deepEqual(csv.items.map((item) => item.recordHash), ofx.items.map((item) => item.recordHash));
+  const negativePurchases = await parser.parse({
+    format: "csv",
+    fileName: "fatura.csv",
+    statementKind: "credit_card_statement",
+    cardAmountSign: "purchases_negative",
+    csvConfiguration: configuration,
+    content: Buffer.from("Data;Descrição;Valor\n10/10/2026;MERCADO;-100,10\n", "utf8"),
+  });
+  assert.equal(negativePurchases.items[0]!.recordHash, ofx.items[0]!.recordHash);
 });

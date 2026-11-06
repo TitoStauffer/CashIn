@@ -10,7 +10,7 @@ const statementId = "22222222-2222-4222-8222-222222222222";
 const card: CreditCard = { id: cardId, nickname: "Gold", closingDay: 10, dueDay: 20, isActive: true };
 const statement: CreditCardStatement = {
   id: statementId, creditCardId: cardId, creditCardName: "Gold", closingDate: "2026-10-10", dueDate: "2026-10-20",
-  paidDate: null, paidAmount: null, totalAmount: "12.34", purchases: [],
+  paidDate: null, paidAmount: null, purchasesAmount: "12.34", creditsAmount: "0.00", totalAmount: "12.34", purchases: [], credits: [],
 };
 
 class MemoryCreditCardRepository implements CreditCardRepository {
