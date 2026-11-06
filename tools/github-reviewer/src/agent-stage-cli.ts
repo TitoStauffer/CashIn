@@ -6,6 +6,8 @@ import { loadAgentReviewInputs } from './agent-review-inputs.js';
 import { extractAcceptanceCriteria, isAgentStageResult, validateAgentResultCompleteness } from './agent-result-validation.js';
 import { computeAgentContextHash, hasLaterChangeRequest, latestCurrentFormalReview } from './agent-evidence.js';
 import { executeCodexAgent, type CheckSummary, type FormalCodeReviewEvidence } from './codex-cli-agent.js';
+import { executeClaudeAgent } from './claude-cli-agent.js';
+import { resolveAgentRuntime } from './agent-runtime.js';
 import { evaluateDeterministicQualityGate, mayRetryInconclusive, selectReusableStageResult, type StageEvidenceContext } from './agent-stage-policy.js';
 import { resolveWorkflowEvent } from './workflow-event.js';
 import { createInjectionBlockedResult, detectPullRequestPromptInjection } from './prompt-injection-guard.js';
@@ -14,7 +16,7 @@ import { assertPullRequestContainsBase } from './branch-freshness.js';
 try {
   await main();
 } catch (error) {
-  const message = error instanceof Error ? error.message : 'Codex stage could not complete.';
+  const message = error instanceof Error ? error.message : 'Agent stage could not complete.';
   process.stderr.write(`${message}\n`);
   process.exitCode = 2;
 }
@@ -114,7 +116,9 @@ async function main(): Promise<void> {
   };
   await writeWorkflowOutput('execution_source', 'model');
   await writeWorkflowOutput('model_calls', '1');
-  const modelResult = await executeCodexAgent(stage, context, AbortSignal.timeout(20 * 60 * 1000), {
+  const runtime = resolveAgentRuntime(process.env.AGENT_RUNTIME);
+  const executeAgent = runtime === 'codex' ? executeCodexAgent : executeClaudeAgent;
+  const modelResult = await executeAgent(stage, context, AbortSignal.timeout(20 * 60 * 1000), {
     pullRequest: {
       state: 'open',
       number: prNumber,
@@ -254,7 +258,7 @@ async function githubJsonPages<T>(path: string, token: string): Promise<T> {
 
 async function verifyHeadUnchanged(number: number, expected: string, repository: string, token: string): Promise<void> {
   const pr = await readPullRequest(number, repository, token);
-  if (stringValue(asRecord(pr.head)?.sha)?.toLowerCase() !== expected.toLowerCase()) throw new Error('Pull Request HEAD changed during the Codex stage.');
+  if (stringValue(asRecord(pr.head)?.sha)?.toLowerCase() !== expected.toLowerCase()) throw new Error('Pull Request HEAD changed during the agent stage.');
 }
 
 async function githubJson<T>(path: string, token: string): Promise<T> {
