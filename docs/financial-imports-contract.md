@@ -46,10 +46,24 @@ A API mantém sessões de importação por carteira para que o cliente possa env
 | `POST` | `/financial-imports/:importId/confirm` | Cria todas as movimentações válidas atomicamente. |
 | `POST` | `/financial-imports/:importId/undo` | Remove os lançamentos gerados se nenhum deles tiver sido alterado. |
 | `DELETE` | `/financial-imports/:importId` | Descarta uma prévia ainda não confirmada e libera suas referências de classificação. |
+| `GET` | `/financial-imports/rules` | Lista as regras de categorização da carteira no envelope `{ "items": [...] }`. |
+| `POST` | `/financial-imports/rules` | Cria uma regra a partir de uma ação explícita do usuário. |
+| `PATCH` | `/financial-imports/rules/:ruleId` | Substitui tipo, descrição, categoria, subcategoria e estado (`isActive`) da regra. |
+| `DELETE` | `/financial-imports/rules/:ruleId` | Exclui a regra da carteira. |
 
 As sessões usam os estados `processing`, `preview`, `confirming`, `completed`, `failed` e `undone`. O resumo separa itens `valid`, `duplicate`, `invalid`, `uncategorized` e `imported`. `canUndo` e `undoBlockedReason` permitem que o cliente apresente a elegibilidade do desfazer sem presumir o estado. Falhas persistidas expõem somente uma mensagem segura em `failureMessage`.
 
 Linhas inválidas permanecem na prévia com motivo explícito. `canEdit` identifica as linhas que podem ser corrigidas pelo usuário; valor inválido, sequência de origem inválida, duplicidade confirmada ou sequência repetida não podem ser reparados manualmente. `canIncludeDuplicate` permite importar explicitamente somente possíveis duplicidades. A posição persistida é sempre única e os campos inválidos são armazenados de forma nula internamente, evitando que uma linha defeituosa descarte as demais.
+
+## Regras de categorização
+
+Uma regra associa um tipo (`income` ou `expense`) e uma descrição a uma categoria e, opcionalmente, a uma subcategoria da mesma carteira e natureza. A descrição é comparada de forma exata após normalização (NFKC, minúsculas e espaços colapsados), a mesma usada na detecção de duplicidades. Há no máximo uma regra por carteira, tipo e descrição normalizada; tentativas repetidas devolvem `409`. Transferências não recebem regras.
+
+As regras nunca são aprendidas silenciosamente: só existem quando o usuário as cria pela gestão de regras ou confirma a criação a partir de um item salvo na prévia com categoria escolhida manualmente. Elas pertencem à carteira e são compartilhadas por todos os seus membros; regras de uma carteira não afetam outra.
+
+Ao gerar uma nova prévia, regras ativas classificam somente itens sem categoria que não sejam inválidos nem duplicados. O item passa a `valid` com `categorizationSource: "rule"`, e o cliente informa que a categoria foi sugerida. Uma escolha do usuário prevalece: salvar o item com outra categoria, tipo ou descrição muda a origem para `manual`, e remover a categoria a limpa (`null`).
+
+Categorias e subcategorias removidas não quebram as regras. A regra continua listada com `isStale: true` e nomes nulos, deixa de classificar movimentações e volta a funcionar quando o usuário a reclassifica. Regras desativadas (`isActive: false`) permanecem listadas, mas também não são aplicadas.
 
 ## Confirmação e desfazer
 

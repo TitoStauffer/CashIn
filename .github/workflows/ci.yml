@@ -123,6 +123,11 @@ jobs:
           ./tools/knowledge/test-validate-vault.ps1
           ./tools/knowledge/validate-vault.ps1
 
+      - name: Validate local runner scripts
+        working-directory: .
+        shell: pwsh
+        run: ./tools/github-runner/test-runner-scripts.ps1
+
   api:
     name: API
     needs: pr-title

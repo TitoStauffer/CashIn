@@ -1,7 +1,7 @@
 # Aprendizados de Code Review
 
-**Status:** auditado até o PR #46, com ocorrências confirmadas do PR #56
-**Última revisão:** 03/11/2026
+**Status:** auditado até o PR #46, com ocorrências confirmadas dos PRs #56 e #58
+**Última revisão:** 05/11/2026
 
 Esta nota converte os achados históricos do Agent de Code Review em regras preventivas. O inventário e os links das revisões estão em [`code-review-audit.md`](code-review-audit.md).
 
@@ -14,6 +14,7 @@ Esta nota converte os achados históricos do Agent de Code Review em regras prev
 - **Regra preventiva:** toda alteração de contrato precisa de uma única definição coerente de rota, formato, nulabilidade, estado e erro em todas as camadas.
 - **Detecção:** teste de integração da rota real e, para fluxos críticos, teste Web/API com respostas reais ou fixtures derivadas do contrato da API.
 - **Ocorrência no PR #56, revisão #5756708661 (`f450e144b68d18ecea22bf09fc57d64992ff05f0`):** a API permitia descrição CSV opcional, mas a Web a marcava como obrigatória; testes PostgreSQL com parser injetado também continuavam omitindo o novo header de mapeamento obrigatório. A correção alinha validação e testes ao contrato real. A prevenção é testar tanto o contrato mínimo válido quanto consumidores antigos sempre que uma pré-condição de rota mudar.
+- **Ocorrência no PR #58, revisão #5794474287 (`4dd3fc657753a43f5a911b3ea419828461f1b530`):** o contrato das regras de categorização documentava `409` para regra duplicada, mas só a criação mapeava a violação de unicidade (`23505`); editar uma regra para a descrição de outra chegava ao handler como erro cru e retornava `500`. Os testes cobriam o `409` apenas no `POST`. A correção aplica o mesmo mapeamento em todas as escritas que atingem a constraint e testa o conflito no `PATCH` nas rotas e no PostgreSQL. A prevenção é, para cada constraint única, enumerar todas as operações que podem violá-la (inserção e atualização) e testar o erro de contrato em cada uma.
 
 ## 2. Dados inválidos também precisam ser persistíveis
 

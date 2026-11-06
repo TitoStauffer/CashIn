@@ -12,7 +12,7 @@ export function createFinancialImportFingerprint(input: {
     input.date,
     normalizeSignedAmount(input.signedAmount),
     input.type,
-    normalizeDescription(input.description),
+    normalizeFinancialImportDescription(input.description),
   ]);
   return createHash("sha256").update(identity, "utf8").digest("hex");
 }
@@ -22,7 +22,7 @@ export function createLegacyFinancialImportFingerprint(input: {
   signedAmount: string;
   description: string | null | undefined;
 }): string {
-  const identity = [input.date, normalizeSignedAmount(input.signedAmount), normalizeDescription(input.description)].join("|");
+  const identity = [input.date, normalizeSignedAmount(input.signedAmount), normalizeFinancialImportDescription(input.description)].join("|");
   return createHash("sha256").update(identity, "utf8").digest("hex");
 }
 
@@ -33,7 +33,7 @@ export function createLegacyOfxFinancialImportFingerprint(input: {
   description: string | null | undefined;
 }): string {
   return createHash("sha256")
-    .update([input.accountReferenceHash, input.date, normalizeSignedAmount(input.signedAmount), normalizeDescription(input.description)].join("|"), "utf8")
+    .update([input.accountReferenceHash, input.date, normalizeSignedAmount(input.signedAmount), normalizeFinancialImportDescription(input.description)].join("|"), "utf8")
     .digest("hex");
 }
 
@@ -45,6 +45,6 @@ export function normalizeSignedAmount(value: string): string {
   return `${match[1]}${integer}.${fraction}`;
 }
 
-function normalizeDescription(value: string | null | undefined): string {
+export function normalizeFinancialImportDescription(value: string | null | undefined): string {
   return value?.normalize("NFKC").toLocaleLowerCase("pt-BR").replaceAll(/\s+/g, " ").trim() ?? "";
 }

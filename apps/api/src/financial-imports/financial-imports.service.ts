@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { FinancialImportError } from "./financial-imports.errors.js";
 import { createFinancialImportFingerprint } from "./financial-imports.fingerprint.js";
+import { FinancialCategorizationRulesService } from "./financial-categorization-rules.service.js";
 import { inspectCsv, parseCsvConfiguration, parseCsvInspectionOverrides } from "./financial-imports.csv.js";
 import {
   FINANCIAL_IMPORT_FORMATS,
@@ -15,6 +16,8 @@ import {
   type FinancialImportSession,
   type ParsedFinancialImportItem,
   type UpdateFinancialImportItemInput,
+  type FinancialCategorizationRuleInput,
+  type FinancialCategorizationRule,
 } from "./financial-imports.types.js";
 
 export const MAX_FINANCIAL_IMPORT_FILE_SIZE = 10 * 1024 * 1024;
@@ -248,6 +251,7 @@ export class FinancialImportsService {
   constructor(
     private readonly repository: FinancialImportRepository,
     private readonly parser: FinancialImportParser,
+    private readonly categorizationRules?: FinancialCategorizationRulesService,
   ) {}
 
   async createImport(
@@ -322,11 +326,14 @@ export class FinancialImportsService {
         }
         return normalized;
       });
+      const categorizedItems = this.categorizationRules
+        ? await this.categorizationRules.applyRules(walletId, items)
+        : items;
       const preview = await this.repository.savePreview(
         userId,
         walletId,
         session.id,
-        items,
+        categorizedItems,
         normalizeSourceMetadata(parsed.sourceMetadata),
       );
       if (!preview) throw new FinancialImportError("A importação não foi encontrada.", 404);
@@ -344,6 +351,22 @@ export class FinancialImportsService {
 
   listImports(userId: string, walletId: string): Promise<FinancialImportSession[]> {
     return this.repository.listImports(userId, walletId);
+  }
+
+  listCategorizationRules(walletId: string): Promise<FinancialCategorizationRule[]> {
+    return this.requireCategorizationRules().listRules(walletId);
+  }
+
+  createCategorizationRule(userId: string, walletId: string, input: FinancialCategorizationRuleInput): Promise<FinancialCategorizationRule> {
+    return this.requireCategorizationRules().createRule(userId, walletId, input);
+  }
+
+  updateCategorizationRule(walletId: string, ruleId: string, input: FinancialCategorizationRuleInput): Promise<FinancialCategorizationRule> {
+    return this.requireCategorizationRules().updateRule(walletId, ruleId, input);
+  }
+
+  deleteCategorizationRule(walletId: string, ruleId: string): Promise<void> {
+    return this.requireCategorizationRules().deleteRule(walletId, ruleId);
   }
 
   inspectCsv(content: Buffer, configuration?: unknown): CsvInspectionResult {
@@ -423,6 +446,11 @@ export class FinancialImportsService {
 
   private validateImportId(importId: string): void {
     if (!UUID_PATTERN.test(importId)) throw new FinancialImportError("A importação não foi encontrada.", 404);
+  }
+
+  private requireCategorizationRules(): FinancialCategorizationRulesService {
+    if (!this.categorizationRules) throw new FinancialImportError("As regras de categorização não estão disponíveis.", 503);
+    return this.categorizationRules;
   }
 
   private validateItemId(itemId: string): void {

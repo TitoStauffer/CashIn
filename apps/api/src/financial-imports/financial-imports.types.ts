@@ -29,6 +29,7 @@ export interface FinancialImportItem {
   errorMessage: string | null;
   canEdit: boolean;
   canIncludeDuplicate?: boolean;
+  categorizationSource?: "rule" | "manual" | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -69,6 +70,7 @@ export interface ParsedFinancialImportItem {
   recordHash?: string | null;
   duplicateOverrideAllowed?: boolean;
   acceptedDuplicateFingerprint?: string | null;
+  categorizationSource?: "rule" | "manual" | null;
 }
 
 export interface ParsedFinancialImport {
@@ -147,6 +149,37 @@ export interface UpdateFinancialImportItemInput {
   categoryId?: string | null;
   subcategoryId?: string | null;
   includeDuplicate?: boolean;
+}
+
+export type FinancialCategorizationRuleType = Extract<FinancialImportItemType, "income" | "expense">;
+
+export interface FinancialCategorizationRule {
+  id: string;
+  type: FinancialCategorizationRuleType;
+  description: string;
+  categoryId: string;
+  categoryName: string | null;
+  subcategoryId: string | null;
+  subcategoryName: string | null;
+  isActive: boolean;
+  isStale: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface FinancialCategorizationRuleInput {
+  type: FinancialCategorizationRuleType;
+  description: string;
+  categoryId: string;
+  subcategoryId?: string | null;
+  isActive?: boolean;
+}
+
+export interface FinancialCategorizationRulesRepository {
+  listRules(walletId: string): Promise<FinancialCategorizationRule[]>;
+  createRule(userId: string, walletId: string, input: FinancialCategorizationRuleInput & { normalizedDescription: string }): Promise<FinancialCategorizationRule | null>;
+  updateRule(walletId: string, ruleId: string, input: FinancialCategorizationRuleInput & { normalizedDescription: string }): Promise<FinancialCategorizationRule | null>;
+  deleteRule(walletId: string, ruleId: string): Promise<boolean>;
 }
 
 export interface FinancialImportRepository {
