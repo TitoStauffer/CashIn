@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File \"$CLAUDE_PROJECT_DIR/tools/github-runner/ensure-runner.ps1\"",
+            "timeout": 30,
+            "statusMessage": "Verificando o runner do Code Review e QA"
+          }
+        ]
+      }
+    ]
+  }
+}
