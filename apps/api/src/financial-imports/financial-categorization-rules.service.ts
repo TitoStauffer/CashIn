@@ -53,6 +53,7 @@ export class FinancialCategorizationRulesService {
       if (
         item.categoryId
         || item.type === "transfer"
+        || item.type === "card_credit"
         || item.validationStatus === "invalid"
         || item.validationStatus === "duplicate"
       ) return item;

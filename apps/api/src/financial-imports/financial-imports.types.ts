@@ -1,12 +1,17 @@
 export const FINANCIAL_IMPORT_FORMATS = ["ofx", "csv"] as const;
 export const FINANCIAL_IMPORT_STATUSES = ["processing", "preview", "confirming", "completed", "failed", "undone"] as const;
-export const FINANCIAL_IMPORT_ITEM_TYPES = ["income", "expense", "transfer"] as const;
+export const FINANCIAL_IMPORT_ITEM_TYPES = ["income", "expense", "transfer", "card_credit"] as const;
+export const FINANCIAL_IMPORT_KINDS = ["bank_statement", "credit_card_statement"] as const;
+// How a card statement CSV signs purchases; OFX always uses negative purchases.
+export const CARD_AMOUNT_SIGNS = ["purchases_negative", "purchases_positive"] as const;
 export const FINANCIAL_IMPORT_ITEM_STATUSES = ["valid", "duplicate", "invalid", "uncategorized", "imported"] as const;
 
 export type FinancialImportFormat = (typeof FINANCIAL_IMPORT_FORMATS)[number];
 export type FinancialImportStatus = (typeof FINANCIAL_IMPORT_STATUSES)[number];
 export type FinancialImportItemType = (typeof FINANCIAL_IMPORT_ITEM_TYPES)[number];
 export type FinancialImportItemStatus = (typeof FINANCIAL_IMPORT_ITEM_STATUSES)[number];
+export type FinancialImportKind = (typeof FINANCIAL_IMPORT_KINDS)[number];
+export type CardAmountSign = (typeof CARD_AMOUNT_SIGNS)[number];
 
 export interface FinancialImportSummary {
   total: number;
@@ -30,13 +35,33 @@ export interface FinancialImportItem {
   canEdit: boolean;
   canIncludeDuplicate?: boolean;
   categorizationSource?: "rule" | "manual" | null;
+  // Credit card statement imports only: the statement the item will be posted to.
+  statementClosingDate?: string | null;
+  statementDueDate?: string | null;
   createdAt: string;
   updatedAt: string;
+}
+
+// Preview of a credit card statement computed from the items that will be imported.
+export interface FinancialImportStatementPreview {
+  closingDate: string;
+  dueDate: string;
+  purchasesAmount: string;
+  creditsAmount: string;
+  totalAmount: string;
+  isPaid: boolean;
 }
 
 export interface FinancialImportSession {
   id: string;
   format: FinancialImportFormat;
+  kind: FinancialImportKind;
+  creditCardId: string | null;
+  creditCardName: string | null;
+  // Lets clients offer the same statement choices the API accepts (previous, calculated, next).
+  creditCardClosingDay: number | null;
+  creditCardDueDay: number | null;
+  statements?: FinancialImportStatementPreview[];
   fileName: string;
   fileSize: number;
   fileHash: string;
@@ -71,6 +96,9 @@ export interface ParsedFinancialImportItem {
   duplicateOverrideAllowed?: boolean;
   acceptedDuplicateFingerprint?: string | null;
   categorizationSource?: "rule" | "manual" | null;
+  // Parser hint only (OFX TRNTYPE); never persisted.
+  sourceTransactionType?: string;
+  statementClosingDate?: string | null;
 }
 
 export interface ParsedFinancialImport {
@@ -83,6 +111,8 @@ export interface FinancialImportParserInput {
   fileName: string;
   content: Buffer;
   csvConfiguration?: CsvImportConfiguration;
+  statementKind?: FinancialImportKind;
+  cardAmountSign?: CardAmountSign;
 }
 
 export const CSV_ENCODINGS = ["utf-8", "windows-1252", "iso-8859-1"] as const;
@@ -140,6 +170,13 @@ export interface CreateFinancialImportInput {
   fileName: string;
   fileSize: number;
   fileHash: string;
+  creditCardId?: string | null;
+}
+
+export interface ImportCreditCard {
+  id: string;
+  closingDay: number;
+  dueDay: number;
 }
 
 export interface UpdateFinancialImportItemInput {
@@ -149,6 +186,7 @@ export interface UpdateFinancialImportItemInput {
   categoryId?: string | null;
   subcategoryId?: string | null;
   includeDuplicate?: boolean;
+  statementClosingDate?: string | null;
 }
 
 export type FinancialCategorizationRuleType = Extract<FinancialImportItemType, "income" | "expense">;
@@ -183,6 +221,8 @@ export interface FinancialCategorizationRulesRepository {
 }
 
 export interface FinancialImportRepository {
+  // Active card of the wallet, or null when it does not exist, is inactive or belongs to another wallet.
+  findImportCreditCard(walletId: string, creditCardId: string): Promise<ImportCreditCard | null>;
   createImport(userId: string, walletId: string, input: CreateFinancialImportInput): Promise<FinancialImportSession>;
   savePreview(
     userId: string,

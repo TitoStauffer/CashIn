@@ -15,6 +15,15 @@ export interface CreditCardPurchase {
   subcategoryName: string | null;
 }
 
+// Refunds and chargebacks reduce the statement total; they are never income.
+export interface CreditCardStatementCredit {
+  id: string;
+  amount: string;
+  date: string;
+  description: string | null;
+  originalExpenseId: string | null;
+}
+
 export interface CreditCardStatement {
   id: string;
   creditCardId: string;
@@ -23,8 +32,12 @@ export interface CreditCardStatement {
   dueDate: string;
   paidDate: string | null;
   paidAmount: string | null;
+  purchasesAmount: string;
+  creditsAmount: string;
+  // Purchases minus credits.
   totalAmount: string;
   purchases: CreditCardPurchase[];
+  credits: CreditCardStatementCredit[];
 }
 
 export interface CreditCardRepository {

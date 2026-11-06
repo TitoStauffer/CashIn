@@ -3,10 +3,14 @@ import { FinancialImportError } from "./financial-imports.errors.js";
 import { createFinancialImportFingerprint } from "./financial-imports.fingerprint.js";
 import { FinancialCategorizationRulesService } from "./financial-categorization-rules.service.js";
 import { inspectCsv, parseCsvConfiguration, parseCsvInspectionOverrides } from "./financial-imports.csv.js";
+import { calculateBillingCycle } from "../credit-cards/billing-cycle.js";
 import {
+  CARD_AMOUNT_SIGNS,
   FINANCIAL_IMPORT_FORMATS,
   FINANCIAL_IMPORT_ITEM_TYPES,
+  type CardAmountSign,
   type FinancialImportFormat,
+  type FinancialImportKind,
   type CreateCsvMappingInput,
   type CsvImportConfiguration,
   type CsvInspectionResult,
@@ -71,7 +75,11 @@ function truncateUtf8(value: string, maxBytes: number): string {
   return result;
 }
 
-function normalizeParsedItem(item: ParsedFinancialImportItem, fallbackSequence: number): ParsedFinancialImportItem {
+function normalizeParsedItem(
+  item: ParsedFinancialImportItem,
+  fallbackSequence: number,
+  kind: FinancialImportKind = "bank_statement",
+): ParsedFinancialImportItem {
   const sourceLine = typeof item.sourceLine === "number"
     && Number.isSafeInteger(item.sourceLine)
     && item.sourceLine > 0
@@ -84,7 +92,7 @@ function normalizeParsedItem(item: ParsedFinancialImportItem, fallbackSequence: 
   const hasValidAmount = typeof item.signedAmount === "string"
     && SIGNED_MONEY_PATTERN.test(item.signedAmount)
     && !ZERO_MONEY_PATTERN.test(item.signedAmount);
-  const hasValidType = FINANCIAL_IMPORT_ITEM_TYPES.includes(item.type);
+  const hasValidType = FINANCIAL_IMPORT_ITEM_TYPES.includes(item.type) && isTypeAllowedForKind(item.type, kind);
   const rawDescription = item.description?.trim() || null;
   const hasPostgresSafeDescription = rawDescription === null || !rawDescription.includes("\u0000");
   const hasValidDescriptionLength = rawDescription === null
@@ -107,8 +115,9 @@ function normalizeParsedItem(item: ParsedFinancialImportItem, fallbackSequence: 
   const rawRecordHash = item.recordHash?.trim() || null;
   const hasValidRecordHash = rawRecordHash === null || HASH_PATTERN.test(rawRecordHash);
   const type = hasValidType ? item.type : "transfer";
-  const categoryId = type === "transfer" || !hasValidCategory ? null : rawCategoryId;
-  const subcategoryId = type === "transfer"
+  const hasNoCategory = type === "transfer" || type === "card_credit";
+  const categoryId = hasNoCategory || !hasValidCategory ? null : rawCategoryId;
+  const subcategoryId = hasNoCategory
     || categoryId === null
     || !hasValidSubcategory
     || !hasCompatibleReferences
@@ -148,7 +157,12 @@ function normalizeParsedItem(item: ParsedFinancialImportItem, fallbackSequence: 
   } else if (validationStatus !== "duplicate") {
     if (type === "transfer") {
       validationStatus = "uncategorized";
-      errorMessage ??= "A transferência precisa ser conciliada antes da importação.";
+      errorMessage ??= kind === "credit_card_statement"
+        ? "Pagamento da fatura: ele é conciliado com o extrato bancário e não é importado como estorno."
+        : "A transferência precisa ser conciliada antes da importação.";
+    } else if (type === "card_credit") {
+      validationStatus = "valid";
+      errorMessage = null;
     } else if (categoryId === null) {
       validationStatus = "uncategorized";
       errorMessage ??= "Selecione uma categoria para importar a movimentação.";
@@ -180,6 +194,7 @@ function normalizeParsedItem(item: ParsedFinancialImportItem, fallbackSequence: 
       && nonRepairableReasons.length === 0
       && (repairableReasons.length > 0 || parserMarkedInvalid),
     externalId: hasValidExternalId ? rawExternalId : null,
+    statementClosingDate: item.statementClosingDate ?? null,
     recordHash: createFinancialImportFingerprint({
       date: hasValidDate ? item.date : null,
       signedAmount: hasValidAmount ? item.signedAmount : null,
@@ -187,6 +202,12 @@ function normalizeParsedItem(item: ParsedFinancialImportItem, fallbackSequence: 
       description,
     }) ?? (hasValidRecordHash ? rawRecordHash : null),
   };
+}
+
+// Card statements hold purchases (expense), refunds/chargebacks (card_credit) and invoice payments
+// (transfer); bank statements never hold card credits.
+function isTypeAllowedForKind(type: ParsedFinancialImportItem["type"], kind: FinancialImportKind): boolean {
+  return kind === "credit_card_statement" ? type !== "income" : type !== "card_credit";
 }
 
 function normalizeSourceMetadata(metadata: Record<string, string> | undefined): Record<string, string> {
@@ -230,6 +251,10 @@ function normalizeUpdateInput(input: UpdateFinancialImportItemInput): Required<U
   if (input.includeDuplicate !== undefined && typeof input.includeDuplicate !== "boolean") {
     throw new FinancialImportError("A decisão sobre a possível duplicidade é inválida.", 400);
   }
+  const statementClosingDate = input.statementClosingDate ?? null;
+  if (statementClosingDate !== null && (typeof statementClosingDate !== "string" || !validateDate(statementClosingDate))) {
+    throw new FinancialImportError("A data de fechamento da fatura deve ser válida e estar no formato AAAA-MM-DD.", 400);
+  }
   const description = input.description?.trim() || null;
   if (description?.includes("\u0000")) {
     throw new FinancialImportError("A descrição da movimentação não pode conter caractere nulo.", 400);
@@ -244,6 +269,7 @@ function normalizeUpdateInput(input: UpdateFinancialImportItemInput): Required<U
     categoryId,
     subcategoryId,
     includeDuplicate: input.includeDuplicate === true,
+    statementClosingDate,
   };
 }
 
@@ -261,9 +287,22 @@ export class FinancialImportsService {
     rawFileName: string,
     content: Buffer,
     csvOptions?: { configuration?: CsvImportConfiguration; mappingId?: string },
+    cardOptions?: { creditCardId: string; amountSign?: string },
   ): Promise<FinancialImportSession> {
     if (!FINANCIAL_IMPORT_FORMATS.includes(format)) {
       throw new FinancialImportError("O formato do arquivo deve ser OFX ou CSV.", 400);
+    }
+    const kind: FinancialImportKind = cardOptions ? "credit_card_statement" : "bank_statement";
+    let cardAmountSign: CardAmountSign | undefined;
+    if (cardOptions) {
+      if (format === "csv") {
+        if (!CARD_AMOUNT_SIGNS.includes(cardOptions.amountSign as CardAmountSign)) {
+          throw new FinancialImportError("Informe como o CSV da fatura representa as compras: valores positivos ou negativos.", 400);
+        }
+        cardAmountSign = cardOptions.amountSign as CardAmountSign;
+      } else if (cardOptions.amountSign !== undefined) {
+        throw new FinancialImportError("O sinal das compras só se aplica a faturas em CSV; o OFX já informa compras como débitos.", 400);
+      }
     }
     if (content.length === 0) throw new FinancialImportError("O arquivo está vazio.", 400);
     if (content.length > MAX_FINANCIAL_IMPORT_FILE_SIZE) {
@@ -290,16 +329,25 @@ export class FinancialImportsService {
         throw new FinancialImportError("Informe o mapeamento das colunas do arquivo CSV.", 400);
       }
     }
+    const card = cardOptions ? await this.findImportCreditCard(walletId, cardOptions.creditCardId) : null;
     const fileHash = createHash("sha256").update(content).digest("hex");
     const session = await this.repository.createImport(userId, walletId, {
       format,
       fileName,
       fileSize: content.length,
       fileHash,
+      creditCardId: card?.id ?? null,
     });
 
     try {
-      const parserOutput = await this.parser.parse({ format, fileName, content, csvConfiguration });
+      const parserOutput = await this.parser.parse({
+        format,
+        fileName,
+        content,
+        csvConfiguration,
+        statementKind: kind,
+        cardAmountSign,
+      });
       const parsed = Array.isArray(parserOutput) ? { items: parserOutput } : parserOutput;
       const parsedItems = parsed.items;
       if (parsedItems.length > MAX_FINANCIAL_IMPORT_ITEMS) {
@@ -310,7 +358,11 @@ export class FinancialImportsService {
       }
       const sourceSequences = new Set<number>();
       const items = parsedItems.map((item, index) => {
-        const normalized = normalizeParsedItem(item, index + 1);
+        const parsedItem = normalizeParsedItem(item, index + 1, kind);
+        // Each card item is posted to the statement of its purchase date; the user can move it later.
+        const normalized = card && parsedItem.date
+          ? { ...parsedItem, statementClosingDate: calculateBillingCycle(parsedItem.date, card.closingDay, card.dueDay).closingDate }
+          : parsedItem;
         const repeatedSequence = sourceSequences.has(item.sequence);
         if (Number.isSafeInteger(item.sequence)) sourceSequences.add(item.sequence);
         if (repeatedSequence) {
@@ -347,6 +399,15 @@ export class FinancialImportsService {
       await this.repository.markFailed(userId, walletId, session.id, failureMessage);
       throw error;
     }
+  }
+
+  private async findImportCreditCard(walletId: string, creditCardId: string) {
+    if (typeof creditCardId !== "string" || !UUID_PATTERN.test(creditCardId)) {
+      throw new FinancialImportError("O cartão não foi encontrado nesta carteira.", 404);
+    }
+    const card = await this.repository.findImportCreditCard(walletId, creditCardId);
+    if (!card) throw new FinancialImportError("O cartão não foi encontrado nesta carteira ou está inativo.", 404);
+    return card;
   }
 
   listImports(userId: string, walletId: string): Promise<FinancialImportSession[]> {
