@@ -4,6 +4,7 @@ export type FinancialImportFormat = 'ofx' | 'csv'
 export type FinancialImportStatus = 'processing' | 'preview' | 'confirming' | 'completed' | 'failed' | 'undone'
 export type FinancialImportItemType = 'income' | 'expense' | 'transfer'
 export type FinancialImportItemStatus = 'valid' | 'duplicate' | 'invalid' | 'uncategorized' | 'imported'
+export type FinancialCategorizationRuleType = 'income' | 'expense'
 
 export type CsvDelimiter = ',' | ';'
 export type CsvEncoding = 'utf-8' | 'windows-1252' | 'iso-8859-1'
@@ -69,6 +70,29 @@ export type FinancialImportItem = {
   errorMessage: string | null
   canEdit: boolean
   canIncludeDuplicate?: boolean
+  categorizationSource?: 'rule' | 'manual' | null
+}
+
+export type FinancialCategorizationRule = {
+  id: string
+  type: FinancialCategorizationRuleType
+  description: string
+  categoryId: string
+  categoryName: string | null
+  subcategoryId: string | null
+  subcategoryName: string | null
+  isActive: boolean
+  isStale: boolean
+  createdAt: string
+  updatedAt: string
+}
+
+export type FinancialCategorizationRuleInput = {
+  type: FinancialCategorizationRuleType
+  description: string
+  categoryId: string
+  subcategoryId?: string | null
+  isActive?: boolean
 }
 
 export type FinancialImportSession = {
@@ -99,6 +123,7 @@ export type FinancialImportItemInput = {
 
 type FinancialImportListResponse = { items: FinancialImportSession[] }
 type CsvMappingListResponse = { items: CsvMappingTemplate[] }
+type CategorizationRuleListResponse = { items: FinancialCategorizationRule[] }
 type ErrorResponse = { message?: string }
 
 export class FinancialImportApiError extends Error {
@@ -137,6 +162,22 @@ function importPath(importId: string) {
 export const importsApi = {
   list(signal?: AbortSignal) {
     return request<FinancialImportListResponse>('/financial-imports', { signal })
+  },
+
+  listCategorizationRules(signal?: AbortSignal) {
+    return request<CategorizationRuleListResponse>('/financial-imports/rules', { signal })
+  },
+
+  createCategorizationRule(input: FinancialCategorizationRuleInput) {
+    return request<FinancialCategorizationRule>('/financial-imports/rules', { method: 'POST', body: JSON.stringify(input) })
+  },
+
+  updateCategorizationRule(ruleId: string, input: FinancialCategorizationRuleInput) {
+    return request<FinancialCategorizationRule>(`/financial-imports/rules/${encodeURIComponent(ruleId)}`, { method: 'PATCH', body: JSON.stringify(input) })
+  },
+
+  deleteCategorizationRule(ruleId: string) {
+    return request<void>(`/financial-imports/rules/${encodeURIComponent(ruleId)}`, { method: 'DELETE' })
   },
 
   get(importId: string, signal?: AbortSignal) {

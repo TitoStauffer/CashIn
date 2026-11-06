@@ -17,6 +17,8 @@ import type {
   FinancialImportItemType,
   FinancialImportSession,
   FinancialImportStatus,
+  FinancialCategorizationRule,
+  FinancialCategorizationRuleInput,
 } from './importsApi'
 import { importsApi } from './importsApi'
 import './FinancialImportsPage.css'
@@ -89,6 +91,18 @@ const typeLabels: Record<FinancialImportItemType, string> = {
   transfer: 'Transferência',
 }
 
+type RuleDraft = FinancialCategorizationRuleInput & { id: string | null }
+
+const emptyRuleDraft: RuleDraft = { id: null, type: 'expense', description: '', categoryId: '', subcategoryId: null, isActive: true }
+
+// A rule may only be learned from a saved, manually categorized income or expense.
+function canLearnRuleFromItem(item: FinancialImportItem, draft: FinancialImportItemInput | undefined) {
+  return item.categorizationSource === 'manual'
+    && item.type !== 'transfer'
+    && Boolean(item.categoryId)
+    && !hasDraftChanged(item, draft)
+}
+
 function getFileFormat(fileName: string): FinancialImportFormat | null {
   const extension = fileName.split('.').pop()?.toLowerCase()
   return extension === 'ofx' || extension === 'csv' ? extension : null
@@ -125,6 +139,12 @@ function getImportError(error: unknown, fallback: string) {
     413: 'O arquivo ultrapassa o limite de 10 MB.',
     415: 'Use um arquivo OFX ou CSV válido.',
     422: 'O arquivo não pôde ser processado. Confira o formato e tente novamente.',
+  })
+}
+
+function getRuleError(error: unknown, fallback: string) {
+  return getApiErrorFeedback(error, fallback, {
+    409: 'Já existe uma regra para esta descrição e tipo nesta carteira.',
   })
 }
 
@@ -186,6 +206,11 @@ function FinancialImportsWalletPage({ userEmail, isLoggingOut, onLogout }: Finan
   const [csvColumns, setCsvColumns] = useState<Array<{ index: number; label: string }>>([])
   const [csvSample, setCsvSample] = useState<Array<{ lineNumber: number; values: string[] }>>([])
   const [csvMappings, setCsvMappings] = useState<CsvMappingTemplate[]>([])
+  const [categorizationRules, setCategorizationRules] = useState<FinancialCategorizationRule[]>([])
+  const [isRulesOpen, setIsRulesOpen] = useState(false)
+  const [isRulesLoading, setIsRulesLoading] = useState(false)
+  const [areRulesLoaded, setAreRulesLoaded] = useState(false)
+  const [ruleDraft, setRuleDraft] = useState<RuleDraft>(emptyRuleDraft)
   const [selectedCsvMappingId, setSelectedCsvMappingId] = useState('')
   const [csvMappingName, setCsvMappingName] = useState('')
   const [isCsvMappingDirty, setIsCsvMappingDirty] = useState(false)
@@ -571,6 +596,101 @@ function FinancialImportsWalletPage({ userEmail, isLoggingOut, onLogout }: Finan
     }
   }
 
+  async function toggleRules() {
+    const nextOpen = !isRulesOpen
+    setIsRulesOpen(nextOpen)
+    if (!nextOpen || areRulesLoaded) return
+    const operation = captureWalletOperation()
+    setIsRulesLoading(true)
+    setFormError('')
+    try {
+      const result = await importsApi.listCategorizationRules()
+      if (isCurrentWalletOperation(operation)) {
+        setCategorizationRules(result.items)
+        setAreRulesLoaded(true)
+      }
+    } catch (error) {
+      if (isCurrentWalletOperation(operation)) setFormError(getRuleError(error, 'Não foi possível carregar as regras da carteira.'))
+    } finally {
+      if (isCurrentWalletOperation(operation)) setIsRulesLoading(false)
+    }
+  }
+
+  async function saveCategorizationRule(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    const { id, ...input } = ruleDraft
+    if (!input.categoryId || !input.description.trim()) {
+      setFormError('Informe uma descrição e uma categoria para a regra.')
+      return
+    }
+    const operation = captureWalletOperation()
+    setPendingAction('categorization-rule')
+    setFormError('')
+    try {
+      const saved = id
+        ? await importsApi.updateCategorizationRule(id, { ...input, description: input.description.trim() })
+        : await importsApi.createCategorizationRule({ ...input, description: input.description.trim() })
+      if (!isCurrentWalletOperation(operation)) return
+      setCategorizationRules((current) => [saved, ...current.filter((rule) => rule.id !== saved.id)])
+      setRuleDraft(emptyRuleDraft)
+      setSuccessMessage(id ? 'Regra atualizada.' : 'Regra criada. Ela será aplicada às próximas importações desta carteira.')
+    } catch (error) {
+      if (isCurrentWalletOperation(operation)) setFormError(getRuleError(error, 'Não foi possível salvar a regra.'))
+    } finally {
+      if (isCurrentWalletOperation(operation)) setPendingAction(null)
+    }
+  }
+
+  async function deleteCategorizationRule(rule: FinancialCategorizationRule) {
+    if (!window.confirm(`Excluir a regra para “${rule.description}”?`)) return
+    const operation = captureWalletOperation()
+    setPendingAction(`delete-rule:${rule.id}`)
+    setFormError('')
+    try {
+      await importsApi.deleteCategorizationRule(rule.id)
+      if (isCurrentWalletOperation(operation)) {
+        setCategorizationRules((current) => current.filter((item) => item.id !== rule.id))
+        setSuccessMessage('Regra excluída.')
+      }
+    } catch (error) {
+      if (isCurrentWalletOperation(operation)) setFormError(getRuleError(error, 'Não foi possível excluir a regra.'))
+    } finally {
+      if (isCurrentWalletOperation(operation)) setPendingAction(null)
+    }
+  }
+
+  async function createRuleFromItem(item: FinancialImportItem) {
+    if (item.type === 'transfer' || !item.categoryId) return
+    const description = item.description?.trim() ?? ''
+    if (!description) {
+      setFormError('Informe uma descrição na movimentação antes de criar uma regra.')
+      return
+    }
+    const category = (item.type === 'income' ? incomeCategories : expenseCategories).find((current) => current.id === item.categoryId)
+    const subcategory = category?.subcategories.find((current) => current.id === item.subcategoryId)
+    const target = [category?.name ?? 'a categoria escolhida', subcategory?.name].filter(Boolean).join(' / ')
+    if (!window.confirm(`Criar uma regra para classificar ${typeLabels[item.type].toLowerCase()}s com a descrição “${description}” como ${target} nas próximas importações desta carteira?`)) return
+    const operation = captureWalletOperation()
+    setPendingAction(`rule-from-item:${item.id}`)
+    setFormError('')
+    setSuccessMessage('')
+    try {
+      const saved = await importsApi.createCategorizationRule({
+        type: item.type,
+        description,
+        categoryId: item.categoryId,
+        subcategoryId: item.subcategoryId,
+      })
+      if (!isCurrentWalletOperation(operation)) return
+      if (areRulesLoaded) setCategorizationRules((current) => [saved, ...current.filter((rule) => rule.id !== saved.id)])
+      setSuccessMessage('Regra criada. Ela será aplicada às próximas importações desta carteira.')
+    } catch (error) {
+      if (isCurrentWalletOperation(operation)) setFormError(getRuleError(error, 'Não foi possível criar a regra.'))
+    } finally {
+      if (isCurrentWalletOperation(operation)) setPendingAction(null)
+    }
+  }
+
   async function confirmImport() {
     if (!selectedImport || confirmableCount === 0 || hasPendingDraftChanges) return
     if (!window.confirm(`Confirmar ${confirmableCount} ${confirmableCount === 1 ? 'movimentação válida' : 'movimentações válidas'} desta importação?`)) return
@@ -668,6 +788,56 @@ function FinancialImportsWalletPage({ userEmail, isLoggingOut, onLogout }: Finan
               <span className="imports-wallet">Carteira: <strong>{activeWallet?.name}</strong></span>
             </header>
 
+            <section className="imports-rules" aria-labelledby="imports-rules-title">
+              <div className="imports-section-heading">
+                <div>
+                  <p className="imports-eyebrow">CLASSIFICAÇÃO EXPLÍCITA</p>
+                  <h2 id="imports-rules-title">Regras por carteira</h2>
+                  <p>As regras usam a descrição normalizada e o tipo. Só são criadas ou alteradas quando você confirma.</p>
+                </div>
+                <button className="imports-secondary-button" type="button" onClick={() => void toggleRules()} disabled={pendingAction !== null}>
+                  {isRulesOpen ? 'Ocultar regras' : 'Gerenciar regras'}
+                </button>
+              </div>
+              {isRulesOpen && (
+                <div className="imports-rules__content">
+                  {isRulesLoading ? <p role="status">Carregando regras…</p> : (
+                    <ul className="imports-rules__list">
+                      {categorizationRules.map((rule) => (
+                        <li key={rule.id}>
+                          <div>
+                            <strong>{rule.description}</strong>
+                            <span>{rule.type === 'income' ? 'Entrada' : 'Saída'} · {rule.categoryName ?? 'Categoria removida'}{rule.subcategoryId ? ` / ${rule.subcategoryName ?? 'subcategoria removida'}` : ''}</span>
+                            {rule.isStale && <small role="status">Categoria removida. Edite a regra para voltar a classificar movimentações.</small>}
+                            {!rule.isActive && <small>Regra desativada</small>}
+                          </div>
+                          <div className="imports-rules__actions">
+                            <button className="imports-text-button" type="button" onClick={() => setRuleDraft({ id: rule.id, type: rule.type, description: rule.description, categoryId: rule.categoryId, subcategoryId: rule.subcategoryId, isActive: rule.isActive })}>Editar</button>
+                            <button className="imports-text-button" type="button" disabled={pendingAction !== null} onClick={() => void deleteCategorizationRule(rule)}>Excluir</button>
+                          </div>
+                        </li>
+                      ))}
+                      {categorizationRules.length === 0 && <li>Nenhuma regra cadastrada para esta carteira.</li>}
+                    </ul>
+                  )}
+                  <form className="imports-rules__form" onSubmit={(event) => void saveCategorizationRule(event)}>
+                    <h3>{ruleDraft.id ? 'Editar regra' : 'Criar regra'}</h3>
+                    <label>Descrição exata da movimentação<input value={ruleDraft.description} maxLength={512} onChange={(event) => setRuleDraft((current) => ({ ...current, description: event.target.value }))} /></label>
+                    <div className="imports-rules__fields">
+                      <label>Tipo<select value={ruleDraft.type} onChange={(event) => setRuleDraft((current) => ({ ...current, type: event.target.value as 'income' | 'expense', categoryId: '', subcategoryId: null }))}><option value="income">Entrada</option><option value="expense">Saída</option></select></label>
+                      <label>Categoria<select value={ruleDraft.categoryId} onChange={(event) => setRuleDraft((current) => ({ ...current, categoryId: event.target.value, subcategoryId: null }))}><option value="">Selecione</option>{(ruleDraft.type === 'income' ? incomeCategories : expenseCategories).map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</select></label>
+                      <label>Subcategoria<select value={ruleDraft.subcategoryId ?? ''} disabled={!ruleDraft.categoryId} onChange={(event) => setRuleDraft((current) => ({ ...current, subcategoryId: event.target.value || null }))}><option value="">Sem subcategoria</option>{(ruleDraft.type === 'income' ? incomeCategories : expenseCategories).find((category) => category.id === ruleDraft.categoryId)?.subcategories.map((subcategory) => <option key={subcategory.id} value={subcategory.id}>{subcategory.name}</option>)}</select></label>
+                    </div>
+                    <label className="imports-rules__active"><input type="checkbox" checked={ruleDraft.isActive ?? true} onChange={(event) => setRuleDraft((current) => ({ ...current, isActive: event.target.checked }))} /> Regra ativa</label>
+                    <div className="imports-rules__actions">
+                      <button className="imports-primary-button" type="submit" disabled={pendingAction !== null || isRulesLoading}>{pendingAction === 'categorization-rule' ? 'Salvando…' : ruleDraft.id ? 'Salvar alterações' : 'Confirmar e criar regra'}</button>
+                      {ruleDraft.id && <button className="imports-text-button" type="button" onClick={() => setRuleDraft(emptyRuleDraft)}>Cancelar edição</button>}
+                    </div>
+                  </form>
+                </div>
+              )}
+            </section>
+
             {formError && (
               <div className="imports-alert imports-alert--error" role="alert">
                 <span>{formError}</span>
@@ -748,6 +918,7 @@ function FinancialImportsWalletPage({ userEmail, isLoggingOut, onLogout }: Finan
                     hasPendingDraftChanges={hasPendingDraftChanges}
                     onDraftChange={updateDraft}
                     onSaveItem={(item, includeDuplicate) => void saveItem(item, includeDuplicate)}
+                    onCreateRule={(item) => void createRuleFromItem(item)}
                     onConfirm={() => void confirmImport()}
                     onUndo={(session) => void undoImport(session)}
                     onDiscard={(session) => void discardImport(session)}
@@ -945,6 +1116,7 @@ function ImportPreview({
   hasPendingDraftChanges,
   onDraftChange,
   onSaveItem,
+  onCreateRule,
   onConfirm,
   onUndo,
   onDiscard,
@@ -960,6 +1132,7 @@ function ImportPreview({
   hasPendingDraftChanges: boolean
   onDraftChange: (itemId: string, changes: Partial<FinancialImportItemInput>) => void
   onSaveItem: (item: FinancialImportItem, includeDuplicate?: boolean) => void
+  onCreateRule: (item: FinancialImportItem) => void
   onConfirm: () => void
   onUndo: (session: FinancialImportSession) => void
   onDiscard: (session: FinancialImportSession) => void
@@ -1040,6 +1213,7 @@ function ImportPreview({
                   </div>
                   <span className={`imports-item-status imports-item-status--${item.validationStatus}`}>{itemStatusLabels[item.validationStatus]}</span>
                 </div>
+                {item.categorizationSource === 'rule' && <p className="imports-rule-suggestion">Categoria sugerida por regra desta carteira</p>}
                 {item.errorMessage && <p className="imports-item-error" role="note">{item.errorMessage}</p>}
                 <div className="imports-item-grid">
                   <label>
@@ -1082,6 +1256,11 @@ function ImportPreview({
                 {isEditable && (
                   <button className="imports-secondary-button" type="button" onClick={() => onSaveItem(item)} disabled={pendingAction !== null}>
                     {isSavingItem ? 'Salvando…' : 'Salvar ajuste'}
+                  </button>
+                )}
+                {session.status === 'preview' && canLearnRuleFromItem(item, drafts[item.id]) && (
+                  <button className="imports-text-button" type="button" onClick={() => onCreateRule(item)} disabled={pendingAction !== null}>
+                    {pendingAction === `rule-from-item:${item.id}` ? 'Criando regra…' : 'Criar regra para esta descrição'}
                   </button>
                 )}
                 {session.status === 'preview' && item.validationStatus === 'duplicate' && item.canIncludeDuplicate && (
