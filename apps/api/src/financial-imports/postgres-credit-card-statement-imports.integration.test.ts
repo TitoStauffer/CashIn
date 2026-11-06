@@ -267,6 +267,34 @@ test("PostgreSQL credit card statement import posts purchases and credits to the
     assert.equal(undone.statusCode, 200);
     assert.equal(undone.json().status, "undone");
     assert.equal((await statementsOf(monthEndCardId)).length, 0);
+
+    // A statement whose credits cover its purchases has no amount due and cannot be paid.
+    const refunded = (await upload(
+      Buffer.from("Data;Descrição;Valor\n10/03/2026;LOJA;45,90\n12/03/2026;Estorno LOJA;-45,90\n", "utf8"),
+      { ...csvHeaders, "x-file-name": "estornada.csv", "x-credit-card-id": monthEndCardId, "x-card-amount-sign": "purchases_positive" },
+    )).json() as FinancialImportSession;
+    const refundedPurchase = refunded.items!.find((item) => item.type === "expense")!;
+    await patchItem(refunded.id, refundedPurchase.id, { date: refundedPurchase.date, description: "LOJA", type: "expense", categoryId, subcategoryId: null });
+    assert.equal((await app.inject({ method: "POST", url: `/financial-imports/${refunded.id}/confirm`, headers: ownerHeaders })).statusCode, 200);
+    const [coveredStatement] = await statementsOf(monthEndCardId);
+    assert.deepEqual([coveredStatement!.purchasesAmount, coveredStatement!.creditsAmount, coveredStatement!.totalAmount], ["45.90", "45.90", "0.00"]);
+    const unpaid = await app.inject({
+      method: "POST",
+      url: `/credit-cards/${monthEndCardId}/statements/${coveredStatement!.id}/pay`,
+      headers: ownerHeaders,
+      payload: { date: "2026-04-08" },
+    });
+    assert.equal(unpaid.statusCode, 409);
+    assert.match(unpaid.json().message, /créditos cobrem as compras/);
+
+    // Deleting the purchase keeps the statement, because it still holds the credit.
+    const deleted = await app.inject({ method: "DELETE", url: `/expenses/${coveredStatement!.purchases[0]!.id}`, headers: ownerHeaders });
+    assert.equal(deleted.statusCode, 204);
+    const [creditOnlyStatement] = await statementsOf(monthEndCardId);
+    assert.deepEqual(
+      [creditOnlyStatement!.id, creditOnlyStatement!.purchasesAmount, creditOnlyStatement!.creditsAmount, creditOnlyStatement!.credits[0]!.originalExpenseId],
+      [coveredStatement!.id, "0.00", "45.90", null],
+    );
   } finally {
     await app?.close();
     await scopedPool?.end();

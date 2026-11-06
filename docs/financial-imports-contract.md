@@ -71,7 +71,10 @@ O upload de fatura envia `x-credit-card-id` com o UUID de um cartão **ativo da 
 
 As faturas em `GET /credit-cards/:creditCardId/statements` passam a expor `purchasesAmount`, `creditsAmount` e `credits`, e `totalAmount` passa a ser o saldo líquido. O pagamento integral cobra esse saldo líquido e é recusado com `409` quando os créditos cobrem as compras.
 
-Limitação conhecida: estornos abatem a fatura e o valor pago, mas não reduzem `expenseTotal`, `creditPurchaseTotal` nem o gasto por categoria do dashboard, que continuam somando as compras pelo valor bruto.
+Limitações conhecidas:
+
+- Estornos abatem a fatura e o valor pago, mas não reduzem `expenseTotal`, `creditPurchaseTotal` nem o gasto por categoria do dashboard, que continuam somando as compras pelo valor bruto (DEV-81).
+- Excluir manualmente uma compra estornada mantém o crédito na fatura, sem vínculo (`originalExpenseId: null`). A fatura não é removida e pode ficar com `totalAmount` negativo (saldo credor), que não pode ser pago. Não existe transporte do saldo credor para a fatura seguinte.
 
 ## Regras de categorização
 

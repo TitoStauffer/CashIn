@@ -3,6 +3,7 @@ import type { Database, QueryExecutor } from "../database.js";
 import { adjacentClosingDates, calculateBillingCycle, calculateDueDate } from "../credit-cards/billing-cycle.js";
 import {
   importCardCredits,
+  lockCardPurchasesForCredits,
   markItemsInPaidStatements,
   markValidItemsInPaidStatements,
   paidStatementMessage,
@@ -816,6 +817,7 @@ export class PostgresFinancialImportsRepository implements FinancialImportReposi
 
       // Card purchases are credit card expenses posted to their statement; they leave the cash
       // balance only when the statement is paid.
+      if (card) await lockCardPurchasesForCredits(transaction, walletId, card, items.rows);
       const cardPosting = card ? await prepareCardPosting(transaction, walletId, card, items.rows) : null;
 
       for (const type of ["income", "expense"] as const) {
@@ -948,6 +950,25 @@ export class PostgresFinancialImportsRepository implements FinancialImportReposi
       const incomeIds = targets.rows.flatMap((target) => target.resulting_income_id ? [target.resulting_income_id] : []);
       const expenseIds = targets.rows.flatMap((target) => target.resulting_expense_id ? [target.resulting_expense_id] : []);
       const creditIds = targets.rows.flatMap((target) => target.resulting_card_credit_id ? [target.resulting_card_credit_id] : []);
+      if (incomeIds.length > 0) {
+        await transaction.query(
+          `SELECT id FROM incomes
+           WHERE wallet_id = $1 AND id = ANY($2::uuid[])
+           ORDER BY id
+           FOR UPDATE`,
+          [walletId, incomeIds],
+        );
+      }
+      if (expenseIds.length > 0) {
+        await transaction.query(
+          `SELECT id FROM expenses
+           WHERE wallet_id = $1 AND id = ANY($2::uuid[])
+           ORDER BY id
+           FOR UPDATE`,
+          [walletId, expenseIds],
+        );
+      }
+      // Same lock order as the expenses repository (movement rows before their statement) to avoid deadlocks.
       if (creditIds.length > 0) {
         await transaction.query(
           `SELECT id FROM credit_card_statement_credits
@@ -971,24 +992,6 @@ export class PostgresFinancialImportsRepository implements FinancialImportReposi
         [walletId, expenseIds, creditIds],
       );
       if (affectedStatements.rows.some((statement) => statement.paid_date !== null)) return null;
-      if (incomeIds.length > 0) {
-        await transaction.query(
-          `SELECT id FROM incomes
-           WHERE wallet_id = $1 AND id = ANY($2::uuid[])
-           ORDER BY id
-           FOR UPDATE`,
-          [walletId, incomeIds],
-        );
-      }
-      if (expenseIds.length > 0) {
-        await transaction.query(
-          `SELECT id FROM expenses
-           WHERE wallet_id = $1 AND id = ANY($2::uuid[])
-           ORDER BY id
-           FOR UPDATE`,
-          [walletId, expenseIds],
-        );
-      }
 
       const validation = await transaction.query<{ blocked: boolean }>(
         `SELECT EXISTS (

@@ -42,6 +42,11 @@ Esta nota converte os achados históricos do Agent de Code Review em regras prev
 - **Impacto:** status antigo por último, deadlock, perda de edição, exclusão de registro atualizado, lease preso e sobrescrita da descrição do PR.
 - **Regra preventiva:** defina ordem global de locks, chave de concorrência estável, revalidação imediatamente antes da escrita e reconciliação depois de resultado incerto.
 - **Detecção:** testes com duas operações controladas por barreiras, invertendo a ordem de conclusão; testes de subprocesso para timeout e liberação de lease.
+- **Ocorrência no [PR #63](https://github.com/TitoStauffer/CashIn/pull/63#pullrequestreview-5800661574) (SHA `1b517ba`, MEDIUM):**
+  - **Problema:** o desfazer e a confirmação de faturas de cartão travavam `credit_card_statements` antes de `expenses`, enquanto editar ou excluir uma despesa trava a despesa antes da fatura.
+  - **Impacto:** deadlock (`40P01`) e erro 500 entre desfazer ou confirmar uma fatura e editar uma compra do mesmo cartão.
+  - **Correção:** a ordem global passou a ser movimentações e créditos antes das faturas. O desfazer trava despesas e créditos primeiro, e a confirmação trava as compras candidatas ao vínculo de estorno (`lockCardPurchasesForCredits`) antes de preparar as faturas.
+  - **Prevenção:** ao introduzir um novo lock numa tabela já travada por outro repositório, conferir a ordem usada lá.
 
 ## 5. Estado assíncrono da interface pertence à requisição que o produziu
 

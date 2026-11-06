@@ -167,6 +167,30 @@ export async function prepareCardPosting(
   return { paymentMethodId, statementIds };
 }
 
+// Locks the card purchases a refund may be linked to. Called before the statements are locked, so the
+// order matches PostgresExpensesRepository (expense rows before their statement) and cannot deadlock.
+export async function lockCardPurchasesForCredits(
+  executor: QueryExecutor,
+  walletId: string,
+  card: ImportCreditCard,
+  items: Array<{ type: FinancialImportItemType; transaction_date: string | Date }>,
+): Promise<void> {
+  const creditDates = items.filter((item) => item.type === "card_credit").map((item) => dateValue(item.transaction_date));
+  if (creditDates.length === 0) return;
+  await executor.query(
+    `SELECT expense.id
+     FROM expenses AS expense
+     JOIN credit_card_statements AS statement
+       ON statement.id = expense.credit_card_statement_id AND statement.wallet_id = expense.wallet_id
+     WHERE expense.wallet_id = $1
+       AND statement.credit_card_id = $2
+       AND expense.date <= $3::date
+     ORDER BY expense.id
+     FOR UPDATE OF expense`,
+    [walletId, card.id, creditDates.sort(compareIsoDates).at(-1)],
+  );
+}
+
 // Refunds and chargebacks become statement credits. A credit is linked to the purchase it reverses
 // only when exactly one purchase of the same card matches its description and still has enough
 // refundable amount; otherwise it stays unlinked instead of guessing.
@@ -192,8 +216,7 @@ export async function importCardCredits(
      WHERE expense.wallet_id = $1
        AND statement.credit_card_id = $2
        AND expense.date <= $3::date
-     ORDER BY expense.id
-     FOR UPDATE OF expense`,
+     ORDER BY expense.id`,
     [walletId, card.id, latestCreditDate],
   );
   const refundable = new Map(purchases.rows.map((purchase) => [purchase.id, toCents(purchase.amount) - toCents(purchase.credited)]));

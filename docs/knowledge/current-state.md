@@ -17,7 +17,7 @@
 - Dashboard financeiro com resumo, comparação, metas e categorias de maior gasto.
 - Fundação de importação financeira com upload, prévia, edição, confirmação atômica, histórico e desfazer.
 - Regras de categorização por carteira, criadas só com confirmação do usuário e aplicadas às novas prévias.
-- Importação de faturas de cartão (OFX e CSV) com fatura calculada por item, estornos como créditos na fatura e duplicidade por cartão.
+- Importação de faturas de cartão (OFX e CSV), com cartão obrigatório, fatura calculada por item e corrigível na prévia, estornos como créditos na fatura e duplicidade por cartão. A página de cartões mostra os estornos e bloqueia o pagamento sem saldo devedor.
 
 ## Estado da importação
 
