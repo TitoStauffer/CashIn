@@ -31,9 +31,9 @@ function getErrorMessage(error: unknown, action: 'load' | 'save' | 'pay') {
   })
 }
 
-// The API sends exact decimal strings; only the sign matters here, so no arithmetic is done.
+// The API sends decimal strings with two places; only the sign matters here, so no money arithmetic is done.
 function hasAmountDue(statement: CreditCardStatement) {
-  return /^[0-9]/.test(statement.totalAmount) && !/^0+(.0+)?$/.test(statement.totalAmount)
+  return Number(statement.totalAmount) > 0
 }
 
 function today() {

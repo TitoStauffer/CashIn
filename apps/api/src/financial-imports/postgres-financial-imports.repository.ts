@@ -214,6 +214,12 @@ function toCents(value: string): bigint {
   return match[1] === "-" ? -cents : cents;
 }
 
+// ISO dates (YYYY-MM-DD) sort chronologically by ordinal comparison.
+function compareIsoDates(left: string, right: string): number {
+  if (left === right) return 0;
+  return left < right ? -1 : 1;
+}
+
 function fromCents(value: bigint): string {
   const negative = value < 0n;
   const absolute = negative ? -value : value;
@@ -1275,7 +1281,7 @@ export class PostgresFinancialImportsRepository implements FinancialImportReposi
       else current.credits += toCents(item.amount);
       totals.set(item.statementClosingDate, current);
     }
-    const closingDates = [...totals.keys()].sort();
+    const closingDates = [...totals.keys()].sort(compareIsoDates);
     if (closingDates.length === 0) return [];
     const paid = await executor.query<{ closing_date: string }>(
       `SELECT closing_date::text AS closing_date
@@ -1388,7 +1394,7 @@ export class PostgresFinancialImportsRepository implements FinancialImportReposi
       throw new FinancialImportError("Uma movimentação da fatura não possui fatura de destino.", 409);
     }
     const statementIds = new Map<string, string>();
-    for (const closingDate of closingDates.sort()) {
+    for (const closingDate of closingDates.sort(compareIsoDates)) {
       await executor.query(
         `INSERT INTO credit_card_statements (wallet_id, credit_card_id, closing_date, due_date)
          VALUES ($1, $2, $3::date, $4::date)
@@ -1423,7 +1429,7 @@ export class PostgresFinancialImportsRepository implements FinancialImportReposi
   ): Promise<void> {
     const credits = items.filter((item) => item.type === "card_credit");
     if (credits.length === 0) return;
-    const latestCreditDate = credits.map((item) => dateValue(item.transaction_date)).sort().at(-1)!;
+    const latestCreditDate = credits.map((item) => dateValue(item.transaction_date)).sort(compareIsoDates).at(-1)!;
     const purchases = await executor.query<{ id: string; amount: string; date: string; description: string | null; credited: string }>(
       `SELECT expense.id, expense.amount::text AS amount, expense.date::text AS date, expense.description,
               COALESCE((SELECT SUM(linked.amount) FROM credit_card_statement_credits AS linked
