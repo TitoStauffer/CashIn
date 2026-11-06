@@ -51,9 +51,11 @@ import {
   MAX_FINANCIAL_IMPORT_FILE_SIZE,
 } from "./financial-imports/financial-imports.service.js";
 import { PostgresFinancialImportsRepository } from "./financial-imports/postgres-financial-imports.repository.js";
+import { FinancialCategorizationRulesService } from "./financial-imports/financial-categorization-rules.service.js";
+import { PostgresFinancialCategorizationRulesRepository } from "./financial-imports/postgres-financial-categorization-rules.repository.js";
 import { DefaultFinancialImportParser } from "./financial-imports/financial-imports.parser.js";
 import { registerFinancialImportRoutes } from "./financial-imports/financial-imports.routes.js";
-import type { FinancialImportParser, FinancialImportRepository } from "./financial-imports/financial-imports.types.js";
+import type { FinancialCategorizationRulesRepository, FinancialImportParser, FinancialImportRepository } from "./financial-imports/financial-imports.types.js";
 
 export interface AppOptions {
   logger?: boolean;
@@ -70,6 +72,7 @@ export interface AppOptions {
   paymentMethodRepository?: PaymentMethodRepository;
   creditCardRepository?: CreditCardRepository;
   financialImportRepository?: FinancialImportRepository;
+  financialCategorizationRulesRepository?: FinancialCategorizationRulesRepository;
   financialImportParser?: FinancialImportParser;
   authConfiguration?: Partial<AuthConfiguration>;
   walletInvitationTokenTtlHours?: number;
@@ -253,6 +256,9 @@ export function createApp(
     financialImportsService: new FinancialImportsService(
       options.financialImportRepository ?? new PostgresFinancialImportsRepository(database),
       options.financialImportParser ?? new DefaultFinancialImportParser(),
+      new FinancialCategorizationRulesService(
+        options.financialCategorizationRulesRepository ?? new PostgresFinancialCategorizationRulesRepository(database),
+      ),
     ),
   });
 

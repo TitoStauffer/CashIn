@@ -68,6 +68,7 @@ interface ImportItemRow {
   error_message: string | null;
   is_repairable: boolean;
   duplicate_override_allowed: boolean;
+  categorization_source: "rule" | "manual" | null;
   created_at: string | Date;
   updated_at: string | Date;
 }
@@ -101,6 +102,7 @@ function invalidateReference(
     ...item,
     categoryId,
     subcategoryId: null,
+    categorizationSource: null,
     validationStatus: isDuplicate ? "duplicate" : "invalid",
     errorMessage: currentMessage ? `${currentMessage} ${message}` : message,
     isRepairable: isDuplicate ? false : item.validationStatus === "invalid" ? item.isRepairable === true : true,
@@ -171,6 +173,7 @@ function mapItem(row: ImportItemRow): FinancialImportItem {
       || row.validation_status === "uncategorized"
       || (row.validation_status === "invalid" && row.is_repairable),
     canIncludeDuplicate: row.validation_status === "duplicate" && row.duplicate_override_allowed,
+    categorizationSource: row.categorization_source,
     createdAt: timestampValue(row.created_at)!,
     updatedAt: timestampValue(row.updated_at)!,
   };
@@ -257,6 +260,7 @@ const itemColumns = `
   item.type,
   item.category_id,
   item.subcategory_id,
+  item.categorization_source,
   item.validation_status,
   item.error_message,
   item.is_repairable,
@@ -369,19 +373,20 @@ export class PostgresFinancialImportsRepository implements FinancialImportReposi
           external_id: item.externalId ?? null,
           record_hash: item.recordHash ?? null,
           duplicate_override_allowed: item.duplicateOverrideAllowed === true,
+          categorization_source: item.categorizationSource ?? null,
         }));
         await transaction.query(
           `INSERT INTO import_items (
              import_session_id, wallet_id, sequence, transaction_date, description,
              signed_amount, type, category_id, subcategory_id, category_nature,
              validation_status, error_message, is_repairable, external_id, record_hash,
-             duplicate_override_allowed
+             duplicate_override_allowed, categorization_source
            )
            SELECT $1, $2, item.sequence, item.transaction_date::date, item.description,
                   item.signed_amount::numeric, item.type, item.category_id::uuid,
                   item.subcategory_id::uuid, item.category_nature,
                   item.validation_status, item.error_message, item.is_repairable,
-                  item.external_id, item.record_hash, item.duplicate_override_allowed
+                  item.external_id, item.record_hash, item.duplicate_override_allowed, item.categorization_source
            FROM jsonb_to_recordset($3::jsonb) AS item(
              sequence integer,
              transaction_date text,
@@ -396,7 +401,8 @@ export class PostgresFinancialImportsRepository implements FinancialImportReposi
              is_repairable boolean,
              external_id text,
              record_hash text,
-             duplicate_override_allowed boolean
+             duplicate_override_allowed boolean,
+             categorization_source text
            )`,
           [importId, walletId, JSON.stringify(payload)],
         );
@@ -514,6 +520,17 @@ export class PostgresFinancialImportsRepository implements FinancialImportReposi
              error_message = $10,
              is_repairable = false,
              duplicate_override_allowed = false,
+             -- Saving a rule-suggested item unchanged keeps its origin; any edit makes it a manual choice.
+             categorization_source = CASE
+               WHEN $7::uuid IS NULL THEN NULL
+               WHEN item.categorization_source = 'rule'
+                 AND item.category_id = $7::uuid
+                 AND item.subcategory_id IS NOT DISTINCT FROM $8::uuid
+                 AND item.type = $6
+                 AND item.description IS NOT DISTINCT FROM $5
+               THEN 'rule'
+               ELSE 'manual'
+             END,
              record_hash = $12,
              accepted_duplicate_fingerprint = $13,
              updated_at = now()

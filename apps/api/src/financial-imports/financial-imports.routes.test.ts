@@ -12,6 +12,9 @@ import type {
   CreateCsvMappingInput,
   CsvMapping,
   CreateFinancialImportInput,
+  FinancialCategorizationRule,
+  FinancialCategorizationRuleInput,
+  FinancialCategorizationRulesRepository,
   FinancialImportItem,
   FinancialImportParser,
   FinancialImportRepository,
@@ -117,6 +120,7 @@ class MemoryFinancialImportRepository implements FinancialImportRepository {
       errorMessage: item.errorMessage ?? null,
       canEdit: item.validationStatus !== "duplicate"
         && (item.validationStatus !== "invalid" || item.isRepairable === true),
+      categorizationSource: item.categorizationSource ?? null,
       createdAt: now,
       updatedAt: now,
     }));
@@ -350,8 +354,63 @@ class SessionAuthRepository implements AuthRepository {
 
 const fixtures = fileURLToPath(new URL("./fixtures/", import.meta.url));
 
+type StoredRule = FinancialCategorizationRule & { walletId: string; normalizedDescription: string };
+
+class MemoryCategorizationRulesRepository implements FinancialCategorizationRulesRepository {
+  readonly rules = new Map<string, StoredRule>();
+  private nextRule = 1;
+
+  async listRules(walletId: string): Promise<FinancialCategorizationRule[]> {
+    return [...this.rules.values()].filter((rule) => rule.walletId === walletId).map((rule) => this.publicRule(rule));
+  }
+
+  async createRule(_userId: string, walletId: string, input: FinancialCategorizationRuleInput & { normalizedDescription: string }) {
+    if (input.categoryId !== CATEGORY_A) return null;
+    const duplicate = [...this.rules.values()].some((rule) => rule.walletId === walletId
+      && rule.type === input.type && rule.normalizedDescription === input.normalizedDescription);
+    if (duplicate) throw Object.assign(new Error("duplicate"), { code: "23505" });
+    const now = new Date().toISOString();
+    const rule: StoredRule = {
+      id: `40000000-0000-4000-8000-${(this.nextRule++).toString().padStart(12, "0")}`,
+      walletId,
+      type: input.type,
+      description: input.description,
+      normalizedDescription: input.normalizedDescription,
+      categoryId: input.categoryId,
+      categoryName: "Alimentação",
+      subcategoryId: input.subcategoryId ?? null,
+      subcategoryName: null,
+      isActive: input.isActive ?? true,
+      isStale: false,
+      createdAt: now,
+      updatedAt: now,
+    };
+    this.rules.set(rule.id, rule);
+    return this.publicRule(rule);
+  }
+
+  async updateRule(walletId: string, ruleId: string, input: FinancialCategorizationRuleInput & { normalizedDescription: string }) {
+    const rule = this.rules.get(ruleId);
+    if (!rule || rule.walletId !== walletId || input.categoryId !== CATEGORY_A) return null;
+    Object.assign(rule, input, { isActive: input.isActive ?? true, updatedAt: new Date().toISOString() });
+    return this.publicRule(rule);
+  }
+
+  async deleteRule(walletId: string, ruleId: string): Promise<boolean> {
+    const rule = this.rules.get(ruleId);
+    if (!rule || rule.walletId !== walletId) return false;
+    return this.rules.delete(ruleId);
+  }
+
+  private publicRule(rule: StoredRule): FinancialCategorizationRule {
+    const { walletId: _walletId, normalizedDescription: _normalizedDescription, ...result } = rule;
+    return { ...result };
+  }
+}
+
 function createTestApp(parser: FinancialImportParser | null = new TestParser()) {
   const repository = new MemoryFinancialImportRepository();
+  const rulesRepository = new MemoryCategorizationRulesRepository();
   const executor: QueryExecutor = { query: async <Row>() => ({ rows: [] as Row[], rowCount: 0 }) };
   const database: Database = { ...executor, transaction: async (work) => work(executor) };
   return {
@@ -359,9 +418,11 @@ function createTestApp(parser: FinancialImportParser | null = new TestParser()) 
       authRepository: new SessionAuthRepository(),
       walletRepository: new WalletsTestFixture(),
       financialImportRepository: repository,
+      financialCategorizationRulesRepository: rulesRepository,
       financialImportParser: parser ?? undefined,
     }),
     repository,
+    rulesRepository,
   };
 }
 
@@ -933,5 +994,70 @@ test("CSV inspection and reusable mappings remain scoped to the current wallet",
     payload: Buffer.from("Data;Descrição;Valor\n31/10/2026;Mercado;-10,25\n"),
   });
   assert.equal(conflictingMappingSources.statusCode, 400);
+  await app.close();
+});
+
+test("categorization rules are wallet scoped, explicit, and applied to future previews", async () => {
+  const { app } = createTestApp();
+  const rulesUrl = "/financial-imports/rules";
+  assert.equal((await app.inject({ method: "GET", url: rulesUrl })).statusCode, 401);
+
+  const created = await app.inject({
+    method: "POST", url: rulesUrl, headers: { cookie: authCookie() },
+    payload: { type: "expense", description: "  MERCADO  ", categoryId: CATEGORY_A, subcategoryId: null },
+  });
+  assert.equal(created.statusCode, 201);
+  assert.equal(created.json().description, "MERCADO");
+  assert.equal(created.json().isActive, true);
+  const ruleId = created.json().id as string;
+
+  const duplicate = await app.inject({
+    method: "POST", url: rulesUrl, headers: { cookie: authCookie() },
+    payload: { type: "expense", description: "mercado", categoryId: CATEGORY_A },
+  });
+  assert.equal(duplicate.statusCode, 409);
+  const transferRule = await app.inject({
+    method: "POST", url: rulesUrl, headers: { cookie: authCookie() },
+    payload: { type: "transfer", description: "Pix", categoryId: CATEGORY_A },
+  });
+  assert.equal(transferRule.statusCode, 400);
+  const unknownCategory = await app.inject({
+    method: "POST", url: rulesUrl, headers: { cookie: authCookie() },
+    payload: { type: "expense", description: "Farmácia", categoryId: "22222222-2222-4222-8222-222222222222" },
+  });
+  assert.equal(unknownCategory.statusCode, 404);
+
+  const otherWallet = await app.inject({ method: "GET", url: rulesUrl, headers: { cookie: authCookie(SESSION_B) } });
+  assert.deepEqual(otherWallet.json(), { items: [] });
+  const crossWalletDelete = await app.inject({ method: "DELETE", url: `${rulesUrl}/${ruleId}`, headers: { cookie: authCookie(SESSION_B) } });
+  assert.equal(crossWalletDelete.statusCode, 404);
+
+  const categorized = await upload(app);
+  const categorizedDetail = await app.inject({ method: "GET", url: `/financial-imports/${categorized.json().id}`, headers: { cookie: authCookie() } });
+  assert.equal(categorizedDetail.json().items[1].categoryId, CATEGORY_A);
+  assert.equal(categorizedDetail.json().items[1].validationStatus, "valid");
+  assert.equal(categorizedDetail.json().items[1].categorizationSource, "rule");
+  assert.equal(categorizedDetail.json().items[0].categorizationSource, null);
+
+  const otherWalletUpload = await upload(app, SESSION_B);
+  const otherWalletDetail = await app.inject({ method: "GET", url: `/financial-imports/${otherWalletUpload.json().id}`, headers: { cookie: authCookie(SESSION_B) } });
+  assert.equal(otherWalletDetail.json().items[1].categoryId, null);
+  assert.equal(otherWalletDetail.json().items[1].validationStatus, "uncategorized");
+
+  const deactivated = await app.inject({
+    method: "PATCH", url: `${rulesUrl}/${ruleId}`, headers: { cookie: authCookie() },
+    payload: { type: "expense", description: "Mercado", categoryId: CATEGORY_A, subcategoryId: null, isActive: false },
+  });
+  assert.equal(deactivated.statusCode, 200);
+  assert.equal(deactivated.json().isActive, false);
+  const uncategorized = await upload(app);
+  const uncategorizedDetail = await app.inject({ method: "GET", url: `/financial-imports/${uncategorized.json().id}`, headers: { cookie: authCookie() } });
+  assert.equal(uncategorizedDetail.json().items[1].categoryId, null);
+  assert.equal(uncategorizedDetail.json().items[1].categorizationSource, null);
+
+  const deleted = await app.inject({ method: "DELETE", url: `${rulesUrl}/${ruleId}`, headers: { cookie: authCookie() } });
+  assert.equal(deleted.statusCode, 204);
+  const missing = await app.inject({ method: "DELETE", url: `${rulesUrl}/${ruleId}`, headers: { cookie: authCookie() } });
+  assert.equal(missing.statusCode, 404);
   await app.close();
 });

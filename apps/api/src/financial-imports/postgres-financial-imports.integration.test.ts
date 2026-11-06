@@ -246,6 +246,7 @@ test("PostgreSQL financial import confirms exact amounts, isolates wallets, and 
       errorMessage: "Data e valor inválidos.",
       canEdit: false,
       canIncludeDuplicate: false,
+      categorizationSource: null,
       createdAt: preview?.items?.[3]?.createdAt,
       updatedAt: preview?.items?.[3]?.updatedAt,
     });
