@@ -168,6 +168,18 @@ test("PostgreSQL categorization rules are shared by wallet members, applied to p
     assert.equal(cleared.json().categorizationSource, null);
     const discarded = await app.inject({ method: "DELETE", url: `/financial-imports/${upload.json().id}`, headers });
     assert.equal(discarded.statusCode, 200);
+    const discardedItems = discarded.json().items as Array<{ categoryId: string | null; categorizationSource: string | null }>;
+    assert.equal(discardedItems.length, 5);
+    for (const item of discardedItems) {
+      assert.equal(item.categoryId, null);
+      assert.equal(item.categorizationSource, null, "discarding clears the categorization origin together with the category");
+    }
+
+    const conflictingEdit = await app.inject({
+      method: "PATCH", url: `/financial-imports/rules/${busRule.id}`, headers,
+      payload: { type: "expense", description: "MERCADO BOM PREÇO", categoryId: transportId, subcategoryId: null, isActive: true },
+    });
+    assert.equal(conflictingEdit.statusCode, 409, "editing into an existing description must not surface a database error");
 
     // Removed references keep the rule visible as stale and stop it from classifying new items.
     await database.query("DELETE FROM subcategories WHERE id = $1", [marketId]);

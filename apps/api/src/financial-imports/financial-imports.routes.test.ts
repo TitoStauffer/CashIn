@@ -392,6 +392,9 @@ class MemoryCategorizationRulesRepository implements FinancialCategorizationRule
   async updateRule(walletId: string, ruleId: string, input: FinancialCategorizationRuleInput & { normalizedDescription: string }) {
     const rule = this.rules.get(ruleId);
     if (!rule || rule.walletId !== walletId || input.categoryId !== CATEGORY_A) return null;
+    const conflict = [...this.rules.values()].some((other) => other.id !== ruleId && other.walletId === walletId
+      && other.type === input.type && other.normalizedDescription === input.normalizedDescription);
+    if (conflict) throw Object.assign(new Error("duplicate"), { code: "23505" });
     Object.assign(rule, input, { isActive: input.isActive ?? true, updatedAt: new Date().toISOString() });
     return this.publicRule(rule);
   }
@@ -1043,6 +1046,18 @@ test("categorization rules are wallet scoped, explicit, and applied to future pr
   const otherWalletDetail = await app.inject({ method: "GET", url: `/financial-imports/${otherWalletUpload.json().id}`, headers: { cookie: authCookie(SESSION_B) } });
   assert.equal(otherWalletDetail.json().items[1].categoryId, null);
   assert.equal(otherWalletDetail.json().items[1].validationStatus, "uncategorized");
+
+  const otherRule = await app.inject({
+    method: "POST", url: rulesUrl, headers: { cookie: authCookie() },
+    payload: { type: "expense", description: "Padaria", categoryId: CATEGORY_A },
+  });
+  assert.equal(otherRule.statusCode, 201);
+  const conflictingEdit = await app.inject({
+    method: "PATCH", url: `${rulesUrl}/${otherRule.json().id}`, headers: { cookie: authCookie() },
+    payload: { type: "expense", description: " mercado ", categoryId: CATEGORY_A, subcategoryId: null, isActive: true },
+  });
+  assert.equal(conflictingEdit.statusCode, 409);
+  assert.match(conflictingEdit.json().message, /Já existe uma regra/);
 
   const deactivated = await app.inject({
     method: "PATCH", url: `${rulesUrl}/${ruleId}`, headers: { cookie: authCookie() },

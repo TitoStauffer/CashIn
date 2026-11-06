@@ -20,19 +20,16 @@ export class FinancialCategorizationRulesService {
 
   async createRule(userId: string, walletId: string, input: FinancialCategorizationRuleInput): Promise<FinancialCategorizationRule> {
     const normalized = normalizeInput(input);
-    try {
-      const rule = await this.repository.createRule(userId, walletId, normalized);
-      if (!rule) throw new FinancialImportError("A categoria ou subcategoria não existe nesta carteira.", 404);
-      return rule;
-    } catch (error) {
-      if (isUniqueViolation(error)) throw new FinancialImportError("Já existe uma regra para esta descrição e tipo nesta carteira.", 409);
-      throw error;
-    }
+    const rule = await mapUniqueViolation(() => this.repository.createRule(userId, walletId, normalized));
+    if (!rule) throw new FinancialImportError("A categoria ou subcategoria não existe nesta carteira.", 404);
+    return rule;
   }
 
   async updateRule(walletId: string, ruleId: string, input: FinancialCategorizationRuleInput): Promise<FinancialCategorizationRule> {
     if (!UUID_PATTERN.test(ruleId)) throw new FinancialImportError("A regra de categorização não foi encontrada.", 404);
-    const rule = await this.repository.updateRule(walletId, ruleId, normalizeInput(input));
+    const normalized = normalizeInput(input);
+    // Editing type or description can collide with another rule of the same wallet.
+    const rule = await mapUniqueViolation(() => this.repository.updateRule(walletId, ruleId, normalized));
     if (!rule) throw new FinancialImportError("A regra ou categoria não foi encontrada nesta carteira.", 404);
     return rule;
   }
@@ -101,6 +98,15 @@ function normalizeInput(input: FinancialCategorizationRuleInput): FinancialCateg
     throw new FinancialImportError("O estado da regra é inválido.", 400);
   }
   return { type: input.type, description, normalizedDescription, categoryId: input.categoryId, subcategoryId, isActive: input.isActive ?? true };
+}
+
+async function mapUniqueViolation<T>(operation: () => Promise<T>): Promise<T> {
+  try {
+    return await operation();
+  } catch (error) {
+    if (isUniqueViolation(error)) throw new FinancialImportError("Já existe uma regra para esta descrição e tipo nesta carteira.", 409);
+    throw error;
+  }
 }
 
 function isUniqueViolation(error: unknown): boolean {

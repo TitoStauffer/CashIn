@@ -809,6 +809,7 @@ export class PostgresFinancialImportsRepository implements FinancialImportReposi
          SET validation_status = 'uncategorized',
              category_id = NULL,
              subcategory_id = NULL,
+             categorization_source = NULL,
              resulting_income_id = NULL,
              resulting_expense_id = NULL,
              resulting_updated_at = NULL,
@@ -822,6 +823,7 @@ export class PostgresFinancialImportsRepository implements FinancialImportReposi
         `UPDATE import_items
          SET category_id = NULL,
              subcategory_id = NULL,
+             categorization_source = NULL,
              updated_at = now()
          WHERE import_session_id = $1
            AND wallet_id = $2
@@ -864,6 +866,7 @@ export class PostgresFinancialImportsRepository implements FinancialImportReposi
         `UPDATE import_items
          SET category_id = NULL,
              subcategory_id = NULL,
+             categorization_source = NULL,
              validation_status = CASE
                WHEN validation_status = 'valid' THEN 'uncategorized'
                ELSE validation_status
