@@ -29,7 +29,7 @@ O script baixa o runner e o PowerShell das releases oficiais, confere o SHA-256 
 - **Login no Windows:** o atalho de inicialização executa `scripts/start-runner.ps1`.
 - **Sessões do Claude Code:** o hook `SessionStart` em `.claude/settings.json` executa `ensure-runner.ps1`, que inicia o runner se estiver parado. Ele nunca baixa nem registra nada, sempre termina com sucesso e só escreve algo quando o runner precisa de atenção.
 
-A cada início, o `codex.exe` mais recente é localizado novamente e gravado em `runner/.env` como `CODEX_EXECUTABLE`, e o PowerShell portátil é colocado à frente do `PATH` dos jobs em `runner/.path`. Assim, atualizações do app Codex não quebram o runner.
+A cada início, o `codex.exe` mais recente é localizado novamente e o processo que inicia o runner recebe `CODEX_EXECUTABLE` e um `PATH` com o PowerShell portátil à frente; os jobs herdam esse ambiente. O runner no Windows não aplica um arquivo `.path` aos jobs, por isso o ambiente do processo é o mecanismo usado. Assim, atualizações do app Codex não quebram o runner.
 
 ## Atualizar versões
 

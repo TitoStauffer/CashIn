@@ -43,7 +43,8 @@ function Get-LatestCodexExecutable {
   return $null
 }
 
-# The runner reads ".env" (KEY=VALUE) and ".path" (PATH for jobs) from its root at startup.
+# Job steps inherit the environment of the process that starts the runner. The Windows runner
+# does not apply a ".path" file to job steps, so PATH and CODEX_EXECUTABLE are set on this process.
 function Set-RunnerEnvironment {
   $codex = Get-LatestCodexExecutable
   if (-not $codex) {
@@ -54,20 +55,12 @@ function Set-RunnerEnvironment {
     throw "PowerShell 7 portátil não encontrado em $script:PwshDir. Rode install-runner.ps1 novamente."
   }
 
-  $utf8 = New-Object System.Text.UTF8Encoding($false)
-  [System.IO.File]::WriteAllText((Join-Path $script:RunnerDir '.env'), "CODEX_EXECUTABLE=$codex`n", $utf8)
-
   $pathEntries = @($script:PwshDir)
   foreach ($scope in 'User', 'Machine') {
     $value = [Environment]::GetEnvironmentVariable('Path', $scope)
     if ($value) { $pathEntries += $value.Split(';') | Where-Object { $_ } }
   }
-  $uniquePath = ($pathEntries | Select-Object -Unique) -join ';'
-  [System.IO.File]::WriteAllText((Join-Path $script:RunnerDir '.path'), $uniquePath, $utf8)
-
-  # The Windows runner does not apply ".path" to job steps, so the same values are also set on
-  # this process; Runner.Listener and its job workers inherit them.
-  $env:Path = $uniquePath
+  $env:Path = ($pathEntries | Select-Object -Unique) -join ';'
   $env:CODEX_EXECUTABLE = $codex
   return $codex
 }
