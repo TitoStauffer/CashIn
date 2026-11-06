@@ -1,7 +1,7 @@
 # Estado atual do projeto
 
-**Status:** atualizado pela DEV-55
-**Última revisão:** 05/11/2026
+**Status:** atualizado pela DEV-56
+**Última revisão:** 06/11/2026
 **Ticket de criação:** [DEV-64](https://titostauffer.atlassian.net/browse/DEV-64)
 
 ## Produto disponível
@@ -17,10 +17,11 @@
 - Dashboard financeiro com resumo, comparação, metas e categorias de maior gasto.
 - Fundação de importação financeira com upload, prévia, edição, confirmação atômica, histórico e desfazer.
 - Regras de categorização por carteira, criadas só com confirmação do usuário e aplicadas às novas prévias.
+- Importação de faturas de cartão (OFX e CSV) com fatura calculada por item, estornos como créditos na fatura e duplicidade por cartão.
 
 ## Estado da importação
 
-A infraestrutura e a tela existem. O parser padrão da API interpreta extratos bancários OFX 1.x e 2.x e CSV configurável, com inspeção, amostra e modelos reutilizáveis por carteira. Itens sem categoria podem receber sugestão de regras explícitas da carteira. Consulte [`domain/imports.md`](domain/imports.md).
+A infraestrutura e a tela existem. O parser padrão da API interpreta extratos bancários OFX 1.x e 2.x, faturas de cartão em OFX e CSV configurável, com inspeção, amostra e modelos reutilizáveis por carteira. Itens sem categoria podem receber sugestão de regras explícitas da carteira. Consulte [`domain/imports.md`](domain/imports.md).
 
 ## Automação de entrega
 
@@ -31,7 +32,8 @@ O fluxo ativo executa validação de título, API, Web, ferramentas de automaç�
 - A API não possui lint configurado.
 - O envio de e-mail e os rate limiters usam mecanismos adequados ao MVP local; filas e estado compartilhado são necessários para múltiplas instâncias.
 - O runner de agentes é Windows self-hosted e depende de máquina ligada, usuário autenticado e Claude Code CLI disponível (Codex CLI apenas como alternativa com `AGENT_RUNTIME=codex`).
-- Faturas de cartão em OFX, múltiplos extratos bancários no mesmo arquivo e detecção de duplicidade entre sessões ainda não estão implementados.
+- Múltiplos extratos ou faturas no mesmo arquivo continuam recusados. A conciliação do pagamento da fatura com o extrato bancário depende da DEV-57.
+- Estornos de cartão abatem a fatura, mas ainda não reduzem os totais de despesa e de gasto por categoria do dashboard.
 - Mobile e deploy em nuvem estão fora do estado atual.
 
 ## Fontes verificáveis

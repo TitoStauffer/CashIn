@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { createApp } from "../app.js";
+import { DefaultFinancialImportParser } from "./financial-imports.parser.js";
 import type { Database, QueryExecutor } from "../database.js";
 import { hashToken } from "../auth/token.js";
 import type { AuthRepository, AuthUser, PendingAccount, StoredUser } from "../auth/auth.types.js";
@@ -69,6 +70,13 @@ class MemoryFinancialImportRepository implements FinancialImportRepository {
     return mapping;
   }
 
+  readonly creditCards = new Map<string, { walletId: string; card: { id: string; closingDay: number; dueDay: number } }>();
+
+  async findImportCreditCard(walletId: string, creditCardId: string) {
+    const stored = this.creditCards.get(creditCardId);
+    return stored?.walletId === walletId ? stored.card : null;
+  }
+
   async createImport(userId: string, walletId: string, input: CreateFinancialImportInput): Promise<FinancialImportSession> {
     const id = `10000000-0000-4000-8000-${this.nextSession.toString().padStart(12, "0")}`;
     this.nextSession += 1;
@@ -78,6 +86,11 @@ class MemoryFinancialImportRepository implements FinancialImportRepository {
       userId,
       walletId,
       format: input.format,
+      kind: input.creditCardId ? "credit_card_statement" : "bank_statement",
+      creditCardId: input.creditCardId ?? null,
+      creditCardName: input.creditCardId ? "Cartão de teste" : null,
+      creditCardClosingDay: input.creditCardId ? 10 : null,
+      creditCardDueDay: input.creditCardId ? 20 : null,
       fileName: input.fileName,
       fileSize: input.fileSize,
       fileHash: input.fileHash,
@@ -453,7 +466,7 @@ test("financial import routes require authentication and expose wallet-scoped pr
   assert.equal((await app.inject({ method: "GET", url: "/financial-imports" })).statusCode, 401);
 
   const created = await upload(app);
-  assert.equal(created.statusCode, 201);
+  assert.equal(created.statusCode, 201, created.body);
   assert.equal(created.json().fileName, "extrato outubro.csv");
   assert.equal(created.json().format, "csv");
   assert.equal(created.json().status, "preview");
@@ -847,7 +860,7 @@ test("upload enforces the 10 MB and 10,000 movement limits", async () => {
 test("impossible dates, zero values, and repeated source sequences remain in preview without blocking valid items", async () => {
   const { app } = createTestApp(new InvalidItemsParser());
   const created = await upload(app);
-  assert.equal(created.statusCode, 201);
+  assert.equal(created.statusCode, 201, created.body);
   assert.deepEqual(created.json().summary, {
     total: 4,
     valid: 1,
@@ -930,7 +943,7 @@ test("CSV inspection and reusable mappings remain scoped to the current wallet",
     method: "POST", url: "/financial-imports/csv-mappings", headers: { cookie: authCookie() },
     payload: { name: "Banco principal", configuration },
   });
-  assert.equal(created.statusCode, 201);
+  assert.equal(created.statusCode, 201, created.body);
   const mappingId = created.json().id as string;
   const otherUserList = await app.inject({ method: "GET", url: "/financial-imports/csv-mappings", headers: { cookie: authCookie(SESSION_B) } });
   assert.deepEqual(otherUserList.json(), { items: [] });
@@ -1009,7 +1022,7 @@ test("categorization rules are wallet scoped, explicit, and applied to future pr
     method: "POST", url: rulesUrl, headers: { cookie: authCookie() },
     payload: { type: "expense", description: "  MERCADO  ", categoryId: CATEGORY_A, subcategoryId: null },
   });
-  assert.equal(created.statusCode, 201);
+  assert.equal(created.statusCode, 201, created.body);
   assert.equal(created.json().description, "MERCADO");
   assert.equal(created.json().isActive, true);
   const ruleId = created.json().id as string;
@@ -1074,5 +1087,43 @@ test("categorization rules are wallet scoped, explicit, and applied to future pr
   assert.equal(deleted.statusCode, 204);
   const missing = await app.inject({ method: "DELETE", url: `${rulesUrl}/${ruleId}`, headers: { cookie: authCookie() } });
   assert.equal(missing.statusCode, 404);
+  await app.close();
+});
+
+test("card statement uploads validate the card and the CSV purchase sign before parsing", async () => {
+  const { app, repository } = createTestApp(new DefaultFinancialImportParser());
+  const bankImport = await upload(app);
+  const walletId = repository.sessions.get(bankImport.json().id)!.walletId;
+  const cardId = "40000000-0000-4000-8000-000000000001";
+  repository.creditCards.set(cardId, { walletId, card: { id: cardId, closingDay: 10, dueDay: 20 } });
+  const sendCard = (headers: Record<string, string>, fileName = "fatura.csv", format = "csv") => app.inject({
+    method: "POST",
+    url: "/financial-imports",
+    headers: {
+      cookie: authCookie(),
+      "content-type": "application/octet-stream",
+      "x-file-name": fileName,
+      "x-file-format": format,
+      ...(format === "csv" ? { "x-csv-mapping": CSV_MAPPING_HEADER } : {}),
+      ...headers,
+    },
+    payload: Buffer.from("date,description,amount\n2026-10-11,Livraria,50.25\n2026-10-12,Estorno Livraria,-20.25\n"),
+  });
+
+  const signWithoutCard = await sendCard({ "x-card-amount-sign": "purchases_positive" });
+  assert.equal(signWithoutCard.statusCode, 400);
+  assert.match(signWithoutCard.json().message, /só se aplica a faturas de cartão/);
+  assert.equal((await sendCard({ "x-credit-card-id": "40000000-0000-4000-8000-000000000099", "x-card-amount-sign": "purchases_positive" })).statusCode, 404);
+  assert.equal((await sendCard({ "x-credit-card-id": "not-a-card", "x-card-amount-sign": "purchases_positive" })).statusCode, 404);
+  assert.match((await sendCard({ "x-credit-card-id": cardId })).json().message, /representa as compras/);
+  assert.equal((await sendCard({ "x-credit-card-id": cardId, "x-card-amount-sign": "purchases_positive" }, "fatura.ofx", "ofx")).statusCode, 400);
+
+  const created = await sendCard({ "x-credit-card-id": cardId, "x-card-amount-sign": "purchases_positive" });
+  assert.equal(created.statusCode, 201, created.body);
+  assert.equal(created.json().kind, "credit_card_statement");
+  assert.deepEqual(repository.sessions.get(created.json().id)!.items.map((item) => [item.type, item.amount]), [
+    ["expense", "50.25"],
+    ["card_credit", "20.25"],
+  ]);
   await app.close();
 });

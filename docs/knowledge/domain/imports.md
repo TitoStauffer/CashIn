@@ -1,7 +1,7 @@
 # Importação financeira OFX e CSV
 
-**Status:** importação OFX e CSV com regras de categorização por carteira (DEV-55)
-**Última revisão:** 05/11/2026
+**Status:** importação OFX e CSV com regras de categorização por carteira (DEV-55) e faturas de cartão (DEV-56)
+**Última revisão:** 06/11/2026
 
 ## Fluxo definido
 
@@ -34,7 +34,21 @@ A infraestrutura de upload, prévia, confirmação, histórico e desfazer existe
 
 CSV aceita vírgula ou ponto e vírgula, UTF-8, Windows-1252 e ISO-8859-1, datas brasileiras, norte-americanas ou ISO e valores `pt-BR` ou `en-US`, sempre normalizados como texto decimal. O usuário inspeciona uma amostra, pode repetir a inspeção com os cinco campos de formato corrigidos, confirma o mapeamento e pode salvar ou editar modelos reutilizáveis, sempre isolados por carteira. Linhas inválidas permanecem na prévia com número físico e motivo, mas recebem sequência ordinal independente das linhas vazias ou multilinha. Caractere nulo e sintaxe de aspas malformada são rejeitados estruturalmente, sem sanitização ou concatenação silenciosa. A configuração exige exatamente `amount` com crédito/débito nulos ou `amount` nulo com o par crédito/débito; no modo separado, vazio e zero são ausência, enquanto conteúdo monetário inválido bloqueia a linha mesmo que a outra coluna seja válida.
 
-Faturas de cartão em OFX permanecem fora desse fluxo. Sessões desfeitas não bloqueiam uma importação futura, pois somente itens ainda marcados como importados participam da detecção.
+Sessões desfeitas não bloqueiam uma importação futura, pois somente itens ainda marcados como importados participam da detecção.
+
+## Faturas de cartão (DEV-56)
+
+- **Seleção do cartão:** a sessão de fatura (`kind = credit_card_statement`) exige um cartão ativo da carteira, gravado em `import_sessions.credit_card_id` com FK composta pela carteira.
+- **Formatos:** o OFX deve ter um único `CCSTMTRS`; o CSV informa o sinal das compras (`x-card-amount-sign`).
+- **Sinais:** são normalizados para compra negativa (`expense`) e crédito positivo (`card_credit`), o que mantém a impressão digital igual entre OFX e CSV.
+- **Pagamento da fatura anterior:** a linha positiva com `PAYMENT` ou "pagamento" vira `transfer` e não é importada; a conciliação com o extrato fica para a DEV-57.
+- **Fatura de destino:** `import_items.statement_closing_date` é calculado pelo fechamento do cartão e pode ser movido para a fatura anterior ou a seguinte. Item em fatura paga fica inválido e reparável, e a confirmação revalida.
+- **Confirmação:**
+  - Compras viram despesas de natureza `credit_card` na fatura do item e só saem do saldo no pagamento.
+  - Créditos viram linhas de `credit_card_statement_credits`, que abatem a fatura e nunca são receitas.
+  - O vínculo com a compra original exige uma única correspondência inequívoca (mesmo cartão, descrição sem prefixo de estorno, data anterior ou igual e saldo estornável suficiente).
+- **Duplicidade:** é procurada só entre sessões do mesmo cartão. Bancárias só se comparam com bancárias.
+- **Desfazer:** remove compras, créditos e faturas que ficarem vazias. É bloqueado se algo foi alterado ou se uma fatura afetada foi paga.
 
 ## Fontes verificáveis
 
@@ -47,3 +61,5 @@ Faturas de cartão em OFX permanecem fora desse fluxo. Sessões desfeitas não b
 - [`apps/api/src/financial-imports/financial-categorization-rules.service.ts`](../../../apps/api/src/financial-imports/financial-categorization-rules.service.ts)
 - [`apps/api/src/financial-imports/postgres-financial-categorization-rules.repository.ts`](../../../apps/api/src/financial-imports/postgres-financial-categorization-rules.repository.ts)
 - [`apps/web/src/imports/FinancialImportsPage.tsx`](../../../apps/web/src/imports/FinancialImportsPage.tsx)
+- [`apps/api/migrations/018_credit_card_statement_imports.sql`](../../../apps/api/migrations/018_credit_card_statement_imports.sql)
+- [`apps/api/src/financial-imports/postgres-credit-card-statement-imports.integration.test.ts`](../../../apps/api/src/financial-imports/postgres-credit-card-statement-imports.integration.test.ts)

@@ -31,6 +31,11 @@ function getErrorMessage(error: unknown, action: 'load' | 'save' | 'pay') {
   })
 }
 
+// The API sends exact decimal strings; only the sign matters here, so no arithmetic is done.
+function hasAmountDue(statement: CreditCardStatement) {
+  return /^[0-9]/.test(statement.totalAmount) && !/^0+(.0+)?$/.test(statement.totalAmount)
+}
+
 function today() {
   const current = new Date()
   return `${current.getFullYear()}-${String(current.getMonth() + 1).padStart(2, '0')}-${String(current.getDate()).padStart(2, '0')}`
@@ -281,11 +286,19 @@ export function CreditCardsPage({ userEmail, isLoggingOut, onLogout }: { userEma
                   <div><strong>{purchase.description?.trim() || purchase.categoryName}</strong><small>{formatDate(purchase.date)} · {purchase.categoryName}{purchase.subcategoryName ? ` / ${purchase.subcategoryName}` : ''}</small></div>
                   <b>{formatBrazilianCurrency(purchase.amount)}</b>
                 </li>)}</ul>
+                {(statement.credits?.length ?? 0) > 0 && <>
+                  <h4 className="statement-credits-title">Estornos e créditos</h4>
+                  <ul className="statement-purchases statement-credits">{statement.credits!.map((credit) => <li key={credit.id}>
+                    <div><strong>{credit.description?.trim() || 'Crédito na fatura'}</strong><small>{formatDate(credit.date)}{credit.originalExpenseId ? ' · vinculado à compra original' : ''}</small></div>
+                    <b>− {formatBrazilianCurrency(credit.amount)}</b>
+                  </li>)}</ul>
+                </>}
                 <footer className="statement-card__footer">
                   {statement.paidDate ? <p className="statement-paid">Paga em {formatDate(statement.paidDate)} · {displayMoney(statement.paidAmount)}</p> : <>
                     <label>Data do pagamento <input type="date" value={paymentDates[statement.id] ?? today()} onChange={(event) => setPaymentDates((current) => ({ ...current, [statement.id]: event.target.value }))} /></label>
-                    <button type="button" className="credit-cards-primary" onClick={() => void payStatement(statement)} disabled={isSaving || statement.purchases.length === 0} aria-describedby={statement.purchases.length === 0 ? `statement-payment-hint-${statement.id}` : undefined}>Pagar fatura integral</button>
+                    <button type="button" className="credit-cards-primary" onClick={() => void payStatement(statement)} disabled={isSaving || statement.purchases.length === 0 || !hasAmountDue(statement)} aria-describedby={statement.purchases.length === 0 || !hasAmountDue(statement) ? `statement-payment-hint-${statement.id}` : undefined}>Pagar fatura integral</button>
                     {statement.purchases.length === 0 && <p id={`statement-payment-hint-${statement.id}`} className="statement-period">Esta fatura não possui compras para pagar. Registre uma despesa vinculada ao cartão para gerar uma fatura com valor.</p>}
+                    {statement.purchases.length > 0 && !hasAmountDue(statement) && <p id={`statement-payment-hint-${statement.id}`} className="statement-period">Os estornos e créditos cobrem as compras desta fatura: não há saldo a pagar.</p>}
                   </>}
                 </footer>
               </article>)}</div>}

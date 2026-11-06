@@ -89,3 +89,8 @@
   .statement-card__footer { align-items: stretch; flex-direction: column; }
 }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; scroll-behavior: auto !important; transition-duration: .01ms !important; } }
+
+.statement-credits-title {
+  margin: 1rem 0 0.25rem;
+  font-size: 0.95rem;
+}

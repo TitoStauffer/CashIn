@@ -371,6 +371,10 @@ export class PostgresExpensesRepository implements ExpenseRepository {
          AND NOT EXISTS (
            SELECT 1 FROM expenses
            WHERE credit_card_statement_id = statement.id AND wallet_id = statement.wallet_id
+         )
+         AND NOT EXISTS (
+           SELECT 1 FROM credit_card_statement_credits
+           WHERE credit_card_statement_id = statement.id AND wallet_id = statement.wallet_id
          )`,
       [statementId, walletId],
     );

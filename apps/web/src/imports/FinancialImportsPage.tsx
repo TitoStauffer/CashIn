@@ -6,7 +6,11 @@ import { getApiErrorFeedback } from '../feedback/apiErrorFeedback'
 import { FinancialSidebar } from '../layout/FinancialSidebar'
 import { formatBrazilianCurrency } from '../money/currency'
 import { useWallet } from '../wallets/useWallet'
+import type { CreditCard } from '../creditCards/creditCardsApi'
+import { creditCardsApi } from '../creditCards/creditCardsApi'
+import { adjacentClosingDates, calculateClosingDate, calculateDueDate, isValidIsoDate } from './cardStatementCycles'
 import type {
+  CardAmountSign,
   CsvColumnMapping,
   CsvImportConfiguration,
   CsvMappingTemplate,
@@ -15,6 +19,7 @@ import type {
   FinancialImportItemInput,
   FinancialImportItemStatus,
   FinancialImportItemType,
+  FinancialImportKind,
   FinancialImportSession,
   FinancialImportStatus,
   FinancialCategorizationRule,
@@ -89,6 +94,29 @@ const typeLabels: Record<FinancialImportItemType, string> = {
   income: 'Entrada',
   expense: 'Saída',
   transfer: 'Transferência',
+  card_credit: 'Estorno/crédito na fatura',
+}
+
+// A card statement holds purchases, refunds/chargebacks and the payment of the previous statement.
+const cardTypeLabels: Partial<Record<FinancialImportItemType, string>> = {
+  expense: 'Compra',
+  card_credit: 'Estorno/crédito na fatura',
+  transfer: 'Pagamento da fatura',
+}
+const bankTypeOptions: FinancialImportItemType[] = ['income', 'expense', 'transfer']
+const cardTypeOptions: FinancialImportItemType[] = ['expense', 'card_credit', 'transfer']
+
+function isCardSession(session: FinancialImportSession) {
+  return session.kind === 'credit_card_statement'
+}
+
+function hasCategory(type: FinancialImportItemType) {
+  return type === 'income' || type === 'expense'
+}
+
+function formatIsoDate(value: string) {
+  const [year, month, day] = value.split('-')
+  return `${day}/${month}/${year}`
 }
 
 type RuleDraft = FinancialCategorizationRuleInput & { id: string | null }
@@ -98,7 +126,7 @@ const emptyRuleDraft: RuleDraft = { id: null, type: 'expense', description: '', 
 // A rule may only be learned from a saved, manually categorized income or expense.
 function canLearnRuleFromItem(item: FinancialImportItem, draft: FinancialImportItemInput | undefined) {
   return item.categorizationSource === 'manual'
-    && item.type !== 'transfer'
+    && hasCategory(item.type)
     && Boolean(item.categoryId)
     && !hasDraftChanged(item, draft)
 }
@@ -155,6 +183,7 @@ function createDraft(item: FinancialImportItem): FinancialImportItemInput {
     type: item.type,
     categoryId: item.categoryId,
     subcategoryId: item.subcategoryId,
+    statementClosingDate: item.statementClosingDate ?? null,
   }
 }
 
@@ -182,6 +211,7 @@ function hasDraftChanged(item: FinancialImportItem, draft: FinancialImportItemIn
     || original.type !== draft.type
     || original.categoryId !== draft.categoryId
     || original.subcategoryId !== draft.subcategoryId
+    || (original.statementClosingDate ?? null) !== (draft.statementClosingDate ?? null)
 }
 
 export function FinancialImportsPage(props: FinancialImportsPageProps) {
@@ -220,6 +250,11 @@ function FinancialImportsWalletPage({ userEmail, isLoggingOut, onLogout }: Finan
   const [formError, setFormError] = useState('')
   const [successMessage, setSuccessMessage] = useState('')
   const [reloadKey, setReloadKey] = useState(0)
+  const [importKind, setImportKind] = useState<FinancialImportKind>('bank_statement')
+  const [creditCards, setCreditCards] = useState<CreditCard[]>([])
+  const [areCreditCardsLoading, setAreCreditCardsLoading] = useState(false)
+  const [selectedCreditCardId, setSelectedCreditCardId] = useState('')
+  const [cardAmountSign, setCardAmountSign] = useState<CardAmountSign | ''>('')
   const [pollFailureCount, setPollFailureCount] = useState(0)
   const [isPollingPaused, setIsPollingPaused] = useState(false)
 
@@ -258,6 +293,10 @@ function FinancialImportsWalletPage({ userEmail, isLoggingOut, onLogout }: Finan
         setSelectedImport(null)
         setDrafts({})
         setSelectedFile(null)
+        setImportKind('bank_statement')
+        setCreditCards([])
+        setSelectedCreditCardId('')
+        setCardAmountSign('')
         setCsvConfiguration(null)
         setDetectedCsvConfiguration(null)
         setCsvColumns([])
@@ -494,6 +533,25 @@ function FinancialImportsWalletPage({ userEmail, isLoggingOut, onLogout }: Finan
     }
   }
 
+  // Cards are loaded only when a card statement import is chosen, scoped to the active wallet.
+  async function selectImportKind(kind: FinancialImportKind) {
+    setImportKind(kind)
+    setFormError('')
+    if (kind !== 'credit_card_statement' || creditCards.length > 0) return
+    const operation = captureWalletOperation()
+    setAreCreditCardsLoading(true)
+    try {
+      const result = await creditCardsApi.list()
+      if (!isCurrentWalletOperation(operation)) return
+      setCreditCards(result.items.filter((card) => card.isActive))
+    } catch {
+      if (!isCurrentWalletOperation(operation)) return
+      setFormError('Não foi possível carregar os cartões desta carteira. Tente novamente.')
+    } finally {
+      if (isCurrentWalletOperation(operation)) setAreCreditCardsLoading(false)
+    }
+  }
+
   async function handleUpload(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     if (loadError || isSelectedImportBusy) return
@@ -507,6 +565,15 @@ function FinancialImportsWalletPage({ userEmail, isLoggingOut, onLogout }: Finan
       setFormError('Mapeie a data e o valor — ou as colunas de crédito e débito — para continuar.')
       return
     }
+    const isCardImport = importKind === 'credit_card_statement'
+    if (isCardImport && !selectedCreditCardId) {
+      setFormError('Selecione o cartão da fatura antes de enviar o arquivo.')
+      return
+    }
+    if (isCardImport && format === 'csv' && !cardAmountSign) {
+      setFormError('Informe como o CSV da fatura representa as compras.')
+      return
+    }
 
     const operation = captureWalletOperation()
     setPendingAction('upload')
@@ -518,9 +585,14 @@ function FinancialImportsWalletPage({ userEmail, isLoggingOut, onLogout }: Finan
           ? { mappingId: selectedCsvMappingId } as const
           : { configuration: csvConfiguration } as const
         : undefined
-      const session = csvMapping
-        ? await importsApi.upload(selectedFile, format, csvMapping)
-        : await importsApi.upload(selectedFile, format)
+      const card = isCardImport
+        ? { creditCardId: selectedCreditCardId, ...(format === 'csv' && cardAmountSign ? { amountSign: cardAmountSign } : {}) }
+        : undefined
+      const session = card
+        ? await importsApi.upload(selectedFile, format, csvMapping, card)
+        : csvMapping
+          ? await importsApi.upload(selectedFile, format, csvMapping)
+          : await importsApi.upload(selectedFile, format)
       if (!isCurrentWalletOperation(operation)) return
       setSelectedImport(session)
       setPollFailureCount(0)
@@ -577,15 +649,20 @@ function FinancialImportsWalletPage({ userEmail, isLoggingOut, onLogout }: Finan
     setFormError('')
     setSuccessMessage('')
     try {
+      const isCardItem = isCardSession(selectedImport!)
+      const { statementClosingDate, ...itemDraft } = draft
       const updated = await importsApi.updateItem(selectedImport!.id, item.id, {
-        ...draft,
+        ...itemDraft,
         description: draft.description.trim(),
-        categoryId: draft.type === 'transfer' ? null : draft.categoryId,
-        subcategoryId: draft.type === 'transfer' ? null : draft.subcategoryId,
+        categoryId: hasCategory(draft.type) ? draft.categoryId : null,
+        subcategoryId: hasCategory(draft.type) ? draft.subcategoryId : null,
+        ...(isCardItem ? { statementClosingDate: statementClosingDate ?? null } : {}),
         ...(includeDuplicate ? { includeDuplicate: true } : {}),
       })
+      // Statement totals are computed by the API; reload the session so they reflect the change.
+      const refreshed = isCardItem ? await importsApi.get(selectedImport!.id) : null
       if (!isCurrentWalletOperation(operation)) return
-      setSelectedImport((current) => current ? replaceSessionItem(current, updated) : current)
+      setSelectedImport((current) => refreshed ?? (current ? replaceSessionItem(current, updated) : current))
       setDrafts((current) => ({ ...current, [updated.id]: createDraft(updated) }))
       setSuccessMessage(`Movimentação ${item.sequence} atualizada na prévia.`)
     } catch (error) {
@@ -660,7 +737,7 @@ function FinancialImportsWalletPage({ userEmail, isLoggingOut, onLogout }: Finan
   }
 
   async function createRuleFromItem(item: FinancialImportItem) {
-    if (item.type === 'transfer' || !item.categoryId) return
+    if (item.type === 'transfer' || item.type === 'card_credit' || !item.categoryId) return
     const description = item.description?.trim() ?? ''
     if (!description) {
       setFormError('Informe uma descrição na movimentação antes de criar uma regra.')
@@ -851,6 +928,40 @@ function FinancialImportsWalletPage({ userEmail, isLoggingOut, onLogout }: Finan
                 <h2>Novo arquivo</h2>
                 <p>Formatos aceitos: OFX ou CSV. Limite de 10 MB e 10.000 movimentações.</p>
               </div>
+              <fieldset className="imports-kind-field" disabled={pendingAction !== null || isLoading || Boolean(loadError) || isSelectedImportBusy}>
+                <legend>Tipo de arquivo</legend>
+                <label>
+                  <input type="radio" name="financial-import-kind" value="bank_statement" checked={importKind === 'bank_statement'} onChange={() => void selectImportKind('bank_statement')} />
+                  Extrato bancário
+                </label>
+                <label>
+                  <input type="radio" name="financial-import-kind" value="credit_card_statement" checked={importKind === 'credit_card_statement'} onChange={() => void selectImportKind('credit_card_statement')} />
+                  Fatura de cartão
+                </label>
+              </fieldset>
+              {importKind === 'credit_card_statement' && (
+                <div className="imports-card-fields">
+                  <label>
+                    <span>Cartão da fatura</span>
+                    <select value={selectedCreditCardId} onChange={(event) => setSelectedCreditCardId(event.target.value)} disabled={pendingAction !== null || areCreditCardsLoading}>
+                      <option value="">{areCreditCardsLoading ? 'Carregando cartões…' : 'Selecione o cartão'}</option>
+                      {creditCards.map((card) => <option key={card.id} value={card.id}>{card.nickname}</option>)}
+                    </select>
+                  </label>
+                  {!areCreditCardsLoading && creditCards.length === 0 && <small>Cadastre um cartão ativo nesta carteira para importar a fatura.</small>}
+                  {selectedFile && getFileFormat(selectedFile.name) === 'csv' && (
+                    <label>
+                      <span>Como o CSV mostra as compras</span>
+                      <select value={cardAmountSign} onChange={(event) => setCardAmountSign(event.target.value as CardAmountSign | '')} disabled={pendingAction !== null}>
+                        <option value="">Selecione</option>
+                        <option value="purchases_positive">Compras com valor positivo</option>
+                        <option value="purchases_negative">Compras com valor negativo</option>
+                      </select>
+                    </label>
+                  )}
+                  <small>Compras entram na fatura pelo fechamento do cartão e não reduzem o saldo até o pagamento. Estornos e reembolsos abatem a fatura.</small>
+                </div>
+              )}
               <label className="imports-file-field" htmlFor="financial-import-file">
                 <span>Arquivo OFX ou CSV</span>
                 <input
@@ -889,7 +1000,7 @@ function FinancialImportsWalletPage({ userEmail, isLoggingOut, onLogout }: Finan
                   onRetryInspection={retryCsvInspection}
                 />
               )}
-              <button className="imports-primary-button" type="submit" disabled={!selectedFile || pendingAction !== null || isLoading || Boolean(loadError) || isSelectedImportBusy || (getFileFormat(selectedFile?.name ?? '') === 'csv' && !isCsvConfigurationValid(csvConfiguration, csvColumns))}>
+              <button className="imports-primary-button" type="submit" disabled={!selectedFile || pendingAction !== null || isLoading || Boolean(loadError) || isSelectedImportBusy || (getFileFormat(selectedFile?.name ?? '') === 'csv' && !isCsvConfigurationValid(csvConfiguration, csvColumns)) || (importKind === 'credit_card_statement' && (!selectedCreditCardId || (getFileFormat(selectedFile?.name ?? '') === 'csv' && !cardAmountSign)))}>
                 {pendingAction === 'upload' ? 'Enviando arquivo…' : 'Enviar e preparar prévia'}
               </button>
             </form>
@@ -946,7 +1057,7 @@ function FinancialImportsWalletPage({ userEmail, isLoggingOut, onLogout }: Finan
                             <span className={`imports-status imports-status--${session.status}`}>{getSessionStatusLabel(session)}</span>
                             <div>
                               <h3>{session.fileName}</h3>
-                              <p>{session.format.toUpperCase()} · {formatFileSize(session.fileSize)} · iniciado em {formatDateTime(session.createdAt)}</p>
+                              <p>{isCardSession(session) ? `Fatura · ${session.creditCardName ?? 'cartão'} · ` : ''}{session.format.toUpperCase()} · {formatFileSize(session.fileSize)} · iniciado em {formatDateTime(session.createdAt)}</p>
                             </div>
                           </div>
                           <div className="imports-history-summary">
@@ -1143,13 +1254,18 @@ function ImportPreview({
   const currentPage = Math.min(requestedPage, pageCount)
   const firstVisibleIndex = (currentPage - 1) * importItemsPerPage
   const visibleItems = items.slice(firstVisibleIndex, firstVisibleIndex + importItemsPerPage)
+  const isCard = isCardSession(session)
+  const closingDay = session.creditCardClosingDay ?? null
+  const dueDay = session.creditCardDueDay ?? null
+  const typeOptions = isCard ? cardTypeOptions : bankTypeOptions
+  const labelForType = (type: FinancialImportItemType) => (isCard ? cardTypeLabels[type] : undefined) ?? typeLabels[type]
   return (
     <section className="imports-preview" aria-labelledby="imports-preview-title">
       <div className="imports-section-heading">
         <div>
           <p className="imports-eyebrow">REVISÃO OBRIGATÓRIA</p>
           <h2 id="imports-preview-title">{session.fileName}</h2>
-          <p>{session.format.toUpperCase()} · {formatFileSize(session.fileSize)} · {getSessionStatusLabel(session)}</p>
+          <p>{isCard ? `Fatura do cartão ${session.creditCardName ?? ''} · ` : ''}{session.format.toUpperCase()} · {formatFileSize(session.fileSize)} · {getSessionStatusLabel(session)}</p>
         </div>
         <span className={`imports-status imports-status--${session.status}`}>{getSessionStatusLabel(session)}</span>
       </div>
@@ -1162,6 +1278,30 @@ function ImportPreview({
         <div><dt>Sem categoria</dt><dd>{session.summary.uncategorized}</dd></div>
         <div><dt>Importadas</dt><dd>{session.summary.imported}</dd></div>
       </dl>
+
+      {isCard && (session.statements?.length ?? 0) > 0 && (
+        <div className="imports-statements">
+          <h3>Faturas calculadas</h3>
+          <table aria-label="Faturas calculadas">
+            <thead>
+              <tr><th scope="col">Fatura</th><th scope="col">Compras</th><th scope="col">Estornos e créditos</th><th scope="col">Total</th></tr>
+            </thead>
+            <tbody>
+              {session.statements!.map((statement) => (
+                <tr key={statement.closingDate}>
+                  <th scope="row">
+                    Fecha {formatIsoDate(statement.closingDate)} · vence {formatIsoDate(statement.dueDate)}
+                    {statement.isPaid && <span className="imports-statement-paid"> · já paga</span>}
+                  </th>
+                  <td>{formatBrazilianCurrency(statement.purchasesAmount)}</td>
+                  <td>{formatBrazilianCurrency(statement.creditsAmount)}</td>
+                  <td>{formatBrazilianCurrency(statement.totalAmount)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
 
       {session.status === 'failed' && session.failureMessage && (
         <p className="imports-alert imports-alert--error" role="alert">{session.failureMessage}</p>
@@ -1200,6 +1340,7 @@ function ImportPreview({
           {visibleItems.map((item) => {
             const draft = drafts[item.id] ?? createDraft(item)
             const categories = draft.type === 'income' ? incomeCategories : draft.type === 'expense' ? expenseCategories : []
+            const canChooseStatement = isCard && closingDay !== null && dueDay !== null && draft.type !== 'transfer' && isValidIsoDate(draft.date)
             const selectedCategory = categories.find((category) => category.id === draft.categoryId)
             const isEditable = session.status === 'preview' && item.canEdit
             const isSavingItem = pendingAction === `item:${item.id}`
@@ -1218,7 +1359,7 @@ function ImportPreview({
                 <div className="imports-item-grid">
                   <label>
                     Data
-                    <input type="date" value={draft.date} onChange={(event) => onDraftChange(item.id, { date: event.target.value })} disabled={areItemControlsDisabled} />
+                    <input type="date" value={draft.date} onChange={(event) => onDraftChange(item.id, isCard ? { date: event.target.value, statementClosingDate: null } : { date: event.target.value })} disabled={areItemControlsDisabled} />
                   </label>
                   <label>
                     Tipo
@@ -1227,14 +1368,30 @@ function ImportPreview({
                       onChange={(event) => onDraftChange(item.id, { type: event.target.value as FinancialImportItemType, categoryId: null, subcategoryId: null })}
                       disabled={areItemControlsDisabled}
                     >
-                      {Object.entries(typeLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+                      {typeOptions.map((type) => <option key={type} value={type}>{labelForType(type)}</option>)}
                     </select>
                   </label>
+                  {canChooseStatement && (
+                    <label>
+                      Fatura
+                      <select
+                        value={draft.statementClosingDate ?? calculateClosingDate(draft.date, closingDay!)}
+                        onChange={(event) => onDraftChange(item.id, { statementClosingDate: event.target.value })}
+                        disabled={areItemControlsDisabled}
+                      >
+                        {adjacentClosingDates(draft.date, closingDay!).map((closingDate) => (
+                          <option key={closingDate} value={closingDate}>
+                            Fecha {formatIsoDate(closingDate)} · vence {formatIsoDate(calculateDueDate(closingDate, closingDay!, dueDay!))}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  )}
                   <label className="imports-item-description">
                     Descrição
                     <input type="text" maxLength={500} value={draft.description} onChange={(event) => onDraftChange(item.id, { description: event.target.value })} disabled={areItemControlsDisabled} />
                   </label>
-                  {draft.type !== 'transfer' && (
+                  {hasCategory(draft.type) && (
                     <>
                       <label>
                         Categoria

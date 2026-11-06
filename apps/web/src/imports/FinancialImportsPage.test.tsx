@@ -7,6 +7,7 @@ import { walletApi } from '../wallets/walletApi'
 import { FinancialImportsPage } from './FinancialImportsPage'
 import type { CsvImportConfiguration, CsvInspection, CsvMappingTemplate, FinancialImportItem, FinancialImportSession } from './importsApi'
 import { FinancialImportApiError, importsApi } from './importsApi'
+import { creditCardsApi } from '../creditCards/creditCardsApi'
 
 function deferred<T>() {
   let resolve!: (value: T) => void
@@ -1012,4 +1013,124 @@ describe('FinancialImportsPage', () => {
     await waitFor(() => expect(deleteRule).toHaveBeenCalledWith('rule-stale'))
     await waitFor(() => expect(within(rules).queryByText('Padaria')).not.toBeInTheDocument())
   })
+describe('credit card statements', () => {
+    const cardPreview: FinancialImportSession = {
+      ...previewSession,
+      id: 'card-import-1',
+      fileName: 'fatura.ofx',
+      kind: 'credit_card_statement',
+      creditCardId: 'card-1',
+      creditCardName: 'Principal',
+      creditCardClosingDay: 10,
+      creditCardDueDay: 20,
+      summary: { total: 3, valid: 2, duplicate: 0, invalid: 0, uncategorized: 1, imported: 0 },
+      statements: [
+        { closingDate: '2026-11-10', dueDate: '2026-11-20', purchasesAmount: '50.25', creditsAmount: '20.25', totalAmount: '30.00', isPaid: false },
+      ],
+      items: [
+        {
+          id: 'card-item-1', sequence: 1, date: '2026-10-11', description: 'LIVRARIA', amount: '50.25', type: 'expense',
+          categoryId: 'expense-category', subcategoryId: null, validationStatus: 'valid', errorMessage: null, canEdit: true,
+          statementClosingDate: '2026-11-10', statementDueDate: '2026-11-20',
+        },
+        {
+          id: 'card-item-2', sequence: 2, date: '2026-10-12', description: 'Estorno de LIVRARIA', amount: '20.25', type: 'card_credit',
+          categoryId: null, subcategoryId: null, validationStatus: 'valid', errorMessage: null, canEdit: true,
+          statementClosingDate: '2026-11-10', statementDueDate: '2026-11-20',
+        },
+        {
+          id: 'card-item-3', sequence: 3, date: '2026-10-15', description: 'Pagamento recebido', amount: '500.00', type: 'transfer',
+          categoryId: null, subcategoryId: null, validationStatus: 'uncategorized',
+          errorMessage: 'Pagamento da fatura: ele é conciliado com o extrato bancário e não é importado como estorno.', canEdit: true,
+          statementClosingDate: '2026-11-10', statementDueDate: '2026-11-20',
+        },
+      ],
+    }
+
+    beforeEach(() => {
+      vi.spyOn(creditCardsApi, 'list').mockResolvedValue({ items: [
+        { id: 'card-1', nickname: 'Principal', closingDay: 10, dueDay: 20, isActive: true },
+        { id: 'card-old', nickname: 'Antigo', closingDay: 5, dueDay: 15, isActive: false },
+      ] })
+    })
+
+    it('requires an active card of the wallet before uploading a card OFX statement', async () => {
+      const user = userEvent.setup()
+      await renderPage()
+      await user.click(screen.getByRole('radio', { name: 'Fatura de cartão' }))
+      const cardSelect = await screen.findByRole('combobox', { name: 'Cartão da fatura' })
+      await waitFor(() => expect(within(cardSelect).getByRole('option', { name: 'Principal' })).toBeInTheDocument())
+      expect(within(cardSelect).queryByRole('option', { name: 'Antigo' })).not.toBeInTheDocument()
+      const file = new File(['OFXDATA'], 'fatura.ofx', { type: 'application/x-ofx' })
+      await user.upload(screen.getByLabelText('Arquivo OFX ou CSV'), file)
+      expect(screen.getByRole('button', { name: 'Enviar e preparar prévia' })).toBeDisabled()
+
+      await user.selectOptions(cardSelect, 'card-1')
+      await user.click(screen.getByRole('button', { name: 'Enviar e preparar prévia' }))
+      await waitFor(() => expect(importsApi.upload).toHaveBeenCalledWith(file, 'ofx', undefined, { creditCardId: 'card-1' }))
+    })
+
+    it('asks how a card CSV signs purchases and sends that choice', async () => {
+      const user = userEvent.setup()
+      await renderPage()
+      await user.click(screen.getByRole('radio', { name: 'Fatura de cartão' }))
+      await user.selectOptions(await screen.findByRole('combobox', { name: 'Cartão da fatura' }), 'card-1')
+      const file = new File(['Data;Histórico;Valor\n23/10/2026;Mercado;120,50'], 'fatura.csv', { type: 'text/csv' })
+      await user.upload(screen.getByLabelText('Arquivo OFX ou CSV'), file)
+      const sign = await screen.findByRole('combobox', { name: 'Como o CSV mostra as compras' })
+      await waitFor(() => expect(importsApi.inspectCsv).toHaveBeenCalled())
+      expect(screen.getByRole('button', { name: 'Enviar e preparar prévia' })).toBeDisabled()
+
+      await user.selectOptions(sign, 'purchases_positive')
+      await user.click(screen.getByRole('button', { name: 'Enviar e preparar prévia' }))
+      await waitFor(() => expect(importsApi.upload).toHaveBeenCalledWith(
+        file,
+        'csv',
+        expect.objectContaining({ configuration: expect.any(Object) }),
+        { creditCardId: 'card-1', amountSign: 'purchases_positive' },
+      ))
+    })
+
+    it('shows calculated statements and lets a purchase move to a neighbouring statement', async () => {
+      const user = userEvent.setup()
+      vi.spyOn(importsApi, 'upload').mockResolvedValue(cardPreview)
+      vi.spyOn(importsApi, 'get').mockResolvedValue(cardPreview)
+      vi.spyOn(importsApi, 'updateItem').mockImplementation(async (_importId, itemId, input) => ({
+        ...cardPreview.items!.find((item) => item.id === itemId)!,
+        ...input,
+      }))
+      await renderPage()
+      await user.click(screen.getByRole('radio', { name: 'Fatura de cartão' }))
+      await user.selectOptions(await screen.findByRole('combobox', { name: 'Cartão da fatura' }), 'card-1')
+      await user.upload(screen.getByLabelText('Arquivo OFX ou CSV'), new File(['OFXDATA'], 'fatura.ofx', { type: 'application/x-ofx' }))
+      await user.click(screen.getByRole('button', { name: 'Enviar e preparar prévia' }))
+
+      const statements = await screen.findByRole('table', { name: 'Faturas calculadas' })
+      expect(within(statements).getByRole('rowheader', { name: /Fecha 10\/11\/2026 · vence 20\/11\/2026/ })).toBeVisible()
+      expect(within(statements).getByText('R$ 30,00')).toBeVisible()
+
+      const purchase = screen.getByText('Movimentação 1').closest('li')!
+      const typeSelect = within(purchase).getByRole('combobox', { name: 'Tipo' })
+      expect(within(typeSelect).getAllByRole('option').map((option) => option.textContent)).toEqual(['Compra', 'Estorno/crédito na fatura', 'Pagamento da fatura'])
+      const credit = screen.getByText('Movimentação 2').closest('li')!
+      expect(within(credit).queryByRole('combobox', { name: 'Categoria' })).not.toBeInTheDocument()
+      const payment = screen.getByText('Movimentação 3').closest('li')!
+      expect(within(payment).queryByRole('combobox', { name: 'Fatura' })).not.toBeInTheDocument()
+
+      const statementSelect = within(purchase).getByRole('combobox', { name: 'Fatura' })
+      expect(within(statementSelect).getAllByRole('option').map((option) => option.textContent)).toEqual([
+        'Fecha 10/10/2026 · vence 20/10/2026',
+        'Fecha 10/11/2026 · vence 20/11/2026',
+        'Fecha 10/12/2026 · vence 20/12/2026',
+      ])
+      await user.selectOptions(statementSelect, '2026-12-10')
+      await user.click(within(purchase).getByRole('button', { name: 'Salvar ajuste' }))
+      await waitFor(() => expect(importsApi.updateItem).toHaveBeenCalledWith('card-import-1', 'card-item-1', expect.objectContaining({
+        type: 'expense',
+        statementClosingDate: '2026-12-10',
+      })))
+      await waitFor(() => expect(importsApi.get).toHaveBeenCalledWith('card-import-1'))
+    })
+  })
 })
+

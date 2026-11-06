@@ -2,7 +2,10 @@ import { withActiveWallet } from '../wallets/walletApi'
 
 export type FinancialImportFormat = 'ofx' | 'csv'
 export type FinancialImportStatus = 'processing' | 'preview' | 'confirming' | 'completed' | 'failed' | 'undone'
-export type FinancialImportItemType = 'income' | 'expense' | 'transfer'
+export type FinancialImportItemType = 'income' | 'expense' | 'transfer' | 'card_credit'
+export type FinancialImportKind = 'bank_statement' | 'credit_card_statement'
+export type CardAmountSign = 'purchases_negative' | 'purchases_positive'
+export type CardStatementUpload = { creditCardId: string; amountSign?: CardAmountSign }
 export type FinancialImportItemStatus = 'valid' | 'duplicate' | 'invalid' | 'uncategorized' | 'imported'
 export type FinancialCategorizationRuleType = 'income' | 'expense'
 
@@ -71,6 +74,17 @@ export type FinancialImportItem = {
   canEdit: boolean
   canIncludeDuplicate?: boolean
   categorizationSource?: 'rule' | 'manual' | null
+  statementClosingDate?: string | null
+  statementDueDate?: string | null
+}
+
+export type FinancialImportStatementPreview = {
+  closingDate: string
+  dueDate: string
+  purchasesAmount: string
+  creditsAmount: string
+  totalAmount: string
+  isPaid: boolean
 }
 
 export type FinancialCategorizationRule = {
@@ -98,6 +112,12 @@ export type FinancialCategorizationRuleInput = {
 export type FinancialImportSession = {
   id: string
   format: FinancialImportFormat
+  kind?: FinancialImportKind
+  creditCardId?: string | null
+  creditCardName?: string | null
+  creditCardClosingDay?: number | null
+  creditCardDueDay?: number | null
+  statements?: FinancialImportStatementPreview[]
   fileName: string
   fileSize: number
   status: FinancialImportStatus
@@ -119,6 +139,7 @@ export type FinancialImportItemInput = {
   categoryId: string | null
   subcategoryId: string | null
   includeDuplicate?: boolean
+  statementClosingDate?: string | null
 }
 
 type FinancialImportListResponse = { items: FinancialImportSession[] }
@@ -184,12 +205,18 @@ export const importsApi = {
     return request<FinancialImportSession>(importPath(importId), { signal })
   },
 
-  upload(file: File, format: FinancialImportFormat, csvMapping?: CsvUploadMapping) {
+  upload(file: File, format: FinancialImportFormat, csvMapping?: CsvUploadMapping, card?: CardStatementUpload) {
     const csvHeaders: Record<string, string> = !csvMapping
       ? {}
       : 'mappingId' in csvMapping
         ? { 'X-Csv-Mapping-Id': csvMapping.mappingId }
         : { 'X-Csv-Mapping': encodeURIComponent(JSON.stringify(csvMapping.configuration)) }
+    const cardHeaders: Record<string, string> = !card
+      ? {}
+      : {
+          'X-Credit-Card-Id': card.creditCardId,
+          ...(card.amountSign ? { 'X-Card-Amount-Sign': card.amountSign } : {}),
+        }
     return request<FinancialImportSession>('/financial-imports', {
       method: 'POST',
       body: file,
@@ -198,6 +225,7 @@ export const importsApi = {
         'X-File-Name': encodeURIComponent(file.name),
         'X-File-Format': format,
         ...csvHeaders,
+        ...cardHeaders,
       },
     })
   },
