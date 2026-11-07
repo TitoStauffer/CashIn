@@ -95,7 +95,14 @@ const VAULT_CURRENT_STATE = 'docs/knowledge/current-state.md';
 const VAULT_CONTEXT_MAP = 'docs/knowledge/context-map.json';
 const MAX_VAULT_ITEMS = 160;
 const MAX_VAULT_BYTES = 650_000;
-const MAX_SINGLE_RESPONSE_BYTES = 100_000;
+// Ceiling for every response this loader reads: a cited local source and the GitHub review evidence
+// alike. The /contents response carries the file as base64, a third larger than it, plus GitHub's
+// metadata, so 100 KB left an effective source ceiling of about 73 KB — below files that already
+// exist in this repository, and the read failed, taking the whole review down with it. At 400 KB the
+// effective source ceiling is about 300 KB, and the guard still aborts a response large enough to
+// amplify memory. The aggregate budget (MAX_VAULT_ITEMS and MAX_VAULT_BYTES) did not change, so a
+// large source eats into the other notes' room instead of growing the context.
+const MAX_SINGLE_RESPONSE_BYTES = 400_000;
 
 export async function loadVaultContext(
   fetchImpl: typeof fetch,
