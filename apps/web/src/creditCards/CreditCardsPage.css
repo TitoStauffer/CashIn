@@ -93,3 +93,7 @@
 /* Credits reduce the statement, so they are not shown in the same colour as purchases. */
 .statement-credits-title { margin: 14px 19px 0; color: #405b49; font-size: 10px; font-weight: 650; text-transform: uppercase; letter-spacing: 0.04em; }
 .statement-credits b { color: #35734b; }
+
+/* Payments reduce the statement, like credits, so they share their colour and not the purchases'. */
+.statement-payments b { color: #35734b; }
+.statement-card__total small { color: #68786d; font-size: 9px; font-weight: 500; white-space: nowrap; }

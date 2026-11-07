@@ -76,6 +76,20 @@ export type FinancialImportItem = {
   categorizationSource?: 'rule' | 'manual' | null
   statementClosingDate?: string | null
   statementDueDate?: string | null
+  // Bank statement imports only: the statement this payment settles, and the open statements it
+  // could settle. An ambiguous match is never reconciled automatically.
+  creditCardStatementId?: string | null
+  statementCandidates?: BankPaymentCandidate[]
+}
+
+// An open statement a bank payment may be reconciled with.
+export type BankPaymentCandidate = {
+  statementId: string
+  creditCardId: string
+  creditCardName: string
+  closingDate: string
+  dueDate: string
+  outstandingAmount: string
 }
 
 export type FinancialImportStatementPreview = {
@@ -140,6 +154,7 @@ export type FinancialImportItemInput = {
   subcategoryId: string | null
   includeDuplicate?: boolean
   statementClosingDate?: string | null
+  creditCardStatementId?: string | null
 }
 
 type FinancialImportListResponse = { items: FinancialImportSession[] }
