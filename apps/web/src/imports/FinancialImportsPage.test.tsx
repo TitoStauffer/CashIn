@@ -487,6 +487,7 @@ describe('FinancialImportsPage', () => {
       type: 'income',
       categoryId: 'income-category',
       subcategoryId: 'income-subcategory',
+      creditCardStatementId: null,
     }))
     expect(within(firstItem).queryByRole('combobox', { name: 'Fatura' })).not.toBeInTheDocument()
     const confirmButton = screen.getByRole('button', { name: 'Confirmar 2 movimentações' })
@@ -1180,7 +1181,7 @@ describe('FinancialImportsPage', () => {
       const purchase = (await screen.findByText('Movimentação 1')).closest('li')!
       await user.click(within(purchase).getByRole('button', { name: 'Salvar ajuste' }))
 
-      expect(await screen.findByText(/foi salva, mas os totais das faturas não puderam ser atualizados/)).toBeVisible()
+      expect(await screen.findByText(/foi salva, mas os dados das faturas não puderam ser atualizados/)).toBeVisible()
       expect(screen.queryByText('Não foi possível atualizar a movimentação.')).not.toBeInTheDocument()
       expect(screen.getByText(/Movimentação 1 atualizada na prévia/)).toBeVisible()
     })
@@ -1249,6 +1250,101 @@ describe('FinancialImportsPage', () => {
         subcategoryId: null,
         statementClosingDate: null,
       }))
+    })
+  })
+  describe('card payments found in a bank statement', () => {
+    const candidates = [
+      { statementId: 'statement-principal', creditCardId: 'card-1', creditCardName: 'Principal', closingDate: '2026-10-10', dueDate: '2026-10-20', outstandingAmount: '400.00' },
+      { statementId: 'statement-extra', creditCardId: 'card-2', creditCardName: 'Secundário', closingDate: '2026-10-12', dueDate: '2026-10-22', outstandingAmount: '250.00' },
+    ]
+    const paymentItem: FinancialImportItem = {
+      id: 'payment-1', sequence: 1, date: '2026-10-20', description: 'PAGAMENTO CARTAO', amount: '-400.00',
+      type: 'transfer', categoryId: null, subcategoryId: null, validationStatus: 'uncategorized',
+      errorMessage: 'Selecione a fatura que este pagamento liquida para incluí-lo na importação.',
+      canEdit: true, creditCardStatementId: null, statementCandidates: candidates,
+    }
+    const paymentSession: FinancialImportSession = {
+      ...previewSession,
+      summary: { total: 1, valid: 0, duplicate: 0, invalid: 0, uncategorized: 1, imported: 0 },
+      items: [paymentItem],
+    }
+
+    function mockPaymentSession(session: FinancialImportSession) {
+      vi.mocked(importsApi.list).mockResolvedValueOnce({ items: [{ ...session, items: undefined }] })
+      vi.mocked(importsApi.get).mockResolvedValue(session)
+      vi.mocked(importsApi.updateItem).mockImplementation(async (_importId, _itemId, input) => ({
+        ...session.items![0],
+        ...input,
+        validationStatus: input.creditCardStatementId ? 'valid' : 'uncategorized',
+      }))
+    }
+
+    it('lets the user pick which statement an ambiguous payment settles', async () => {
+      mockPaymentSession(paymentSession)
+      const user = userEvent.setup()
+      await renderPage()
+      await user.click(await screen.findByRole('button', { name: 'Ver detalhes' }))
+
+      const payment = (await screen.findByText('Movimentação 1')).closest('li') as HTMLElement
+      expect(within(payment).getByText(/Selecione a fatura que este pagamento liquida/)).toBeVisible()
+      const statementField = within(payment).getByRole('combobox', { name: 'Fatura paga' })
+      // Every candidate is offered with the card, the due date and what is still owed, so the choice
+      // does not depend on remembering which statement is which.
+      expect(Array.from(statementField.querySelectorAll('option')).map((option) => option.textContent)).toEqual([
+        'Selecione a fatura',
+        'Principal · vence 20/10/2026 · falta R$ 400,00',
+        'Secundário · vence 22/10/2026 · falta R$ 250,00',
+      ])
+
+      await user.selectOptions(statementField, 'statement-principal')
+      await user.click(within(payment).getByRole('button', { name: 'Salvar ajuste' }))
+
+      await waitFor(() => expect(importsApi.updateItem).toHaveBeenCalledWith('import-1', 'payment-1', {
+        date: '2026-10-20',
+        description: 'PAGAMENTO CARTAO',
+        type: 'transfer',
+        categoryId: null,
+        subcategoryId: null,
+        creditCardStatementId: 'statement-principal',
+      }))
+      // The item response carries no candidate list, so the session is read again to keep the choice
+      // and the remaining candidates on screen.
+      await waitFor(() => expect(importsApi.get).toHaveBeenCalledTimes(2))
+      expect(await screen.findByText(/Movimentação 1 atualizada na prévia/)).toBeVisible()
+    })
+
+    it('undoes the reconciliation when the payment becomes another type', async () => {
+      mockPaymentSession({
+        ...paymentSession,
+        items: [{ ...paymentItem, validationStatus: 'valid', errorMessage: null, creditCardStatementId: 'statement-principal' }],
+      })
+      const user = userEvent.setup()
+      await renderPage()
+      await user.click(await screen.findByRole('button', { name: 'Ver detalhes' }))
+
+      const payment = (await screen.findByText('Movimentação 1')).closest('li') as HTMLElement
+      await user.selectOptions(within(payment).getByRole('combobox', { name: 'Tipo' }), 'expense')
+      expect(within(payment).queryByRole('combobox', { name: 'Fatura paga' })).not.toBeInTheDocument()
+      await user.click(within(payment).getByRole('button', { name: 'Salvar ajuste' }))
+
+      await waitFor(() => expect(importsApi.updateItem).toHaveBeenCalledWith('import-1', 'payment-1', expect.objectContaining({
+        type: 'expense',
+        creditCardStatementId: null,
+      })))
+    })
+
+    it('explains that there is no open statement to settle instead of offering an empty list', async () => {
+      mockPaymentSession({
+        ...paymentSession,
+        items: [{ ...paymentItem, statementCandidates: [], errorMessage: 'Nenhuma fatura em aberto corresponde a este pagamento. Escolha outro tipo ou deixe-o fora da importação.' }],
+      })
+      const user = userEvent.setup()
+      await renderPage()
+      await user.click(await screen.findByRole('button', { name: 'Ver detalhes' }))
+
+      const payment = (await screen.findByText('Movimentação 1')).closest('li') as HTMLElement
+      expect(within(payment).queryByRole('combobox', { name: 'Fatura paga' })).not.toBeInTheDocument()
+      expect(within(payment).getByText(/Nenhuma fatura em aberto corresponde a esta saída/)).toBeVisible()
     })
   })
 })

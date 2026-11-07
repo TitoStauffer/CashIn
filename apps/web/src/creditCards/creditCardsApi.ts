@@ -32,6 +32,17 @@ export type CreditCardStatementCredit = {
   originalExpenseId: string | null
 }
 
+// A statement may be paid in full or in parts, and a payment may come from a reconciled bank
+// statement line.
+export type CreditCardStatementPaymentSource = 'manual' | 'bank_statement'
+
+export type CreditCardStatementPayment = {
+  id: string
+  amount: string
+  date: string
+  source: CreditCardStatementPaymentSource
+}
+
 export type CreditCardStatement = {
   id: string
   creditCardId: string
@@ -44,8 +55,12 @@ export type CreditCardStatement = {
   creditsAmount?: string
   // Purchases minus credits.
   totalAmount: string
+  paymentsAmount?: string
+  // Total minus payments; never negative, so an overpayment reads as settled instead of as debt.
+  outstandingAmount?: string
   purchases: CreditCardPurchase[]
   credits?: CreditCardStatementCredit[]
+  payments?: CreditCardStatementPayment[]
 }
 
 type ErrorResponse = { message?: string }
@@ -101,10 +116,11 @@ export const creditCardsApi = {
     return request<{ items: CreditCardStatement[] }>(`${cardPath(cardId)}/statements?${query}`, { signal })
   },
 
-  payStatement(cardId: string, statementId: string, date: string) {
+  // Without an amount the payment settles the outstanding balance in full.
+  payStatement(cardId: string, statementId: string, date: string, amount?: string) {
     return request<CreditCardStatement>(`${cardPath(cardId)}/statements/${encodeURIComponent(statementId)}/pay`, {
       method: 'POST',
-      body: JSON.stringify({ date }),
+      body: JSON.stringify(amount ? { date, amount } : { date }),
     })
   },
 }

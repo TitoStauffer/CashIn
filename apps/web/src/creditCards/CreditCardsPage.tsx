@@ -7,7 +7,7 @@ import { formatMonth, getCurrentMonth, getMonthRange } from '../period/month'
 import { MonthYearSelector } from '../period/MonthYearSelector'
 import { useWallet } from '../wallets/useWallet'
 import { creditCardsApi } from './creditCardsApi'
-import type { CreditCard, CreditCardInput, CreditCardStatement } from './creditCardsApi'
+import type { CreditCard, CreditCardInput, CreditCardStatement, CreditCardStatementPaymentSource } from './creditCardsApi'
 import './CreditCardsPage.css'
 
 type EditorState = { id: string | null; nickname: string; closingDay: string; dueDay: string }
@@ -32,8 +32,39 @@ function getErrorMessage(error: unknown, action: 'load' | 'save' | 'pay') {
 }
 
 // The API sends decimal strings with two places; only the sign matters here, so no money arithmetic is done.
+// What is left to pay is the outstanding balance, which already discounts the payments; an older API
+// without it falls back to the statement total.
+function amountDue(statement: CreditCardStatement) {
+  return statement.outstandingAmount ?? statement.totalAmount
+}
+
 function hasAmountDue(statement: CreditCardStatement) {
-  return Number(statement.totalAmount) > 0
+  return Number(amountDue(statement)) > 0
+}
+
+function hasPayments(statement: CreditCardStatement) {
+  return Number(statement.paymentsAmount ?? '0') > 0
+}
+
+const paymentSourceLabels: Record<CreditCardStatementPaymentSource, string> = {
+  manual: 'registrado aqui',
+  bank_statement: 'conciliado do extrato',
+}
+
+// A value typed by the user, as the API accepts it: digits with an optional two-place decimal part.
+const paymentAmountPattern = /^\d{1,12}([.,]\d{1,2})?$/
+
+function normalizePaymentAmount(value: string) {
+  const trimmed = value.trim()
+  if (!trimmed) return { amount: undefined as string | undefined, error: '' }
+  if (!paymentAmountPattern.test(trimmed)) {
+    return { amount: undefined, error: 'Informe um valor válido, com até duas casas decimais, ou deixe em branco para pagar a fatura integral.' }
+  }
+  const amount = trimmed.replace(',', '.')
+  if (Number(amount) <= 0) {
+    return { amount: undefined, error: 'O valor do pagamento deve ser maior que zero.' }
+  }
+  return { amount, error: '' }
 }
 
 function today() {
@@ -49,6 +80,7 @@ export function CreditCardsPage({ userEmail, isLoggingOut, onLogout }: { userEma
   const [month, setMonth] = useState(getCurrentMonth)
   const [editor, setEditor] = useState<EditorState | null>(null)
   const [paymentDates, setPaymentDates] = useState<Record<string, string>>({})
+  const [paymentAmounts, setPaymentAmounts] = useState<Record<string, string>>({})
   const [isLoading, setIsLoading] = useState(true)
   const [loadedWalletId, setLoadedWalletId] = useState<string | null>(null)
   const lastLoadedWalletId = useRef<string | null>(null)
@@ -174,13 +206,27 @@ export function CreditCardsPage({ userEmail, isLoggingOut, onLogout }: { userEma
 
   async function payStatement(statement: CreditCardStatement) {
     const date = paymentDates[statement.id] || today()
+    const { amount, error: amountError } = normalizePaymentAmount(paymentAmounts[statement.id] ?? '')
+    if (amountError) {
+      setMessage('')
+      setError(amountError)
+      return
+    }
     setPendingAction('pay')
     setError('')
     setMessage('')
     try {
-      const updated = await creditCardsApi.payStatement(statement.creditCardId, statement.id, date)
+      const updated = await creditCardsApi.payStatement(statement.creditCardId, statement.id, date, amount)
       setStatements((current) => current.map((item) => item.id === updated.id ? updated : item))
-      setMessage(`Fatura paga em ${formatDate(updated.paidDate ?? date)}.`)
+      setPaymentAmounts((current) => ({ ...current, [statement.id]: '' }))
+      // A partial payment does not settle the statement, so the message says what really happened.
+      // paidAmount only exists once the statement is settled, which is what tells the two apart even
+      // if the response omits the settlement date.
+      setMessage(updated.paidDate || updated.paidAmount
+        ? `Fatura paga em ${formatDate(updated.paidDate ?? date)}.`
+        : amount
+          ? `Pagamento de ${formatBrazilianCurrency(amount)} registrado em ${formatDate(date)}. Falta ${formatBrazilianCurrency(amountDue(updated))}.`
+          : `Pagamento registrado em ${formatDate(date)}. Falta ${formatBrazilianCurrency(amountDue(updated))}.`)
     } catch (cause) {
       setError(getErrorMessage(cause, 'pay'))
     } finally {
@@ -280,7 +326,9 @@ export function CreditCardsPage({ userEmail, isLoggingOut, onLogout }: { userEma
               </div> : <div className="statement-list">{statements.map((statement) => <article className="statement-card" key={statement.id}>
                 <header className="statement-card__header">
                   <div><h3>Fatura de {statement.creditCardName}</h3><p>Fechamento {formatDate(statement.closingDate)} <span aria-hidden="true">·</span> vencimento {formatDate(statement.dueDate)}</p></div>
-                  <div className="statement-card__total"><span>Total da fatura</span><strong>{formatBrazilianCurrency(statement.totalAmount)}</strong></div>
+                  <div className="statement-card__total"><span>Total da fatura</span><strong>{formatBrazilianCurrency(statement.totalAmount)}</strong>
+                    {hasPayments(statement) && !statement.paidDate && <small>Falta {formatBrazilianCurrency(amountDue(statement))}</small>}
+                  </div>
                 </header>
                 <ul className="statement-purchases">{statement.purchases.map((purchase) => <li key={purchase.id}>
                   <div><strong>{purchase.description?.trim() || purchase.categoryName}</strong><small>{formatDate(purchase.date)} · {purchase.categoryName}{purchase.subcategoryName ? ` / ${purchase.subcategoryName}` : ''}</small></div>
@@ -293,12 +341,20 @@ export function CreditCardsPage({ userEmail, isLoggingOut, onLogout }: { userEma
                     <b>− {formatBrazilianCurrency(credit.amount)}</b>
                   </li>)}</ul>
                 </>}
+                {(statement.payments?.length ?? 0) > 0 && <>
+                  <h4 className="statement-credits-title">Pagamentos</h4>
+                  <ul className="statement-purchases statement-payments">{statement.payments!.map((payment) => <li key={payment.id}>
+                    <div><strong>Pagamento {paymentSourceLabels[payment.source]}</strong><small>{formatDate(payment.date)}</small></div>
+                    <b>{formatBrazilianCurrency(payment.amount)}</b>
+                  </li>)}</ul>
+                </>}
                 <footer className="statement-card__footer">
                   {statement.paidDate ? <p className="statement-paid">Paga em {formatDate(statement.paidDate)} · {displayMoney(statement.paidAmount)}</p> : <>
                     <label>Data do pagamento <input type="date" value={paymentDates[statement.id] ?? today()} onChange={(event) => setPaymentDates((current) => ({ ...current, [statement.id]: event.target.value }))} /></label>
-                    <button type="button" className="credit-cards-primary" onClick={() => void payStatement(statement)} disabled={isSaving || statement.purchases.length === 0 || !hasAmountDue(statement)} aria-describedby={statement.purchases.length === 0 || !hasAmountDue(statement) ? `statement-payment-hint-${statement.id}` : undefined}>Pagar fatura integral</button>
+                    <label>Valor do pagamento <input type="text" inputMode="decimal" placeholder={`Integral (${formatBrazilianCurrency(amountDue(statement))})`} value={paymentAmounts[statement.id] ?? ''} onChange={(event) => setPaymentAmounts((current) => ({ ...current, [statement.id]: event.target.value }))} /></label>
+                    <button type="button" className="credit-cards-primary" onClick={() => void payStatement(statement)} disabled={isSaving || statement.purchases.length === 0 || !hasAmountDue(statement)} aria-describedby={statement.purchases.length === 0 || !hasAmountDue(statement) ? `statement-payment-hint-${statement.id}` : undefined}>{(paymentAmounts[statement.id] ?? '').trim() ? 'Pagar valor informado' : 'Pagar fatura integral'}</button>
                     {statement.purchases.length === 0 && <p id={`statement-payment-hint-${statement.id}`} className="statement-period">Esta fatura não possui compras para pagar. Registre uma despesa vinculada ao cartão para gerar uma fatura com valor.</p>}
-                    {statement.purchases.length > 0 && !hasAmountDue(statement) && <p id={`statement-payment-hint-${statement.id}`} className="statement-period">Os estornos e créditos cobrem as compras desta fatura: não há saldo a pagar.</p>}
+                    {statement.purchases.length > 0 && !hasAmountDue(statement) && <p id={`statement-payment-hint-${statement.id}`} className="statement-period">{hasPayments(statement) ? 'Os pagamentos registrados cobrem o total desta fatura: não há saldo a pagar.' : 'Os estornos e créditos cobrem as compras desta fatura: não há saldo a pagar.'}</p>}
                   </>}
                 </footer>
               </article>)}</div>}

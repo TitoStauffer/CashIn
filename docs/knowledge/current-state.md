@@ -1,6 +1,6 @@
 # Estado atual do projeto
 
-**Status:** atualizado pela DEV-85
+**Status:** atualizado pela DEV-57
 **Última revisão:** 07/11/2026
 **Ticket de criação:** [DEV-64](https://titostauffer.atlassian.net/browse/DEV-64)
 
@@ -33,7 +33,7 @@ O fluxo ativo executa validação de título, API, Web, ferramentas de automaç�
 - O envio de e-mail e os rate limiters usam mecanismos adequados ao MVP local; filas e estado compartilhado são necessários para múltiplas instâncias.
 - O runner de agentes é Windows self-hosted e depende de máquina ligada, usuário autenticado e Claude Code CLI disponível (Codex CLI apenas como alternativa com `AGENT_RUNTIME=codex`).
 - Múltiplos extratos ou faturas no mesmo arquivo continuam recusados.
-- A API reconhece e vincula o pagamento da fatura encontrado no extrato; a tela de conciliação chega com a DEV-57.
+- A conciliação do pagamento da fatura está disponível de ponta a ponta: a prévia da importação deixa escolher a fatura que o pagamento liquida, e a tela do cartão mostra os pagamentos, o que falta pagar e aceita pagamento parcial.
 - Estornos de cartão abatem a fatura, mas ainda não reduzem os totais de despesa e de gasto por categoria do dashboard.
 - Mobile e deploy em nuvem estão fora do estado atual.
 

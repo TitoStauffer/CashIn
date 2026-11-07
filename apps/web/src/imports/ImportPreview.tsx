@@ -6,9 +6,11 @@ import type { FinancialImportItem, FinancialImportItemInput, FinancialImportItem
 import {
   bankTypeOptions,
   canLearnRuleFromItem,
+  canReconcileStatement,
   cardTypeLabels,
   cardTypeOptions,
   createDraft,
+  describeStatementCandidate,
   formatFileSize,
   formatIsoDate,
   getSessionStatusLabel,
@@ -149,6 +151,12 @@ export function ImportPreview({
             const draft = drafts[item.id] ?? createDraft(item)
             const categories = draft.type === 'income' ? incomeCategories : draft.type === 'expense' ? expenseCategories : []
             const canChooseStatement = isCard && closingDay !== null && dueDay !== null && draft.type !== 'transfer' && isValidIsoDate(draft.date)
+            const canReconcilePayment = canReconcileStatement(session, draft.type)
+            const candidates = canReconcilePayment ? item.statementCandidates ?? [] : []
+            // The candidate list only holds open statements with an outstanding balance, so a statement
+            // already chosen drops out of it. It stays selectable, otherwise saving the item again
+            // would silently undo the reconciliation the user had made.
+            const isChosenStatementListed = candidates.some((candidate) => candidate.statementId === draft.creditCardStatementId)
             const selectedCategory = categories.find((category) => category.id === draft.categoryId)
             const isEditable = session.status === 'preview' && item.canEdit
             const isSavingItem = pendingAction === `item:${item.id}`
@@ -173,7 +181,12 @@ export function ImportPreview({
                     Tipo
                     <select
                       value={draft.type}
-                      onChange={(event) => onDraftChange(item.id, { type: event.target.value as FinancialImportItemType, categoryId: null, subcategoryId: null, ...(event.target.value === 'transfer' ? { statementClosingDate: null } : {}) })}
+                      onChange={(event) => onDraftChange(item.id, {
+                        type: event.target.value as FinancialImportItemType,
+                        categoryId: null,
+                        subcategoryId: null,
+                        ...(event.target.value === 'transfer' ? { statementClosingDate: null } : { creditCardStatementId: null }),
+                      })}
                       disabled={areItemControlsDisabled}
                     >
                       {typeOptions.map((type) => <option key={type} value={type}>{labelForType(type)}</option>)}
@@ -196,6 +209,30 @@ export function ImportPreview({
                       </select>
                     </label>
                   )}
+                  {canReconcilePayment && (candidates.length > 0 || draft.creditCardStatementId ? (
+                    <label>
+                      Fatura paga
+                      <select
+                        value={draft.creditCardStatementId ?? ''}
+                        onChange={(event) => onDraftChange(item.id, { creditCardStatementId: event.target.value || null })}
+                        disabled={areItemControlsDisabled}
+                      >
+                        <option value="">Selecione a fatura</option>
+                        {candidates.map((candidate) => (
+                          <option key={candidate.statementId} value={candidate.statementId}>
+                            {describeStatementCandidate(candidate)}
+                          </option>
+                        ))}
+                        {draft.creditCardStatementId && !isChosenStatementListed && (
+                          <option value={draft.creditCardStatementId}>Fatura escolhida anteriormente</option>
+                        )}
+                      </select>
+                    </label>
+                  ) : (
+                    <p className="imports-item-hint" role="note">
+                      Nenhuma fatura em aberto corresponde a esta saída. Escolha outro tipo ou deixe-a fora da importação.
+                    </p>
+                  ))}
                   <label className="imports-item-description">
                     Descrição
                     <input type="text" maxLength={500} value={draft.description} onChange={(event) => onDraftChange(item.id, { description: event.target.value })} disabled={areItemControlsDisabled} />

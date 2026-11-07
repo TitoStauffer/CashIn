@@ -1,6 +1,6 @@
 # Importação financeira OFX e CSV
 
-**Status:** importação OFX e CSV com regras por carteira (DEV-55), faturas de cartão (DEV-56) e conciliação do pagamento da fatura (DEV-85)
+**Status:** importação OFX e CSV com regras por carteira (DEV-55), faturas de cartão (DEV-56) e conciliação do pagamento da fatura na API (DEV-85) e na tela (DEV-57)
 **Última revisão:** 07/11/2026
 
 ## Fluxo definido
@@ -41,7 +41,7 @@ Sessões desfeitas não bloqueiam uma importação futura, pois somente itens ai
 - **Seleção do cartão:** a sessão de fatura (`kind = credit_card_statement`) exige um cartão ativo da carteira, gravado em `import_sessions.credit_card_id` com FK composta pela carteira.
 - **Formatos:** o OFX deve ter um único `CCSTMTRS`; o CSV informa o sinal das compras (`x-card-amount-sign`).
 - **Sinais:** são normalizados para compra negativa (`expense`) e crédito positivo (`card_credit`), o que mantém a impressão digital igual entre OFX e CSV.
-- **Pagamento da fatura anterior:** a linha positiva com `PAYMENT` ou "pagamento" vira `transfer` e não é importada; a conciliação com o extrato fica para a DEV-57.
+- **Pagamento da fatura anterior:** a linha positiva com `PAYMENT` ou "pagamento" vira `transfer` e não é importada, porque quem registra o pagamento é a conciliação feita no extrato bancário.
 - **Fatura de destino:** `import_items.statement_closing_date` é calculado pelo fechamento do cartão e pode ser movido para a fatura anterior ou a seguinte. Item em fatura paga fica inválido e reparável, e a confirmação revalida.
 - **Confirmação:**
   - Compras viram despesas de natureza `credit_card` na fatura do item e só saem do saldo no pagamento.
@@ -56,7 +56,8 @@ Sessões desfeitas não bloqueiam uma importação futura, pois somente itens ai
 - **Sugestão:** só para débito cuja descrição aponte cartão ou fatura, nunca para qualquer "pagamento". As candidatas são faturas da carteira não liquidadas, com saldo devedor e vencimento até 15 dias da data do pagamento.
 - **Correspondência única** (uma candidata com saldo devedor igual ao valor) vira `transfer` conciliado e `valid`. **Ambígua** vira `transfer` sem fatura, com as candidatas expostas para o usuário escolher; nada é confirmado sozinho.
 - **Confirmação:** cria o pagamento em `credit_card_statement_payments` e não lança a compra de novo, então a fatura não é contada duas vezes. `transfer` sem fatura continua bloqueando a confirmação.
-- **Desfazer:** remove os pagamentos e reabre a fatura que eles tinham liquidado.
+- **Desfazer:** remove os pagamentos e reabre a fatura que eles tinham liquidado. Uma fatura que ainda tenha pagamento registrado nunca é removida.
+- **Na tela (DEV-57):** o item apresentado como pagamento traz um seletor com as faturas candidatas, cada uma com cartão, vencimento e saldo devedor; a escolha é salva no próprio item e desfeita ao mudar o tipo. Sem candidata, a prévia explica que não há fatura em aberto a liquidar em vez de oferecer uma lista vazia. A tela do cartão lista os pagamentos com sua origem, mostra o que falta pagar e aceita pagamento parcial.
 
 ## Fontes verificáveis
 
@@ -69,6 +70,7 @@ Sessões desfeitas não bloqueiam uma importação futura, pois somente itens ai
 - [`apps/api/src/financial-imports/financial-categorization-rules.service.ts`](../../../apps/api/src/financial-imports/financial-categorization-rules.service.ts)
 - [`apps/api/src/financial-imports/postgres-financial-categorization-rules.repository.ts`](../../../apps/api/src/financial-imports/postgres-financial-categorization-rules.repository.ts)
 - [`apps/web/src/imports/FinancialImportsPage.tsx`](../../../apps/web/src/imports/FinancialImportsPage.tsx)
+- [`apps/web/src/imports/ImportPreview.tsx`](../../../apps/web/src/imports/ImportPreview.tsx)
 - [`apps/api/migrations/018_credit_card_statement_imports.sql`](../../../apps/api/migrations/018_credit_card_statement_imports.sql)
 - [`apps/api/src/financial-imports/postgres-card-statement-imports.ts`](../../../apps/api/src/financial-imports/postgres-card-statement-imports.ts)
 - [`apps/api/src/financial-imports/postgres-bank-payment-reconciliation.ts`](../../../apps/api/src/financial-imports/postgres-bank-payment-reconciliation.ts)

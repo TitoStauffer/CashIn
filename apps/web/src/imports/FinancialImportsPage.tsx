@@ -29,6 +29,7 @@ import {
   isImportBusy,
   getSessionStatusLabel,
   typeLabels,
+  canReconcileStatement,
   isCardSession,
   hasCategory,
   formatFileSize,
@@ -554,13 +555,16 @@ function FinancialImportsWalletPage({ userEmail, isLoggingOut, onLogout }: Finan
     setSuccessMessage('')
     try {
       const isCardItem = isCardSession(selectedImport!)
-      const { statementClosingDate, ...itemDraft } = draft
+      const canReconcilePayment = canReconcileStatement(selectedImport!, draft.type)
+      const { statementClosingDate, creditCardStatementId, ...itemDraft } = draft
       const updated = await importsApi.updateItem(selectedImport!.id, item.id, {
         ...itemDraft,
         description: draft.description.trim(),
         categoryId: hasCategory(draft.type) ? draft.categoryId : null,
         subcategoryId: hasCategory(draft.type) ? draft.subcategoryId : null,
         ...(isCardItem ? { statementClosingDate: statementClosingDate ?? null } : {}),
+        // The field is only accepted on a bank statement import, and only a transfer may carry it.
+        ...(isCardItem ? {} : { creditCardStatementId: canReconcilePayment ? creditCardStatementId ?? null : null }),
         ...(includeDuplicate ? { includeDuplicate: true } : {}),
       })
       if (!isCurrentWalletOperation(operation)) return
@@ -568,8 +572,11 @@ function FinancialImportsWalletPage({ userEmail, isLoggingOut, onLogout }: Finan
       setSelectedImport((current) => current ? replaceSessionItem(current, updated) : current)
       setDrafts((current) => ({ ...current, [updated.id]: createDraft(updated) }))
       setSuccessMessage(`Movimentação ${item.sequence} atualizada na prévia.`)
-      if (!isCardItem) return
-      // Statement totals are computed by the API; reload the session so they reflect the change.
+      // A reconciled payment needs the session again too: the item response carries no candidate
+      // list, and a type changed into a transfer has none loaded yet.
+      if (!isCardItem && !canReconcilePayment) return
+      // Statement totals and candidates are computed by the API; reload the session so they reflect
+      // the change.
       try {
         const refreshed = await importsApi.get(selectedImport!.id)
         if (!isCurrentWalletOperation(operation)) return
@@ -581,7 +588,7 @@ function FinancialImportsWalletPage({ userEmail, isLoggingOut, onLogout }: Finan
         ])))
       } catch {
         if (!isCurrentWalletOperation(operation)) return
-        setFormError(`A movimentação ${item.sequence} foi salva, mas os totais das faturas não puderam ser atualizados. Recarregue a importação.`)
+        setFormError(`A movimentação ${item.sequence} foi salva, mas os dados das faturas não puderam ser atualizados. Recarregue a importação.`)
       }
     } catch (error) {
       if (!isCurrentWalletOperation(operation)) return

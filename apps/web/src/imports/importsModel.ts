@@ -1,4 +1,6 @@
+import { formatBrazilianCurrency } from '../money/currency'
 import type {
+  BankPaymentCandidate,
   CsvImportConfiguration,
   FinancialImportItem,
   FinancialImportItemInput,
@@ -79,6 +81,12 @@ export function isCardSession(session: FinancialImportSession) {
   return session.kind === 'credit_card_statement'
 }
 
+// In a bank statement an outgoing transfer is how a card payment arrives, so it is the only type
+// that can be reconciled with a statement.
+export function canReconcileStatement(session: FinancialImportSession, type: FinancialImportItemType) {
+  return !isCardSession(session) && type === 'transfer'
+}
+
 export function hasCategory(type: FinancialImportItemType) {
   return type === 'income' || type === 'expense'
 }
@@ -109,6 +117,7 @@ export function createDraft(item: FinancialImportItem): FinancialImportItemInput
     categoryId: item.categoryId,
     subcategoryId: item.subcategoryId,
     statementClosingDate: item.statementClosingDate ?? null,
+    creditCardStatementId: item.creditCardStatementId ?? null,
   }
 }
 
@@ -121,4 +130,9 @@ export function hasDraftChanged(item: FinancialImportItem, draft: FinancialImpor
     || original.categoryId !== draft.categoryId
     || original.subcategoryId !== draft.subcategoryId
     || (original.statementClosingDate ?? null) !== (draft.statementClosingDate ?? null)
+    || (original.creditCardStatementId ?? null) !== (draft.creditCardStatementId ?? null)
+}
+
+export function describeStatementCandidate(candidate: BankPaymentCandidate) {
+  return `${candidate.creditCardName} · vence ${formatIsoDate(candidate.dueDate)} · falta ${formatBrazilianCurrency(candidate.outstandingAmount)}`
 }

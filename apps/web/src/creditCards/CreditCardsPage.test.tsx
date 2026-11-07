@@ -35,7 +35,7 @@ describe('CreditCardsPage', () => {
     expect(await screen.findByText('Mercado')).toBeVisible()
     expect(screen.getAllByText('R$ 123,45')).toHaveLength(2)
     await userEvent.setup().click(screen.getByRole('button', { name: 'Pagar fatura integral' }))
-    await waitFor(() => expect(paySpy).toHaveBeenCalledWith('card-1', 'statement-1', expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/)))
+    await waitFor(() => expect(paySpy).toHaveBeenCalledWith('card-1', 'statement-1', expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/), undefined))
     expect(await screen.findByText(/Paga em 18\/10\/2026/)).toBeVisible()
   })
 
@@ -165,7 +165,7 @@ describe('CreditCardsPage', () => {
     fireEvent.change(screen.getByLabelText('Data do pagamento'), { target: { value: '2026-10-21' } })
     await user.click(screen.getByRole('button', { name: 'Pagar fatura integral' }))
 
-    await waitFor(() => expect(paySpy).toHaveBeenCalledWith('card-1', 'statement-1', '2026-10-21'))
+    await waitFor(() => expect(paySpy).toHaveBeenCalledWith('card-1', 'statement-1', '2026-10-21', undefined))
     expect(await screen.findByRole('status')).toHaveTextContent('Fatura paga em 21/10/2026.')
   })
 
@@ -273,5 +273,63 @@ describe('CreditCardsPage', () => {
     expect(payButtons[0]).toBeEnabled()
     expect(payButtons[1]).toBeDisabled()
     expect(screen.getByText(/os estornos e créditos cobrem as compras/i)).toBeVisible()
+  })
+
+  it('pays part of a statement and says what is left instead of calling it settled', async () => {
+    const partiallyPaid: CreditCardStatement = {
+      ...statement,
+      paymentsAmount: '50.00',
+      outstandingAmount: '73.45',
+      payments: [{ id: 'payment-1', amount: '50.00', date: '2026-10-18', source: 'manual' }],
+    }
+    vi.spyOn(creditCardsApi, 'list').mockResolvedValue({ items: [card] })
+    vi.spyOn(creditCardsApi, 'statements').mockResolvedValue({ items: [{ ...statement, paymentsAmount: '0.00', outstandingAmount: '123.45', payments: [] }] })
+    const paySpy = vi.spyOn(creditCardsApi, 'payStatement').mockResolvedValue(partiallyPaid)
+    render(<CreditCardsPage userEmail="user@example.com" isLoggingOut={false} onLogout={vi.fn()} />)
+
+    expect(await screen.findByText('Mercado')).toBeVisible()
+    const user = userEvent.setup()
+    await user.type(screen.getByLabelText('Valor do pagamento'), '50,00')
+    // The label follows what the click will do, so paying part of the statement is never read as
+    // settling it.
+    await user.click(screen.getByRole('button', { name: 'Pagar valor informado' }))
+
+    await waitFor(() => expect(paySpy).toHaveBeenCalledWith('card-1', 'statement-1', expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/), '50.00'))
+    expect(await screen.findByText(/Pagamento de R\$ 50,00 registrado/)).toBeVisible()
+    // The header carries exactly what is left, while the message says it inside a sentence.
+    expect(screen.getByText('Falta R$ 73,45')).toBeVisible()
+    // The statement is not settled, so it keeps the payment form and shows what was already paid.
+    expect(screen.getByText('Pagamento registrado aqui')).toBeVisible()
+    expect(screen.getByRole('button', { name: 'Pagar fatura integral' })).toBeEnabled()
+  })
+
+  it('refuses an invalid typed amount before calling the API', async () => {
+    vi.spyOn(creditCardsApi, 'list').mockResolvedValue({ items: [card] })
+    vi.spyOn(creditCardsApi, 'statements').mockResolvedValue({ items: [statement] })
+    const paySpy = vi.spyOn(creditCardsApi, 'payStatement')
+    render(<CreditCardsPage userEmail="user@example.com" isLoggingOut={false} onLogout={vi.fn()} />)
+
+    expect(await screen.findByText('Mercado')).toBeVisible()
+    const user = userEvent.setup()
+    await user.type(screen.getByLabelText('Valor do pagamento'), '12,345')
+    await user.click(screen.getByRole('button', { name: 'Pagar valor informado' }))
+
+    expect(await screen.findByText(/Informe um valor válido, com até duas casas decimais/)).toBeVisible()
+    expect(paySpy).not.toHaveBeenCalled()
+  })
+
+  it('shows a payment reconciled from a bank statement and what is still owed', async () => {
+    vi.spyOn(creditCardsApi, 'list').mockResolvedValue({ items: [card] })
+    vi.spyOn(creditCardsApi, 'statements').mockResolvedValue({ items: [{
+      ...statement,
+      paymentsAmount: '100.00',
+      outstandingAmount: '23.45',
+      payments: [{ id: 'payment-1', amount: '100.00', date: '2026-10-18', source: 'bank_statement' }],
+    }] })
+    render(<CreditCardsPage userEmail="user@example.com" isLoggingOut={false} onLogout={vi.fn()} />)
+
+    expect(await screen.findByText('Pagamento conciliado do extrato')).toBeVisible()
+    expect(screen.getByText(/Falta R\$ 23,45/)).toBeVisible()
+    expect(screen.getByText('R$ 100,00')).toBeVisible()
   })
 })
