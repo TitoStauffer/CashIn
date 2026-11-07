@@ -162,6 +162,10 @@ export function ImportPreview({
             const candidates = canReconcilePayment ? item.statementCandidates ?? [] : []
             const transferCandidates = canReconcilePayment ? item.transferCandidates ?? [] : []
             const counterpartWallets = canReconcilePayment ? item.transferCounterpartWallets ?? [] : []
+            // The API omits these lists for a line it left to the statement reconciliation, and for a
+            // type the user just changed by hand. Absent is not the same as empty: only an empty list
+            // the API actually sent means there is nothing to reconcile.
+            const knowsTransferOptions = item.transferCounterpartWallets !== undefined
             // The candidate lists only hold what is still open — a statement with an outstanding
             // balance, a transfer whose side here is free — so what was already chosen drops out of
             // them. It stays selectable, otherwise saving the item again would silently undo the
@@ -175,7 +179,6 @@ export function ImportPreview({
             // The API attaches the statements and wallets to a line already stored as a transfer, so a
             // type just changed by hand has none yet: saying there is nothing to reconcile would be
             // false.
-            const awaitsSavedType = !hasReconciliationOption && item.type !== 'transfer'
             const selectedCategory = categories.find((category) => category.id === draft.categoryId)
             const isEditable = session.status === 'preview' && item.canEdit
             const isSavingItem = pendingAction === `item:${item.id}`
@@ -279,9 +282,9 @@ export function ImportPreview({
                     </label>
                   ) : (
                     <p className="imports-item-hint" role="note">
-                      {awaitsSavedType
-                        ? 'Salve o ajuste para ver as faturas e as carteiras disponíveis para conciliar esta movimentação.'
-                        : 'Nenhuma fatura em aberto e nenhuma outra carteira para conciliar esta movimentação. Escolha outro tipo ou deixe-a fora da importação.'}
+                      {knowsTransferOptions
+                        ? 'Nenhuma fatura em aberto e nenhuma outra carteira para conciliar esta movimentação. Escolha outro tipo ou deixe-a fora da importação.'
+                        : 'Esta movimentação não tem conciliação disponível nesta prévia. Salve o ajuste e revise, escolha outro tipo ou deixe-a fora da importação.'}
                     </p>
                   ))}
                   <label className="imports-item-description">

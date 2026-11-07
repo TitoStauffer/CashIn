@@ -1350,7 +1350,9 @@ describe('FinancialImportsPage', () => {
 
       const payment = (await screen.findByText('Movimentação 1')).closest('li') as HTMLElement
       expect(within(payment).queryByRole('combobox', { name: 'Conciliar com' })).not.toBeInTheDocument()
-      expect(within(payment).getByText(/Nenhuma fatura em aberto e nenhuma outra carteira/)).toBeVisible()
+      // The API did not send the wallet lists for this line, so the hint states no absence it cannot
+      // vouch for.
+      expect(within(payment).getByText(/não tem conciliação disponível nesta prévia/)).toBeVisible()
     })
   })
   describe('transfers between wallets found in a bank statement', () => {
@@ -1485,9 +1487,10 @@ describe('FinancialImportsPage', () => {
       expect(within(field).getByRole('option', { name: 'para Poupança · 05/10/2026 · R$ 500,00' })).toBeInTheDocument()
     })
 
-    it('asks to save a type changed by hand before claiming there is nothing to reconcile', async () => {
+    it('does not claim an absence the API did not report', async () => {
       // The API attaches statements and wallets to a line already stored as a transfer, so a line the
-      // user just switched to "Transferência" has none — saying there is nothing would be false.
+      // user just switched to "Transferência" has none. Absent is not empty: claiming there is no
+      // wallet to reconcile with would be false.
       mockTransferSession({
         ...transferSession,
         items: [{
@@ -1495,8 +1498,9 @@ describe('FinancialImportsPage', () => {
           type: 'expense',
           validationStatus: 'uncategorized',
           errorMessage: 'Selecione uma categoria para importar a movimentação.',
-          transferCandidates: [],
-          transferCounterpartWallets: [],
+          // The API omits the lists for this line, which is different from sending them empty.
+          transferCandidates: undefined,
+          transferCounterpartWallets: undefined,
         }],
       })
       const user = userEvent.setup()
@@ -1507,7 +1511,20 @@ describe('FinancialImportsPage', () => {
       await user.selectOptions(within(line).getByRole('combobox', { name: 'Tipo' }), 'transfer')
 
       expect(within(line).queryByRole('combobox', { name: 'Conciliar com' })).not.toBeInTheDocument()
-      expect(within(line).getByText(/Salve o ajuste para ver as faturas e as carteiras/)).toBeVisible()
+      expect(within(line).getByText(/não tem conciliação disponível nesta prévia/)).toBeVisible()
+    })
+
+    it('states both absences when the API reported empty lists', async () => {
+      mockTransferSession({
+        ...transferSession,
+        items: [{ ...transferItem, transferCandidates: [], transferCounterpartWallets: [], statementCandidates: [] }],
+      })
+      const user = userEvent.setup()
+      await renderPage()
+      await user.click(await screen.findByRole('button', { name: 'Ver detalhes' }))
+
+      const line = (await screen.findByText('Movimentação 1')).closest('li') as HTMLElement
+      expect(within(line).getByText(/Nenhuma fatura em aberto e nenhuma outra carteira/)).toBeVisible()
     })
 
     it('keeps a transfer chosen earlier when it is no longer among the candidates', async () => {
