@@ -335,7 +335,7 @@ test("PostgreSQL financial import confirms exact amounts, isolates wallets, and 
       type: "income",
       categoryId: incomeCategoryId,
       subcategoryId: null,
-      includeDuplicate: true, statementClosingDate: null, creditCardStatementId: null,
+      includeDuplicate: true, statementClosingDate: null, creditCardStatementId: null, transferCounterpartWalletId: null, walletTransferId: null,
     });
     assert.equal(reviewedDuplicate?.validationStatus, "valid");
     const acceptedFingerprint = await database.query<{ accepted_duplicate_fingerprint: string | null }>(
@@ -364,7 +364,7 @@ test("PostgreSQL financial import confirms exact amounts, isolates wallets, and 
       walletId,
       changedConsentSession.id,
       changedConsentItemId,
-      { date: "2026-10-20", description, type: "income", categoryId: incomeCategoryId, subcategoryId: null, includeDuplicate, statementClosingDate: null, creditCardStatementId: null },
+      { date: "2026-10-20", description, type: "income", categoryId: incomeCategoryId, subcategoryId: null, includeDuplicate, statementClosingDate: null, creditCardStatementId: null, transferCounterpartWalletId: null, walletTransferId: null },
     );
     assert.equal((await acceptChangedConsent("Salário", true))?.validationStatus, "valid");
     assert.equal((await acceptChangedConsent("Salário corrigido"))?.validationStatus, "valid");
@@ -396,7 +396,7 @@ test("PostgreSQL financial import confirms exact amounts, isolates wallets, and 
       secondEditedItemId,
       {
         date: "2026-11-01", description: "Movimento A", type: "expense",
-        categoryId: expenseCategoryId, subcategoryId: null, includeDuplicate, statementClosingDate: null, creditCardStatementId: null,
+        categoryId: expenseCategoryId, subcategoryId: null, includeDuplicate, statementClosingDate: null, creditCardStatementId: null, transferCounterpartWalletId: null, walletTransferId: null,
       },
     );
     assert.equal((await editSecondItem())?.validationStatus, "valid");
@@ -710,7 +710,7 @@ test("PostgreSQL financial import confirms exact amounts, isolates wallets, and 
         type: "income",
         categoryId: incomeCategoryId,
         subcategoryId: null,
-        includeDuplicate: false, statementClosingDate: null, creditCardStatementId: null,
+        includeDuplicate: false, statementClosingDate: null, creditCardStatementId: null, transferCounterpartWalletId: null, walletTransferId: null,
       });
       await delay(100);
       const confirmationPromise = repository.confirmImport(userId, walletId, editSession.id);

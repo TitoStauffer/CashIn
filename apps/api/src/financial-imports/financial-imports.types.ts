@@ -42,6 +42,12 @@ export interface FinancialImportItem {
   // statements it could pay. An ambiguous match is never reconciled automatically.
   creditCardStatementId?: string | null;
   statementCandidates?: BankPaymentCandidate[];
+  // Bank statement imports only: the transfer between wallets this line is one side of, the wallet on
+  // the other end, the pending transfers it could complete and the wallets it could be paired with.
+  walletTransferId?: string | null;
+  transferCounterpartWalletId?: string | null;
+  transferCandidates?: WalletTransferCandidate[];
+  transferCounterpartWallets?: TransferCounterpartWallet[];
   createdAt: string;
   updatedAt: string;
 }
@@ -54,6 +60,25 @@ export interface BankPaymentCandidate {
   closingDate: string;
   dueDate: string;
   outstandingAmount: string;
+}
+
+// A transfer between wallets whose side in this wallet has not been reconciled yet.
+export interface WalletTransferCandidate {
+  walletTransferId: string;
+  counterpartWalletId: string;
+  counterpartWalletName: string;
+  amount: string;
+  date: string;
+  description: string | null;
+  // Which end of the transfer the line being reconciled is.
+  direction: "outgoing" | "incoming";
+}
+
+// A wallet the user can reach, offered as the other end of a transfer.
+export interface TransferCounterpartWallet {
+  walletId: string;
+  walletName: string;
+  isPersonal: boolean;
 }
 
 // Preview of a credit card statement computed from the items that will be imported.
@@ -114,6 +139,8 @@ export interface ParsedFinancialImportItem {
   sourceTransactionType?: string;
   statementClosingDate?: string | null;
   creditCardStatementId?: string | null;
+  walletTransferId?: string | null;
+  transferCounterpartWalletId?: string | null;
 }
 
 export interface ParsedFinancialImport {
@@ -204,6 +231,10 @@ export interface UpdateFinancialImportItemInput {
   statementClosingDate?: string | null;
   // Bank statement imports: the statement this payment settles, or null to leave it unreconciled.
   creditCardStatementId?: string | null;
+  // Bank statement imports: the wallet on the other end of this transfer, or the pending transfer it
+  // completes. Null on either leaves the line unreconciled.
+  transferCounterpartWalletId?: string | null;
+  walletTransferId?: string | null;
 }
 
 export type FinancialCategorizationRuleType = Extract<FinancialImportItemType, "income" | "expense">;

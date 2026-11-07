@@ -16,6 +16,8 @@ const expected: FinancialSummary = {
   cashExpenseTotal: "20.00",
   creditPurchaseTotal: "5.00",
   cardPaymentTotal: "5.00",
+  transferOutTotal: "0.00",
+  transferInTotal: "0.00",
   contributionTotal: "10.00",
   contributionsByGoal: [{ goalId: "cccccccc-cccc-4ccc-8ccc-cccccccccccc", amount: "10.00" }],
   availableBalance: "65.00",

@@ -2,6 +2,15 @@ import { randomUUID } from "node:crypto";
 import type { Database, QueryExecutor } from "../database.js";
 import { adjacentClosingDates, calculateBillingCycle, calculateDueDate } from "../credit-cards/billing-cycle.js";
 import {
+  assertCounterpartWallet,
+  assertPendingTransfer,
+  attachTransferOptions,
+  importWalletTransfers,
+  RECONCILE_TRANSFER_MESSAGE,
+  reconcileWalletTransfers,
+  undoWalletTransfers,
+} from "./postgres-wallet-transfer-reconciliation.js";
+import {
   assertOutgoingPayment,
   assertReconcilableStatement,
   attachStatementCandidates,
@@ -98,6 +107,8 @@ interface ImportItemRow {
   categorization_source: "rule" | "manual" | null;
   statement_closing_date: string | Date | null;
   credit_card_statement_id: string | null;
+  transfer_counterpart_wallet_id: string | null;
+  wallet_transfer_id: string | null;
   created_at: string | Date;
   updated_at: string | Date;
 }
@@ -209,7 +220,11 @@ function mapItem(row: ImportItemRow, card: ImportCreditCard | null = null): Fina
       || (row.validation_status === "invalid" && row.is_repairable),
     canIncludeDuplicate: row.validation_status === "duplicate" && row.duplicate_override_allowed,
     categorizationSource: row.categorization_source,
-    ...(row.type === "transfer" ? { creditCardStatementId: row.credit_card_statement_id } : {}),
+    ...(row.type === "transfer" ? {
+      creditCardStatementId: row.credit_card_statement_id,
+      transferCounterpartWalletId: row.transfer_counterpart_wallet_id,
+      walletTransferId: row.wallet_transfer_id,
+    } : {}),
     ...(card ? {
       statementClosingDate,
       statementDueDate: statementClosingDate ? calculateDueDate(statementClosingDate, card.closingDay, card.dueDay) : null,
@@ -274,6 +289,10 @@ const sessionColumns = `
       LEFT JOIN credit_card_statement_payments AS checked_payment
         ON checked_payment.id = checked_item.resulting_statement_payment_id
        AND checked_payment.wallet_id = checked_item.wallet_id
+      LEFT JOIN wallet_transfers AS checked_transfer
+        ON checked_transfer.id = checked_item.resulting_wallet_transfer_id
+       AND (checked_transfer.from_wallet_id = checked_item.wallet_id
+         OR checked_transfer.to_wallet_id = checked_item.wallet_id)
       WHERE checked_item.import_session_id = session.id
         AND checked_item.validation_status = 'imported'
         AND (
@@ -289,8 +308,12 @@ const sessionColumns = `
             checked_credit.id IS NULL OR checked_credit.updated_at IS DISTINCT FROM checked_item.resulting_updated_at
           ))
           OR
-          (checked_item.type = 'transfer' AND (
+          (checked_item.type = 'transfer' AND checked_item.resulting_wallet_transfer_id IS NULL AND (
             checked_payment.id IS NULL OR checked_payment.updated_at IS DISTINCT FROM checked_item.resulting_updated_at
+          ))
+          OR
+          (checked_item.type = 'transfer' AND checked_item.resulting_wallet_transfer_id IS NOT NULL AND (
+            checked_transfer.id IS NULL OR checked_transfer.updated_at IS DISTINCT FROM checked_item.resulting_updated_at
           ))
         )
     )
@@ -324,6 +347,10 @@ const sessionColumns = `
       LEFT JOIN credit_card_statement_payments AS blocked_payment
         ON blocked_payment.id = blocked_item.resulting_statement_payment_id
        AND blocked_payment.wallet_id = blocked_item.wallet_id
+      LEFT JOIN wallet_transfers AS blocked_transfer
+        ON blocked_transfer.id = blocked_item.resulting_wallet_transfer_id
+       AND (blocked_transfer.from_wallet_id = blocked_item.wallet_id
+         OR blocked_transfer.to_wallet_id = blocked_item.wallet_id)
       WHERE blocked_item.import_session_id = session.id
         AND blocked_item.validation_status = 'imported'
         AND (
@@ -339,8 +366,12 @@ const sessionColumns = `
             blocked_credit.id IS NULL OR blocked_credit.updated_at IS DISTINCT FROM blocked_item.resulting_updated_at
           ))
           OR
-          (blocked_item.type = 'transfer' AND (
+          (blocked_item.type = 'transfer' AND blocked_item.resulting_wallet_transfer_id IS NULL AND (
             blocked_payment.id IS NULL OR blocked_payment.updated_at IS DISTINCT FROM blocked_item.resulting_updated_at
+          ))
+          OR
+          (blocked_item.type = 'transfer' AND blocked_item.resulting_wallet_transfer_id IS NOT NULL AND (
+            blocked_transfer.id IS NULL OR blocked_transfer.updated_at IS DISTINCT FROM blocked_item.resulting_updated_at
           ))
         )
     ) THEN 'Um ou mais lançamentos importados foram alterados ou removidos.'
@@ -374,6 +405,8 @@ const itemColumns = `
   item.duplicate_override_allowed,
   item.statement_closing_date,
   item.credit_card_statement_id,
+  item.transfer_counterpart_wallet_id,
+  COALESCE(item.wallet_transfer_id, item.resulting_wallet_transfer_id) AS wallet_transfer_id,
   item.created_at,
   item.updated_at`;
 
@@ -416,7 +449,7 @@ export class PostgresFinancialImportsRepository implements FinancialImportReposi
   }
 
   async savePreview(
-    _userId: string,
+    userId: string,
     walletId: string,
     importId: string,
     items: ParsedFinancialImportItem[],
@@ -485,7 +518,11 @@ export class PostgresFinancialImportsRepository implements FinancialImportReposi
       // expense the parser suggested, miss the payment already imported and reduce the cash twice.
       const reconciledItems = creditCardId
         ? validatedItems
-        : await reconcileBankPayments(transaction, walletId, validatedItems);
+        : await reconcileWalletTransfers(
+          transaction,
+          walletId,
+          await reconcileBankPayments(transaction, walletId, validatedItems),
+        );
       const itemsWithFileDuplicates = this.markInFileDuplicates(reconciledItems);
       const itemsWithHistoryDuplicates = await this.markPreviouslyImportedDuplicates(
         transaction,
@@ -509,6 +546,8 @@ export class PostgresFinancialImportsRepository implements FinancialImportReposi
           category_nature: item.type === "income" || item.type === "expense" ? item.type : null,
           statement_closing_date: creditCardId ? item.statementClosingDate ?? null : null,
           credit_card_statement_id: creditCardId ? null : item.creditCardStatementId ?? null,
+          transfer_counterpart_wallet_id: creditCardId ? null : item.transferCounterpartWalletId ?? null,
+          wallet_transfer_id: creditCardId ? null : item.walletTransferId ?? null,
           validation_status: item.validationStatus ?? "valid",
           error_message: item.errorMessage ?? null,
           is_repairable: item.isRepairable ?? false,
@@ -523,14 +562,15 @@ export class PostgresFinancialImportsRepository implements FinancialImportReposi
              signed_amount, type, category_id, subcategory_id, category_nature,
              validation_status, error_message, is_repairable, external_id, record_hash,
              duplicate_override_allowed, categorization_source, statement_closing_date,
-             credit_card_statement_id
+             credit_card_statement_id, transfer_counterpart_wallet_id, wallet_transfer_id
            )
            SELECT $1, $2, item.sequence, item.transaction_date::date, item.description,
                   item.signed_amount::numeric, item.type, item.category_id::uuid,
                   item.subcategory_id::uuid, item.category_nature,
                   item.validation_status, item.error_message, item.is_repairable,
                   item.external_id, item.record_hash, item.duplicate_override_allowed, item.categorization_source,
-                  item.statement_closing_date::date, item.credit_card_statement_id::uuid
+                  item.statement_closing_date::date, item.credit_card_statement_id::uuid,
+                  item.transfer_counterpart_wallet_id::uuid, item.wallet_transfer_id::uuid
            FROM jsonb_to_recordset($3::jsonb) AS item(
              sequence integer,
              transaction_date text,
@@ -548,7 +588,9 @@ export class PostgresFinancialImportsRepository implements FinancialImportReposi
              duplicate_override_allowed boolean,
              categorization_source text,
              statement_closing_date text,
-             credit_card_statement_id text
+             credit_card_statement_id text,
+             transfer_counterpart_wallet_id text,
+             wallet_transfer_id text
            )`,
           [importId, walletId, JSON.stringify(payload)],
         );
@@ -560,7 +602,7 @@ export class PostgresFinancialImportsRepository implements FinancialImportReposi
         [importId, walletId, JSON.stringify(sourceMetadata)],
       );
       await this.refreshCounters(transaction, walletId, importId, "preview");
-      return this.getSessionWithItems(transaction, walletId, importId);
+      return this.getSessionWithItems(transaction, walletId, userId, importId);
     });
   }
 
@@ -575,12 +617,12 @@ export class PostgresFinancialImportsRepository implements FinancialImportReposi
     return result.rows.map(mapSession);
   }
 
-  async getImport(_userId: string, walletId: string, importId: string): Promise<FinancialImportSession | null> {
-    return this.getSessionWithItems(this.database, walletId, importId);
+  async getImport(userId: string, walletId: string, importId: string): Promise<FinancialImportSession | null> {
+    return this.getSessionWithItems(this.database, walletId, userId, importId);
   }
 
   async markFailed(
-    _userId: string,
+    userId: string,
     walletId: string,
     importId: string,
     failureMessage: string,
@@ -594,7 +636,7 @@ export class PostgresFinancialImportsRepository implements FinancialImportReposi
   }
 
   async updateItem(
-    _userId: string,
+    userId: string,
     walletId: string,
     importId: string,
     itemId: string,
@@ -641,6 +683,14 @@ export class PostgresFinancialImportsRepository implements FinancialImportReposi
         }
         await assertReconcilableStatement(transaction, walletId, reconciledStatementId);
       }
+      const chosenTransferId = card ? null : input.walletTransferId ?? null;
+      const chosenCounterpartWalletId = card ? null : input.transferCounterpartWalletId ?? null;
+      if (card && (input.walletTransferId || input.transferCounterpartWalletId)) {
+        throw new FinancialImportError("A conciliação entre carteiras só existe em importações de extrato bancário.", 400);
+      }
+      if ((chosenTransferId !== null || chosenCounterpartWalletId !== null) && input.type !== "transfer") {
+        throw new FinancialImportError("Somente uma transferência pode ser conciliada com outra carteira.", 400);
+      }
       let statementClosingDate: string | null = null;
       let isInPaidStatement = false;
       if (card) {
@@ -684,6 +734,19 @@ export class PostgresFinancialImportsRepository implements FinancialImportReposi
       if (!canEditItem || currentItem.rows[0].signed_amount === null) return null;
       // Money received can never pay a statement, whatever type the user picked.
       if (reconciledStatementId !== null) assertOutgoingPayment(currentItem.rows[0].signed_amount);
+      let counterpartWalletId = chosenCounterpartWalletId;
+      if (chosenTransferId !== null) {
+        // The chosen transfer already has both ends, so it decides the counterpart instead of the
+        // wallet the client sent: the two can only disagree by mistake.
+        counterpartWalletId = await assertPendingTransfer(
+          transaction,
+          walletId,
+          chosenTransferId,
+          currentItem.rows[0].signed_amount,
+        );
+      } else if (counterpartWalletId !== null) {
+        await assertCounterpartWallet(transaction, userId, walletId, counterpartWalletId);
+      }
 
       const hasCategory = input.type === "income" || input.type === "expense";
       const categoryId = hasCategory ? input.categoryId : null;
@@ -702,19 +765,22 @@ export class PostgresFinancialImportsRepository implements FinancialImportReposi
         : currentItem.rows[0].accepted_duplicate_fingerprint === nextFingerprint
           ? nextFingerprint
           : null;
-      // A bank payment reconciled with a statement is ready to import; without a statement it stays out.
+      // A transfer is ready to import once it has one destination: the statement it pays or the
+      // wallet on the other end. Without either it stays out of the import.
       const isReconciledPayment = input.type === "transfer" && reconciledStatementId !== null;
+      const isReconciledTransfer = input.type === "transfer" && counterpartWalletId !== null;
+      const isReconciledMovement = isReconciledPayment || isReconciledTransfer;
       const validationStatus = isInPaidStatement
         ? "invalid"
-        : (input.type === "transfer" && !isReconciledPayment) || (hasCategory && categoryId === null)
+        : (input.type === "transfer" && !isReconciledMovement) || (hasCategory && categoryId === null)
           ? "uncategorized"
           : "valid";
       const errorMessage = isInPaidStatement && statementClosingDate
         ? paidStatementMessage(statementClosingDate)
-        : input.type === "transfer" && !isReconciledPayment
+        : input.type === "transfer" && !isReconciledMovement
           ? card
             ? "Pagamento da fatura: ele é conciliado com o extrato bancário e não é importado como estorno."
-            : SELECT_STATEMENT_MESSAGE
+            : RECONCILE_TRANSFER_MESSAGE
           : hasCategory && categoryId === null
             ? "Selecione uma categoria para importar a movimentação."
             : null;
@@ -731,6 +797,8 @@ export class PostgresFinancialImportsRepository implements FinancialImportReposi
              is_repairable = $14::boolean,
              statement_closing_date = $15::date,
              credit_card_statement_id = $16::uuid,
+             transfer_counterpart_wallet_id = $17::uuid,
+             wallet_transfer_id = $18::uuid,
              duplicate_override_allowed = false,
              -- Saving a rule-suggested item unchanged keeps its origin; any edit makes it a manual choice.
              categorization_source = CASE
@@ -780,6 +848,8 @@ export class PostgresFinancialImportsRepository implements FinancialImportReposi
           isInPaidStatement,
           statementClosingDate,
           reconciledStatementId,
+          counterpartWalletId,
+          chosenTransferId,
         ],
       );
       const row = result.rows[0];
@@ -837,7 +907,7 @@ export class PostgresFinancialImportsRepository implements FinancialImportReposi
            WHERE id = $1 AND wallet_id = $2`,
           [importId, walletId],
         );
-        return this.getSessionWithItems(transaction, walletId, importId);
+        return this.getSessionWithItems(transaction, walletId, userId, importId);
       }
       const items = await transaction.query<{
         id: string;
@@ -849,9 +919,13 @@ export class PostgresFinancialImportsRepository implements FinancialImportReposi
         description: string | null;
         statement_closing_date: string | Date | null;
         credit_card_statement_id: string | null;
+        signed_amount: string;
+        transfer_counterpart_wallet_id: string | null;
+        wallet_transfer_id: string | null;
       }>(
         `SELECT id, type, category_id, subcategory_id, abs(signed_amount)::text AS amount,
-                transaction_date, description, statement_closing_date, credit_card_statement_id
+                transaction_date, description, statement_closing_date, credit_card_statement_id,
+                signed_amount::text AS signed_amount, transfer_counterpart_wallet_id, wallet_transfer_id
          FROM import_items
          WHERE import_session_id = $1 AND wallet_id = $2 AND validation_status = 'valid'
          ORDER BY sequence
@@ -866,7 +940,7 @@ export class PostgresFinancialImportsRepository implements FinancialImportReposi
            WHERE id = $1 AND wallet_id = $2`,
           [importId, walletId],
         );
-        return this.getSessionWithItems(transaction, walletId, importId);
+        return this.getSessionWithItems(transaction, walletId, userId, importId);
       }
 
       if (card && items.rows.some((item) => item.type === "transfer")) {
@@ -959,6 +1033,7 @@ export class PostgresFinancialImportsRepository implements FinancialImportReposi
         await importCardCredits(transaction, userId, walletId, importId, card!, cardPosting.statementIds, items.rows);
       } else {
         await importBankPayments(transaction, walletId, importId, items.rows);
+        await importWalletTransfers(transaction, walletId, userId, importId, items.rows);
       }
 
       await this.refreshCounters(transaction, walletId, importId);
@@ -970,12 +1045,12 @@ export class PostgresFinancialImportsRepository implements FinancialImportReposi
          WHERE id = $1 AND wallet_id = $2`,
         [importId, walletId],
       );
-      return this.getSessionWithItems(transaction, walletId, importId);
+      return this.getSessionWithItems(transaction, walletId, userId, importId);
     });
   }
 
   async undoImport(
-    _userId: string,
+    userId: string,
     walletId: string,
     importId: string,
   ): Promise<FinancialImportSession | null> {
@@ -994,10 +1069,12 @@ export class PostgresFinancialImportsRepository implements FinancialImportReposi
         resulting_expense_id: string | null;
         resulting_card_credit_id: string | null;
         resulting_statement_payment_id: string | null;
+        resulting_wallet_transfer_id: string | null;
         resulting_updated_at: string | Date | null;
       }>(
         `SELECT item.id, item.type, item.resulting_income_id, item.resulting_expense_id,
-                item.resulting_card_credit_id, item.resulting_statement_payment_id, item.resulting_updated_at
+                item.resulting_card_credit_id, item.resulting_statement_payment_id,
+                item.resulting_wallet_transfer_id, item.resulting_updated_at
          FROM import_items AS item
          WHERE item.import_session_id = $1
            AND item.wallet_id = $2
@@ -1012,6 +1089,7 @@ export class PostgresFinancialImportsRepository implements FinancialImportReposi
       const expenseIds = targets.rows.flatMap((target) => target.resulting_expense_id ? [target.resulting_expense_id] : []);
       const creditIds = targets.rows.flatMap((target) => target.resulting_card_credit_id ? [target.resulting_card_credit_id] : []);
       const paymentIds = targets.rows.flatMap((target) => target.resulting_statement_payment_id ? [target.resulting_statement_payment_id] : []);
+      const transferIds = targets.rows.flatMap((target) => target.resulting_wallet_transfer_id ? [target.resulting_wallet_transfer_id] : []);
       if (paymentIds.length > 0) {
         await transaction.query(
           `SELECT id FROM credit_card_statement_payments
@@ -1102,7 +1180,7 @@ export class PostgresFinancialImportsRepository implements FinancialImportReposi
                  )
                ))
                OR
-               (item.type = 'transfer' AND (
+               (item.type = 'transfer' AND item.resulting_wallet_transfer_id IS NULL AND (
                  item.resulting_statement_payment_id IS NULL
                  OR NOT EXISTS (
                    SELECT 1 FROM credit_card_statement_payments AS payment
@@ -1110,6 +1188,13 @@ export class PostgresFinancialImportsRepository implements FinancialImportReposi
                      AND payment.wallet_id = item.wallet_id
                      AND payment.updated_at = item.resulting_updated_at
                  )
+               ))
+               OR
+               (item.type = 'transfer' AND item.resulting_wallet_transfer_id IS NOT NULL AND NOT EXISTS (
+                 SELECT 1 FROM wallet_transfers AS transfer
+                 WHERE transfer.id = item.resulting_wallet_transfer_id
+                   AND (transfer.from_wallet_id = item.wallet_id OR transfer.to_wallet_id = item.wallet_id)
+                   AND transfer.updated_at = item.resulting_updated_at
                ))
              )
          ) AS blocked`,
@@ -1127,6 +1212,9 @@ export class PostgresFinancialImportsRepository implements FinancialImportReposi
              resulting_expense_id = NULL,
              resulting_card_credit_id = NULL,
              resulting_statement_payment_id = NULL,
+             resulting_wallet_transfer_id = NULL,
+             transfer_counterpart_wallet_id = NULL,
+             wallet_transfer_id = NULL,
              resulting_updated_at = NULL,
              error_message = 'Selecione uma categoria para importar a movimentação.',
              is_repairable = false,
@@ -1149,6 +1237,7 @@ export class PostgresFinancialImportsRepository implements FinancialImportReposi
         await transaction.query("DELETE FROM incomes WHERE wallet_id = $1 AND id = ANY($2::uuid[])", [walletId, incomeIds]);
       }
       await undoBankPayments(transaction, walletId, paymentIds);
+      await undoWalletTransfers(transaction, walletId, transferIds);
       if (creditIds.length > 0) {
         await transaction.query("DELETE FROM credit_card_statement_credits WHERE wallet_id = $1 AND id = ANY($2::uuid[])", [walletId, creditIds]);
       }
@@ -1179,12 +1268,12 @@ export class PostgresFinancialImportsRepository implements FinancialImportReposi
         [importId, walletId],
       );
       await this.refreshCounters(transaction, walletId, importId);
-      return this.getSessionWithItems(transaction, walletId, importId);
+      return this.getSessionWithItems(transaction, walletId, userId, importId);
     });
   }
 
   async discardImport(
-    _userId: string,
+    userId: string,
     walletId: string,
     importId: string,
   ): Promise<FinancialImportSession | null> {
@@ -1223,7 +1312,7 @@ export class PostgresFinancialImportsRepository implements FinancialImportReposi
          WHERE id = $1 AND wallet_id = $2`,
         [importId, walletId],
       );
-      return this.getSessionWithItems(transaction, walletId, importId);
+      return this.getSessionWithItems(transaction, walletId, userId, importId);
     });
   }
 
@@ -1303,6 +1392,7 @@ export class PostgresFinancialImportsRepository implements FinancialImportReposi
   private async getSessionWithItems(
     executor: QueryExecutor,
     walletId: string,
+    userId: string,
     importId: string,
   ): Promise<FinancialImportSession | null> {
     const row = await this.getSessionRow(executor, walletId, importId);
@@ -1323,7 +1413,16 @@ export class PostgresFinancialImportsRepository implements FinancialImportReposi
     return {
       ...session,
       ...(card ? { statements: await previewStatements(executor, walletId, card, mappedItems) } : {}),
-      items: card ? mappedItems : await attachStatementCandidates(executor, walletId, mappedItems, session.status),
+      items: card
+        ? mappedItems
+        : await attachTransferOptions(
+          executor,
+          walletId,
+          userId,
+          importId,
+          await attachStatementCandidates(executor, walletId, mappedItems, session.status),
+          session.status,
+        ),
     };
   }
 

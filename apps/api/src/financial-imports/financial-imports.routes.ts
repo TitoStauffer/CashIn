@@ -315,7 +315,7 @@ export function registerFinancialImportRoutes(app: FastifyInstance, options: Rou
     "/financial-imports/:importId/items/:itemId",
     {
       preHandler: [app.authenticate, app.resolveWalletContext],
-      preValidation: rejectUnexpectedProperties(["date", "description", "type", "categoryId", "subcategoryId", "includeDuplicate", "statementClosingDate", "creditCardStatementId"]),
+      preValidation: rejectUnexpectedProperties(["date", "description", "type", "categoryId", "subcategoryId", "includeDuplicate", "statementClosingDate", "creditCardStatementId", "transferCounterpartWalletId", "walletTransferId"]),
       schema: {
         params: {
           type: "object",
@@ -336,6 +336,8 @@ export function registerFinancialImportRoutes(app: FastifyInstance, options: Rou
             includeDuplicate: { type: "boolean" },
             statementClosingDate: { anyOf: [{ type: "string", pattern: "^\\d{4}-\\d{2}-\\d{2}$" }, { type: "null" }] },
             creditCardStatementId: { anyOf: [uuidSchema, { type: "null" }] },
+            transferCounterpartWalletId: { anyOf: [uuidSchema, { type: "null" }] },
+            walletTransferId: { anyOf: [uuidSchema, { type: "null" }] },
           },
         },
       },

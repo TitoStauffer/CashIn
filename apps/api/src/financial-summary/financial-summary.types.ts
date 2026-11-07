@@ -7,6 +7,10 @@ export interface FinancialSummary {
   cashExpenseTotal: string;
   creditPurchaseTotal: string;
   cardPaymentTotal: string;
+  // Transfers between wallets are not income nor expense, so they only move the cash balance: what
+  // left this wallet and what arrived in it, each as its own total.
+  transferOutTotal: string;
+  transferInTotal: string;
   contributionTotal: string;
   contributionsByGoal: FinancialSummaryGoalContribution[];
   availableBalance: string;
