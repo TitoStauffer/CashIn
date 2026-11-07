@@ -1,6 +1,6 @@
 # Importação financeira OFX e CSV
 
-**Status:** importação OFX e CSV com regras por carteira (DEV-55), faturas de cartão (DEV-56) e conciliação do pagamento da fatura na API (DEV-85) e na tela (DEV-57)
+**Status:** importação OFX e CSV com regras por carteira (DEV-55), faturas de cartão (DEV-56), conciliação do pagamento da fatura na API (DEV-85) e na tela (DEV-57) e transferências entre carteiras na API (DEV-88)
 **Última revisão:** 07/11/2026
 
 ## Fluxo definido
@@ -59,6 +59,16 @@ Sessões desfeitas não bloqueiam uma importação futura, pois somente itens ai
 - **Desfazer:** remove os pagamentos e reabre a fatura que eles tinham liquidado. Uma fatura que ainda tenha pagamento registrado nunca é removida.
 - **Na tela (DEV-57):** o item apresentado como pagamento traz um seletor com as faturas candidatas, cada uma com cartão, vencimento e saldo devedor; a escolha é salva no próprio item e desfeita ao mudar o tipo. Sem candidata, a prévia explica que não há fatura em aberto a liquidar em vez de oferecer uma lista vazia. A tela do cartão lista os pagamentos com sua origem, mostra o que falta pagar e aceita pagamento parcial.
 
+## Transferências entre carteiras (DEV-88)
+
+- **O que é:** dinheiro que sai de uma carteira e entra em outra não é receita nem despesa. A transferência é registrada uma vez em `wallet_transfers` (origem, destino, valor, data) e cada lado é uma linha do extrato da carteira correspondente.
+- **Lados independentes:** os dois lados podem ser importados em qualquer ordem, ou só um deles existir. O lado que uma linha representa é a própria carteira dela: saída quando é `from_wallet_id`, entrada quando é `to_wallet_id`. Um índice único garante uma linha importada por lado.
+- **Sugestão:** linha marcada como transferência pelo arquivo (`XFER`) aguarda a carteira do outro lado. Saída ou entrada comum vira transferência apenas quando existe transferência pendente com o mesmo valor e data até três dias de distância — é o que reconhece o segundo lado em extratos que não marcam transferência. Mais de uma candidata fica pendente de escolha.
+- **Dois destinos do mesmo tipo:** um item `transfer` liquida uma fatura (DEV-85) **ou** espelha outra carteira, nunca as duas; o banco e a API recusam a combinação. Linha cuja descrição aponta pagamento de cartão fica com a conciliação de fatura, que tem a sugestão mais específica.
+- **Isolamento:** só as carteiras que a pessoa autenticada acessa são oferecidas, e uma transferência só aparece para as duas carteiras que são os seus extremos.
+- **Caixa:** `transferOutTotal` e `transferInTotal` entram apenas no `cashBalance`, reduzindo a origem e aumentando o destino. Nenhuma receita ou despesa é criada.
+- **Desfazer:** libera o lado da importação desfeita. A transferência permanece se o outro lado continuar conciliado e volta a ser oferecida como candidata; sem nenhum lado, é removida.
+
 ## Fontes verificáveis
 
 - [`docs/financial-imports-contract.md`](../../financial-imports-contract.md)
@@ -67,6 +77,8 @@ Sessões desfeitas não bloqueiam uma importação futura, pois somente itens ai
 - [`apps/api/src/financial-imports/financial-imports.csv.ts`](../../../apps/api/src/financial-imports/financial-imports.csv.ts)
 - [`apps/api/src/financial-imports/financial-imports.parser.test.ts`](../../../apps/api/src/financial-imports/financial-imports.parser.test.ts)
 - [`apps/api/src/financial-imports/postgres-financial-imports.repository.ts`](../../../apps/api/src/financial-imports/postgres-financial-imports.repository.ts)
+- [`apps/api/src/financial-imports/postgres-wallet-transfer-reconciliation.ts`](../../../apps/api/src/financial-imports/postgres-wallet-transfer-reconciliation.ts)
+- [`apps/api/migrations/020_wallet_transfers.sql`](../../../apps/api/migrations/020_wallet_transfers.sql)
 - [`apps/api/src/financial-imports/financial-categorization-rules.service.ts`](../../../apps/api/src/financial-imports/financial-categorization-rules.service.ts)
 - [`apps/api/src/financial-imports/postgres-financial-categorization-rules.repository.ts`](../../../apps/api/src/financial-imports/postgres-financial-categorization-rules.repository.ts)
 - [`apps/web/src/imports/FinancialImportsPage.tsx`](../../../apps/web/src/imports/FinancialImportsPage.tsx)

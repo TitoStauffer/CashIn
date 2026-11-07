@@ -255,6 +255,19 @@ function normalizeUpdateInput(input: UpdateFinancialImportItemInput): Required<U
   if (creditCardStatementId !== null && typeof creditCardStatementId !== "string") {
     throw new FinancialImportError("A fatura conciliada é inválida.", 400);
   }
+  const transferCounterpartWalletId = input.transferCounterpartWalletId ?? null;
+  if (transferCounterpartWalletId !== null && typeof transferCounterpartWalletId !== "string") {
+    throw new FinancialImportError("A carteira da transferência é inválida.", 400);
+  }
+  const walletTransferId = input.walletTransferId ?? null;
+  if (walletTransferId !== null && typeof walletTransferId !== "string") {
+    throw new FinancialImportError("A transferência conciliada é inválida.", 400);
+  }
+  // Settling a card statement and mirroring another wallet are the two destinations of a transfer,
+  // and a line has exactly one of them.
+  if (creditCardStatementId !== null && (transferCounterpartWalletId !== null || walletTransferId !== null)) {
+    throw new FinancialImportError("Uma transferência liquida uma fatura ou espelha outra carteira, nunca as duas.", 400);
+  }
   const statementClosingDate = input.statementClosingDate ?? null;
   if (statementClosingDate !== null && (typeof statementClosingDate !== "string" || !validateDate(statementClosingDate))) {
     throw new FinancialImportError("A data de fechamento da fatura deve ser válida e estar no formato AAAA-MM-DD.", 400);
@@ -275,6 +288,8 @@ function normalizeUpdateInput(input: UpdateFinancialImportItemInput): Required<U
     includeDuplicate: input.includeDuplicate === true,
     statementClosingDate,
     creditCardStatementId,
+    transferCounterpartWalletId,
+    walletTransferId,
   };
 }
 

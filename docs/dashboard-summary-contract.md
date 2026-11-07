@@ -18,6 +18,8 @@ Valores monetários continuam sendo strings decimais, com precisão de centavos 
 | `cashExpenseTotal` | Despesas com natureza registrada `immediate` ou sem natureza nos registros legados. | Data da despesa |
 | `creditPurchaseTotal` | Despesas com natureza registrada `credit_card`, inclusive registros legados sem fatura vinculada. | Data da compra/despesa |
 | `cardPaymentTotal` | Pagamentos registrados nas faturas, incluindo pagamentos parciais de faturas ainda em aberto. | Data de cada pagamento |
+| `transferOutTotal` | Transferências entre carteiras que saíram desta carteira. | Data da transferência |
+| `transferInTotal` | Transferências entre carteiras que entraram nesta carteira. | Data da transferência |
 
 A classificação usa a natureza registrada na despesa, preservando o histórico mesmo se a forma de pagamento mudar posteriormente.
 
@@ -39,12 +41,15 @@ A fórmula existente permanece:
 
 ```text
 cashBalance = cashIncomeTotal - cashExpenseTotal - contributionTotal - cardPaymentTotal
+              - transferOutTotal + transferInTotal
 availableBalance = cashBalance
 ```
 
 `cashBalance` representa o fluxo líquido de caixa do período consultado. Ele pode ser negativo e não representa um saldo bancário acumulado nem incorpora um saldo inicial. Sem filtros, representa o fluxo de todos os registros armazenados.
 
 Uma compra no crédito entra em `expenseTotal` e `creditPurchaseTotal` na data da compra. Cada pagamento entra em `cardPaymentTotal` na sua data e reduz o caixa uma única vez, inclusive quando é parcial e a fatura continua em aberto. Não se deve subtrair `creditPurchaseTotal` novamente da fórmula de caixa. Compra e pagamento podem pertencer a períodos diferentes.
+
+Uma transferência entre carteiras não é receita nem despesa: ela não entra em `incomeTotal`, `expenseTotal`, `incomeByCategory` nem `expenseByCategory`. Ela aparece apenas no caixa, reduzindo o da carteira de origem por `transferOutTotal` e aumentando o da carteira de destino por `transferInTotal`. Uma transferência existe assim que um dos dois lados é conciliado, porque o dinheiro já mudou de lugar; conciliar o segundo lado depois não a duplica.
 
 `benefitBalances` continua separando VA/VR unificado (`food_meal_benefit`, somando os tipos legados `food_benefit` e `meal_benefit`) e auxílio home office (`home_office_benefit`). Esses benefícios não compõem os totais de caixa.
 
@@ -60,6 +65,8 @@ Com receita em dinheiro de `100.00`, despesa imediata de `5.00`, compra no créd
   "cashExpenseTotal": "5.00",
   "creditPurchaseTotal": "10.00",
   "cardPaymentTotal": "10.00",
+  "transferOutTotal": "0.00",
+  "transferInTotal": "0.00",
   "contributionTotal": "20.00",
   "contributionsByGoal": [
     { "goalId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", "amount": "20.00" }

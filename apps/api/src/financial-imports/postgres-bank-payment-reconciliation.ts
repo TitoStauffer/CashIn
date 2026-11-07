@@ -244,7 +244,9 @@ export async function importBankPayments(
     credit_card_statement_id: string | null;
   }>,
 ): Promise<void> {
-  const payments = items.filter((item) => item.type === "transfer");
+  const payments = items.flatMap((item) => item.type === "transfer" && item.credit_card_statement_id !== null
+    ? [{ ...item, credit_card_statement_id: item.credit_card_statement_id }]
+    : []);
   if (payments.length === 0) return;
   const userId = await walletOwnerUserId(executor, walletId);
   // Statements are locked in a stable order, so concurrent confirmations cannot deadlock.
@@ -256,9 +258,6 @@ export async function importBankPayments(
     [walletId, [...new Set(payments.flatMap((payment) => payment.credit_card_statement_id ? [payment.credit_card_statement_id] : []))]],
   );
   for (const payment of payments) {
-    if (!payment.credit_card_statement_id) {
-      throw new FinancialImportError("Concilie as transferências antes de confirmar a importação.", 409);
-    }
     let registered: { paymentId: string };
     try {
       registered = await registerStatementPayment(executor, {

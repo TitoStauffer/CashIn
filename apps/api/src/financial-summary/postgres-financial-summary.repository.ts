@@ -18,6 +18,8 @@ interface SummaryRow {
   available_balance: string;
   cash_balance: string;
   card_payment_total: string;
+  transfer_out_total: string;
+  transfer_in_total: string;
   benefit_balances: FinancialSummaryBalance[];
   income_by_category: FinancialSummaryCategory[];
   expense_by_category: FinancialSummaryCategory[];
@@ -85,7 +87,21 @@ export class PostgresFinancialSummaryRepository implements FinancialSummaryRepos
              WHERE payment.wallet_id = $1
                AND ($2::date IS NULL OR payment.date >= $2::date)
                AND ($3::date IS NULL OR payment.date <= $3::date)
-           ), 0.00) AS card_payment_total
+           ), 0.00) AS card_payment_total,
+           COALESCE((
+             SELECT SUM(transfer.amount)
+             FROM wallet_transfers AS transfer
+             WHERE transfer.from_wallet_id = $1
+               AND ($2::date IS NULL OR transfer.date >= $2::date)
+               AND ($3::date IS NULL OR transfer.date <= $3::date)
+           ), 0.00) AS transfer_out_total,
+           COALESCE((
+             SELECT SUM(transfer.amount)
+             FROM wallet_transfers AS transfer
+             WHERE transfer.to_wallet_id = $1
+               AND ($2::date IS NULL OR transfer.date >= $2::date)
+               AND ($3::date IS NULL OR transfer.date <= $3::date)
+           ), 0.00) AS transfer_in_total
        ),
        goal_contributions AS (
          SELECT COALESCE(
@@ -182,10 +198,16 @@ export class PostgresFinancialSummaryRepository implements FinancialSummaryRepos
          trunc(cash_expense_total, 2)::text AS cash_expense_total,
          trunc(credit_purchase_total, 2)::text AS credit_purchase_total,
          trunc(card_payment_total, 2)::text AS card_payment_total,
+         trunc(transfer_out_total, 2)::text AS transfer_out_total,
+         trunc(transfer_in_total, 2)::text AS transfer_in_total,
          contribution_total::text AS contribution_total,
          goal_contributions.items AS contributions_by_goal,
-         (cash_income_total - cash_expense_total - contribution_total - card_payment_total)::text AS cash_balance,
-         (cash_income_total - cash_expense_total - contribution_total - card_payment_total)::text AS available_balance,
+         -- A transfer moves cash without being income or expense: it leaves one wallet's balance and
+         -- enters the other's, and the totals above stay untouched.
+         (cash_income_total - cash_expense_total - contribution_total - card_payment_total
+           - transfer_out_total + transfer_in_total)::text AS cash_balance,
+         (cash_income_total - cash_expense_total - contribution_total - card_payment_total
+           - transfer_out_total + transfer_in_total)::text AS available_balance,
          benefit_balances.items AS benefit_balances,
          income_categories.items AS income_by_category,
          expense_categories.items AS expense_by_category
@@ -201,6 +223,8 @@ export class PostgresFinancialSummaryRepository implements FinancialSummaryRepos
       cashExpenseTotal: row.cash_expense_total,
       creditPurchaseTotal: row.credit_purchase_total,
       cardPaymentTotal: row.card_payment_total,
+      transferOutTotal: row.transfer_out_total,
+      transferInTotal: row.transfer_in_total,
       contributionTotal: row.contribution_total,
       contributionsByGoal: row.contributions_by_goal,
       availableBalance: row.available_balance,
