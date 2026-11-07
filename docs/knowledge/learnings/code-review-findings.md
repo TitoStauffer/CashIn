@@ -1,6 +1,6 @@
 # Aprendizados de Code Review
 
-**Status:** auditado até o PR #46, com ocorrências confirmadas dos PRs #56, #58, #63 e #64
+**Status:** auditado até o PR #46, com ocorrências confirmadas dos PRs #56, #58, #63, #64 e #66
 **Última revisão:** 07/11/2026
 
 Esta nota converte os achados históricos do Agent de Code Review em regras preventivas. O inventário e os links das revisões estão em [`code-review-audit.md`](code-review-audit.md).
@@ -177,6 +177,8 @@ Esta nota converte os achados históricos do Agent de Code Review em regras prev
 - **Correção aplicada:** a identidade é recalculada junto com o tipo; a conciliação passou a rodar antes da checagem de duplicidade; e a checagem compara as duas identidades possíveis de uma saída que pode pagar fatura, a despesa sugerida pelo parser e o pagamento que ela se torna.
 - **Regra preventiva:** quando um campo que compõe a identidade de deduplicação pode ser redefinido por regra de negócio, recalcule a identidade no mesmo ponto em que o campo muda e decida a classificação antes de consultar o histórico. Se a classificação depende do estado atual do banco, a comparação precisa considerar todas as identidades que a mesma movimentação real pode assumir.
 - **Detecção:** reimportar a mesma movimentação depois de confirmada, nos dois sentidos da classificação derivada — já importada como pagamento e já importada como despesa — sem reaproveitar o identificador externo do arquivo, que esconde a falha do fingerprint.
+- **Reincidência no [PR #66](https://github.com/TitoStauffer/CashIn/pull/66#pullrequestreview-5814939328) (SHA `d7cec81`, HIGH):** a transferência entre carteiras repetiu o mesmo erro na entrega seguinte à que criou esta regra. `asWalletTransfer` mudava o tipo do item para `transfer` sem recalcular a impressão digital, e o alargamento da comparação existia apenas para saídas com cara de pagamento de cartão. Reimportando a mesma linha em CSV, sem identificador externo, a movimentação voltava a entrar como receita ou despesa e o caixa era afetado duas vezes. A correção generalizou a regra: num extrato bancário, a comparação considera o tipo que o parser leu, o tipo natural do sinal e `transfer`, porque qualquer linha pode ter sido conciliada como pagamento de fatura ou como espelho de outra carteira. A mutação mostrou que é esse alargamento que detecta a reimportação; recalcular a impressão digital mantém o dado persistido coerente, mas não é o que pega o caso.
+- **Por que reincidiu:** a regra estava escrita para o destino conhecido na época (o pagamento de fatura), e o alargamento foi implementado com o predicado daquele destino (`isBankPaymentCandidateItem`). Ao surgir um segundo destino para o mesmo tipo, o predicado não o cobria. A prevenção passa a ser: alargar a identidade pelo **conjunto de tipos que a movimentação pode assumir**, derivado do sinal e dos destinos possíveis, nunca pelo predicado de um destino específico.
 
 ## 15. Valor financeiro movido para tabela associada precisa sobreviver à exclusão do pai
 

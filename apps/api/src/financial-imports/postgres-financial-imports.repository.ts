@@ -15,7 +15,6 @@ import {
   assertReconcilableStatement,
   attachStatementCandidates,
   importBankPayments,
-  isBankPaymentCandidateItem,
   reconcileBankPayments,
   SELECT_STATEMENT_MESSAGE,
   undoBankPayments,
@@ -1486,14 +1485,20 @@ export class PostgresFinancialImportsRepository implements FinancialImportReposi
   // suggested and the statement payment it becomes once reconciled. Which one it takes depends on
   // whether a statement was open at the time, so both are compared and a reimported payment is
   // recognized either way.
-  private duplicateIdentityTypes(item: ParsedFinancialImportItem): FinancialImportItemType[] {
-    if (!isBankPaymentCandidateItem(item)) return [item.type];
-    return ["expense", "transfer"];
+  // In a bank statement the same line may have been persisted as the movement the parser read or as a
+  // transfer: the payment of a card statement (DEV-85) or the mirror of another wallet's line
+  // (DEV-88). Which one it became depends on the state of the database at the time, so every identity
+  // the same real movement can take is compared. Comparing only the current type would miss a line
+  // already imported as a transfer and count the money twice.
+  private duplicateIdentityTypes(item: ParsedFinancialImportItem, isCardImport: boolean): FinancialImportItemType[] {
+    if (isCardImport || item.type === "card_credit" || !item.signedAmount) return [item.type];
+    const parsedType: FinancialImportItemType = item.signedAmount.startsWith("-") ? "expense" : "income";
+    return [...new Set<FinancialImportItemType>([item.type, parsedType, "transfer"])];
   }
 
-  private duplicateIdentityHashes(item: ParsedFinancialImportItem): string[] {
+  private duplicateIdentityHashes(item: ParsedFinancialImportItem, isCardImport: boolean): string[] {
     if (!item.date || !item.signedAmount) return [];
-    return this.duplicateIdentityTypes(item).flatMap((type) => {
+    return this.duplicateIdentityTypes(item, isCardImport).flatMap((type) => {
       const hash = createFinancialImportFingerprint({
         date: item.date!,
         signedAmount: item.signedAmount!,
@@ -1526,12 +1531,12 @@ export class PostgresFinancialImportsRepository implements FinancialImportReposi
         const date = item.date!;
         const signedAmount = item.signedAmount!;
         const description = item.description ?? null;
-        for (const hash of this.duplicateIdentityHashes(item)) hashes.add(hash);
+        for (const hash of this.duplicateIdentityHashes(item, creditCardId !== null)) hashes.add(hash);
         hashes.add(createLegacyFinancialImportFingerprint({ date, signedAmount, description }));
         if (accountReferenceHash) {
           hashes.add(createLegacyOfxFinancialImportFingerprint({ accountReferenceHash, date, signedAmount, description }));
         }
-        return this.duplicateIdentityTypes(item).map((type) => (
+        return this.duplicateIdentityTypes(item, creditCardId !== null).map((type) => (
           { transaction_date: date, signed_amount: signedAmount, type }
         ));
       });
@@ -1589,7 +1594,7 @@ export class PostgresFinancialImportsRepository implements FinancialImportReposi
     return items.map((item) => {
       if (item.validationStatus === "invalid" || item.validationStatus === "duplicate") return item;
       const matchesExternalId = Boolean(item.externalId && externalIds.has(item.externalId));
-      const matchesFingerprint = this.duplicateIdentityHashes(item).some((hash) => existingFingerprints.has(hash));
+      const matchesFingerprint = this.duplicateIdentityHashes(item, creditCardId !== null).some((hash) => existingFingerprints.has(hash));
       const fingerprintWasReviewed = item.acceptedDuplicateFingerprint === item.recordHash;
       if (!matchesExternalId && (!matchesFingerprint || fingerprintWasReviewed)) return item;
       return {

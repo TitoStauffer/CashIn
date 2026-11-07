@@ -1,5 +1,6 @@
 import type { QueryExecutor } from "../database.js";
 import { looksLikeCardPayment } from "./postgres-bank-payment-reconciliation.js";
+import { createFinancialImportFingerprint } from "./financial-imports.fingerprint.js";
 import { FinancialImportError } from "./financial-imports.errors.js";
 import { moneyToCents } from "../shared/money.js";
 import type {
@@ -77,6 +78,9 @@ export async function findCounterpartWallets(
   }));
 }
 
+// Changing the type changes the item's identity, so the fingerprint is recalculated with the fields
+// that will be persisted. Without this, a later import of the same line would not be seen as a
+// duplicate and the money would be counted twice.
 function asWalletTransfer(
   item: ParsedFinancialImportItem,
   candidate: WalletTransferCandidate | null,
@@ -86,6 +90,12 @@ function asWalletTransfer(
   return {
     ...item,
     type: "transfer",
+    recordHash: createFinancialImportFingerprint({
+      date: item.date,
+      signedAmount: item.signedAmount,
+      type: "transfer",
+      description: item.description,
+    }),
     categoryId: null,
     subcategoryId: null,
     creditCardStatementId: null,
@@ -138,9 +148,14 @@ export async function reconcileWalletTransfers(
     })),
   );
   const reconciled = [...items];
+  // A pending transfer has a single side to fill in this wallet, so it is suggested to at most one
+  // line: a second line of the same amount and date waits for the user instead of being confirmed
+  // into a conflict it did not cause.
+  const claimed = new Set<string>();
   for (const { item, index } of reconcilable) {
-    const candidates = candidatesByIndex.get(index) ?? [];
+    const candidates = (candidatesByIndex.get(index) ?? []).filter((candidate) => !claimed.has(candidate.walletTransferId));
     if (candidates.length === 1) {
+      claimed.add(candidates[0]!.walletTransferId);
       reconciled[index] = asWalletTransfer(item, candidates[0]!, "valid", null);
     } else if (isDeclaredTransfer(item)) {
       reconciled[index] = asWalletTransfer(
@@ -438,7 +453,10 @@ export async function importWalletTransfers(
       );
       resultingTransferId = created.rows[0]!.id;
     }
-    const linked = await executor.query(
+    // The other wallet may have undone its import between reading the items and locking here, which
+    // removes a transfer no side holds any more. The foreign key catches it, and the conflict is
+    // reported as such instead of as an unexpected failure.
+    const linked = await runWithTransferConflict(() => executor.query(
       `UPDATE import_items AS item
        SET validation_status = 'imported',
            resulting_wallet_transfer_id = $4,
@@ -448,10 +466,23 @@ export async function importWalletTransfers(
            updated_at = now()
        WHERE item.id = $1 AND item.import_session_id = $2 AND item.wallet_id = $3 AND item.validation_status = 'valid'`,
       [item.id, importId, walletId, resultingTransferId],
-    );
+    ));
     if (linked.rowCount !== 1) {
       throw new FinancialImportError("Uma transferência foi alterada durante a confirmação.", 409);
     }
+  }
+}
+
+const FOREIGN_KEY_VIOLATION = "23503";
+
+async function runWithTransferConflict<T>(operation: () => Promise<T>): Promise<T> {
+  try {
+    return await operation();
+  } catch (error) {
+    if ((error as { code?: string }).code === FOREIGN_KEY_VIOLATION) {
+      throw new FinancialImportError("Uma transferência foi alterada durante a confirmação.", 409);
+    }
+    throw error;
   }
 }
 

@@ -10,6 +10,15 @@ import type { FinancialImportSession } from "./financial-imports.types.js";
 
 const testDatabaseUrl = process.env.TEST_DATABASE_URL;
 
+const csvConfiguration = {
+  delimiter: ";" as const,
+  encoding: "utf-8" as const,
+  hasHeader: true,
+  dateFormat: "dd/MM/yyyy" as const,
+  numberFormat: "pt-BR" as const,
+  columns: { date: 0, description: 1, amount: 2, credit: null, debit: null, externalId: null },
+};
+
 // Bank statement where a transfer between the user's own wallets shows up as an ordinary debit on
 // one side and an ordinary credit on the other.
 function bankOfx(transactions: Array<{ id: string; date: string; amount: string; name: string; type?: string }>): Buffer {
@@ -95,14 +104,28 @@ test("PostgreSQL wallet transfer reconciliation moves cash between wallets witho
     const undo = (walletId: string, importId: string) => app!.inject({
       method: "POST", url: `/financial-imports/${importId}/undo`, headers: headersFor(walletId),
     });
+    const uploadCsv = (walletId: string, content: string, fileName: string) => app!.inject({
+      method: "POST",
+      url: "/financial-imports",
+      headers: {
+        ...headersFor(walletId),
+        "content-type": "application/octet-stream",
+        "x-file-name": fileName,
+        "x-file-format": "csv",
+        "x-csv-mapping": encodeURIComponent(JSON.stringify(csvConfiguration)),
+      },
+      payload: Buffer.from(content, "utf8"),
+    });
     const summary = async (walletId: string) => (await app!.inject({
       method: "GET", url: "/financial-summary?from=2026-10-01&to=2026-10-31", headers: headersFor(walletId),
     })).json() as {
       incomeTotal: string; expenseTotal: string; cashBalance: string;
       transferOutTotal: string; transferInTotal: string;
     };
-    const transferCount = async () => (await database.query<{ count: string }>(
-      "SELECT count(*)::text AS count FROM wallet_transfers",
+    // Counted by amount, so the later scenarios' transfers do not disturb the assertions about this one.
+    const transferCount = async (amount: string) => (await database.query<{ count: string }>(
+      "SELECT count(*)::text AS count FROM wallet_transfers WHERE amount = $1::numeric",
+      [amount],
     )).rows[0]!.count;
 
     // The outgoing side: a debit that is not a card payment is offered as a transfer between wallets.
@@ -156,7 +179,7 @@ test("PostgreSQL wallet transfer reconciliation moves cash between wallets witho
       ["valid", savingsWalletId, null],
     );
     assert.equal((await confirm(checkingWalletId, outgoing.id)).statusCode, 200);
-    assert.equal(await transferCount(), "1");
+    assert.equal(await transferCount("500.00"), "1");
 
     // The money left the checking wallet and arrived in the savings wallet, and neither total moved.
     const checkingAfterTransfer = await summary(checkingWalletId);
@@ -189,7 +212,7 @@ test("PostgreSQL wallet transfer reconciliation moves cash between wallets witho
     assert.ok(incomingItem.walletTransferId);
     assert.equal((await confirm(savingsWalletId, incoming.id)).statusCode, 200);
     // Still one transfer, and the cash balances did not move again.
-    assert.equal(await transferCount(), "1");
+    assert.equal(await transferCount("500.00"), "1");
     assert.equal((await summary(savingsWalletId)).cashBalance, "500.00");
     assert.equal((await summary(checkingWalletId)).cashBalance, "-500.00");
 
@@ -212,10 +235,24 @@ test("PostgreSQL wallet transfer reconciliation moves cash between wallets witho
     });
     assert.equal(foreignCategory.statusCode, 409);
 
+    // Reimporting the line already imported as a transfer must be recognized, or the money would be
+    // counted twice for one real movement. A CSV carries no external id, so the comparison depends
+    // only on the identity of the line — and the type is part of that identity, which changed when the
+    // line was reconciled.
+    const reimported = (await uploadCsv(
+      checkingWalletId,
+      "Data;Descrição;Valor\n05/10/2026;TRANSFERENCIA PARA POUPANCA;-500,00\n",
+      "reimportado.csv",
+    )).json() as FinancialImportSession;
+    assert.deepEqual(
+      [reimported.items![0]!.validationStatus, reimported.items![0]!.canIncludeDuplicate],
+      ["duplicate", true],
+    );
+
     // Undoing the side that arrived later keeps the transfer: the money did move, and only this
     // wallet's line stops being reconciled, which puts the side back on offer.
     assert.equal((await undo(savingsWalletId, incoming.id)).statusCode, 200);
-    assert.equal(await transferCount(), "1");
+    assert.equal(await transferCount("500.00"), "1");
     assert.equal((await summary(savingsWalletId)).cashBalance, "500.00");
     const pendingAgain = (await upload(savingsWalletId, bankOfx([
       { id: "t-in-third", date: "2026-10-06", amount: "500.00", name: "TRANSFERENCIA RECEBIDA DE NOVO" },
@@ -225,9 +262,59 @@ test("PostgreSQL wallet transfer reconciliation moves cash between wallets witho
 
     // Undoing the side that created the transfer removes it, because no other side holds it.
     assert.equal((await undo(checkingWalletId, outgoing.id)).statusCode, 200);
-    assert.equal(await transferCount(), "0");
+    assert.equal(await transferCount("500.00"), "0");
     assert.equal((await summary(checkingWalletId)).cashBalance, "0.00");
     assert.equal((await summary(savingsWalletId)).cashBalance, "0.00");
+
+    // Two pending transfers of the same amount and date are ambiguous: nothing is reconciled on its
+    // own, and both candidates are offered for the user to choose.
+    const ambiguousCard = await database.query<{ id: string }>(
+      "INSERT INTO wallets (owner_user_id, name, is_personal) VALUES ($1, 'Reserva', false) RETURNING id",
+      [userId],
+    );
+    for (const target of [savingsWalletId, ambiguousCard.rows[0]!.id]) {
+      await database.query(
+        `INSERT INTO wallet_transfers (from_wallet_id, to_wallet_id, user_id, amount, date, description)
+         VALUES ($1, $2, $3, 310.00, '2026-10-09', 'APORTE')`,
+        [checkingWalletId, target, userId],
+      );
+    }
+    const ambiguous = (await upload(checkingWalletId, bankOfx([
+      { id: "t-ambiguous", date: "2026-10-09", amount: "-310.00", name: "APORTE", type: "XFER" },
+    ]), "ambigua.ofx")).json() as FinancialImportSession;
+    const ambiguousItem = ambiguous.items![0]!;
+    assert.deepEqual(
+      [ambiguousItem.type, ambiguousItem.validationStatus, ambiguousItem.transferCounterpartWalletId],
+      ["transfer", "uncategorized", null],
+    );
+    assert.match(ambiguousItem.errorMessage ?? "", /Escolha a transferência que esta movimentação completa/);
+    const ambiguousReloaded = (await app.inject({
+      method: "GET", url: `/financial-imports/${ambiguous.id}`, headers: headersFor(checkingWalletId),
+    })).json() as FinancialImportSession;
+    assert.equal(ambiguousReloaded.items![0]!.transferCandidates!.length, 2);
+    // Confirming is blocked until the user picks one of them.
+    assert.equal((await confirm(checkingWalletId, ambiguous.id)).statusCode, 409);
+
+    // Two lines of the same file never claim the same pending transfer: the second waits for the user
+    // instead of being confirmed into a conflict it did not cause.
+    const disputed = (await upload(checkingWalletId, bankOfx([
+      { id: "t-disputed-1", date: "2026-10-12", amount: "-77.00", name: "TRANSFERENCIA", type: "XFER" },
+      { id: "t-disputed-2", date: "2026-10-12", amount: "-77.00", name: "OUTRA TRANSFERENCIA", type: "XFER" },
+    ]), "disputada.ofx")).json() as FinancialImportSession;
+    await database.query(
+      `INSERT INTO wallet_transfers (from_wallet_id, to_wallet_id, user_id, amount, date, description)
+       VALUES ($1, $2, $3, 77.00, '2026-10-12', 'DISPUTADA')`,
+      [checkingWalletId, savingsWalletId, userId],
+    );
+    const disputedAgain = (await upload(checkingWalletId, bankOfx([
+      { id: "t-disputed-3", date: "2026-10-13", amount: "-77.00", name: "TRANSFERENCIA", type: "XFER" },
+      { id: "t-disputed-4", date: "2026-10-13", amount: "-77.00", name: "OUTRA TRANSFERENCIA", type: "XFER" },
+    ]), "disputada-2.ofx")).json() as FinancialImportSession;
+    assert.deepEqual(
+      disputedAgain.items!.map((item) => item.validationStatus),
+      ["valid", "uncategorized"],
+    );
+    assert.equal(disputed.items!.length, 2);
   } finally {
     await app?.close();
     await scopedPool?.end();
