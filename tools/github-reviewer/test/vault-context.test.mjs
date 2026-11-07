@@ -428,3 +428,34 @@ test('fails closed when the vault index exists without the required current stat
   const files = { 'docs/knowledge/README.md': { value: '# Index\n' } };
   await assert.rejects(loadVaultContext(fakeFetch(files), repository, [], headSha, baseSha, 'token'), /current state is unavailable/);
 });
+
+// The ceiling of a single response is what decides whether a cited source of real size can be read at
+// all: below it the review runs, above it the whole review fails before any analysis. These two pin
+// the value, so a regression in either direction shows up as a failing test instead of as a broken
+// review round.
+test('reads a cited source whose response fills most of the single-response ceiling', async () => {
+  // 300_000 source bytes become about 400_000 of base64 inside the JSON response.
+  const source = 'a'.repeat(290_000);
+  const files = baseVault({
+    'docs/knowledge/context-map.json': { value: JSON.stringify({ version: 1, routes: [{ paths: ['apps/api/src/**'], documents: ['docs/knowledge/domains/backend.md'] }] }) },
+    'docs/knowledge/domains/backend.md': { value: '# Backend\n[Service](../../../apps/api/src/service.ts)\n' },
+    'apps/api/src/service.ts': { value: source },
+  });
+
+  const result = await loadVaultContext(fakeFetch(files), repository, [{ filename: 'apps/api/src/route.ts', status: 'modified' }], headSha, baseSha, 'token');
+
+  assert.equal(result.find(({ path }) => path === 'apps/api/src/service.ts')?.content, source);
+});
+
+test('fails closed when a cited source response exceeds the single-response ceiling', async () => {
+  const files = baseVault({
+    'docs/knowledge/context-map.json': { value: JSON.stringify({ version: 1, routes: [{ paths: ['apps/api/src/**'], documents: ['docs/knowledge/domains/backend.md'] }] }) },
+    'docs/knowledge/domains/backend.md': { value: '# Backend\n[Service](../../../apps/api/src/service.ts)\n' },
+    'apps/api/src/service.ts': { value: 'a'.repeat(310_000) },
+  });
+
+  await assert.rejects(
+    loadVaultContext(fakeFetch(files), repository, [{ filename: 'apps/api/src/route.ts', status: 'modified' }], headSha, baseSha, 'token'),
+    /response exceeds the supported size|Could not read vault context source/,
+  );
+});
