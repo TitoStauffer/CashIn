@@ -488,6 +488,8 @@ describe('FinancialImportsPage', () => {
       categoryId: 'income-category',
       subcategoryId: 'income-subcategory',
       creditCardStatementId: null,
+      transferCounterpartWalletId: null,
+      walletTransferId: null,
     }))
     expect(within(firstItem).queryByRole('combobox', { name: 'Fatura' })).not.toBeInTheDocument()
     const confirmButton = screen.getByRole('button', { name: 'Confirmar 2 movimentações' })
@@ -1287,16 +1289,18 @@ describe('FinancialImportsPage', () => {
 
       const payment = (await screen.findByText('Movimentação 1')).closest('li') as HTMLElement
       expect(within(payment).getByText(/Selecione a fatura que este pagamento liquida/)).toBeVisible()
-      const statementField = within(payment).getByRole('combobox', { name: 'Fatura paga' })
+      const reconciliationField = within(payment).getByRole('combobox', { name: 'Conciliar com' })
       // Every candidate is offered with the card, the due date and what is still owed, so the choice
-      // does not depend on remembering which statement is which.
-      expect(Array.from(statementField.querySelectorAll('option')).map((option) => option.textContent)).toEqual([
-        'Selecione a fatura',
+      // does not depend on remembering which statement is which. Statements and wallets live in the
+      // same field because a transfer reconciles with one or the other, never both.
+      expect(Array.from(reconciliationField.querySelectorAll('option')).map((option) => option.textContent)).toEqual([
+        'Escolha a fatura ou a carteira',
         'Principal · vence 20/10/2026 · falta R$ 400,00',
         'Secundário · vence 22/10/2026 · falta R$ 250,00',
       ])
+      expect(Array.from(reconciliationField.querySelectorAll('optgroup')).map((group) => group.label)).toEqual(['Fatura paga'])
 
-      await user.selectOptions(statementField, 'statement-principal')
+      await user.selectOptions(reconciliationField, 'statement:statement-principal')
       await user.click(within(payment).getByRole('button', { name: 'Salvar ajuste' }))
 
       await waitFor(() => expect(importsApi.updateItem).toHaveBeenCalledWith('import-1', 'payment-1', {
@@ -1306,6 +1310,8 @@ describe('FinancialImportsPage', () => {
         categoryId: null,
         subcategoryId: null,
         creditCardStatementId: 'statement-principal',
+        transferCounterpartWalletId: null,
+        walletTransferId: null,
       }))
       // The item response carries no candidate list, so the session is read again to keep the choice
       // and the remaining candidates on screen.
@@ -1324,7 +1330,7 @@ describe('FinancialImportsPage', () => {
 
       const payment = (await screen.findByText('Movimentação 1')).closest('li') as HTMLElement
       await user.selectOptions(within(payment).getByRole('combobox', { name: 'Tipo' }), 'expense')
-      expect(within(payment).queryByRole('combobox', { name: 'Fatura paga' })).not.toBeInTheDocument()
+      expect(within(payment).queryByRole('combobox', { name: 'Conciliar com' })).not.toBeInTheDocument()
       await user.click(within(payment).getByRole('button', { name: 'Salvar ajuste' }))
 
       await waitFor(() => expect(importsApi.updateItem).toHaveBeenCalledWith('import-1', 'payment-1', expect.objectContaining({
@@ -1343,8 +1349,241 @@ describe('FinancialImportsPage', () => {
       await user.click(await screen.findByRole('button', { name: 'Ver detalhes' }))
 
       const payment = (await screen.findByText('Movimentação 1')).closest('li') as HTMLElement
-      expect(within(payment).queryByRole('combobox', { name: 'Fatura paga' })).not.toBeInTheDocument()
-      expect(within(payment).getByText(/Nenhuma fatura em aberto corresponde a esta saída/)).toBeVisible()
+      expect(within(payment).queryByRole('combobox', { name: 'Conciliar com' })).not.toBeInTheDocument()
+      // The API did not send the wallet lists for this line, so the hint states no absence it cannot
+      // vouch for.
+      expect(within(payment).getByText(/não tem conciliação disponível nesta prévia/)).toBeVisible()
+    })
+  })
+  describe('transfers between wallets found in a bank statement', () => {
+    const counterpartWallets = [
+      { walletId: 'wallet-savings', walletName: 'Poupança', isPersonal: false },
+      { walletId: 'wallet-shared', walletName: 'Família', isPersonal: false },
+    ]
+    const pendingTransfer = {
+      walletTransferId: 'transfer-1',
+      counterpartWalletId: 'wallet-savings',
+      counterpartWalletName: 'Poupança',
+      amount: '500.00',
+      date: '2026-10-05',
+      description: 'TRANSFERENCIA',
+      direction: 'outgoing' as const,
+    }
+    const transferItem: FinancialImportItem = {
+      // The API always returns amount as an absolute value (abs(signed_amount)), so a fixture with a
+      // sign would test something the client never receives.
+      id: 'transfer-item-1', sequence: 1, date: '2026-10-05', description: 'TRANSFERENCIA PARA POUPANCA', amount: '500.00',
+      type: 'transfer', categoryId: null, subcategoryId: null, validationStatus: 'uncategorized',
+      errorMessage: 'Escolha a carteira do outro lado desta transferência para incluí-la na importação.',
+      canEdit: true, creditCardStatementId: null, statementCandidates: [],
+      transferCandidates: [], transferCounterpartWallets: counterpartWallets,
+      walletTransferId: null, transferCounterpartWalletId: null,
+    }
+    const transferSession: FinancialImportSession = {
+      ...previewSession,
+      summary: { total: 1, valid: 0, duplicate: 0, invalid: 0, uncategorized: 1, imported: 0 },
+      items: [transferItem],
+    }
+
+    function mockTransferSession(session: FinancialImportSession) {
+      vi.mocked(importsApi.list).mockResolvedValueOnce({ items: [{ ...session, items: undefined }] })
+      vi.mocked(importsApi.get).mockResolvedValue(session)
+      vi.mocked(importsApi.updateItem).mockImplementation(async (_importId, _itemId, input) => ({
+        ...session.items![0],
+        ...input,
+        validationStatus: input.transferCounterpartWalletId || input.creditCardStatementId ? 'valid' : 'uncategorized',
+      }))
+    }
+
+    it('pairs an outgoing line with another wallet of the user', async () => {
+      mockTransferSession(transferSession)
+      const user = userEvent.setup()
+      await renderPage()
+      await user.click(await screen.findByRole('button', { name: 'Ver detalhes' }))
+
+      const line = (await screen.findByText('Movimentação 1')).closest('li') as HTMLElement
+      expect(within(line).getByText(/Escolha a carteira do outro lado/)).toBeVisible()
+      const field = within(line).getByRole('combobox', { name: 'Conciliar com' })
+      // Without a pending candidate there is no authoritative direction — the API sends the amount as
+      // an absolute value — so the label names the wallets without claiming a direction.
+      expect(Array.from(field.querySelectorAll('optgroup')).map((group) => group.label)).toEqual(['Carteira do outro lado'])
+      expect(Array.from(field.querySelectorAll('option')).map((option) => option.textContent)).toEqual([
+        'Escolha a fatura ou a carteira',
+        'Poupança',
+        'Família',
+      ])
+
+      await user.selectOptions(field, 'wallet:wallet-savings')
+      await user.click(within(line).getByRole('button', { name: 'Salvar ajuste' }))
+
+      await waitFor(() => expect(importsApi.updateItem).toHaveBeenCalledWith('import-1', 'transfer-item-1', {
+        date: '2026-10-05',
+        description: 'TRANSFERENCIA PARA POUPANCA',
+        type: 'transfer',
+        categoryId: null,
+        subcategoryId: null,
+        creditCardStatementId: null,
+        transferCounterpartWalletId: 'wallet-savings',
+        walletTransferId: null,
+      }))
+    })
+
+    it('completes a transfer already registered instead of creating another', async () => {
+      mockTransferSession({
+        ...transferSession,
+        items: [{
+          ...transferItem,
+          date: '2026-10-06',
+          description: 'TRANSFERENCIA RECEBIDA',
+          transferCandidates: [{ ...pendingTransfer, direction: 'incoming' }],
+          errorMessage: 'Escolha a transferência que esta movimentação completa, ou a carteira do outro lado.',
+        }],
+      })
+      const user = userEvent.setup()
+      await renderPage()
+      await user.click(await screen.findByRole('button', { name: 'Ver detalhes' }))
+
+      const line = (await screen.findByText('Movimentação 1')).closest('li') as HTMLElement
+      const field = within(line).getByRole('combobox', { name: 'Conciliar com' })
+      // The pending candidate carries the direction decided by the API, so here the label can state it.
+      expect(Array.from(field.querySelectorAll('optgroup')).map((group) => group.label)).toEqual([
+        'Transferência já registrada',
+        'Receber da carteira',
+      ])
+      expect(within(field).getByRole('option', { name: 'de Poupança · 05/10/2026 · R$ 500,00' })).toBeInTheDocument()
+      expect(within(field).getByRole('option', { name: 'de Família' })).toBeInTheDocument()
+
+      await user.selectOptions(field, 'transfer:transfer-1')
+      await user.click(within(line).getByRole('button', { name: 'Salvar ajuste' }))
+
+      // Choosing a registered transfer carries the wallet on its other end, so the API completes that
+      // transfer instead of creating a second one for the same money.
+      await waitFor(() => expect(importsApi.updateItem).toHaveBeenCalledWith('import-1', 'transfer-item-1', expect.objectContaining({
+        walletTransferId: 'transfer-1',
+        transferCounterpartWalletId: 'wallet-savings',
+        creditCardStatementId: null,
+      })))
+    })
+
+    it('states the direction of an outgoing line when a pending transfer carries it', async () => {
+      mockTransferSession({
+        ...transferSession,
+        items: [{ ...transferItem, transferCandidates: [pendingTransfer] }],
+      })
+      const user = userEvent.setup()
+      await renderPage()
+      await user.click(await screen.findByRole('button', { name: 'Ver detalhes' }))
+
+      const line = (await screen.findByText('Movimentação 1')).closest('li') as HTMLElement
+      const field = within(line).getByRole('combobox', { name: 'Conciliar com' })
+      // The candidate's direction is the API's, so an outgoing line reads as sending money out — the
+      // opposite label would invert the meaning of the choice.
+      expect(Array.from(field.querySelectorAll('optgroup')).map((group) => group.label)).toEqual([
+        'Transferência já registrada',
+        'Transferir para a carteira',
+      ])
+      expect(within(field).getByRole('option', { name: 'para Poupança' })).toBeInTheDocument()
+      expect(within(field).getByRole('option', { name: 'para Família' })).toBeInTheDocument()
+      expect(within(field).getByRole('option', { name: 'para Poupança · 05/10/2026 · R$ 500,00' })).toBeInTheDocument()
+    })
+
+    it('does not claim an absence the API did not report', async () => {
+      // The API attaches statements and wallets to a line already stored as a transfer, so a line the
+      // user just switched to "Transferência" has none. Absent is not empty: claiming there is no
+      // wallet to reconcile with would be false.
+      mockTransferSession({
+        ...transferSession,
+        items: [{
+          ...transferItem,
+          type: 'expense',
+          validationStatus: 'uncategorized',
+          errorMessage: 'Selecione uma categoria para importar a movimentação.',
+          // The API omits the lists for this line, which is different from sending them empty.
+          transferCandidates: undefined,
+          transferCounterpartWallets: undefined,
+        }],
+      })
+      const user = userEvent.setup()
+      await renderPage()
+      await user.click(await screen.findByRole('button', { name: 'Ver detalhes' }))
+
+      const line = (await screen.findByText('Movimentação 1')).closest('li') as HTMLElement
+      await user.selectOptions(within(line).getByRole('combobox', { name: 'Tipo' }), 'transfer')
+
+      expect(within(line).queryByRole('combobox', { name: 'Conciliar com' })).not.toBeInTheDocument()
+      expect(within(line).getByText(/não tem conciliação disponível nesta prévia/)).toBeVisible()
+    })
+
+    it('states both absences when the API reported empty lists', async () => {
+      mockTransferSession({
+        ...transferSession,
+        items: [{ ...transferItem, transferCandidates: [], transferCounterpartWallets: [], statementCandidates: [] }],
+      })
+      const user = userEvent.setup()
+      await renderPage()
+      await user.click(await screen.findByRole('button', { name: 'Ver detalhes' }))
+
+      const line = (await screen.findByText('Movimentação 1')).closest('li') as HTMLElement
+      expect(within(line).getByText(/Nenhuma fatura em aberto e nenhuma outra carteira/)).toBeVisible()
+    })
+
+    it('keeps a transfer chosen earlier when it is no longer among the candidates', async () => {
+      mockTransferSession({
+        ...transferSession,
+        items: [{
+          ...transferItem,
+          validationStatus: 'valid',
+          errorMessage: null,
+          walletTransferId: 'transfer-gone',
+          transferCounterpartWalletId: 'wallet-savings',
+          transferCandidates: [],
+        }],
+      })
+      const user = userEvent.setup()
+      await renderPage()
+      await user.click(await screen.findByRole('button', { name: 'Ver detalhes' }))
+
+      const line = (await screen.findByText('Movimentação 1')).closest('li') as HTMLElement
+      const field = within(line).getByRole('combobox', { name: 'Conciliar com' })
+      expect(within(field).getByRole('option', { name: 'Transferência escolhida anteriormente' })).toBeInTheDocument()
+
+      // Re-picking the fallback option keeps the wallet already in the draft, instead of dropping the
+      // choice and falling back to the placeholder.
+      await user.selectOptions(field, 'transfer:transfer-gone')
+      await user.click(within(line).getByRole('button', { name: 'Salvar ajuste' }))
+
+      await waitFor(() => expect(importsApi.updateItem).toHaveBeenCalledWith('import-1', 'transfer-item-1', expect.objectContaining({
+        walletTransferId: 'transfer-gone',
+        transferCounterpartWalletId: 'wallet-savings',
+      })))
+    })
+
+    it('replaces one reconciliation with the other instead of keeping both', async () => {
+      mockTransferSession({
+        ...transferSession,
+        items: [{
+          ...transferItem,
+          statementCandidates: [{
+            statementId: 'statement-1', creditCardId: 'card-1', creditCardName: 'Principal',
+            closingDate: '2026-10-10', dueDate: '2026-10-20', outstandingAmount: '500.00',
+          }],
+        }],
+      })
+      const user = userEvent.setup()
+      await renderPage()
+      await user.click(await screen.findByRole('button', { name: 'Ver detalhes' }))
+
+      const line = (await screen.findByText('Movimentação 1')).closest('li') as HTMLElement
+      const field = within(line).getByRole('combobox', { name: 'Conciliar com' })
+      await user.selectOptions(field, 'statement:statement-1')
+      await user.selectOptions(field, 'wallet:wallet-shared')
+      await user.click(within(line).getByRole('button', { name: 'Salvar ajuste' }))
+
+      // The API refuses a line carrying both, so picking the wallet clears the statement.
+      await waitFor(() => expect(importsApi.updateItem).toHaveBeenCalledWith('import-1', 'transfer-item-1', expect.objectContaining({
+        creditCardStatementId: null,
+        transferCounterpartWalletId: 'wallet-shared',
+      })))
     })
   })
 })

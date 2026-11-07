@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { amountToCents, barPercentage, categoryChanges, centsToAmount, topCategories } from './dashboardMetrics'
+import { amountToCents, barPercentage, cashInflow, cashOutflow, categoryChanges, centsToAmount, hasActivity, topCategories, transferInflow } from './dashboardMetrics'
 
 describe('dashboard exact calculations', () => {
   it('preserves signed cent values beyond the safe integer limit', () => {
@@ -34,5 +34,35 @@ describe('dashboard exact calculations', () => {
     expect(categoryChanges(current, previous).map((item) => [item.categoryId, item.previous, item.amount, item.difference])).toEqual([
       ['largest', '0.00', '1000.00', 100000n], ['new', '0.00', '60.00', 6000n], ['removed', '50.01', '0.00', -5001n], ['tie', '0.00', '50.01', 5001n],
     ])
+  })
+  it('moves transfers between wallets through the cash flow without touching income or expense', () => {
+    const summary = {
+      incomeTotal: '0.00', expenseTotal: '0.00', contributionTotal: '0.00',
+      cashIncomeTotal: '100.00', cashExpenseTotal: '0.00', creditPurchaseTotal: '0.00', cardPaymentTotal: '0.00',
+      transferOutTotal: '500.00', transferInTotal: '80.00',
+      contributionsByGoal: [], availableBalance: '-320.00', cashBalance: '-320.00',
+      benefitBalances: [], incomeByCategory: [], expenseByCategory: [],
+    }
+
+    // What left the wallet joins the outflow and what arrived joins the inflow, so the two sides of a
+    // transfer appear where the money actually moved.
+    expect(cashOutflow(summary)).toBe(50000n)
+    expect(cashInflow(summary)).toBe(18000n)
+    expect(transferInflow(summary)).toBe(8000n)
+    // A wallet whose only activity is a transfer still has activity to show.
+    expect(hasActivity({ ...summary, cashIncomeTotal: '0.00', transferInTotal: '0.00' })).toBe(true)
+  })
+
+  it('treats an older API without transfer totals as zero', () => {
+    const summary = {
+      incomeTotal: '0.00', expenseTotal: '0.00', contributionTotal: '0.00',
+      cashIncomeTotal: '100.00', cashExpenseTotal: '10.00', creditPurchaseTotal: '0.00', cardPaymentTotal: '0.00',
+      contributionsByGoal: [], availableBalance: '90.00', cashBalance: '90.00',
+      benefitBalances: [], incomeByCategory: [], expenseByCategory: [],
+    }
+
+    expect(cashOutflow(summary)).toBe(1000n)
+    expect(cashInflow(summary)).toBe(10000n)
+    expect(hasActivity(summary)).toBe(false)
   })
 })

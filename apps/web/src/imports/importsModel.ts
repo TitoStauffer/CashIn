@@ -2,6 +2,8 @@ import { formatBrazilianCurrency } from '../money/currency'
 import type {
   BankPaymentCandidate,
   CsvImportConfiguration,
+  TransferCounterpartWallet,
+  WalletTransferCandidate,
   FinancialImportItem,
   FinancialImportItemInput,
   FinancialImportItemStatus,
@@ -81,10 +83,91 @@ export function isCardSession(session: FinancialImportSession) {
   return session.kind === 'credit_card_statement'
 }
 
-// In a bank statement an outgoing transfer is how a card payment arrives, so it is the only type
-// that can be reconciled with a statement.
+// In a bank statement a transfer is either the payment of a card statement or one side of a transfer
+// between two wallets, so it is the only type that asks to be reconciled — and with exactly one of
+// the two.
 export function canReconcileStatement(session: FinancialImportSession, type: FinancialImportItemType) {
   return !isCardSession(session) && type === 'transfer'
+}
+
+// The two reconciliations are mutually exclusive, so the preview offers them as one choice. The
+// value carries which kind was picked, because the API takes a different field for each.
+export type ReconciliationChoice =
+  | { kind: 'none' }
+  | { kind: 'statement'; statementId: string }
+  | { kind: 'transfer'; walletTransferId: string; counterpartWalletId: string }
+  | { kind: 'wallet'; counterpartWalletId: string }
+
+export function reconciliationChoiceValue(choice: ReconciliationChoice) {
+  switch (choice.kind) {
+    case 'statement': return `statement:${choice.statementId}`
+    case 'transfer': return `transfer:${choice.walletTransferId}`
+    case 'wallet': return `wallet:${choice.counterpartWalletId}`
+    default: return ''
+  }
+}
+
+export function currentReconciliationChoice(draft: FinancialImportItemInput): ReconciliationChoice {
+  if (draft.creditCardStatementId) return { kind: 'statement', statementId: draft.creditCardStatementId }
+  if (draft.walletTransferId && draft.transferCounterpartWalletId) {
+    return { kind: 'transfer', walletTransferId: draft.walletTransferId, counterpartWalletId: draft.transferCounterpartWalletId }
+  }
+  if (draft.transferCounterpartWalletId) return { kind: 'wallet', counterpartWalletId: draft.transferCounterpartWalletId }
+  return { kind: 'none' }
+}
+
+// Picking one reconciliation always clears the other, which is what the API requires.
+export function reconciliationChoiceDraft(
+  value: string,
+  candidates: WalletTransferCandidate[],
+  currentCounterpartWalletId: string | null = null,
+): Partial<FinancialImportItemInput> {
+  const [kind, id] = value.split(':')
+  if (kind === 'statement' && id) {
+    return { creditCardStatementId: id, transferCounterpartWalletId: null, walletTransferId: null }
+  }
+  if (kind === 'transfer' && id) {
+    // The chosen transfer may no longer be among the candidates — that is exactly when the "chosen
+    // earlier" option is shown — so the wallet already in the draft is kept instead of being cleared,
+    // which would silently drop the choice.
+    const candidate = candidates.find((option) => option.walletTransferId === id)
+    return {
+      creditCardStatementId: null,
+      walletTransferId: id,
+      transferCounterpartWalletId: candidate?.counterpartWalletId ?? currentCounterpartWalletId,
+    }
+  }
+  if (kind === 'wallet' && id) {
+    return { creditCardStatementId: null, walletTransferId: null, transferCounterpartWalletId: id }
+  }
+  return { creditCardStatementId: null, walletTransferId: null, transferCounterpartWalletId: null }
+}
+
+export function describeTransferCandidate(candidate: WalletTransferCandidate) {
+  const direction = candidate.direction === 'outgoing' ? 'para' : 'de'
+  return `${direction} ${candidate.counterpartWalletName} · ${formatIsoDate(candidate.date)} · ${formatBrazilianCurrency(candidate.amount)}`
+}
+
+// The direction of a line is not derivable on the client: the API exposes `amount` as an absolute
+// value and the line is already stored as `transfer`, so neither the sign nor the type tells an
+// outgoing line from an incoming one. The pending candidates carry the direction decided by the API,
+// which is the only authoritative source here; without any candidate the label states no direction
+// instead of guessing one.
+export function transferDirection(candidates: WalletTransferCandidate[]): 'outgoing' | 'incoming' | null {
+  const directions = new Set(candidates.map((candidate) => candidate.direction))
+  return directions.size === 1 ? [...directions][0]! : null
+}
+
+export function counterpartWalletsLabel(direction: 'outgoing' | 'incoming' | null) {
+  if (direction === 'outgoing') return 'Transferir para a carteira'
+  if (direction === 'incoming') return 'Receber da carteira'
+  return 'Carteira do outro lado'
+}
+
+export function describeCounterpartWallet(wallet: TransferCounterpartWallet, direction: 'outgoing' | 'incoming' | null) {
+  if (direction === 'outgoing') return `para ${wallet.walletName}`
+  if (direction === 'incoming') return `de ${wallet.walletName}`
+  return wallet.walletName
 }
 
 export function hasCategory(type: FinancialImportItemType) {
@@ -118,6 +201,8 @@ export function createDraft(item: FinancialImportItem): FinancialImportItemInput
     subcategoryId: item.subcategoryId,
     statementClosingDate: item.statementClosingDate ?? null,
     creditCardStatementId: item.creditCardStatementId ?? null,
+    transferCounterpartWalletId: item.transferCounterpartWalletId ?? null,
+    walletTransferId: item.walletTransferId ?? null,
   }
 }
 
@@ -131,6 +216,8 @@ export function hasDraftChanged(item: FinancialImportItem, draft: FinancialImpor
     || original.subcategoryId !== draft.subcategoryId
     || (original.statementClosingDate ?? null) !== (draft.statementClosingDate ?? null)
     || (original.creditCardStatementId ?? null) !== (draft.creditCardStatementId ?? null)
+    || (original.transferCounterpartWalletId ?? null) !== (draft.transferCounterpartWalletId ?? null)
+    || (original.walletTransferId ?? null) !== (draft.walletTransferId ?? null)
 }
 
 export function describeStatementCandidate(candidate: BankPaymentCandidate) {

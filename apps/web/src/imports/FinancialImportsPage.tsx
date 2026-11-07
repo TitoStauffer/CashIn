@@ -556,15 +556,21 @@ function FinancialImportsWalletPage({ userEmail, isLoggingOut, onLogout }: Finan
     try {
       const isCardItem = isCardSession(selectedImport!)
       const canReconcilePayment = canReconcileStatement(selectedImport!, draft.type)
-      const { statementClosingDate, creditCardStatementId, ...itemDraft } = draft
+      const { statementClosingDate, creditCardStatementId, transferCounterpartWalletId, walletTransferId, ...itemDraft } = draft
       const updated = await importsApi.updateItem(selectedImport!.id, item.id, {
         ...itemDraft,
         description: draft.description.trim(),
         categoryId: hasCategory(draft.type) ? draft.categoryId : null,
         subcategoryId: hasCategory(draft.type) ? draft.subcategoryId : null,
         ...(isCardItem ? { statementClosingDate: statementClosingDate ?? null } : {}),
-        // The field is only accepted on a bank statement import, and only a transfer may carry it.
-        ...(isCardItem ? {} : { creditCardStatementId: canReconcilePayment ? creditCardStatementId ?? null : null }),
+        // The fields are only accepted on a bank statement import, and only a transfer may carry
+        // them. A transfer settles a statement or mirrors another wallet, never both, so the pair not
+        // chosen is sent as null.
+        ...(isCardItem ? {} : {
+          creditCardStatementId: canReconcilePayment ? creditCardStatementId ?? null : null,
+          transferCounterpartWalletId: canReconcilePayment ? transferCounterpartWalletId ?? null : null,
+          walletTransferId: canReconcilePayment ? walletTransferId ?? null : null,
+        }),
         ...(includeDuplicate ? { includeDuplicate: true } : {}),
       })
       if (!isCurrentWalletOperation(operation)) return

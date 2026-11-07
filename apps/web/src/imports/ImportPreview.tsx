@@ -9,8 +9,15 @@ import {
   canReconcileStatement,
   cardTypeLabels,
   cardTypeOptions,
+  counterpartWalletsLabel,
   createDraft,
+  currentReconciliationChoice,
+  describeCounterpartWallet,
   describeStatementCandidate,
+  describeTransferCandidate,
+  reconciliationChoiceDraft,
+  reconciliationChoiceValue,
+  transferDirection,
   formatFileSize,
   formatIsoDate,
   getSessionStatusLabel,
@@ -153,10 +160,25 @@ export function ImportPreview({
             const canChooseStatement = isCard && closingDay !== null && dueDay !== null && draft.type !== 'transfer' && isValidIsoDate(draft.date)
             const canReconcilePayment = canReconcileStatement(session, draft.type)
             const candidates = canReconcilePayment ? item.statementCandidates ?? [] : []
-            // The candidate list only holds open statements with an outstanding balance, so a statement
-            // already chosen drops out of it. It stays selectable, otherwise saving the item again
-            // would silently undo the reconciliation the user had made.
+            const transferCandidates = canReconcilePayment ? item.transferCandidates ?? [] : []
+            const counterpartWallets = canReconcilePayment ? item.transferCounterpartWallets ?? [] : []
+            // The API omits these lists for a line it left to the statement reconciliation, and for a
+            // type the user just changed by hand. Absent is not the same as empty: only an empty list
+            // the API actually sent means there is nothing to reconcile.
+            const knowsTransferOptions = item.transferCounterpartWallets !== undefined
+            // The candidate lists only hold what is still open — a statement with an outstanding
+            // balance, a transfer whose side here is free — so what was already chosen drops out of
+            // them. It stays selectable, otherwise saving the item again would silently undo the
+            // reconciliation the user had made.
             const isChosenStatementListed = candidates.some((candidate) => candidate.statementId === draft.creditCardStatementId)
+            const isChosenTransferListed = transferCandidates.some((candidate) => candidate.walletTransferId === draft.walletTransferId)
+            const isChosenWalletListed = counterpartWallets.some((wallet) => wallet.walletId === draft.transferCounterpartWalletId)
+            const choice = currentReconciliationChoice(draft)
+            const direction = transferDirection(transferCandidates)
+            const hasReconciliationOption = candidates.length > 0 || transferCandidates.length > 0 || counterpartWallets.length > 0
+            // The API attaches the statements and wallets to a line already stored as a transfer, so a
+            // type just changed by hand has none yet: saying there is nothing to reconcile would be
+            // false.
             const selectedCategory = categories.find((category) => category.id === draft.categoryId)
             const isEditable = session.status === 'preview' && item.canEdit
             const isSavingItem = pendingAction === `item:${item.id}`
@@ -185,7 +207,9 @@ export function ImportPreview({
                         type: event.target.value as FinancialImportItemType,
                         categoryId: null,
                         subcategoryId: null,
-                        ...(event.target.value === 'transfer' ? { statementClosingDate: null } : { creditCardStatementId: null }),
+                        ...(event.target.value === 'transfer'
+                          ? { statementClosingDate: null }
+                          : { creditCardStatementId: null, transferCounterpartWalletId: null, walletTransferId: null }),
                       })}
                       disabled={areItemControlsDisabled}
                     >
@@ -209,28 +233,58 @@ export function ImportPreview({
                       </select>
                     </label>
                   )}
-                  {canReconcilePayment && (candidates.length > 0 || draft.creditCardStatementId ? (
-                    <label>
-                      Fatura paga
+                  {canReconcilePayment && (hasReconciliationOption || choice.kind !== 'none' ? (
+                    <label className="imports-item-reconciliation">
+                      Conciliar com
                       <select
-                        value={draft.creditCardStatementId ?? ''}
-                        onChange={(event) => onDraftChange(item.id, { creditCardStatementId: event.target.value || null })}
+                        value={reconciliationChoiceValue(choice)}
+                        onChange={(event) => onDraftChange(item.id, reconciliationChoiceDraft(event.target.value, transferCandidates, draft.transferCounterpartWalletId ?? null))}
                         disabled={areItemControlsDisabled}
                       >
-                        <option value="">Selecione a fatura</option>
-                        {candidates.map((candidate) => (
-                          <option key={candidate.statementId} value={candidate.statementId}>
-                            {describeStatementCandidate(candidate)}
-                          </option>
-                        ))}
-                        {draft.creditCardStatementId && !isChosenStatementListed && (
-                          <option value={draft.creditCardStatementId}>Fatura escolhida anteriormente</option>
+                        <option value="">Escolha a fatura ou a carteira</option>
+                        {candidates.length > 0 && (
+                          <optgroup label="Fatura paga">
+                            {candidates.map((candidate) => (
+                              <option key={candidate.statementId} value={`statement:${candidate.statementId}`}>
+                                {describeStatementCandidate(candidate)}
+                              </option>
+                            ))}
+                          </optgroup>
+                        )}
+                        {transferCandidates.length > 0 && (
+                          <optgroup label="Transferência já registrada">
+                            {transferCandidates.map((candidate) => (
+                              <option key={candidate.walletTransferId} value={`transfer:${candidate.walletTransferId}`}>
+                                {describeTransferCandidate(candidate)}
+                              </option>
+                            ))}
+                          </optgroup>
+                        )}
+                        {counterpartWallets.length > 0 && (
+                          <optgroup label={counterpartWalletsLabel(direction)}>
+                            {counterpartWallets.map((wallet) => (
+                              <option key={wallet.walletId} value={`wallet:${wallet.walletId}`}>
+                                {describeCounterpartWallet(wallet, direction)}
+                              </option>
+                            ))}
+                          </optgroup>
+                        )}
+                        {choice.kind === 'statement' && !isChosenStatementListed && (
+                          <option value={reconciliationChoiceValue(choice)}>Fatura escolhida anteriormente</option>
+                        )}
+                        {choice.kind === 'transfer' && !isChosenTransferListed && (
+                          <option value={reconciliationChoiceValue(choice)}>Transferência escolhida anteriormente</option>
+                        )}
+                        {choice.kind === 'wallet' && !isChosenWalletListed && (
+                          <option value={reconciliationChoiceValue(choice)}>Carteira escolhida anteriormente</option>
                         )}
                       </select>
                     </label>
                   ) : (
                     <p className="imports-item-hint" role="note">
-                      Nenhuma fatura em aberto corresponde a esta saída. Escolha outro tipo ou deixe-a fora da importação.
+                      {knowsTransferOptions
+                        ? 'Nenhuma fatura em aberto e nenhuma outra carteira para conciliar esta movimentação. Escolha outro tipo ou deixe-a fora da importação.'
+                        : 'Esta movimentação não tem conciliação disponível nesta prévia. Salve o ajuste e revise, escolha outro tipo ou deixe-a fora da importação.'}
                     </p>
                   ))}
                   <label className="imports-item-description">

@@ -1,5 +1,5 @@
 import type { BenefitBalanceSummary, FinancialSummary } from './dashboardApi'
-import { amountToCents, barPercentage, cashOutflow, centsToAmount, hasActivity } from './dashboardMetrics'
+import { amountToCents, barPercentage, cashInflow, cashOutflow, centsToAmount, hasActivity, transferInflow } from './dashboardMetrics'
 import { formatBrazilianCurrency as money } from '../money/currency'
 import { formatMonth } from '../period/month'
 import { recordLink } from '../period/recordLinks'
@@ -10,7 +10,12 @@ const benefitLabels: Record<BenefitBalanceSummary['balanceType'], string> = {
 }
 
 export function DashboardOverview({ summary, month }: { summary: FinancialSummary; month: string }) {
-  const income = amountToCents(summary.cashIncomeTotal)
+  // A transfer received is cash that arrived without being income, so it enters the inflow bar and
+  // is named apart from the entries below it.
+  const income = cashInflow(summary)
+  const transfersIn = transferInflow(summary)
+  const transfersOut = amountToCents(summary.transferOutTotal ?? '0.00')
+  const hasTransfers = transfersIn !== 0n || transfersOut !== 0n
   const outflow = cashOutflow(summary)
   const scale = income > outflow ? income : outflow
   return <>
@@ -26,12 +31,13 @@ export function DashboardOverview({ summary, month }: { summary: FinancialSummar
     <section className="dashboard-panel dashboard-flow" aria-labelledby="cash-flow-title"><div className="dashboard-panel__heading"><div><p className="dashboard-eyebrow">MOVIMENTO DO MÊS</p><h2 id="cash-flow-title">Composição do fluxo em dinheiro</h2></div></div>
       {!hasActivity(summary) && <p className="dashboard-empty dashboard-empty--compact">Nenhuma entrada, despesa, aporte ou fatura paga neste mês.</p>}
       <div className="dashboard-flow__rows">
-        <div className="dashboard-flow__row"><div><span>Entradas em dinheiro</span><strong>{money(summary.cashIncomeTotal)}</strong></div><div className="dashboard-flow__track" aria-hidden="true"><span className="dashboard-flow__bar dashboard-flow__bar--income" style={{ width: `${barPercentage(income, scale)}%` }} /></div></div>
+        <div className="dashboard-flow__row"><div><span>Entradas em dinheiro</span><strong>{money(centsToAmount(income))}</strong></div><div className="dashboard-flow__track" aria-hidden="true"><span className="dashboard-flow__bar dashboard-flow__bar--income" style={{ width: `${barPercentage(income, scale)}%` }} /></div></div>
         <div className="dashboard-flow__row"><div><span>Saídas em dinheiro</span><strong>{money(centsToAmount(outflow))}</strong></div><div className="dashboard-flow__track" aria-hidden="true"><span className="dashboard-flow__bar dashboard-flow__bar--outflow" style={{ width: `${barPercentage(outflow, scale)}%` }} /></div></div>
       </div>
-      <dl className="dashboard-cash-details"><div><dt>Despesas em dinheiro</dt><dd>{money(summary.cashExpenseTotal)}</dd></div><div><dt>Faturas pagas no mês</dt><dd>{money(summary.cardPaymentTotal)}</dd></div><div><dt>Aportes do mês</dt><dd>{money(summary.contributionTotal)}</dd></div><div><dt>Compras no crédito no mês</dt><dd>{money(summary.creditPurchaseTotal)}</dd></div></dl>
-      <p className="dashboard-section-note">Fluxo restante = entradas em dinheiro − despesas em dinheiro − faturas pagas − aportes.</p>
-      <p className="dashboard-section-note">{money(summary.cashIncomeTotal)} − {money(summary.cashExpenseTotal)} − {money(summary.cardPaymentTotal)} − {money(summary.contributionTotal)} = {money(summary.cashBalance)}.</p>
+      <dl className="dashboard-cash-details"><div><dt>Despesas em dinheiro</dt><dd>{money(summary.cashExpenseTotal)}</dd></div><div><dt>Faturas pagas no mês</dt><dd>{money(summary.cardPaymentTotal)}</dd></div><div><dt>Aportes do mês</dt><dd>{money(summary.contributionTotal)}</dd></div><div><dt>Compras no crédito no mês</dt><dd>{money(summary.creditPurchaseTotal)}</dd></div>{hasTransfers && <><div><dt>Transferências enviadas</dt><dd>{money(centsToAmount(transfersOut))}</dd></div><div><dt>Transferências recebidas</dt><dd>{money(centsToAmount(transfersIn))}</dd></div></>}</dl>
+      <p className="dashboard-section-note">Fluxo restante = entradas em dinheiro − despesas em dinheiro − faturas pagas − aportes{hasTransfers ? ' − transferências enviadas' : ''}.</p>
+      <p className="dashboard-section-note">{money(centsToAmount(income))} − {money(summary.cashExpenseTotal)} − {money(summary.cardPaymentTotal)} − {money(summary.contributionTotal)}{hasTransfers ? ` − ${money(centsToAmount(transfersOut))}` : ''} = {money(summary.cashBalance)}.</p>
+      {hasTransfers && <p className="dashboard-section-note">As entradas em dinheiro incluem {money(centsToAmount(transfersIn))} recebidos de outra carteira. Transferências entre carteiras mudam o dinheiro de lugar: elas não entram em receitas nem em despesas, apenas saem de uma carteira e entram na outra.</p>}
       <p className="dashboard-section-note">Compras no crédito entram nas despesas pela data da compra, mas afetam o dinheiro somente pelo pagamento da fatura. Faturas pagas são consideradas pela data do pagamento, uma única vez.</p>
       <nav className="dashboard-record-links" aria-label="Conferir composição"><a href={recordLink('/incomes', month)}>Consultar entradas do mês</a><a href={recordLink('/expenses', month)}>Consultar despesas do mês</a><a href={recordLink('/goals', month)}>Consultar aportes do mês</a><a href="/credit-cards">Consultar cartões e faturas</a></nav>
     </section>

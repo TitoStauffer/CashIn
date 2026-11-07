@@ -1,6 +1,6 @@
 # Importação financeira OFX e CSV
 
-**Status:** importação OFX e CSV com regras por carteira (DEV-55), faturas de cartão (DEV-56), conciliação do pagamento da fatura na API (DEV-85) e na tela (DEV-57) e transferências entre carteiras na API (DEV-88)
+**Status:** importação OFX e CSV com regras por carteira (DEV-55), faturas de cartão (DEV-56), conciliação do pagamento da fatura na API (DEV-85) e na tela (DEV-57) e transferências entre carteiras na API (DEV-88) e na tela (DEV-58)
 **Última revisão:** 07/11/2026
 
 ## Fluxo definido
@@ -68,6 +68,7 @@ Sessões desfeitas não bloqueiam uma importação futura, pois somente itens ai
 - **Isolamento:** só as carteiras que a pessoa autenticada acessa são oferecidas, e uma transferência só aparece para as duas carteiras que são os seus extremos.
 - **Caixa:** `transferOutTotal` e `transferInTotal` entram apenas no `cashBalance`, reduzindo a origem e aumentando o destino. Nenhuma receita ou despesa é criada.
 - **Desfazer:** libera o lado da importação desfeita. A transferência permanece se o outro lado continuar conciliado e volta a ser oferecida como candidata; sem nenhum lado, é removida.
+- **Na tela (DEV-58):** as duas conciliações de um `transfer` — a fatura que ele paga e a carteira do outro lado — aparecem como um único campo "Conciliar com", agrupado em fatura paga, transferência já registrada e carteira de destino ou origem. Escolher uma limpa a outra, que é o que a API exige. A carteira é nomeada pela direção da linha ("para Poupança", "de Família"). Sem fatura em aberto e sem outra carteira, a prévia explica em vez de oferecer uma lista vazia. No dashboard, o enviado entra na saída de dinheiro e o recebido na entrada, com as duas linhas nomeadas à parte e a nota de que transferência não é receita nem despesa.
 
 ## Fontes verificáveis
 
@@ -83,6 +84,7 @@ Sessões desfeitas não bloqueiam uma importação futura, pois somente itens ai
 - [`apps/api/src/financial-imports/postgres-financial-categorization-rules.repository.ts`](../../../apps/api/src/financial-imports/postgres-financial-categorization-rules.repository.ts)
 - [`apps/web/src/imports/FinancialImportsPage.tsx`](../../../apps/web/src/imports/FinancialImportsPage.tsx)
 - [`apps/web/src/imports/ImportPreview.tsx`](../../../apps/web/src/imports/ImportPreview.tsx)
+- [`apps/web/src/dashboard/dashboardMetrics.ts`](../../../apps/web/src/dashboard/dashboardMetrics.ts)
 - [`apps/api/migrations/018_credit_card_statement_imports.sql`](../../../apps/api/migrations/018_credit_card_statement_imports.sql)
 - [`apps/api/src/financial-imports/postgres-card-statement-imports.ts`](../../../apps/api/src/financial-imports/postgres-card-statement-imports.ts)
 - [`apps/api/src/financial-imports/postgres-bank-payment-reconciliation.ts`](../../../apps/api/src/financial-imports/postgres-bank-payment-reconciliation.ts)

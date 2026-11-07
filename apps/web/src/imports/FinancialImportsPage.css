@@ -265,3 +265,7 @@
 
 /* An outgoing line with no open statement to settle: the hint sits where the statement select would. */
 .imports-item-hint { align-self: center; grid-column: span 2; margin: 0; color: #68786d; font-size: 10px; line-height: 1.55; }
+
+/* The reconciliation field holds statements, registered transfers and wallets, so its options are
+   long: it takes two columns of the grid to stay readable. */
+.imports-item-reconciliation { grid-column: span 2; }

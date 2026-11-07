@@ -10,6 +10,10 @@ export type FinancialSummary = {
   cashExpenseTotal: string
   creditPurchaseTotal: string
   cardPaymentTotal: string
+  // Transfers between wallets are not income nor expense: they only move cash out of one wallet and
+  // into another. An older API omits them, so the dashboard treats the absence as zero.
+  transferOutTotal?: string
+  transferInTotal?: string
   contributionsByGoal: { goalId: string; amount: string }[]
   availableBalance: string
   cashBalance: string

@@ -26,12 +26,31 @@ export function topCategories(items: CategorySummary[]) {
 }
 
 export function cashOutflow(summary: FinancialSummary) {
-  return amountToCents(summary.cashExpenseTotal) + amountToCents(summary.cardPaymentTotal) + amountToCents(summary.contributionTotal)
+  return amountToCents(summary.cashExpenseTotal)
+    + amountToCents(summary.cardPaymentTotal)
+    + amountToCents(summary.contributionTotal)
+    + amountToCents(summary.transferOutTotal ?? '0.00')
+}
+
+// What arrived in this wallet from another one. It is not income, so it is shown beside the cash
+// inflow instead of inside it.
+export function transferInflow(summary: FinancialSummary) {
+  return amountToCents(summary.transferInTotal ?? '0.00')
+}
+
+export function cashInflow(summary: FinancialSummary) {
+  return amountToCents(summary.cashIncomeTotal) + transferInflow(summary)
 }
 
 export function hasActivity(summary: FinancialSummary) {
-  return [summary.incomeTotal, summary.expenseTotal, summary.contributionTotal, summary.cardPaymentTotal]
-    .some((amount) => amountToCents(amount) !== 0n)
+  return [
+    summary.incomeTotal,
+    summary.expenseTotal,
+    summary.contributionTotal,
+    summary.cardPaymentTotal,
+    summary.transferOutTotal ?? '0.00',
+    summary.transferInTotal ?? '0.00',
+  ].some((amount) => amountToCents(amount) !== 0n)
 }
 
 export function categoryChanges(current: CategorySummary[], previous: CategorySummary[]) {

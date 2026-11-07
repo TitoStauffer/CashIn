@@ -80,6 +80,12 @@ export type FinancialImportItem = {
   // could settle. An ambiguous match is never reconciled automatically.
   creditCardStatementId?: string | null
   statementCandidates?: BankPaymentCandidate[]
+  // Bank statement imports only: the transfer between wallets this line is one side of, the wallet on
+  // the other end, the pending transfers it could complete and the wallets it could be paired with.
+  walletTransferId?: string | null
+  transferCounterpartWalletId?: string | null
+  transferCandidates?: WalletTransferCandidate[]
+  transferCounterpartWallets?: TransferCounterpartWallet[]
 }
 
 // An open statement a bank payment may be reconciled with.
@@ -90,6 +96,24 @@ export type BankPaymentCandidate = {
   closingDate: string
   dueDate: string
   outstandingAmount: string
+}
+
+// A transfer between wallets whose side in this wallet has not been reconciled yet.
+export type WalletTransferCandidate = {
+  walletTransferId: string
+  counterpartWalletId: string
+  counterpartWalletName: string
+  amount: string
+  date: string
+  description: string | null
+  direction: 'outgoing' | 'incoming'
+}
+
+// A wallet the user can reach, offered as the other end of a transfer.
+export type TransferCounterpartWallet = {
+  walletId: string
+  walletName: string
+  isPersonal: boolean
 }
 
 export type FinancialImportStatementPreview = {
@@ -155,6 +179,8 @@ export type FinancialImportItemInput = {
   includeDuplicate?: boolean
   statementClosingDate?: string | null
   creditCardStatementId?: string | null
+  transferCounterpartWalletId?: string | null
+  walletTransferId?: string | null
 }
 
 type FinancialImportListResponse = { items: FinancialImportSession[] }
