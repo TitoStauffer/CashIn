@@ -1,7 +1,7 @@
 # Estado atual do projeto
 
-**Status:** atualizado pela DEV-56
-**Última revisão:** 06/11/2026
+**Status:** atualizado pela DEV-85
+**Última revisão:** 07/11/2026
 **Ticket de criação:** [DEV-64](https://titostauffer.atlassian.net/browse/DEV-64)
 
 ## Produto disponível
@@ -12,7 +12,7 @@
 - Categorias e subcategorias por carteira e natureza.
 - Entradas separadas por saldo em dinheiro, VA/VR e AHO.
 - Despesas com forma de pagamento, incluindo cartão de crédito e benefícios.
-- Cartões de crédito, ciclos de fatura e quitação integral.
+- Cartões de crédito, ciclos de fatura, pagamento integral ou parcial e conciliação do pagamento com o extrato bancário.
 - Metas de investimento, aportes, encerramento e progresso calculado.
 - Dashboard financeiro com resumo, comparação, metas e categorias de maior gasto.
 - Fundação de importação financeira com upload, prévia, edição, confirmação atômica, histórico e desfazer.
@@ -32,7 +32,8 @@ O fluxo ativo executa validação de título, API, Web, ferramentas de automaç�
 - A API não possui lint configurado.
 - O envio de e-mail e os rate limiters usam mecanismos adequados ao MVP local; filas e estado compartilhado são necessários para múltiplas instâncias.
 - O runner de agentes é Windows self-hosted e depende de máquina ligada, usuário autenticado e Claude Code CLI disponível (Codex CLI apenas como alternativa com `AGENT_RUNTIME=codex`).
-- Múltiplos extratos ou faturas no mesmo arquivo continuam recusados. A conciliação do pagamento da fatura com o extrato bancário depende da DEV-57.
+- Múltiplos extratos ou faturas no mesmo arquivo continuam recusados.
+- A API reconhece e vincula o pagamento da fatura encontrado no extrato; a tela de conciliação chega com a DEV-57.
 - Estornos de cartão abatem a fatura, mas ainda não reduzem os totais de despesa e de gasto por categoria do dashboard.
 - Mobile e deploy em nuvem estão fora do estado atual.
 

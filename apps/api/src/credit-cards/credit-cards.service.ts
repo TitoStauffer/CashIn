@@ -1,3 +1,4 @@
+import { isPositiveMoneyAmount } from "../shared/money.js";
 import { CreditCardError } from "./credit-cards.errors.js";
 import type { CreditCard, CreditCardRepository, CreditCardStatement } from "./credit-cards.types.js";
 
@@ -73,13 +74,17 @@ export class CreditCardsService {
     return statements;
   }
 
-  async payStatement(walletId: string, creditCardId: string, statementId: string, date: string): Promise<CreditCardStatement> {
+  // Without an amount the payment settles the outstanding balance; with one it may be partial.
+  async payStatement(walletId: string, creditCardId: string, statementId: string, date: string, amount?: string): Promise<CreditCardStatement> {
     if (!UUID_PATTERN.test(creditCardId) || !UUID_PATTERN.test(statementId)) {
       throw new CreditCardError("Fatura não encontrada.", 404);
     }
     validateDate(date, "A data de pagamento");
+    if (amount !== undefined && !isPositiveMoneyAmount(amount)) {
+      throw new CreditCardError("O valor do pagamento deve ser positivo e ter no máximo duas casas decimais.", 400);
+    }
     try {
-      const statement = await this.repository.payStatement(walletId, creditCardId, statementId, date);
+      const statement = await this.repository.payStatement(walletId, creditCardId, statementId, date, amount);
       if (!statement) throw new CreditCardError("Fatura não encontrada.", 404);
       return statement;
     } catch (error) {

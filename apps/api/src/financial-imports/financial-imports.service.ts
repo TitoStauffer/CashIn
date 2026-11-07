@@ -251,6 +251,10 @@ function normalizeUpdateInput(input: UpdateFinancialImportItemInput): Required<U
   if (input.includeDuplicate !== undefined && typeof input.includeDuplicate !== "boolean") {
     throw new FinancialImportError("A decisão sobre a possível duplicidade é inválida.", 400);
   }
+  const creditCardStatementId = input.creditCardStatementId ?? null;
+  if (creditCardStatementId !== null && typeof creditCardStatementId !== "string") {
+    throw new FinancialImportError("A fatura conciliada é inválida.", 400);
+  }
   const statementClosingDate = input.statementClosingDate ?? null;
   if (statementClosingDate !== null && (typeof statementClosingDate !== "string" || !validateDate(statementClosingDate))) {
     throw new FinancialImportError("A data de fechamento da fatura deve ser válida e estar no formato AAAA-MM-DD.", 400);
@@ -270,6 +274,7 @@ function normalizeUpdateInput(input: UpdateFinancialImportItemInput): Required<U
     subcategoryId,
     includeDuplicate: input.includeDuplicate === true,
     statementClosingDate,
+    creditCardStatementId,
   };
 }
 

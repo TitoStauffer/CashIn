@@ -1,7 +1,7 @@
 # Importação financeira OFX e CSV
 
-**Status:** importação OFX e CSV com regras de categorização por carteira (DEV-55) e faturas de cartão (DEV-56)
-**Última revisão:** 06/11/2026
+**Status:** importação OFX e CSV com regras por carteira (DEV-55), faturas de cartão (DEV-56) e conciliação do pagamento da fatura (DEV-85)
+**Última revisão:** 07/11/2026
 
 ## Fluxo definido
 
@@ -50,6 +50,14 @@ Sessões desfeitas não bloqueiam uma importação futura, pois somente itens ai
 - **Duplicidade:** é procurada só entre sessões do mesmo cartão. Bancárias só se comparam com bancárias.
 - **Desfazer:** remove compras, créditos e faturas que ficarem vazias. É bloqueado se algo foi alterado ou se uma fatura afetada foi paga.
 
+## Conciliação do pagamento da fatura (DEV-85)
+
+- **Onde acontece:** na prévia de um **extrato bancário**, onde o pagamento do cartão aparece como débito comum.
+- **Sugestão:** só para débito cuja descrição aponte cartão ou fatura, nunca para qualquer "pagamento". As candidatas são faturas da carteira não liquidadas, com saldo devedor e vencimento até 15 dias da data do pagamento.
+- **Correspondência única** (uma candidata com saldo devedor igual ao valor) vira `transfer` conciliado e `valid`. **Ambígua** vira `transfer` sem fatura, com as candidatas expostas para o usuário escolher; nada é confirmado sozinho.
+- **Confirmação:** cria o pagamento em `credit_card_statement_payments` e não lança a compra de novo, então a fatura não é contada duas vezes. `transfer` sem fatura continua bloqueando a confirmação.
+- **Desfazer:** remove os pagamentos e reabre a fatura que eles tinham liquidado.
+
 ## Fontes verificáveis
 
 - [`docs/financial-imports-contract.md`](../../financial-imports-contract.md)
@@ -63,4 +71,6 @@ Sessões desfeitas não bloqueiam uma importação futura, pois somente itens ai
 - [`apps/web/src/imports/FinancialImportsPage.tsx`](../../../apps/web/src/imports/FinancialImportsPage.tsx)
 - [`apps/api/migrations/018_credit_card_statement_imports.sql`](../../../apps/api/migrations/018_credit_card_statement_imports.sql)
 - [`apps/api/src/financial-imports/postgres-card-statement-imports.ts`](../../../apps/api/src/financial-imports/postgres-card-statement-imports.ts)
+- [`apps/api/src/financial-imports/postgres-bank-payment-reconciliation.ts`](../../../apps/api/src/financial-imports/postgres-bank-payment-reconciliation.ts)
+- [`apps/api/migrations/019_credit_card_statement_payments.sql`](../../../apps/api/migrations/019_credit_card_statement_payments.sql)
 - [`apps/api/src/financial-imports/postgres-credit-card-statement-imports.integration.test.ts`](../../../apps/api/src/financial-imports/postgres-credit-card-statement-imports.integration.test.ts)

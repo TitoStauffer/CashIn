@@ -80,12 +80,11 @@ export class PostgresFinancialSummaryRepository implements FinancialSummaryRepos
                AND ($3::date IS NULL OR expense.date <= $3::date)
            ), 0.00) AS credit_purchase_total,
            COALESCE((
-             SELECT SUM(statement.paid_amount)
-             FROM credit_card_statements AS statement
-             WHERE statement.wallet_id = $1
-               AND statement.paid_date IS NOT NULL
-               AND ($2::date IS NULL OR statement.paid_date >= $2::date)
-               AND ($3::date IS NULL OR statement.paid_date <= $3::date)
+             SELECT SUM(payment.amount)
+             FROM credit_card_statement_payments AS payment
+             WHERE payment.wallet_id = $1
+               AND ($2::date IS NULL OR payment.date >= $2::date)
+               AND ($3::date IS NULL OR payment.date <= $3::date)
            ), 0.00) AS card_payment_total
        ),
        goal_contributions AS (

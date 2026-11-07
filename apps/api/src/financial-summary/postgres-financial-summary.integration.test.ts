@@ -202,15 +202,34 @@ test("PostgreSQL summary preserves exact cents, benefit separation and wallet bo
        SELECT id, 'Test card', 20, 1 FROM wallets WHERE owner_user_id = $1 RETURNING id, wallet_id`, [userId],
     );
     const cardId = (wallet: string) => cards.rows.find((row) => row.wallet_id === wallet)!.id;
-    await database.query(
-      `INSERT INTO credit_card_statements (wallet_id, credit_card_id, closing_date, due_date, paid_date, paid_amount)
-       VALUES ($1, $2, '2026-09-20', '2026-10-01', '2026-10-01', '0.10'),
-              ($1, $2, '2026-10-20', '2026-11-01', '2026-10-31', '0.20'),
-              ($1, $2, '2026-08-20', '2026-09-01', '2026-09-30', '0.30'),
-              ($1, $2, '2026-10-21', '2026-11-01', '2026-11-01', '0.40'),
-              ($1, $2, '2026-12-20', '2027-01-01', NULL, NULL),
-              ($3, $4, '2026-09-20', '2026-10-01', '2026-10-15', '70.00')`,
+    const statements = await database.query<{ id: string; closing_date: string; wallet_id: string }>(
+      `INSERT INTO credit_card_statements (wallet_id, credit_card_id, closing_date, due_date, paid_date)
+       VALUES ($1, $2, '2026-09-20', '2026-10-01', '2026-10-01'),
+              ($1, $2, '2026-10-20', '2026-11-01', '2026-10-31'),
+              ($1, $2, '2026-08-20', '2026-09-01', '2026-09-30'),
+              ($1, $2, '2026-10-21', '2026-11-01', '2026-11-01'),
+              ($1, $2, '2026-12-20', '2027-01-01', NULL),
+              ($3, $4, '2026-09-20', '2026-10-01', '2026-10-15')
+       RETURNING id, closing_date::text AS closing_date, wallet_id`,
       [walletId, cardId(walletId), otherWalletId, cardId(otherWalletId)],
+    );
+    const statementId = (wallet: string, closingDate: string) =>
+      statements.rows.find((row) => row.wallet_id === wallet && row.closing_date === closingDate)!.id;
+    await database.query(
+      `INSERT INTO credit_card_statement_payments (wallet_id, user_id, credit_card_statement_id, amount, date)
+       VALUES ($1, $3, $4, '0.10', '2026-10-01'),
+              ($1, $3, $5, '0.20', '2026-10-31'),
+              ($1, $3, $6, '0.30', '2026-09-30'),
+              ($1, $3, $7, '0.40', '2026-11-01'),
+              ($2, $3, $8, '70.00', '2026-10-15')`,
+      [
+        walletId, otherWalletId, userId,
+        statementId(walletId, "2026-09-20"),
+        statementId(walletId, "2026-10-20"),
+        statementId(walletId, "2026-08-20"),
+        statementId(walletId, "2026-10-21"),
+        statementId(otherWalletId, "2026-09-20"),
+      ],
     );
     const repository = new PostgresFinancialSummaryRepository(database);
     const summary = await repository.getSummary(walletId, "2026-10-01", "2026-10-31");

@@ -108,6 +108,12 @@ for (const collision of [
       const methodsAfter = await database.query("SELECT * FROM payment_methods WHERE wallet_id = $1 ORDER BY id", [walletId]);
       await database.transaction(async (transaction) => { await transaction.query(migration); });
       assert.deepEqual((await database.query("SELECT * FROM payment_methods WHERE wallet_id = $1 ORDER BY id", [walletId])).rows, methodsAfter.rows);
+
+      // The summary below needs the current schema, so the later migrations are applied too.
+      for (const version of (await readdir(migrationDirectory)).filter((name) => /^\d+_[a-z0-9_-]+\.sql$/i.test(name) && name > unifiedVersion).sort()) {
+        const sql = await readFile(join(migrationDirectory, version), "utf8");
+        await database.transaction(async (transaction) => { await transaction.query(sql); });
+      }
       const summaryRepository = new PostgresFinancialSummaryRepository(database);
       const beforeNewExpense = await summaryRepository.getSummary(walletId);
       assert.equal(beforeNewExpense.cashBalance, collision.cashBalance);
@@ -231,6 +237,16 @@ test("PostgreSQL payment methods seed wallet defaults and enforce wallet-scoped 
       await transaction.query(unifiedMigration);
       await transaction.query("INSERT INTO schema_migrations (version) VALUES ('013_unified_benefit_balance.sql')");
     });
+
+    // The summary below needs the current schema, so the later migrations are applied too.
+    for (const version of (await readdir(migrationDirectory)).filter((name) => /^\d+_[a-z0-9_-]+\.sql$/i.test(name) && name > "013_unified_benefit_balance.sql").sort()) {
+      const sql = await readFile(join(migrationDirectory, version), "utf8");
+      await database.transaction(async (transaction) => {
+        await transaction.query(sql);
+        await transaction.query("INSERT INTO schema_migrations (version) VALUES ($1)", [version]);
+      });
+    }
+
 
     const historicalIncomes = await database.query<{ amount: string; balance_type: string }>(
       "SELECT amount::text, balance_type FROM incomes WHERE wallet_id = $1 ORDER BY description",
