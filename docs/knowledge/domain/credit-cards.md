@@ -21,7 +21,7 @@ O escopo atual trata fatura, estornos como créditos na fatura, pagamento integr
 - Cartão, despesa e fatura devem pertencer à mesma carteira.
 - Alterar datas do cartão não deve reclassificar silenciosamente histórico já consolidado.
 - Pagar uma mesma fatura novamente deve ser impedido ou tratado de forma idempotente.
-- Uma fatura com compras ou créditos não é removida. Uma fatura vazia e não paga pode ser removida ao excluir ou desfazer lançamentos.
+- Uma fatura com compras, créditos ou pagamentos registrados não é removida. Uma fatura vazia e sem pagamento pode ser removida ao excluir ou desfazer lançamentos. Um pagamento é dinheiro que já saiu da conta: a fatura que o guarda permanece mesmo sem compras, para que o valor pago não desapareça do cartão nem do saldo.
 
 ## Fontes verificáveis
 
@@ -31,3 +31,5 @@ O escopo atual trata fatura, estornos como créditos na fatura, pagamento integr
 - [`apps/web/src/expenses/ExpensesPage.tsx`](../../../apps/web/src/expenses/ExpensesPage.tsx)
 - [`apps/api/src/credit-cards/postgres-credit-cards.repository.ts`](../../../apps/api/src/credit-cards/postgres-credit-cards.repository.ts)
 - [`apps/api/migrations/018_credit_card_statement_imports.sql`](../../../apps/api/migrations/018_credit_card_statement_imports.sql)
+- [`apps/api/src/expenses/postgres-expenses.repository.ts`](../../../apps/api/src/expenses/postgres-expenses.repository.ts)
+- [`apps/api/migrations/019_credit_card_statement_payments.sql`](../../../apps/api/migrations/019_credit_card_statement_payments.sql)

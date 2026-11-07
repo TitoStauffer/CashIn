@@ -253,6 +253,49 @@ test("PostgreSQL bank payment reconciliation settles statements without double c
     assert.equal(asPayment.items![0]!.validationStatus, "duplicate");
     assert.equal(asPayment.items![0]!.canIncludeDuplicate, true);
 
+    // A statement payment is a fourth possible result of an imported item, so the undo check has to
+    // look at it too: with the payment removed the undo refuses, and announcing it as undoable would
+    // contradict the endpoint.
+    const januaryCard = await database.query<{ id: string }>(
+      "INSERT INTO credit_cards (wallet_id, alias, closing_day, due_day) VALUES ($1, 'Janeiro', 10, 20) RETURNING id",
+      [walletId],
+    );
+    const januaryStatement = await database.query<{ id: string }>(
+      `INSERT INTO credit_card_statements (wallet_id, credit_card_id, closing_date, due_date)
+       VALUES ($1, $2, '2027-01-10', '2027-01-20') RETURNING id`,
+      [walletId, januaryCard.rows[0]!.id],
+    );
+    await database.query(
+      `INSERT INTO expenses (user_id, wallet_id, category_id, payment_method_id, payment_method_nature, credit_card_statement_id, amount, date, description)
+       VALUES ($1, $2, $3, $4, 'credit_card', $5, 70.00, '2027-01-05', 'FARMACIA')`,
+      [userId, walletId, categoryId, paymentMethodId, januaryStatement.rows[0]!.id],
+    );
+    const januaryImport = (await upload(bankOfx([
+      { id: "p-january", date: "2027-01-20", amount: "-70.00", name: "PAGAMENTO CARTAO" },
+    ]), "janeiro.ofx")).json() as FinancialImportSession;
+    const januaryItem = januaryImport.items![0]!;
+    assert.deepEqual(
+      [januaryItem.type, januaryItem.validationStatus, januaryItem.creditCardStatementId],
+      ["transfer", "valid", januaryStatement.rows[0]!.id],
+    );
+    assert.equal((await app.inject({ method: "POST", url: `/financial-imports/${januaryImport.id}/confirm`, headers })).statusCode, 200);
+    const undoable = (await app.inject({ method: "GET", url: `/financial-imports/${januaryImport.id}`, headers })).json() as FinancialImportSession;
+    assert.deepEqual([undoable.canUndo, undoable.undoBlockedReason], [true, null]);
+    await database.query(
+      `DELETE FROM credit_card_statement_payments
+       WHERE wallet_id = $1 AND id = (SELECT resulting_statement_payment_id FROM import_items
+                                      WHERE import_session_id = $2 AND wallet_id = $1
+                                        AND resulting_statement_payment_id IS NOT NULL)`,
+      [walletId, januaryImport.id],
+    );
+    const blocked = (await app.inject({ method: "GET", url: `/financial-imports/${januaryImport.id}`, headers })).json() as FinancialImportSession;
+    assert.deepEqual(
+      [blocked.canUndo, blocked.undoBlockedReason],
+      [false, "Um ou mais lançamentos importados foram alterados ou removidos."],
+    );
+    // The announced state matches what the endpoint really does.
+    assert.equal((await app.inject({ method: "POST", url: `/financial-imports/${januaryImport.id}/undo`, headers })).statusCode, 409);
+
     // Undoing the partial import removes its payment and leaves the statement as it was.
     const undone = await app.inject({ method: "POST", url: `/financial-imports/${partial.id}/undo`, headers });
     assert.equal(undone.statusCode, 200);
@@ -267,6 +310,43 @@ test("PostgreSQL bank payment reconciliation settles statements without double c
     const reopenedSettlement = await statementOf(cardId);
     assert.deepEqual([reopenedSettlement.paidDate, reopenedSettlement.paymentsAmount, reopenedSettlement.outstandingAmount], [null, "0.00", "400.00"]);
     assert.equal((await summary("2026-10-01", "2026-10-31")).cardPaymentTotal, "0.00");
+
+    // A statement with a registered payment is kept when its last purchase is removed. The payment is
+    // money that already left the account, and it lives in the statement: removing the statement would
+    // cascade the payment away and the paid amount would vanish from the card and from the balance.
+    const keptCard = await database.query<{ id: string }>(
+      "INSERT INTO credit_cards (wallet_id, alias, closing_day, due_day) VALUES ($1, 'Preservado', 10, 20) RETURNING id",
+      [walletId],
+    );
+    const keptStatement = await database.query<{ id: string }>(
+      `INSERT INTO credit_card_statements (wallet_id, credit_card_id, closing_date, due_date)
+       VALUES ($1, $2, '2027-02-10', '2027-02-20') RETURNING id`,
+      [walletId, keptCard.rows[0]!.id],
+    );
+    const keptPurchase = await database.query<{ id: string }>(
+      `INSERT INTO expenses (user_id, wallet_id, category_id, payment_method_id, payment_method_nature, credit_card_statement_id, amount, date, description)
+       VALUES ($1, $2, $3, $4, 'credit_card', $5, 300.00, '2027-02-05', 'OFICINA') RETURNING id`,
+      [userId, walletId, categoryId, paymentMethodId, keptStatement.rows[0]!.id],
+    );
+    const partialSettlement = await app.inject({
+      method: "POST",
+      url: `/credit-cards/${keptCard.rows[0]!.id}/statements/${keptStatement.rows[0]!.id}/pay`,
+      headers,
+      payload: { date: "2027-02-20", amount: "100.00" },
+    });
+    assert.equal(partialSettlement.statusCode, 200);
+    assert.equal(
+      (await app.inject({ method: "DELETE", url: `/expenses/${keptPurchase.rows[0]!.id}`, headers })).statusCode,
+      204,
+    );
+    const keptStatements = (await app.inject({
+      method: "GET", url: `/credit-cards/${keptCard.rows[0]!.id}/statements`, headers,
+    })).json() as { items: Array<{ id: string; totalAmount: string; paymentsAmount: string; paidDate: string | null }> };
+    assert.deepEqual(
+      keptStatements.items.map((statement) => [statement.id, statement.totalAmount, statement.paymentsAmount, statement.paidDate]),
+      [[keptStatement.rows[0]!.id, "0.00", "100.00", null]],
+    );
+    assert.equal((await summary("2027-02-01", "2027-02-28")).cardPaymentTotal, "100.00");
   } finally {
     await app?.close();
     await scopedPool?.end();

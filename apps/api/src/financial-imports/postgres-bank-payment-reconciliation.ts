@@ -54,7 +54,9 @@ function asStatementPayment(
 // In a bank statement a card payment is an ordinary debit, so the suggestion also looks at the
 // description. "Pagamento" alone is not enough: it must point at a card or a statement, otherwise an
 // ordinary expense ("pagamento de boleto") would be taken for a card payment.
-const CARD_PAYMENT_DESCRIPTION = /\b(pag(?:amento|to)?|pgto)\b[^]*\b(cart[aã]o|fatura|credito|cr[eé]dito)\b|\b(cart[aã]o|fatura)\b[^]*\b(pag(?:amento|to)?|pgto)\b/i;
+// The gap between the two terms is bounded, so a long description cannot join words that belong to
+// unrelated parts of the line ("pagamento de boleto ... troca de cartão").
+const CARD_PAYMENT_DESCRIPTION = /\b(pag(?:amento|to)?|pgto)\b[\s\S]{0,30}?\b(cart[aã]o|fatura|credito|cr[eé]dito)\b|\b(cart[aã]o|fatura)\b[\s\S]{0,30}?\b(pag(?:amento|to)?|pgto)\b/i;
 
 export function looksLikeCardPayment(description: string | null | undefined): boolean {
   return CARD_PAYMENT_DESCRIPTION.test(description ?? "");
@@ -303,11 +305,23 @@ export async function undoBankPayments(
      WHERE wallet_id = $1 AND id = ANY($2::uuid[])`,
     [walletId, paymentIds],
   );
+  const statementIds = statements.rows.map((row) => row.id);
+  // The statements are locked before the payments are removed, so a concurrent payment cannot be
+  // registered against a balance this undo is about to change. The order matches the other callers:
+  // movements first, then statements, each batch ordered by id.
+  if (statementIds.length > 0) {
+    await executor.query(
+      `SELECT id FROM credit_card_statements
+       WHERE wallet_id = $1 AND id = ANY($2::uuid[])
+       ORDER BY id
+       FOR UPDATE`,
+      [walletId, statementIds],
+    );
+  }
   await executor.query(
     "DELETE FROM credit_card_statement_payments WHERE wallet_id = $1 AND id = ANY($2::uuid[])",
     [walletId, paymentIds],
   );
-  const statementIds = statements.rows.map((row) => row.id);
   if (statementIds.length === 0) return;
   // A statement stays settled only while its remaining payments still cover the total.
   await executor.query(

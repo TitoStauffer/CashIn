@@ -253,6 +253,9 @@ const sessionColumns = `
   session.undone_at,
   session.created_at,
   session.updated_at,
+  -- An imported item results in an income, an expense, a statement credit or a statement payment,
+  -- and every one of them has to be checked here: the undo refuses to run when any of them changed,
+  -- so a type left out would announce an undo the endpoint then refuses.
   (
     session.status = 'completed'
     AND session.imported_count > 0
@@ -268,6 +271,9 @@ const sessionColumns = `
       LEFT JOIN credit_card_statement_credits AS checked_credit
         ON checked_credit.id = checked_item.resulting_card_credit_id
        AND checked_credit.wallet_id = checked_item.wallet_id
+      LEFT JOIN credit_card_statement_payments AS checked_payment
+        ON checked_payment.id = checked_item.resulting_statement_payment_id
+       AND checked_payment.wallet_id = checked_item.wallet_id
       WHERE checked_item.import_session_id = session.id
         AND checked_item.validation_status = 'imported'
         AND (
@@ -281,6 +287,10 @@ const sessionColumns = `
           OR
           (checked_item.type = 'card_credit' AND (
             checked_credit.id IS NULL OR checked_credit.updated_at IS DISTINCT FROM checked_item.resulting_updated_at
+          ))
+          OR
+          (checked_item.type = 'transfer' AND (
+            checked_payment.id IS NULL OR checked_payment.updated_at IS DISTINCT FROM checked_item.resulting_updated_at
           ))
         )
     )
@@ -311,6 +321,9 @@ const sessionColumns = `
       LEFT JOIN credit_card_statement_credits AS blocked_credit
         ON blocked_credit.id = blocked_item.resulting_card_credit_id
        AND blocked_credit.wallet_id = blocked_item.wallet_id
+      LEFT JOIN credit_card_statement_payments AS blocked_payment
+        ON blocked_payment.id = blocked_item.resulting_statement_payment_id
+       AND blocked_payment.wallet_id = blocked_item.wallet_id
       WHERE blocked_item.import_session_id = session.id
         AND blocked_item.validation_status = 'imported'
         AND (
@@ -324,6 +337,10 @@ const sessionColumns = `
           OR
           (blocked_item.type = 'card_credit' AND (
             blocked_credit.id IS NULL OR blocked_credit.updated_at IS DISTINCT FROM blocked_item.resulting_updated_at
+          ))
+          OR
+          (blocked_item.type = 'transfer' AND (
+            blocked_payment.id IS NULL OR blocked_payment.updated_at IS DISTINCT FROM blocked_item.resulting_updated_at
           ))
         )
     ) THEN 'Um ou mais lançamentos importados foram alterados ou removidos.'
@@ -1138,6 +1155,8 @@ export class PostgresFinancialImportsRepository implements FinancialImportReposi
       if (expenseIds.length > 0) {
         await transaction.query("DELETE FROM expenses WHERE wallet_id = $1 AND id = ANY($2::uuid[])", [walletId, expenseIds]);
       }
+      // A statement paid by another source keeps its payment, so it survives this undo without its
+      // purchases instead of being removed with the payment cascading away.
       const affectedStatementIds = affectedStatements.rows.map((statement) => statement.id);
       if (affectedStatementIds.length > 0) {
         await transaction.query(
@@ -1146,7 +1165,8 @@ export class PostgresFinancialImportsRepository implements FinancialImportReposi
              AND statement.id = ANY($2::uuid[])
              AND statement.paid_date IS NULL
              AND NOT EXISTS (SELECT 1 FROM expenses WHERE credit_card_statement_id = statement.id AND wallet_id = statement.wallet_id)
-             AND NOT EXISTS (SELECT 1 FROM credit_card_statement_credits WHERE credit_card_statement_id = statement.id AND wallet_id = statement.wallet_id)`,
+             AND NOT EXISTS (SELECT 1 FROM credit_card_statement_credits WHERE credit_card_statement_id = statement.id AND wallet_id = statement.wallet_id)
+             AND NOT EXISTS (SELECT 1 FROM credit_card_statement_payments WHERE credit_card_statement_id = statement.id AND wallet_id = statement.wallet_id)`,
           [walletId, affectedStatementIds],
         );
       }
@@ -1369,7 +1389,7 @@ export class PostgresFinancialImportsRepository implements FinancialImportReposi
   // recognized either way.
   private duplicateIdentityTypes(item: ParsedFinancialImportItem): FinancialImportItemType[] {
     if (!isBankPaymentCandidateItem(item)) return [item.type];
-    return item.type === "expense" || item.type === "transfer" ? ["expense", "transfer"] : [item.type, "transfer"];
+    return ["expense", "transfer"];
   }
 
   private duplicateIdentityHashes(item: ParsedFinancialImportItem): string[] {
