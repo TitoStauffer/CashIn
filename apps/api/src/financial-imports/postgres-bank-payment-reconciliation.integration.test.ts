@@ -209,6 +209,50 @@ test("PostgreSQL bank payment reconciliation settles statements without double c
       creditCardStatementId: statementId(cardId),
     })).statusCode, 409);
 
+    // Reimporting a payment already imported must be recognized, or the cash would be reduced twice
+    // for one real payment. A new FITID forces the comparison onto the fingerprint instead of the
+    // external id, which is what a CSV statement relies on.
+    const reimportedSettlement = (await upload(bankOfx([
+      { id: "p-ambiguous-again", date: "2026-10-20", amount: "-400.00", name: "PAGAMENTO CARTAO" },
+    ]), "reimportado.ofx")).json() as FinancialImportSession;
+    assert.equal(reimportedSettlement.items![0]!.validationStatus, "duplicate");
+    assert.equal(reimportedSettlement.items![0]!.canIncludeDuplicate, true);
+
+    // The same line may take either identity depending on whether a statement was open when it was
+    // imported: here the first import found none, so it stayed an expense.
+    const asExpense = (await upload(bankOfx([
+      { id: "p-december", date: "2026-12-20", amount: "-90.00", name: "PAGAMENTO CARTAO" },
+    ]), "dezembro.ofx")).json() as FinancialImportSession;
+    assert.equal(asExpense.items![0]!.type, "expense");
+    await patchItem(asExpense.id, asExpense.items![0]!.id, {
+      date: asExpense.items![0]!.date, description: "PAGAMENTO CARTAO", type: "expense", categoryId, subcategoryId: null,
+    });
+    assert.equal((await app.inject({ method: "POST", url: `/financial-imports/${asExpense.id}/confirm`, headers })).statusCode, 200);
+
+    // A statement of the same amount is now open on that due date, so the line becomes a statement
+    // payment — and is still recognized as the payment already imported as an expense.
+    // On a card of its own, so the statements asserted above keep being the first of their card.
+    const decemberCard = await database.query<{ id: string }>(
+      "INSERT INTO credit_cards (wallet_id, alias, closing_day, due_day) VALUES ($1, 'Dezembro', 10, 20) RETURNING id",
+      [walletId],
+    );
+    const decemberStatement = await database.query<{ id: string }>(
+      `INSERT INTO credit_card_statements (wallet_id, credit_card_id, closing_date, due_date)
+       VALUES ($1, $2, '2026-12-10', '2026-12-20') RETURNING id`,
+      [walletId, decemberCard.rows[0]!.id],
+    );
+    await database.query(
+      `INSERT INTO expenses (user_id, wallet_id, category_id, payment_method_id, payment_method_nature, credit_card_statement_id, amount, date, description)
+       VALUES ($1, $2, $3, $4, 'credit_card', $5, 90.00, '2026-12-05', 'PRESENTE')`,
+      [userId, walletId, categoryId, paymentMethodId, decemberStatement.rows[0]!.id],
+    );
+    const asPayment = (await upload(bankOfx([
+      { id: "p-december-again", date: "2026-12-20", amount: "-90.00", name: "PAGAMENTO CARTAO" },
+    ]), "dezembro-2.ofx")).json() as FinancialImportSession;
+    assert.equal(asPayment.items![0]!.type, "transfer");
+    assert.equal(asPayment.items![0]!.validationStatus, "duplicate");
+    assert.equal(asPayment.items![0]!.canIncludeDuplicate, true);
+
     // Undoing the partial import removes its payment and leaves the statement as it was.
     const undone = await app.inject({ method: "POST", url: `/financial-imports/${partial.id}/undo`, headers });
     assert.equal(undone.statusCode, 200);

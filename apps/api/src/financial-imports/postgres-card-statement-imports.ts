@@ -1,5 +1,6 @@
 import type { QueryExecutor } from "../database.js";
 import { calculateDueDate } from "../credit-cards/billing-cycle.js";
+import { moneyFromCents, moneyToCents } from "../shared/money.js";
 import { FinancialImportError } from "./financial-imports.errors.js";
 import { normalizeFinancialImportDescription } from "./financial-imports.fingerprint.js";
 import type {
@@ -19,24 +20,16 @@ function dateValue(value: string | Date | null): string {
   return value instanceof Date ? value.toISOString().slice(0, 10) : value.slice(0, 10);
 }
 
-// Exact decimal arithmetic for amounts with up to two decimal places.
 function toCents(value: string): bigint {
-  const match = /^(-?)(\d+)(?:\.(\d{1,2}))?$/.exec(value.trim());
-  if (!match) throw new Error("Invalid money amount");
-  const cents = BigInt(match[2]!) * 100n + BigInt((match[3] ?? "").padEnd(2, "0"));
-  return match[1] === "-" ? -cents : cents;
+  const cents = moneyToCents(value);
+  if (cents === null) throw new FinancialImportError("O valor da movimentação é inválido.", 422);
+  return cents;
 }
 
 // ISO dates (YYYY-MM-DD) sort chronologically by ordinal comparison.
 function compareIsoDates(left: string, right: string): number {
   if (left === right) return 0;
   return left < right ? -1 : 1;
-}
-
-function fromCents(value: bigint): string {
-  const negative = value < 0n;
-  const absolute = negative ? -value : value;
-  return `${negative ? "-" : ""}${absolute / 100n}.${(absolute % 100n).toString().padStart(2, "0")}`;
 }
 
 // Strips refund wording so a refund line can be matched with the purchase it reverses.
@@ -82,9 +75,9 @@ export async function previewStatements(
     return {
       closingDate,
       dueDate: calculateDueDate(closingDate, card.closingDay, card.dueDay),
-      purchasesAmount: fromCents(total.purchases),
-      creditsAmount: fromCents(total.credits),
-      totalAmount: fromCents(total.purchases - total.credits),
+      purchasesAmount: moneyFromCents(total.purchases),
+      creditsAmount: moneyFromCents(total.credits),
+      totalAmount: moneyFromCents(total.purchases - total.credits),
       isPaid: paidDates.has(closingDate),
     };
   });

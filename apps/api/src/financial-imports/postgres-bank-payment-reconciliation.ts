@@ -2,6 +2,8 @@ import type { QueryExecutor } from "../database.js";
 import { registerStatementPayment, walletOwnerUserId } from "../credit-cards/postgres-credit-cards.repository.js";
 import { CreditCardError } from "../credit-cards/credit-cards.errors.js";
 import { FinancialImportError } from "./financial-imports.errors.js";
+import { createFinancialImportFingerprint } from "./financial-imports.fingerprint.js";
+import { moneyToCents } from "../shared/money.js";
 import type { BankPaymentCandidate, FinancialImportItem, ParsedFinancialImportItem } from "./financial-imports.types.js";
 
 // Reconciling a card payment found in a bank statement (DEV-57): the outgoing line is matched with
@@ -19,10 +21,34 @@ function dateValue(value: string | Date | null): string {
 }
 
 function toCents(value: string): bigint {
-  const match = /^(-?)(\d+)(?:\.(\d{1,2}))?$/.exec(value.trim());
-  if (!match) throw new FinancialImportError("O valor da movimentação é inválido.", 422);
-  const cents = BigInt(match[2]!) * 100n + BigInt((match[3] ?? "").padEnd(2, "0"));
-  return match[1] === "-" ? -cents : cents;
+  const cents = moneyToCents(value);
+  if (cents === null) throw new FinancialImportError("O valor da movimentação é inválido.", 422);
+  return cents;
+}
+
+// Changing the type changes the item's identity, so the fingerprint is recalculated with the fields
+// that will be persisted. Otherwise a later import of the same line would not be seen as duplicate.
+function asStatementPayment(
+  item: ParsedFinancialImportItem,
+  creditCardStatementId: string | null,
+  validationStatus: "valid" | "uncategorized",
+  errorMessage: string | null,
+): ParsedFinancialImportItem {
+  return {
+    ...item,
+    type: "transfer",
+    categoryId: null,
+    subcategoryId: null,
+    creditCardStatementId,
+    validationStatus,
+    errorMessage,
+    recordHash: createFinancialImportFingerprint({
+      date: item.date,
+      signedAmount: item.signedAmount,
+      type: "transfer",
+      description: item.description,
+    }),
+  };
 }
 
 // In a bank statement a card payment is an ordinary debit, so the suggestion also looks at the
@@ -100,11 +126,12 @@ export function suggestStatement(candidates: BankPaymentCandidate[], signedAmoun
   return exact.length === 1 ? exact[0]!.statementId : null;
 }
 
+// Shared with updateItem, so the preview and the edit never disagree about what is missing.
+export const SELECT_STATEMENT_MESSAGE = "Selecione a fatura que este pagamento liquida para incluí-lo na importação.";
+const NO_CANDIDATE_MESSAGE = "Nenhuma fatura em aberto corresponde a este pagamento. Escolha outro tipo ou deixe-o fora da importação.";
+
 export function reconciliationMessage(candidateCount: number): string {
-  if (candidateCount === 0) {
-    return "Nenhuma fatura em aberto corresponde a este pagamento. Escolha outro tipo ou deixe-o fora da importação.";
-  }
-  return "Selecione a fatura que este pagamento liquida para incluí-lo na importação.";
+  return candidateCount === 0 ? NO_CANDIDATE_MESSAGE : SELECT_STATEMENT_MESSAGE;
 }
 
 // Attaches candidates and a suggestion to every outgoing transfer of a bank statement preview.
@@ -130,19 +157,11 @@ export async function reconcileBankPayments(
     if (suggestion) {
       // A single candidate matching the amount exactly: suggested as a statement payment, which the
       // user still has to keep or change in the preview.
-      reconciled.push({ ...item, type: "transfer", categoryId: null, subcategoryId: null, creditCardStatementId: suggestion, validationStatus: "valid", errorMessage: null });
+      reconciled.push(asStatementPayment(item, suggestion, "valid", null));
     } else if (item.type === "transfer" || candidates.length > 0) {
       // Ambiguous, so nothing is confirmed: the item is presented as a statement payment waiting for
       // the user to pick the statement, and the type can still be changed back to an expense.
-      reconciled.push({
-        ...item,
-        type: "transfer",
-        categoryId: null,
-        subcategoryId: null,
-        creditCardStatementId: null,
-        validationStatus: "uncategorized",
-        errorMessage: reconciliationMessage(candidates.length),
-      });
+      reconciled.push(asStatementPayment(item, null, "uncategorized", reconciliationMessage(candidates.length)));
     } else {
       // No open statement matches, so the debit stays the expense the parser suggested.
       reconciled.push(item);
@@ -174,6 +193,13 @@ export async function attachStatementCandidates(
 
 // Validates a statement the user chose for a payment: it must be an open statement of the wallet
 // with an outstanding balance.
+// An incoming line is money received, so it can never pay a statement.
+export function assertOutgoingPayment(signedAmount: string | null): void {
+  if (signedAmount === null || !signedAmount.startsWith("-")) {
+    throw new FinancialImportError("Somente uma saída do extrato pode pagar uma fatura.", 400);
+  }
+}
+
 export async function assertReconcilableStatement(
   executor: QueryExecutor,
   walletId: string,
@@ -219,6 +245,14 @@ export async function importBankPayments(
   const payments = items.filter((item) => item.type === "transfer");
   if (payments.length === 0) return;
   const userId = await walletOwnerUserId(executor, walletId);
+  // Statements are locked in a stable order, so concurrent confirmations cannot deadlock.
+  await executor.query(
+    `SELECT id FROM credit_card_statements
+     WHERE wallet_id = $1 AND id = ANY($2::uuid[])
+     ORDER BY id
+     FOR UPDATE`,
+    [walletId, [...new Set(payments.flatMap((payment) => payment.credit_card_statement_id ? [payment.credit_card_statement_id] : []))]],
+  );
   for (const payment of payments) {
     if (!payment.credit_card_statement_id) {
       throw new FinancialImportError("Concilie as transferências antes de confirmar a importação.", 409);

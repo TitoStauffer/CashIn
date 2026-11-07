@@ -1,7 +1,7 @@
 # Aprendizados de Code Review
 
-**Status:** auditado até o PR #46, com ocorrências confirmadas dos PRs #56 e #58
-**Última revisão:** 05/11/2026
+**Status:** auditado até o PR #46, com ocorrências confirmadas dos PRs #56, #58, #63 e #64
+**Última revisão:** 07/11/2026
 
 Esta nota converte os achados históricos do Agent de Code Review em regras preventivas. O inventário e os links das revisões estão em [`code-review-audit.md`](code-review-audit.md).
 
@@ -15,6 +15,7 @@ Esta nota converte os achados históricos do Agent de Code Review em regras prev
 - **Detecção:** teste de integração da rota real e, para fluxos críticos, teste Web/API com respostas reais ou fixtures derivadas do contrato da API.
 - **Ocorrência no PR #56, revisão #5756708661 (`f450e144b68d18ecea22bf09fc57d64992ff05f0`):** a API permitia descrição CSV opcional, mas a Web a marcava como obrigatória; testes PostgreSQL com parser injetado também continuavam omitindo o novo header de mapeamento obrigatório. A correção alinha validação e testes ao contrato real. A prevenção é testar tanto o contrato mínimo válido quanto consumidores antigos sempre que uma pré-condição de rota mudar.
 - **Ocorrência no PR #58, revisão #5794474287 (`4dd3fc657753a43f5a911b3ea419828461f1b530`):** o contrato das regras de categorização documentava `409` para regra duplicada, mas só a criação mapeava a violação de unicidade (`23505`); editar uma regra para a descrição de outra chegava ao handler como erro cru e retornava `500`. Os testes cobriam o `409` apenas no `POST`. A correção aplica o mesmo mapeamento em todas as escritas que atingem a constraint e testa o conflito no `PATCH` nas rotas e no PostgreSQL. A prevenção é, para cada constraint única, enumerar todas as operações que podem violá-la (inserção e atualização) e testar o erro de contrato em cada uma.
+- **Ocorrência no PR #64, revisão #5809840703 (`4b7db54f8594b37ee616669b4025aa4bda67c50c`, MEDIUM):** a conciliação de pagamentos de fatura só faz sentido para uma saída do extrato, mas o `PATCH` do item aceitava vincular uma fatura a uma entrada; uma transferência recebida podia virar pagamento e reduzir o caixa indevidamente. A correção valida o sinal do valor no caminho de edição (`assertOutgoingPayment`), ao lado da validação de carteira e de saldo devedor. A prevenção é, quando a interface só oferece uma operação para um subconjunto dos registros, repetir essa pré-condição como invariante na API, que é o contrato real.
 
 ## 2. Dados inválidos também precisam ser persistíveis
 
@@ -47,6 +48,11 @@ Esta nota converte os achados históricos do Agent de Code Review em regras prev
   - **Impacto:** deadlock (`40P01`) e erro 500 entre desfazer ou confirmar uma fatura e editar uma compra do mesmo cartão.
   - **Correção:** a ordem global passou a ser movimentações e créditos antes das faturas. O desfazer trava despesas e créditos primeiro, e a confirmação trava as compras candidatas ao vínculo de estorno (`lockCardPurchasesForCredits`) antes de preparar as faturas.
   - **Prevenção:** ao introduzir um novo lock numa tabela já travada por outro repositório, conferir a ordem usada lá.
+- **Ocorrência no [PR #64](https://github.com/TitoStauffer/CashIn/pull/64#pullrequestreview-5809840703) (SHA `4b7db54`, MEDIUM):**
+  - **Problema:** `registerStatementPayment` lia "fatura já liquidada" e "saldo devedor restante" sem travar a fatura, e a confirmação de uma importação registrava vários pagamentos sem ordem definida.
+  - **Impacto:** um pagamento manual simultâneo à confirmação do extrato podia inserir dois pagamentos integrais e dobrar o valor pago da mesma fatura; vários pagamentos numa transação podiam travar faturas em ordens diferentes.
+  - **Correção:** a fatura é travada (`FOR UPDATE`) antes de ler as guardas, dentro do próprio helper, de modo que todo caminho que registra pagamento herde a atomicidade; a importação trava as faturas alvo `ORDER BY id`.
+  - **Prevenção:** guarda lida antes de uma escrita condicional pertence à mesma transação serializada da escrita; coloque o lock no helper compartilhado, não em cada chamador.
 
 ## 5. Estado assíncrono da interface pertence à requisição que o produziu
 
@@ -153,3 +159,14 @@ Esta nota converte os achados históricos do Agent de Code Review em regras prev
 - **Ocorrência no PR #56, revisão #5757414706 (`b102de15418441fdb5e66c9d5f61ccae335e61d2`):** a Web validava somente a existência dos índices mapeados e permitia que dois campos reutilizassem a mesma coluna, embora a API recusasse a configuração; além disso, a linha física era preservada apenas nos erros produzidos pelo parser e se perdia nas validações posteriores do serviço. A correção exige unicidade global dos índices também na interface e transporta a proveniência física separadamente da sequência ordinal até a normalização. A prevenção é testar a mesma matriz de configuração em todas as camadas e propagar metadados diagnósticos por toda a cadeia, não apenas no ponto inicial de parsing.
 - **Ocorrência no PR #56, revisão #5759336883 (`89a5df147aa7de17552f945593e3452b71b34ada`):** o limite de 10.000 movimentações era verificado somente depois de materializar e transformar todos os registros; a inspeção também processava o arquivo inteiro para retornar dez amostras. Um CSV de até 10 MB com milhões de linhas curtas podia amplificar memória e bloquear o event loop. A correção conta registros durante a leitura, rejeita o 10.001º antes do conteúdo posterior, separa o cabeçalho da cota e retém apenas o necessário para inspeção ou upload. A prevenção é aplicar limites no primeiro ponto de expansão, cobrir inspeção e processamento final e testar que conteúdo posterior malformado nem chega a ser consumido.
 - **Ocorrência no PR #56, revisão #5759709787 (`fac17472100ff88ae69c055d94bac8f152011a58`):** a correção do limite de registros não auditou a outra dimensão expansível do mesmo parser: colunas continuavam acumuladas até o fim da linha antes da validação de 100. Uma única linha podia criar milhões de entradas. A correção rejeita assim que um separador comprova a existência da 101ª coluna, inclusive após campo entre aspas, antes de consumir seu conteúdo. A prevenção é inventariar todas as coleções, buffers e transformações quando surgir um problema de amplificação, aplicando cada limite no primeiro ponto em que o excesso fica comprovado.
+
+## 14. Identidade de deduplicação não pode depender de classificação derivada
+
+- **Padrão:** `dedup-identity-stable-under-derived-classification`.
+- **Evidência:** [PR #64, revisão #5809840703](https://github.com/TitoStauffer/CashIn/pull/64#pullrequestreview-5809840703), SHA `4b7db54f8594b37ee616669b4025aa4bda67c50c`, HIGH.
+- **Problema confirmado:** a conciliação convertia uma saída do extrato em pagamento de fatura mudando o tipo do item, mas mantinha o `record_hash` calculado para o tipo original. O tipo integra a identidade usada na deduplicação, tanto no hash quanto na comparação por data, valor e tipo.
+- **Causa-raiz:** a identidade era calculada uma única vez no parsing, antes de uma regra de negócio posterior redefinir um campo que faz parte dela. A investigação da correção mostrou uma segunda face do mesmo erro: a checagem de duplicidade rodava antes da conciliação, comparando a reimportação como despesa; e o tipo atribuído depende do estado do banco no momento da importação, porque só vira pagamento quando existe fatura em aberto candidata.
+- **Impacto:** reimportar o mesmo extrato não reconhecia o pagamento já importado, criava uma despesa comum e reduzia o caixa duas vezes para um único pagamento real, sem aviso de duplicidade. Em OFX da mesma conta o `FITID` ainda protegia; em CSV não havia proteção.
+- **Correção aplicada:** a identidade é recalculada junto com o tipo; a conciliação passou a rodar antes da checagem de duplicidade; e a checagem compara as duas identidades possíveis de uma saída que pode pagar fatura, a despesa sugerida pelo parser e o pagamento que ela se torna.
+- **Regra preventiva:** quando um campo que compõe a identidade de deduplicação pode ser redefinido por regra de negócio, recalcule a identidade no mesmo ponto em que o campo muda e decida a classificação antes de consultar o histórico. Se a classificação depende do estado atual do banco, a comparação precisa considerar todas as identidades que a mesma movimentação real pode assumir.
+- **Detecção:** reimportar a mesma movimentação depois de confirmada, nos dois sentidos da classificação derivada — já importada como pagamento e já importada como despesa — sem reaproveitar o identificador externo do arquivo, que esconde a falha do fingerprint.

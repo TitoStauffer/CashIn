@@ -1,4 +1,5 @@
 import type { Database, QueryExecutor } from "../database.js";
+import { moneyFromCents, moneyToCents } from "../shared/money.js";
 import { CreditCardError } from "./credit-cards.errors.js";
 import type {
   CreditCard,
@@ -167,6 +168,13 @@ export async function registerStatementPayment(
     source: "manual" | "bank_statement";
   },
 ): Promise<{ paymentId: string; settled: boolean }> {
+  // Locking the statement first makes "already settled" and "no outstanding balance" atomic against
+  // a concurrent payment, whichever path registers it.
+  const locked = await executor.query<{ id: string }>(
+    "SELECT id FROM credit_card_statements WHERE id = $1 AND wallet_id = $2 FOR UPDATE",
+    [input.statementId, input.walletId],
+  );
+  if (!locked.rows[0]) throw new CreditCardError("Fatura não encontrada.", 404);
   const balance = await executor.query<{
     outstanding: string;
     has_purchases: boolean;
@@ -202,7 +210,7 @@ export async function registerStatementPayment(
     `INSERT INTO credit_card_statement_payments (wallet_id, user_id, credit_card_statement_id, amount, date, source)
      VALUES ($1, $2, $3, $4::numeric, $5::date, $6)
      RETURNING id`,
-    [input.walletId, input.userId, input.statementId, fromCents(paid), input.date, input.source],
+    [input.walletId, input.userId, input.statementId, moneyFromCents(paid), input.date, input.source],
   );
   // A payment that covers the outstanding balance settles the statement; a partial one leaves it open,
   // so the statement keeps accepting purchases.
@@ -229,18 +237,10 @@ export async function walletOwnerUserId(executor: QueryExecutor, walletId: strin
   return ownerUserId;
 }
 
-// Exact decimal arithmetic for amounts with up to two decimal places.
 function toCents(value: string): bigint {
-  const match = /^(-?)(\d+)(?:\.(\d{1,2}))?$/.exec(value.trim());
-  if (!match) throw new CreditCardError("O valor do pagamento é inválido.", 400);
-  const cents = BigInt(match[2]!) * 100n + BigInt((match[3] ?? "").padEnd(2, "0"));
-  return match[1] === "-" ? -cents : cents;
-}
-
-function fromCents(value: bigint): string {
-  const negative = value < 0n;
-  const absolute = negative ? -value : value;
-  return `${negative ? "-" : ""}${absolute / 100n}.${(absolute % 100n).toString().padStart(2, "0")}`;
+  const cents = moneyToCents(value);
+  if (cents === null) throw new CreditCardError("O valor do pagamento é inválido.", 400);
+  return cents;
 }
 
 export class PostgresCreditCardsRepository implements CreditCardRepository {
