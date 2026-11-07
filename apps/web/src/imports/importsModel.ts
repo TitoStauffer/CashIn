@@ -117,17 +117,24 @@ export function currentReconciliationChoice(draft: FinancialImportItemInput): Re
 }
 
 // Picking one reconciliation always clears the other, which is what the API requires.
-export function reconciliationChoiceDraft(value: string, candidates: WalletTransferCandidate[]): Partial<FinancialImportItemInput> {
+export function reconciliationChoiceDraft(
+  value: string,
+  candidates: WalletTransferCandidate[],
+  currentCounterpartWalletId: string | null = null,
+): Partial<FinancialImportItemInput> {
   const [kind, id] = value.split(':')
   if (kind === 'statement' && id) {
     return { creditCardStatementId: id, transferCounterpartWalletId: null, walletTransferId: null }
   }
   if (kind === 'transfer' && id) {
+    // The chosen transfer may no longer be among the candidates — that is exactly when the "chosen
+    // earlier" option is shown — so the wallet already in the draft is kept instead of being cleared,
+    // which would silently drop the choice.
     const candidate = candidates.find((option) => option.walletTransferId === id)
     return {
       creditCardStatementId: null,
       walletTransferId: id,
-      transferCounterpartWalletId: candidate?.counterpartWalletId ?? null,
+      transferCounterpartWalletId: candidate?.counterpartWalletId ?? currentCounterpartWalletId,
     }
   }
   if (kind === 'wallet' && id) {
@@ -141,8 +148,26 @@ export function describeTransferCandidate(candidate: WalletTransferCandidate) {
   return `${direction} ${candidate.counterpartWalletName} · ${formatIsoDate(candidate.date)} · ${formatBrazilianCurrency(candidate.amount)}`
 }
 
-export function describeCounterpartWallet(wallet: TransferCounterpartWallet, isOutgoing: boolean) {
-  return `${isOutgoing ? 'para' : 'de'} ${wallet.walletName}`
+// The direction of a line is not derivable on the client: the API exposes `amount` as an absolute
+// value and the line is already stored as `transfer`, so neither the sign nor the type tells an
+// outgoing line from an incoming one. The pending candidates carry the direction decided by the API,
+// which is the only authoritative source here; without any candidate the label states no direction
+// instead of guessing one.
+export function transferDirection(candidates: WalletTransferCandidate[]): 'outgoing' | 'incoming' | null {
+  const directions = new Set(candidates.map((candidate) => candidate.direction))
+  return directions.size === 1 ? [...directions][0]! : null
+}
+
+export function counterpartWalletsLabel(direction: 'outgoing' | 'incoming' | null) {
+  if (direction === 'outgoing') return 'Transferir para a carteira'
+  if (direction === 'incoming') return 'Receber da carteira'
+  return 'Carteira do outro lado'
+}
+
+export function describeCounterpartWallet(wallet: TransferCounterpartWallet, direction: 'outgoing' | 'incoming' | null) {
+  if (direction === 'outgoing') return `para ${wallet.walletName}`
+  if (direction === 'incoming') return `de ${wallet.walletName}`
+  return wallet.walletName
 }
 
 export function hasCategory(type: FinancialImportItemType) {

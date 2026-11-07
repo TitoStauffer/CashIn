@@ -9,6 +9,7 @@ import {
   canReconcileStatement,
   cardTypeLabels,
   cardTypeOptions,
+  counterpartWalletsLabel,
   createDraft,
   currentReconciliationChoice,
   describeCounterpartWallet,
@@ -16,6 +17,7 @@ import {
   describeTransferCandidate,
   reconciliationChoiceDraft,
   reconciliationChoiceValue,
+  transferDirection,
   formatFileSize,
   formatIsoDate,
   getSessionStatusLabel,
@@ -168,8 +170,12 @@ export function ImportPreview({
             const isChosenTransferListed = transferCandidates.some((candidate) => candidate.walletTransferId === draft.walletTransferId)
             const isChosenWalletListed = counterpartWallets.some((wallet) => wallet.walletId === draft.transferCounterpartWalletId)
             const choice = currentReconciliationChoice(draft)
-            const isOutgoingLine = item.amount.startsWith('-') || item.type === 'expense'
+            const direction = transferDirection(transferCandidates)
             const hasReconciliationOption = candidates.length > 0 || transferCandidates.length > 0 || counterpartWallets.length > 0
+            // The API attaches the statements and wallets to a line already stored as a transfer, so a
+            // type just changed by hand has none yet: saying there is nothing to reconcile would be
+            // false.
+            const awaitsSavedType = !hasReconciliationOption && item.type !== 'transfer'
             const selectedCategory = categories.find((category) => category.id === draft.categoryId)
             const isEditable = session.status === 'preview' && item.canEdit
             const isSavingItem = pendingAction === `item:${item.id}`
@@ -229,7 +235,7 @@ export function ImportPreview({
                       Conciliar com
                       <select
                         value={reconciliationChoiceValue(choice)}
-                        onChange={(event) => onDraftChange(item.id, reconciliationChoiceDraft(event.target.value, transferCandidates))}
+                        onChange={(event) => onDraftChange(item.id, reconciliationChoiceDraft(event.target.value, transferCandidates, draft.transferCounterpartWalletId ?? null))}
                         disabled={areItemControlsDisabled}
                       >
                         <option value="">Escolha a fatura ou a carteira</option>
@@ -252,10 +258,10 @@ export function ImportPreview({
                           </optgroup>
                         )}
                         {counterpartWallets.length > 0 && (
-                          <optgroup label={isOutgoingLine ? 'Transferir para a carteira' : 'Receber da carteira'}>
+                          <optgroup label={counterpartWalletsLabel(direction)}>
                             {counterpartWallets.map((wallet) => (
                               <option key={wallet.walletId} value={`wallet:${wallet.walletId}`}>
-                                {describeCounterpartWallet(wallet, isOutgoingLine)}
+                                {describeCounterpartWallet(wallet, direction)}
                               </option>
                             ))}
                           </optgroup>
@@ -273,7 +279,9 @@ export function ImportPreview({
                     </label>
                   ) : (
                     <p className="imports-item-hint" role="note">
-                      Nenhuma fatura em aberto e nenhuma outra carteira para conciliar esta movimentação. Escolha outro tipo ou deixe-a fora da importação.
+                      {awaitsSavedType
+                        ? 'Salve o ajuste para ver as faturas e as carteiras disponíveis para conciliar esta movimentação.'
+                        : 'Nenhuma fatura em aberto e nenhuma outra carteira para conciliar esta movimentação. Escolha outro tipo ou deixe-a fora da importação.'}
                     </p>
                   ))}
                   <label className="imports-item-description">
