@@ -1,4 +1,5 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
+import { MONEY_AMOUNT_PATTERN } from "../shared/money.js";
 import { CreditCardError } from "./credit-cards.errors.js";
 import type { CreditCardsService } from "./credit-cards.service.js";
 
@@ -8,7 +9,7 @@ interface StatementParams extends CardParams { statementId: string }
 interface CardQuery { from?: string; to?: string }
 interface CardBody { nickname: string; closingDay: number; dueDay: number }
 interface CardPatch { nickname?: string; closingDay?: number; dueDay?: number; isActive?: boolean }
-interface PayBody { date: string }
+interface PayBody { date: string; amount?: string }
 
 const uuidSchema = { type: "string", pattern: "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$" };
 const dateSchema = { type: "string", pattern: "^\\d{4}-\\d{2}-\\d{2}$" };
@@ -104,18 +105,21 @@ export function registerCreditCardRoutes(app: FastifyInstance, options: RouteOpt
 
   app.post<{ Params: StatementParams; Body: PayBody }>("/credit-cards/:creditCardId/statements/:statementId/pay", {
     preHandler: [app.authenticate, app.resolveWalletContext],
-    preValidation: rejectUnexpectedProperties(["date"]),
+    preValidation: rejectUnexpectedProperties(["date", "amount"]),
     schema: {
       params: {
         type: "object", required: ["creditCardId", "statementId"],
         properties: { creditCardId: uuidSchema, statementId: uuidSchema },
       },
-      body: { type: "object", additionalProperties: false, required: ["date"], properties: { date: dateSchema } },
+      body: {
+        type: "object", additionalProperties: false, required: ["date"],
+        properties: { date: dateSchema, amount: { type: "string", pattern: MONEY_AMOUNT_PATTERN } },
+      },
     },
   }, async (request, reply) => {
     try {
       const item = await options.creditCardsService.payStatement(
-        request.currentWalletId!, request.params.creditCardId, request.params.statementId, request.body.date,
+        request.currentWalletId!, request.params.creditCardId, request.params.statementId, request.body.date, request.body.amount,
       );
       return reply.code(200).send(item);
     } catch (error) { return sendError(error, reply); }

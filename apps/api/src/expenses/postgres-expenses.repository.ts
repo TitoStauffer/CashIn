@@ -359,6 +359,9 @@ export class PostgresExpensesRepository implements ExpenseRepository {
     return result.rows[0]?.valid ?? false;
   }
 
+  // A statement with a registered payment is kept even without purchases: the payment is money that
+  // already left the account, and the statement is what holds it. Removing the statement would cascade
+  // the payment away and the paid amount would vanish from the card and from the balance.
   private async removeEmptyStatement(
     transaction: import("../database.js").QueryExecutor,
     walletId: string,
@@ -374,6 +377,10 @@ export class PostgresExpensesRepository implements ExpenseRepository {
          )
          AND NOT EXISTS (
            SELECT 1 FROM credit_card_statement_credits
+           WHERE credit_card_statement_id = statement.id AND wallet_id = statement.wallet_id
+         )
+         AND NOT EXISTS (
+           SELECT 1 FROM credit_card_statement_payments
            WHERE credit_card_statement_id = statement.id AND wallet_id = statement.wallet_id
          )`,
       [statementId, walletId],

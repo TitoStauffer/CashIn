@@ -111,7 +111,9 @@ test("PostgreSQL credit card statement import posts purchases and credits to the
       assert.equal(response.statusCode, 200);
       return (response.json() as { items: Array<{
         id: string; closingDate: string; dueDate: string; purchasesAmount: string; creditsAmount: string; totalAmount: string;
-        paidAmount: string | null; purchases: Array<{ id: string; description: string }>;
+        paidAmount: string | null; paidDate: string | null; paymentsAmount: string;
+        payments: Array<{ amount: string; source: string }>;
+        purchases: Array<{ id: string; description: string }>;
         credits: Array<{ amount: string; description: string; originalExpenseId: string | null }>;
       }> }).items;
     };
@@ -295,6 +297,40 @@ test("PostgreSQL credit card statement import posts purchases and credits to the
       [creditOnlyStatement!.id, creditOnlyStatement!.purchasesAmount, creditOnlyStatement!.creditsAmount, creditOnlyStatement!.credits[0]!.originalExpenseId],
       [coveredStatement!.id, "0.00", "45.90", null],
     );
+
+    // Undoing a card statement import keeps a statement that was partially paid: the payment is money
+    // already gone from the account and it lives in the statement, so removing the statement would
+    // cascade the payment away and the paid amount would vanish from the card and from the balance.
+    const partialCard = (await app.inject({
+      method: "POST", url: "/credit-cards", headers: ownerHeaders, payload: { nickname: "Parcial", closingDay: 10, dueDay: 20 },
+    })).json() as { id: string };
+    const partialImport = (await upload(
+      Buffer.from("Data;Descrição;Valor\n05/05/2026;MERCEARIA;200,00\n", "utf8"),
+      { ...csvHeaders, "x-file-name": "parcial.csv", "x-credit-card-id": partialCard.id, "x-card-amount-sign": "purchases_positive" },
+    )).json() as FinancialImportSession;
+    const partialItem = partialImport.items![0]!;
+    await patchItem(partialImport.id, partialItem.id, {
+      date: partialItem.date, description: "MERCEARIA", type: "expense", categoryId, subcategoryId: null,
+    });
+    assert.equal((await app.inject({ method: "POST", url: `/financial-imports/${partialImport.id}/confirm`, headers: ownerHeaders })).statusCode, 200);
+    const [importedStatement] = await statementsOf(partialCard.id);
+    const partiallyPaid = await app.inject({
+      method: "POST",
+      url: `/credit-cards/${partialCard.id}/statements/${importedStatement!.id}/pay`,
+      headers: ownerHeaders,
+      payload: { date: "2026-05-20", amount: "50.00" },
+    });
+    assert.equal(partiallyPaid.statusCode, 200);
+    // A partial payment does not settle the statement, so the import is still undoable.
+    const undonePartial = await app.inject({ method: "POST", url: `/financial-imports/${partialImport.id}/undo`, headers: ownerHeaders });
+    assert.equal(undonePartial.statusCode, 200);
+    assert.equal(undonePartial.json().status, "undone");
+    const [keptStatement] = await statementsOf(partialCard.id);
+    assert.deepEqual(
+      [keptStatement!.id, keptStatement!.purchasesAmount, keptStatement!.paymentsAmount, keptStatement!.paidDate],
+      [importedStatement!.id, "0.00", "50.00", null],
+    );
+    assert.deepEqual(keptStatement!.payments.map((payment) => [payment.amount, payment.source]), [["50.00", "manual"]]);
   } finally {
     await app?.close();
     await scopedPool?.end();

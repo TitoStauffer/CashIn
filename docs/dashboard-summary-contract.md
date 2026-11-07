@@ -17,7 +17,7 @@ Valores monetários continuam sendo strings decimais, com precisão de centavos 
 | `cashIncomeTotal` | Receitas com `balance_type = cash`; exclui benefícios. | Data da receita |
 | `cashExpenseTotal` | Despesas com natureza registrada `immediate` ou sem natureza nos registros legados. | Data da despesa |
 | `creditPurchaseTotal` | Despesas com natureza registrada `credit_card`, inclusive registros legados sem fatura vinculada. | Data da compra/despesa |
-| `cardPaymentTotal` | Valores efetivamente pagos nas faturas com `paid_date` preenchida. Faturas em aberto não entram. | Data do pagamento (`paid_date`) |
+| `cardPaymentTotal` | Pagamentos registrados nas faturas, incluindo pagamentos parciais de faturas ainda em aberto. | Data de cada pagamento |
 
 A classificação usa a natureza registrada na despesa, preservando o histórico mesmo se a forma de pagamento mudar posteriormente.
 
@@ -44,7 +44,7 @@ availableBalance = cashBalance
 
 `cashBalance` representa o fluxo líquido de caixa do período consultado. Ele pode ser negativo e não representa um saldo bancário acumulado nem incorpora um saldo inicial. Sem filtros, representa o fluxo de todos os registros armazenados.
 
-Uma compra no crédito entra em `expenseTotal` e `creditPurchaseTotal` na data da compra. O pagamento entra em `cardPaymentTotal` na data do pagamento e reduz o caixa uma única vez. Não se deve subtrair `creditPurchaseTotal` novamente da fórmula de caixa. Compra e pagamento podem pertencer a períodos diferentes.
+Uma compra no crédito entra em `expenseTotal` e `creditPurchaseTotal` na data da compra. Cada pagamento entra em `cardPaymentTotal` na sua data e reduz o caixa uma única vez, inclusive quando é parcial e a fatura continua em aberto. Não se deve subtrair `creditPurchaseTotal` novamente da fórmula de caixa. Compra e pagamento podem pertencer a períodos diferentes.
 
 `benefitBalances` continua separando VA/VR unificado (`food_meal_benefit`, somando os tipos legados `food_benefit` e `meal_benefit`) e auxílio home office (`home_office_benefit`). Esses benefícios não compõem os totais de caixa.
 

@@ -38,8 +38,22 @@ export interface FinancialImportItem {
   // Credit card statement imports only: the statement the item will be posted to.
   statementClosingDate?: string | null;
   statementDueDate?: string | null;
+  // Bank statement imports only: the statement this payment was reconciled with, plus the open
+  // statements it could pay. An ambiguous match is never reconciled automatically.
+  creditCardStatementId?: string | null;
+  statementCandidates?: BankPaymentCandidate[];
   createdAt: string;
   updatedAt: string;
+}
+
+// An open statement a bank payment may be reconciled with.
+export interface BankPaymentCandidate {
+  statementId: string;
+  creditCardId: string;
+  creditCardName: string;
+  closingDate: string;
+  dueDate: string;
+  outstandingAmount: string;
 }
 
 // Preview of a credit card statement computed from the items that will be imported.
@@ -99,6 +113,7 @@ export interface ParsedFinancialImportItem {
   // Parser hint only (OFX TRNTYPE); never persisted.
   sourceTransactionType?: string;
   statementClosingDate?: string | null;
+  creditCardStatementId?: string | null;
 }
 
 export interface ParsedFinancialImport {
@@ -187,6 +202,8 @@ export interface UpdateFinancialImportItemInput {
   subcategoryId?: string | null;
   includeDuplicate?: boolean;
   statementClosingDate?: string | null;
+  // Bank statement imports: the statement this payment settles, or null to leave it unreconciled.
+  creditCardStatementId?: string | null;
 }
 
 export type FinancialCategorizationRuleType = Extract<FinancialImportItemType, "income" | "expense">;

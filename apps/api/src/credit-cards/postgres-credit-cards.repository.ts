@@ -1,4 +1,5 @@
 import type { Database, QueryExecutor } from "../database.js";
+import { moneyFromCents, moneyToCents } from "../shared/money.js";
 import { CreditCardError } from "./credit-cards.errors.js";
 import type {
   CreditCard,
@@ -6,6 +7,7 @@ import type {
   CreditCardRepository,
   CreditCardStatement,
   CreditCardStatementCredit,
+  CreditCardStatementPayment,
 } from "./credit-cards.types.js";
 
 interface CreditCardRow {
@@ -23,12 +25,15 @@ interface StatementRow {
   closing_date: string | Date;
   due_date: string | Date;
   paid_date: string | Date | null;
-  paid_amount: string | null;
+
   purchases_amount: string;
   credits_amount: string;
   total_amount: string;
+  payments_amount: string;
+  outstanding_amount: string;
   purchases: CreditCardPurchase[] | null;
   credits: CreditCardStatementCredit[] | null;
+  payments: CreditCardStatementPayment[] | null;
 }
 
 function dateValue(value: string | Date | null): string | null {
@@ -54,16 +59,20 @@ function mapStatement(row: StatementRow): CreditCardStatement {
     closingDate: dateValue(row.closing_date)!,
     dueDate: dateValue(row.due_date)!,
     paidDate: dateValue(row.paid_date),
-    paidAmount: row.paid_amount,
+    // The amount paid is the sum of the statement's payments; it only reads as paid once settled.
+    paidAmount: dateValue(row.paid_date) === null ? null : row.payments_amount,
     purchasesAmount: row.purchases_amount,
     creditsAmount: row.credits_amount,
     totalAmount: row.total_amount,
+    paymentsAmount: row.payments_amount,
+    outstandingAmount: row.outstanding_amount,
     purchases: row.purchases ?? [],
     credits: row.credits ?? [],
+    payments: row.payments ?? [],
   };
 }
 
-// Purchases and credits are aggregated in separate lateral subqueries so neither multiplies the other.
+// Purchases, credits and payments are aggregated in separate lateral subqueries so none multiplies another.
 const statementSelect = `
   SELECT statement.id,
          statement.credit_card_id,
@@ -71,12 +80,14 @@ const statementSelect = `
          statement.closing_date,
          statement.due_date,
          statement.paid_date,
-         statement.paid_amount::text AS paid_amount,
          purchase_summary.amount::text AS purchases_amount,
          credit_summary.amount::text AS credits_amount,
          (purchase_summary.amount - credit_summary.amount)::numeric(14, 2)::text AS total_amount,
+         payment_summary.amount::text AS payments_amount,
+         GREATEST(purchase_summary.amount - credit_summary.amount - payment_summary.amount, 0.00)::numeric(14, 2)::text AS outstanding_amount,
          purchase_summary.items AS purchases,
-         credit_summary.items AS credits
+         credit_summary.items AS credits,
+         payment_summary.items AS payments
   FROM credit_card_statements AS statement
   JOIN credit_cards AS card
     ON card.id = statement.credit_card_id
@@ -124,7 +135,113 @@ const statementSelect = `
     FROM credit_card_statement_credits AS credit
     WHERE credit.credit_card_statement_id = statement.id
       AND credit.wallet_id = statement.wallet_id
-  ) AS credit_summary`;
+  ) AS credit_summary
+  CROSS JOIN LATERAL (
+    SELECT COALESCE(SUM(payment.amount), 0.00)::numeric(14, 2) AS amount,
+           COALESCE(
+             json_agg(
+               json_build_object(
+                 'id', payment.id,
+                 'amount', payment.amount::text,
+                 'date', payment.date::text,
+                 'source', payment.source
+               ) ORDER BY payment.date, payment.created_at, payment.id
+             ) FILTER (WHERE payment.id IS NOT NULL),
+             '[]'::json
+           ) AS items
+    FROM credit_card_statement_payments AS payment
+    WHERE payment.credit_card_statement_id = statement.id
+      AND payment.wallet_id = statement.wallet_id
+  ) AS payment_summary`;
+
+// Shared by manual payments and by payments reconciled from a bank statement, so both follow the
+// same rules: no payment on a settled statement, no payment without purchases or without an
+// outstanding balance, and settlement only once the payments cover the statement total.
+export async function registerStatementPayment(
+  executor: QueryExecutor,
+  input: {
+    walletId: string;
+    userId: string;
+    statementId: string;
+    date: string;
+    amount?: string;
+    source: "manual" | "bank_statement";
+  },
+): Promise<{ paymentId: string; settled: boolean }> {
+  // Locking the statement first makes "already settled" and "no outstanding balance" atomic against
+  // a concurrent payment, whichever path registers it.
+  const locked = await executor.query<{ id: string }>(
+    "SELECT id FROM credit_card_statements WHERE id = $1 AND wallet_id = $2 FOR UPDATE",
+    [input.statementId, input.walletId],
+  );
+  if (!locked.rows[0]) throw new CreditCardError("Fatura não encontrada.", 404);
+  const balance = await executor.query<{
+    outstanding: string;
+    has_purchases: boolean;
+    is_settled: boolean;
+  }>(
+    `WITH totals AS (
+       SELECT ((SELECT COALESCE(SUM(amount), 0.00) FROM expenses
+                WHERE credit_card_statement_id = $1 AND wallet_id = $2)
+             - (SELECT COALESCE(SUM(amount), 0.00) FROM credit_card_statement_credits
+                WHERE credit_card_statement_id = $1 AND wallet_id = $2)
+             - (SELECT COALESCE(SUM(amount), 0.00) FROM credit_card_statement_payments
+                WHERE credit_card_statement_id = $1 AND wallet_id = $2))::numeric(14, 2) AS outstanding
+     )
+     SELECT totals.outstanding::text AS outstanding,
+            EXISTS (SELECT 1 FROM expenses WHERE credit_card_statement_id = $1 AND wallet_id = $2) AS has_purchases,
+            EXISTS (SELECT 1 FROM credit_card_statements
+                    WHERE id = $1 AND wallet_id = $2 AND paid_date IS NOT NULL) AS is_settled
+     FROM totals`,
+    [input.statementId, input.walletId],
+  );
+  const current = balance.rows[0];
+  if (!current) throw new CreditCardError("Fatura não encontrada.", 404);
+  if (current.is_settled) throw new CreditCardError("Esta fatura já foi paga.", 409);
+  if (!current.has_purchases) throw new CreditCardError("Não é possível pagar uma fatura sem compras.", 409);
+  const outstanding = toCents(current.outstanding);
+  if (outstanding <= 0n) {
+    throw new CreditCardError("Não é possível pagar uma fatura sem saldo devedor: os créditos cobrem as compras.", 409);
+  }
+  const paid = input.amount === undefined ? outstanding : toCents(input.amount);
+  if (paid <= 0n) throw new CreditCardError("O valor do pagamento deve ser maior que zero.", 400);
+
+  const inserted = await executor.query<{ id: string }>(
+    `INSERT INTO credit_card_statement_payments (wallet_id, user_id, credit_card_statement_id, amount, date, source)
+     VALUES ($1, $2, $3, $4::numeric, $5::date, $6)
+     RETURNING id`,
+    [input.walletId, input.userId, input.statementId, moneyFromCents(paid), input.date, input.source],
+  );
+  // A payment that covers the outstanding balance settles the statement; a partial one leaves it open,
+  // so the statement keeps accepting purchases.
+  const settled = paid >= outstanding;
+  if (settled) {
+    await executor.query(
+      `UPDATE credit_card_statements
+       SET paid_date = $3::date, updated_at = now()
+       WHERE id = $1 AND wallet_id = $2`,
+      [input.statementId, input.walletId, input.date],
+    );
+  }
+  return { paymentId: inserted.rows[0]!.id, settled };
+}
+
+// Statement payments are recorded against the wallet owner, like the wallet's seeded data.
+export async function walletOwnerUserId(executor: QueryExecutor, walletId: string): Promise<string> {
+  const result = await executor.query<{ owner_user_id: string }>(
+    "SELECT owner_user_id FROM wallets WHERE id = $1",
+    [walletId],
+  );
+  const ownerUserId = result.rows[0]?.owner_user_id;
+  if (!ownerUserId) throw new CreditCardError("Carteira não encontrada.", 404);
+  return ownerUserId;
+}
+
+function toCents(value: string): bigint {
+  const cents = moneyToCents(value);
+  if (cents === null) throw new CreditCardError("O valor do pagamento é inválido.", 400);
+  return cents;
+}
 
 export class PostgresCreditCardsRepository implements CreditCardRepository {
   constructor(private readonly database: Database) {}
@@ -190,46 +307,30 @@ export class PostgresCreditCardsRepository implements CreditCardRepository {
     return result.rows.map(mapStatement);
   }
 
-  async payStatement(walletId: string, creditCardId: string, statementId: string, date: string): Promise<CreditCardStatement | null> {
+  async payStatement(
+    walletId: string,
+    creditCardId: string,
+    statementId: string,
+    date: string,
+    amount?: string,
+  ): Promise<CreditCardStatement | null> {
     return this.database.transaction(async (transaction) => {
-      const statement = await transaction.query<{ id: string; paid_date: string | Date | null }>(
-        `SELECT id, paid_date
+      const statement = await transaction.query<{ id: string }>(
+        `SELECT id
          FROM credit_card_statements
          WHERE id = $1 AND credit_card_id = $2 AND wallet_id = $3
          FOR UPDATE`,
         [statementId, creditCardId, walletId],
       );
-      const current = statement.rows[0];
-      if (!current) return null;
-      if (current.paid_date !== null) throw new CreditCardError("Esta fatura já foi paga.", 409);
-
-      // The amount paid is the net statement balance: purchases minus refunds and chargebacks.
-      const total = await transaction.query<{ amount: string; has_purchases: boolean; is_positive: boolean }>(
-        `WITH balance AS (
-           SELECT ((SELECT COALESCE(SUM(amount), 0.00) FROM expenses
-                    WHERE credit_card_statement_id = $1 AND wallet_id = $2)
-                 - (SELECT COALESCE(SUM(amount), 0.00) FROM credit_card_statement_credits
-                    WHERE credit_card_statement_id = $1 AND wallet_id = $2))::numeric(14, 2) AS amount
-         )
-         SELECT balance.amount::text AS amount,
-                balance.amount > 0 AS is_positive,
-                EXISTS (SELECT 1 FROM expenses WHERE credit_card_statement_id = $1 AND wallet_id = $2) AS has_purchases
-         FROM balance`,
-        [statementId, walletId],
-      );
-      const balance = total.rows[0];
-      if (!balance?.has_purchases) throw new CreditCardError("Não é possível pagar uma fatura sem compras.", 409);
-      if (!balance.is_positive) {
-        throw new CreditCardError("Não é possível pagar uma fatura sem saldo devedor: os créditos cobrem as compras.", 409);
-      }
-      const amount = balance.amount;
-
-      await transaction.query(
-        `UPDATE credit_card_statements
-         SET paid_date = $3::date, paid_amount = $4::numeric, updated_at = now()
-         WHERE id = $1 AND wallet_id = $2`,
-        [statementId, walletId, date, amount],
-      );
+      if (!statement.rows[0]) return null;
+      await registerStatementPayment(transaction, {
+        walletId,
+        userId: await walletOwnerUserId(transaction, walletId),
+        statementId,
+        date,
+        amount,
+        source: "manual",
+      });
       return this.findStatement(transaction, walletId, creditCardId, statementId);
     });
   }
