@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import { randomBytes } from "node:crypto";
 import test from "node:test";
+import { readdir, readFile } from "node:fs/promises";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { Pool } from "pg";
 import { createDatabase, runMigrations } from "../database.js";
 import { ExpensesService } from "../expenses/expenses.service.js";
@@ -144,6 +147,97 @@ test("credit-card billing assigns purchases by card close date and pays the stat
       (error: unknown) => error instanceof Error && "statusCode" in error && error.statusCode === 409,
     );
     assert.equal(await cards.listStatements(otherWalletId, firstCard.id), null);
+  } finally {
+    await scopedPool?.end();
+    await adminPool.query(`DROP SCHEMA IF EXISTS ${schemaName} CASCADE`);
+    await adminPool.end();
+  }
+});
+
+test("migration 019 turns every settled statement into a payment and keeps the amount paid", {
+  skip: !testDatabaseUrl,
+}, async () => {
+  const schemaName = `payment_migration_${randomBytes(8).toString("hex")}`;
+  const adminPool = new Pool({ connectionString: testDatabaseUrl });
+  let scopedPool: Pool | undefined;
+  try {
+    await adminPool.query(`CREATE SCHEMA ${schemaName}`);
+    scopedPool = new Pool({ connectionString: testDatabaseUrl, options: `-c search_path=${schemaName}` });
+    const database = createDatabase(scopedPool);
+    const migrationDirectory = fileURLToPath(new URL("../../migrations/", import.meta.url));
+    const paymentsVersion = "019_credit_card_statement_payments.sql";
+    // Applied versions are recorded, so the rerun at the end of this test behaves like a real deploy.
+    await database.query("CREATE TABLE schema_migrations (version text PRIMARY KEY, applied_at timestamptz NOT NULL DEFAULT now())");
+    for (const version of (await readdir(migrationDirectory))
+      .filter((name) => /^\d+_[a-z0-9_-]+\.sql$/i.test(name) && name < paymentsVersion)
+      .sort()) {
+      const sql = await readFile(join(migrationDirectory, version), "utf8");
+      await database.transaction(async (transaction) => {
+        await transaction.query(sql);
+        await transaction.query("INSERT INTO schema_migrations (version) VALUES ($1)", [version]);
+      });
+    }
+
+    const user = await database.query<{ id: string }>(
+      "INSERT INTO users (email, password_hash, email_verified_at) VALUES ($1, 'test-hash', now()) RETURNING id",
+      [`migration-${schemaName}@example.com`],
+    );
+    const userId = user.rows[0]!.id;
+    const wallet = await database.query<{ id: string }>(
+      "SELECT id FROM wallets WHERE owner_user_id = $1 AND is_personal", [userId],
+    );
+    const walletId = wallet.rows[0]!.id;
+    const card = await database.query<{ id: string }>(
+      "INSERT INTO credit_cards (wallet_id, alias, closing_day, due_day) VALUES ($1, 'Principal', 10, 20) RETURNING id",
+      [walletId],
+    );
+    // One settled statement and one still open, as the schema before this migration allowed.
+    const statements = await database.query<{ id: string; closing_date: string }>(
+      `INSERT INTO credit_card_statements (wallet_id, credit_card_id, closing_date, due_date, paid_date, paid_amount)
+       VALUES ($1, $2, '2026-09-10', '2026-09-20', '2026-09-19', '123.45'),
+              ($1, $2, '2026-10-10', '2026-10-20', NULL, NULL)
+       RETURNING id, closing_date::text AS closing_date`,
+      [walletId, card.rows[0]!.id],
+    );
+    const settledId = statements.rows.find((row) => row.closing_date === "2026-09-10")!.id;
+    const openId = statements.rows.find((row) => row.closing_date === "2026-10-10")!.id;
+
+    const migration = await readFile(join(migrationDirectory, paymentsVersion), "utf8");
+    await database.transaction(async (transaction) => {
+      await transaction.query(migration);
+      await transaction.query("INSERT INTO schema_migrations (version) VALUES ($1)", [paymentsVersion]);
+    });
+
+    const payments = await database.query<{ statement: string; amount: string; date: string; source: string; user_id: string }>(
+      `SELECT credit_card_statement_id AS statement, amount::text, date::text, source, user_id
+       FROM credit_card_statement_payments WHERE wallet_id = $1`,
+      [walletId],
+    );
+    assert.deepEqual(payments.rows, [
+      { statement: settledId, amount: "123.45", date: "2026-09-19", source: "manual", user_id: userId },
+    ]);
+    // The settlement marker survives; the open statement gains no payment.
+    const kept = await database.query<{ id: string; paid_date: string | null }>(
+      "SELECT id, paid_date::text AS paid_date FROM credit_card_statements WHERE wallet_id = $1 ORDER BY closing_date",
+      [walletId],
+    );
+    assert.deepEqual(kept.rows, [{ id: settledId, paid_date: "2026-09-19" }, { id: openId, paid_date: null }]);
+    // The duplicated amount column is gone, so the payments are the single source of truth.
+    const columns = await database.query<{ column_name: string }>(
+      `SELECT column_name FROM information_schema.columns
+       WHERE table_schema = $1 AND table_name = 'credit_card_statements' AND column_name = 'paid_amount'`,
+      [schemaName],
+    );
+    assert.deepEqual(columns.rows, []);
+
+    // Re-running it is safe, as runMigrations may retry a failed deploy.
+    await runMigrations(database);
+    assert.equal(
+      (await database.query<{ count: string }>(
+        "SELECT count(*)::text AS count FROM credit_card_statement_payments WHERE wallet_id = $1", [walletId],
+      )).rows[0]!.count,
+      "1",
+    );
   } finally {
     await scopedPool?.end();
     await adminPool.query(`DROP SCHEMA IF EXISTS ${schemaName} CASCADE`);

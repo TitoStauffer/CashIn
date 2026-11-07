@@ -27,7 +27,7 @@ class MemoryCreditCardRepository implements CreditCardRepository {
   private readonly statement: CreditCardStatement = {
     id: "22222222-2222-4222-8222-222222222222", creditCardId: "11111111-1111-4111-8111-111111111111",
     creditCardName: "Gold", closingDate: "2026-10-10", dueDate: "2026-10-20", paidDate: null,
-    paidAmount: null, purchasesAmount: "10.00", creditsAmount: "0.00", totalAmount: "10.00", purchases: [], credits: [],
+    paidAmount: null, purchasesAmount: "10.00", creditsAmount: "0.00", totalAmount: "10.00", paymentsAmount: "0.00", outstandingAmount: "10.00", purchases: [], credits: [], payments: [],
   };
 
   async list(walletId: string): Promise<CreditCard[]> { return walletId === userId ? this.cards : []; }

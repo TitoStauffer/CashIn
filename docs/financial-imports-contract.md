@@ -76,6 +76,25 @@ Limitações conhecidas:
 - Estornos abatem a fatura e o valor pago, mas não reduzem `expenseTotal`, `creditPurchaseTotal` nem o gasto por categoria do dashboard, que continuam somando as compras pelo valor bruto (DEV-81).
 - Excluir manualmente uma compra estornada mantém o crédito na fatura, sem vínculo (`originalExpenseId: null`). A fatura não é removida e pode ficar com `totalAmount` negativo (saldo credor), que não pode ser pago. Não existe transporte do saldo credor para a fatura seguinte.
 
+## Pagamentos de fatura no extrato bancário
+
+Um pagamento de cartão aparece no extrato como um débito comum, então a prévia de um extrato bancário sugere a conciliação por descrição, valor, data e faturas abertas da carteira.
+
+- **Quando a sugestão acontece:** apenas para um débito cuja descrição aponte para cartão ou fatura (por exemplo "pagamento cartão", "pgto fatura"), e não para qualquer "pagamento". As candidatas são as faturas da carteira ainda não liquidadas, com saldo devedor e vencimento dentro de 15 dias da data do pagamento, no máximo cinco, ordenadas pela proximidade do vencimento.
+- **Correspondência única:** o item é sugerido como `transfer` já conciliado (`creditCardStatementId`) e fica `valid` somente quando **uma única** candidata tem saldo devedor exatamente igual ao valor pago.
+- **Correspondência ambígua:** o item é apresentado como `transfer` sem fatura, `uncategorized`, com as candidatas em `statementCandidates` e a instrução para escolher. Nada é confirmado automaticamente. Sem nenhuma candidata, o débito permanece a despesa que o parser sugeriu.
+- **Escolha do usuário:** o `PATCH` do item aceita `creditCardStatementId` em importações de extrato bancário. A fatura precisa ser da carteira, não liquidada e com saldo devedor; caso contrário responde `404` ou `409`. Somente `type: "transfer"` pode ser conciliado, e `null` desfaz a conciliação. Em importações de fatura de cartão o campo é recusado.
+- **Confirmação:** cada pagamento conciliado cria um pagamento da fatura, e as compras não são lançadas de novo, então o total de despesas não conta a fatura duas vezes. Um `transfer` sem fatura continua bloqueando a confirmação. Se a fatura tiver sido liquidada entre a prévia e a confirmação, a resposta é `409`.
+- **Desfazer:** remove os pagamentos criados e reabre a fatura que eles tinham liquidado, se ela voltar a ter saldo devedor.
+
+### Pagamentos da fatura
+
+O valor pago de uma fatura passa a viver em uma tabela de pagamentos, e não em uma coluna da fatura, para que um pagamento parcial também apareça no saldo. As faturas em `GET /credit-cards/:creditCardId/statements` expõem `paymentsAmount`, `outstandingAmount` (total menos pagamentos, nunca negativo) e `payments` (valor, data e origem `manual` ou `bank_statement`). `paidAmount` continua existindo e é a soma dos pagamentos, mas apenas quando a fatura está liquidada.
+
+- `POST /credit-cards/:creditCardId/statements/:statementId/pay` aceita `amount` opcional. Sem ele, o pagamento liquida o saldo devedor, como antes; com ele, pode ser parcial.
+- Um pagamento parcial reduz a fatura e **não** a liquida, então ela continua aceitando compras. A liquidação (`paidDate`) acontece quando os pagamentos cobrem o total, e é ela que bloqueia novas compras, novos pagamentos e o desfazer de importações.
+- Pagar mais que o saldo devedor é aceito, porque é o fato bancário: a fatura é liquidada e a diferença fica como saldo credor, que não é transportado para a fatura seguinte.
+
 ## Regras de categorização
 
 Uma regra associa um tipo (`income` ou `expense`) e uma descrição a uma categoria e, opcionalmente, a uma subcategoria da mesma carteira e natureza. A descrição é comparada de forma exata após normalização (NFKC, minúsculas e espaços colapsados), a mesma usada na detecção de duplicidades. Há no máximo uma regra por carteira, tipo e descrição normalizada; tentativas repetidas devolvem `409`. Transferências e créditos de fatura não recebem regras.
