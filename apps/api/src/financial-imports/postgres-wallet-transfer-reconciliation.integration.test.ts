@@ -480,19 +480,36 @@ test("PostgreSQL preview distinguishes a line with no reconciliation option from
       payload: bankOfx([
         { id: "r-market", date: "2026-10-05", amount: "-50.00", name: "MERCADO" },
         { id: "r-card", date: "2026-10-06", amount: "-400.00", name: "PAGAMENTO FATURA CARTAO" },
+        // Declared a transfer by the file, with a date the parser cannot read: it is persisted
+        // invalid and repairable, so it stays editable and typed as a transfer.
+        { id: "r-nodate", date: "nao-e-data", amount: "-70.00", name: "TRANSFERENCIA SEM DATA", type: "XFER" },
       ]),
     })).json() as FinancialImportSession;
 
     // Neither line is stored as a transfer: an ordinary debit stays an expense, and so does a card
     // payment with no open statement to pay. Nothing was evaluated for either.
     const initial = await read(created.id);
-    for (const item of initial.items!) {
+    const datelessLine = initial.items!.find((item) => item.description === "TRANSFERENCIA SEM DATA")!;
+    for (const item of initial.items!.filter((candidate) => candidate.id !== datelessLine.id)) {
       assert.equal(item.type, "expense");
       assert.deepEqual(item.statementCandidates, []);
       assert.deepEqual(item.transferCandidates, []);
       assert.deepEqual(item.transferCounterpartWallets, []);
       assert.equal(item.reconciliationUnavailableReason, "not_a_transfer");
     }
+
+    // The line left out of the transfer evaluation for a missing date must NOT be told its problem
+    // is the description: that was the defect of the first round, a cause asserted by elimination.
+    // Its real impediment is already in its own error message, so the reason is simply "no option".
+    assert.equal(datelessLine.type, "transfer");
+    assert.equal(datelessLine.validationStatus, "invalid");
+    assert.equal(datelessLine.canEdit, true);
+    assert.equal(datelessLine.date, "");
+    assert.match(datelessLine.errorMessage!, /data da movimentação é inválida/i);
+    assert.deepEqual(datelessLine.statementCandidates, []);
+    assert.deepEqual(datelessLine.transferCandidates, []);
+    assert.deepEqual(datelessLine.transferCounterpartWallets, []);
+    assert.equal(datelessLine.reconciliationUnavailableReason, null);
 
     const cardLine = initial.items!.find((item) => item.description === "PAGAMENTO FATURA CARTAO")!;
     const marketLine = initial.items!.find((item) => item.description === "MERCADO")!;

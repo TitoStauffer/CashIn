@@ -288,7 +288,7 @@ export async function attachTransferOptions(
       statementCandidates,
       transferCandidates,
       transferCounterpartWallets: wallets,
-      reconciliationUnavailableReason: reconciliationUnavailableReason(item, evaluated, {
+      reconciliationUnavailableReason: reconciliationUnavailableReason(item, {
         statements: statementCandidates.length,
         transfers: transferCandidates.length,
         wallets: wallets.length,
@@ -298,17 +298,23 @@ export async function attachTransferOptions(
 }
 
 // Said only when there is nothing to offer: with any option available the client has what it needs.
+//
+// Each reason is decided by its own condition, never by elimination. The filter that leaves a line
+// out of the transfer evaluation does so for three different motives — a description pointing to a
+// card payment, a statement already chosen, and a missing date — so "left out" is not a cause. A
+// field whose whole purpose is to stop the client from guessing a cause cannot guess one itself.
 function reconciliationUnavailableReason(
   item: FinancialImportItem,
-  evaluatedAsTransfer: boolean,
   counts: { statements: number; transfers: number; wallets: number },
 ): ReconciliationUnavailableReason {
   if (counts.statements > 0 || counts.transfers > 0 || counts.wallets > 0) return null;
   if (item.type !== "transfer") return "not_a_transfer";
-  if (evaluatedAsTransfer) return null;
-  // Stored as a transfer and still left out: the line is reserved to the statement reconciliation,
-  // which is the more specific one for a description that points to a card payment.
-  return "card_payment";
+  // Reserved to the statement reconciliation, which is the more specific one for this description.
+  if (looksLikeCardPayment(item.description)) return "card_payment";
+  // Left out for a missing date, or because a statement was already chosen for it. Neither is a
+  // reconciliation cause, and an invalid line already carries the real impediment in its own
+  // `errorMessage`, so there is nothing to add here beyond "no option".
+  return null;
 }
 
 async function loadTransferCandidates(
