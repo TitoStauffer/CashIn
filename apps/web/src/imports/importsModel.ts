@@ -145,7 +145,10 @@ export function reconciliationChoiceDraft(
 
 export function describeTransferCandidate(candidate: WalletTransferCandidate) {
   const direction = candidate.direction === 'outgoing' ? 'para' : 'de'
-  return `${direction} ${candidate.counterpartWalletName} · ${formatIsoDate(candidate.date)} · ${formatBrazilianCurrency(candidate.amount)}`
+  // Without the name the candidate is still the right one to pick: the transfer has this wallet on
+  // one end. Naming it "outra carteira" says what is known without inventing what is not.
+  const wallet = candidate.counterpartWalletName ?? 'outra carteira'
+  return `${direction} ${wallet} · ${formatIsoDate(candidate.date)} · ${formatBrazilianCurrency(candidate.amount)}`
 }
 
 // The direction of a line is not derivable on the client: the API exposes `amount` as an absolute

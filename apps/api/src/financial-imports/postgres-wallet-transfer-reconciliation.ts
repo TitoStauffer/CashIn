@@ -51,7 +51,10 @@ interface CandidateRow {
   date: string | Date;
   description: string | null;
   counterpart_wallet_id: string;
-  counterpart_wallet_name: string;
+  // Null when the reader is no longer a member of the wallet on the other end. Access to a wallet
+  // can be revoked after a transfer exists, and the transfer itself stays: the money did move. What
+  // stops being theirs to read is the wallet's name.
+  counterpart_wallet_name: string | null;
   direction: "outgoing" | "incoming";
 }
 
@@ -206,7 +209,10 @@ async function findTransferCandidatesInBatch(
                 transfer.date,
                 transfer.description,
                 CASE WHEN line.outgoing THEN transfer.to_wallet_id ELSE transfer.from_wallet_id END AS counterpart_wallet_id,
-                counterpart.name AS counterpart_wallet_name,
+                -- These candidates only decide the suggestion during the import and never reach a
+                -- client, so the name is not read here at all. Selecting it would be the one way
+                -- this path could ever leak a wallet the reader may no longer access.
+                NULL::text AS counterpart_wallet_name,
                 CASE WHEN line.outgoing THEN 'outgoing' ELSE 'incoming' END AS direction
          FROM wallet_transfers AS transfer
          JOIN wallets AS counterpart
@@ -291,7 +297,13 @@ export async function attachTransferOptions(
               transfer.date,
               transfer.description,
               CASE WHEN pending.outgoing THEN transfer.to_wallet_id ELSE transfer.from_wallet_id END AS counterpart_wallet_id,
-              counterpart.name AS counterpart_wallet_name,
+              -- The name of the other wallet is only served while the reader is still a member of
+              -- it. The candidate stays either way: this wallet is one end of the transfer, the
+              -- money already left it, and the line deserves to be reconciled as what it is.
+              CASE WHEN EXISTS (
+                SELECT 1 FROM wallet_members AS viewer
+                WHERE viewer.wallet_id = counterpart.id AND viewer.user_id = $6
+              ) THEN counterpart.name END AS counterpart_wallet_name,
               CASE WHEN pending.outgoing THEN 'outgoing' ELSE 'incoming' END AS direction
        FROM wallet_transfers AS transfer
        JOIN wallets AS counterpart
@@ -307,7 +319,7 @@ export async function attachTransferOptions(
        ORDER BY abs(transfer.date - pending.date), transfer.date, transfer.id
        LIMIT $4
      ) AS candidate`,
-    [importId, walletId, TRANSFER_DATE_WINDOW_DAYS, MAX_CANDIDATES, pending.map((item) => item.id)],
+    [importId, walletId, TRANSFER_DATE_WINDOW_DAYS, MAX_CANDIDATES, pending.map((item) => item.id), userId],
   );
   const candidatesByItem = new Map<string, WalletTransferCandidate[]>();
   for (const item of pending) candidatesByItem.set(item.id, []);

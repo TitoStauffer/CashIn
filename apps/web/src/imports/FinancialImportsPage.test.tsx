@@ -1514,6 +1514,29 @@ describe('FinancialImportsPage', () => {
       expect(within(field).getByRole('option', { name: 'para Poupança · 05/10/2026 · R$ 500,00' })).toBeInTheDocument()
     })
 
+    // The API withholds the other wallet's name when the user is no longer a member of it. The
+    // candidate is still the right one to pick, so it is named by what is known.
+    it('names the other wallet neutrally when the API withholds it', async () => {
+      mockTransferSession({
+        ...transferSession,
+        items: [{
+          ...transferItem,
+          transferCandidates: [{ ...pendingTransfer, counterpartWalletName: null }],
+          transferCounterpartWallets: [],
+        }],
+      })
+      const user = userEvent.setup()
+      await renderPage()
+      await user.click(await screen.findByRole('button', { name: 'Ver detalhes' }))
+
+      const line = (await screen.findByText('Movimentação 1')).closest('li') as HTMLElement
+      const field = within(line).getByRole('combobox', { name: 'Conciliar com' })
+      expect(within(field).getByRole('option', { name: 'para outra carteira · 05/10/2026 · R$ 500,00' })).toBeInTheDocument()
+      // Nothing claims a name it does not have.
+      expect(within(field).queryByRole('option', { name: /null/ })).not.toBeInTheDocument()
+      expect(within(field).queryByRole('option', { name: /undefined/ })).not.toBeInTheDocument()
+    })
+
     it('does not claim an absence the API did not report', async () => {
       // The API attaches statements and wallets to a line already stored as a transfer, so a line the
       // user just switched to "Transferência" has none. Absent is not empty: claiming there is no
