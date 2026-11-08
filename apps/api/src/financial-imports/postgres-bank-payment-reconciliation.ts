@@ -144,6 +144,10 @@ export async function reconcileBankPayments(
 ): Promise<ParsedFinancialImportItem[]> {
   const reconciled: ParsedFinancialImportItem[] = [];
   const candidatesByDate = new Map<string, BankPaymentCandidate[]>();
+  // An open statement is paid once, so it is suggested to at most one line of the preview. Two
+  // outflows of the same amount on the same date would otherwise both be suggested the same
+  // statement and both arrive at the confirmation as valid, where the second one is refused.
+  const claimed = new Set<string>();
   for (const item of items) {
     if (!isBankPaymentCandidateItem(item) || !item.date
       || item.validationStatus === "invalid" || item.validationStatus === "duplicate") {
@@ -155,10 +159,14 @@ export async function reconcileBankPayments(
       candidates = await findStatementCandidates(executor, walletId, item.date);
       candidatesByDate.set(item.date, candidates);
     }
-    const suggestion = suggestStatement(candidates, item.signedAmount!);
+    const suggestion = suggestStatement(
+      candidates.filter((candidate) => !claimed.has(candidate.statementId)),
+      item.signedAmount!,
+    );
     if (suggestion) {
       // A single candidate matching the amount exactly: suggested as a statement payment, which the
       // user still has to keep or change in the preview.
+      claimed.add(suggestion);
       reconciled.push(asStatementPayment(item, suggestion, "valid", null));
     } else if (item.type === "transfer" || candidates.length > 0) {
       // Ambiguous, so nothing is confirmed: the item is presented as a statement payment waiting for
@@ -238,6 +246,7 @@ export async function importBankPayments(
   importId: string,
   items: Array<{
     id: string;
+    sequence: number;
     type: string;
     amount: string;
     transaction_date: string | Date;
@@ -269,8 +278,15 @@ export async function importBankPayments(
         source: "bank_statement",
       });
     } catch (error) {
-      // The statement may have been settled between the preview and the confirmation.
-      if (error instanceof CreditCardError) throw new FinancialImportError(error.message, error.statusCode);
+      // The statement may have been settled between the preview and the confirmation, or the user
+      // may have pointed two lines at the same one. Either way the message names the line to fix:
+      // "Esta fatura já foi paga." alone leaves the person hunting for which payment it refers to.
+      if (error instanceof CreditCardError) {
+        throw new FinancialImportError(
+          `Movimentação ${payment.sequence}: ${error.message}`,
+          error.statusCode,
+        );
+      }
       throw error;
     }
     const linked = await executor.query(

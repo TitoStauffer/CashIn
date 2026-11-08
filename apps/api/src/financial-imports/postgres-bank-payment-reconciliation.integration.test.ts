@@ -354,3 +354,151 @@ test("PostgreSQL bank payment reconciliation settles statements without double c
     await adminPool.end();
   }
 });
+
+
+// An open statement is paid once. Two outflows of the same amount on the same date used to be
+// suggested the same statement, and both reached the confirmation as valid — where the second one
+// was refused with a message that did not say which line to fix.
+test("PostgreSQL bank payment reconciliation suggests an open statement to a single line of the preview", {
+  skip: !testDatabaseUrl,
+}, async () => {
+  const schemaName = `bank_payment_claim_${randomBytes(8).toString("hex")}`;
+  const adminPool = new Pool({ connectionString: testDatabaseUrl });
+  let scopedPool: Pool | undefined;
+  let app: ReturnType<typeof createApp> | undefined;
+
+  try {
+    await adminPool.query(`CREATE SCHEMA ${schemaName}`);
+    scopedPool = new Pool({ connectionString: testDatabaseUrl, options: `-c search_path=${schemaName}` });
+    const database = createDatabase(scopedPool);
+    await runMigrations(database);
+
+    const users = await database.query<{ id: string }>(
+      `INSERT INTO users (email, password_hash, email_verified_at)
+       VALUES ($1, 'test-hash', now()) RETURNING id`,
+      [`payer-${schemaName}@example.com`],
+    );
+    const userId = users.rows[0]!.id;
+    const wallets = await database.query<{ id: string }>(
+      "SELECT id FROM wallets WHERE owner_user_id = $1 AND is_personal",
+      [userId],
+    );
+    const walletId = wallets.rows[0]!.id;
+    const category = await database.query<{ id: string }>(
+      "INSERT INTO categories (user_id, wallet_id, name, nature) VALUES ($1, $2, 'Compras', 'expense') RETURNING id",
+      [userId, walletId],
+    );
+    const creditMethod = await database.query<{ id: string }>(
+      "SELECT id FROM payment_methods WHERE wallet_id = $1 AND nature = 'credit_card' AND is_active ORDER BY created_at LIMIT 1",
+      [walletId],
+    );
+    const card = await database.query<{ id: string }>(
+      "INSERT INTO credit_cards (wallet_id, alias, closing_day, due_day) VALUES ($1, 'Principal', 10, 20) RETURNING id",
+      [walletId],
+    );
+    // A single open statement owing exactly 400,00.
+    const statement = await database.query<{ id: string }>(
+      `INSERT INTO credit_card_statements (wallet_id, credit_card_id, closing_date, due_date)
+       VALUES ($1, $2, '2026-10-10', '2026-10-20') RETURNING id`,
+      [walletId, card.rows[0]!.id],
+    );
+    const statementId = statement.rows[0]!.id;
+    await database.query(
+      `INSERT INTO expenses (user_id, wallet_id, category_id, payment_method_id, payment_method_nature, credit_card_statement_id, amount, date, description)
+       VALUES ($1, $2, $3, $4, 'credit_card', $5, 400.00, '2026-10-05', 'MERCADO')`,
+      [userId, walletId, category.rows[0]!.id, creditMethod.rows[0]!.id, statementId],
+    );
+
+    const authRepository = new PostgresAuthRepository(database);
+    const sessionToken = createOpaqueToken();
+    await authRepository.createSession(userId, hashToken(sessionToken), new Date(Date.now() + 120_000));
+    app = createApp(database);
+    await app.ready();
+    const headers = { cookie: `cashin_session=${sessionToken}`, "x-wallet-id": walletId };
+    const upload = (content: Buffer, fileName: string) => app!.inject({
+      method: "POST",
+      url: "/financial-imports",
+      headers: { ...headers, "content-type": "application/octet-stream", "x-file-name": fileName, "x-file-format": "ofx" },
+      payload: content,
+    });
+
+    // Two outflows of the same amount on the same date, with different descriptions so neither is a
+    // duplicate of the other.
+    const preview = (await upload(bankOfx([
+      { id: "p-first", date: "2026-10-20", amount: "-400.00", name: "PAGAMENTO CARTAO" },
+      { id: "p-second", date: "2026-10-20", amount: "-400.00", name: "PAGTO FATURA CARTAO" },
+    ]), "duas-saidas.ofx")).json() as FinancialImportSession;
+
+    const [first, second] = preview.items!;
+    // The first line keeps the suggestion; the second has no statement left to claim and waits for
+    // the user instead of arriving at the confirmation as a conflict it did not cause.
+    assert.equal(first!.validationStatus, "valid");
+    assert.equal(first!.creditCardStatementId, statementId);
+    assert.equal(second!.validationStatus, "uncategorized");
+    assert.equal(second!.creditCardStatementId, null);
+    assert.equal(second!.errorMessage, "Selecione a fatura que este pagamento liquida para incluí-lo na importação.");
+    // The statement is still offered to the second line, because the user may be the one to decide.
+    assert.deepEqual(second!.statementCandidates!.map((candidate) => candidate.statementId), [statementId]);
+
+    // If the user insists and points the second line at the same statement, the confirmation still
+    // refuses it — and now says which line to fix instead of only "Esta fatura já foi paga.".
+    const insisted = await app.inject({
+      method: "PATCH",
+      url: `/financial-imports/${preview.id}/items/${second!.id}`,
+      headers,
+      payload: { date: second!.date, description: second!.description, type: "transfer", creditCardStatementId: statementId },
+    });
+    assert.equal(insisted.statusCode, 200, insisted.body);
+    const refused = await app.inject({ method: "POST", url: `/financial-imports/${preview.id}/confirm`, headers });
+    assert.equal(refused.statusCode, 409);
+    assert.equal((refused.json() as { message: string }).message, "Movimentação 2: Esta fatura já foi paga.");
+    // The refusal rolls back: nothing was imported and the preview is still editable.
+    const intact = await app.inject({ method: "GET", url: `/financial-imports/${preview.id}`, headers });
+    assert.equal((intact.json() as FinancialImportSession).status, "preview");
+    assert.equal((await database.query<{ count: string }>(
+      "SELECT count(*)::text AS count FROM credit_card_statement_payments WHERE credit_card_statement_id = $1",
+      [statementId],
+    )).rows[0]!.count, "0");
+
+    // Back to a single reconciled line, which is the state the suggestion had produced.
+    await app.inject({
+      method: "PATCH",
+      url: `/financial-imports/${preview.id}/items/${second!.id}`,
+      headers,
+      payload: { date: second!.date, description: second!.description, type: "transfer", creditCardStatementId: null },
+    });
+
+    // Confirming imports the single reconciled payment and settles the statement once.
+    const confirmed = (await app.inject({
+      method: "POST", url: `/financial-imports/${preview.id}/confirm`, headers,
+    })).json() as FinancialImportSession;
+    assert.equal(confirmed.summary.imported, 1);
+    const payments = await database.query<{ count: string }>(
+      "SELECT count(*)::text AS count FROM credit_card_statement_payments WHERE credit_card_statement_id = $1",
+      [statementId],
+    );
+    assert.equal(payments.rows[0]!.count, "1");
+
+    // A single outflow matching one open statement is unchanged: it is still suggested.
+    const secondStatement = await database.query<{ id: string }>(
+      `INSERT INTO credit_card_statements (wallet_id, credit_card_id, closing_date, due_date)
+       VALUES ($1, $2, '2026-11-10', '2026-11-20') RETURNING id`,
+      [walletId, card.rows[0]!.id],
+    );
+    await database.query(
+      `INSERT INTO expenses (user_id, wallet_id, category_id, payment_method_id, payment_method_nature, credit_card_statement_id, amount, date, description)
+       VALUES ($1, $2, $3, $4, 'credit_card', $5, 150.00, '2026-11-05', 'LIVRARIA')`,
+      [userId, walletId, category.rows[0]!.id, creditMethod.rows[0]!.id, secondStatement.rows[0]!.id],
+    );
+    const single = (await upload(bankOfx([
+      { id: "p-single", date: "2026-11-20", amount: "-150.00", name: "PAGAMENTO CARTAO" },
+    ]), "uma-saida.ofx")).json() as FinancialImportSession;
+    assert.equal(single.items![0]!.validationStatus, "valid");
+    assert.equal(single.items![0]!.creditCardStatementId, secondStatement.rows[0]!.id);
+  } finally {
+    if (app) await app.close();
+    await scopedPool?.end();
+    await adminPool.query(`DROP SCHEMA IF EXISTS ${schemaName} CASCADE`);
+    await adminPool.end();
+  }
+});
