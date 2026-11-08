@@ -2,7 +2,7 @@ import { getApiErrorFeedback } from '../feedback/apiErrorFeedback'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import { FinancialSidebar } from '../layout/FinancialSidebar'
-import { formatBrazilianCurrency } from '../money/currency'
+import { formatBrazilianCurrency, hasInvalidBrazilianCurrencyInput, maskBrazilianCurrencyInput, parseBrazilianCurrencyInput } from '../money/currency'
 import { formatMonth, getCurrentMonth, getMonthRange } from '../period/month'
 import { MonthYearSelector } from '../period/MonthYearSelector'
 import { useWallet } from '../wallets/useWallet'
@@ -34,8 +34,10 @@ function getErrorMessage(error: unknown, action: 'load' | 'save' | 'pay') {
 // The API sends decimal strings with two places; only the sign matters here, so no money arithmetic is done.
 // What is left to pay is the outstanding balance, which already discounts the payments; an older API
 // without it falls back to the statement total.
+// O contrato da API devolve `outstandingAmount` em toda fatura, então não há o que substituir: cair
+// para o total superestimaria o "Falta …" de uma fatura com pagamento parcial.
 function amountDue(statement: CreditCardStatement) {
-  return statement.outstandingAmount ?? statement.totalAmount
+  return statement.outstandingAmount
 }
 
 function hasAmountDue(statement: CreditCardStatement) {
@@ -51,18 +53,16 @@ const paymentSourceLabels: Record<CreditCardStatementPaymentSource, string> = {
   bank_statement: 'conciliado do extrato',
 }
 
-// A value typed by the user, as the API accepts it: digits with an optional two-place decimal part.
-const paymentAmountPattern = /^\d{1,12}([.,]\d{1,2})?$/
-
+// O valor digitado segue os mesmos utilitários monetários das outras telas, em vez de um regex
+// próprio: o campo recusava justamente o formato que o seu placeholder sugere, com separador de
+// milhar. Uma mensagem só, porque `parseBrazilianCurrencyInput` recusa formato inválido e zero pelo
+// mesmo motivo — não é um valor que dá para cobrar.
 function normalizePaymentAmount(value: string) {
   const trimmed = value.trim()
   if (!trimmed) return { amount: undefined as string | undefined, error: '' }
-  if (!paymentAmountPattern.test(trimmed)) {
-    return { amount: undefined, error: 'Informe um valor válido, com até duas casas decimais, ou deixe em branco para pagar a fatura integral.' }
-  }
-  const amount = trimmed.replace(',', '.')
-  if (Number(amount) <= 0) {
-    return { amount: undefined, error: 'O valor do pagamento deve ser maior que zero.' }
+  const amount = parseBrazilianCurrencyInput(trimmed)
+  if (!amount) {
+    return { amount: undefined, error: 'Informe um valor maior que zero, no formato 1.234,56, ou deixe em branco para pagar a fatura integral.' }
   }
   return { amount, error: '' }
 }
@@ -81,6 +81,9 @@ export function CreditCardsPage({ userEmail, isLoggingOut, onLogout }: { userEma
   const [editor, setEditor] = useState<EditorState | null>(null)
   const [paymentDates, setPaymentDates] = useState<Record<string, string>>({})
   const [paymentAmounts, setPaymentAmounts] = useState<Record<string, string>>({})
+  // O que o usuário digitou e a máscara descartou, por fatura: o campo sinaliza enquanto se digita,
+  // como nas outras telas de valor.
+  const [invalidPaymentAmounts, setInvalidPaymentAmounts] = useState<Record<string, boolean>>({})
   const [isLoading, setIsLoading] = useState(true)
   const [loadedWalletId, setLoadedWalletId] = useState<string | null>(null)
   const lastLoadedWalletId = useRef<string | null>(null)
@@ -351,7 +354,10 @@ export function CreditCardsPage({ userEmail, isLoggingOut, onLogout }: { userEma
                 <footer className="statement-card__footer">
                   {statement.paidDate ? <p className="statement-paid">Paga em {formatDate(statement.paidDate)} · {displayMoney(statement.paidAmount)}</p> : <>
                     <label>Data do pagamento <input type="date" value={paymentDates[statement.id] ?? today()} onChange={(event) => setPaymentDates((current) => ({ ...current, [statement.id]: event.target.value }))} /></label>
-                    <label>Valor do pagamento <input type="text" inputMode="decimal" placeholder={`Integral (${formatBrazilianCurrency(amountDue(statement))})`} value={paymentAmounts[statement.id] ?? ''} onChange={(event) => setPaymentAmounts((current) => ({ ...current, [statement.id]: event.target.value }))} /></label>
+                    <label>Valor do pagamento <input type="text" inputMode="decimal" placeholder={`Integral (${formatBrazilianCurrency(amountDue(statement))})`} value={paymentAmounts[statement.id] ?? ''} aria-invalid={invalidPaymentAmounts[statement.id] ?? false} onChange={(event) => {
+                      setInvalidPaymentAmounts((current) => ({ ...current, [statement.id]: hasInvalidBrazilianCurrencyInput(event.target.value) }))
+                      setPaymentAmounts((current) => ({ ...current, [statement.id]: maskBrazilianCurrencyInput(event.target.value) }))
+                    }} /></label>
                     <button type="button" className="credit-cards-primary" onClick={() => void payStatement(statement)} disabled={isSaving || statement.purchases.length === 0 || !hasAmountDue(statement)} aria-describedby={statement.purchases.length === 0 || !hasAmountDue(statement) ? `statement-payment-hint-${statement.id}` : undefined}>{(paymentAmounts[statement.id] ?? '').trim() ? 'Pagar valor informado' : 'Pagar fatura integral'}</button>
                     {statement.purchases.length === 0 && <p id={`statement-payment-hint-${statement.id}`} className="statement-period">Esta fatura não possui compras para pagar. Registre uma despesa vinculada ao cartão para gerar uma fatura com valor.</p>}
                     {statement.purchases.length > 0 && !hasAmountDue(statement) && <p id={`statement-payment-hint-${statement.id}`} className="statement-period">{hasPayments(statement) ? 'Os pagamentos registrados cobrem o total desta fatura: não há saldo a pagar.' : 'Os estornos e créditos cobrem as compras desta fatura: não há saldo a pagar.'}</p>}

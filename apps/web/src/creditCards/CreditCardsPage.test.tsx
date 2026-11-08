@@ -12,7 +12,7 @@ vi.mock('../layout/FinancialSidebar', () => ({ FinancialSidebar: () => <nav aria
 const card: CreditCard = { id: 'card-1', nickname: 'Principal', closingDay: 10, dueDay: 17, isActive: true }
 const statement: CreditCardStatement = {
   id: 'statement-1', creditCardId: 'card-1', creditCardName: 'Principal', closingDate: '2026-10-10', dueDate: '2026-10-17',
-  paidDate: null, paidAmount: null, totalAmount: '123.45',
+  paidDate: null, paidAmount: null, totalAmount: '123.45', outstandingAmount: '123.45',
   purchases: [{ id: 'purchase-1', amount: '123.45', date: '2026-10-03', description: 'Mercado', categoryName: 'Casa', subcategoryName: 'Alimentação' }],
 }
 
@@ -252,13 +252,13 @@ describe('CreditCardsPage', () => {
     vi.spyOn(creditCardsApi, 'statements').mockResolvedValue({ items: [
       {
         ...statement,
-        purchasesAmount: '123.45', creditsAmount: '23.45', totalAmount: '100.00',
+        purchasesAmount: '123.45', creditsAmount: '23.45', totalAmount: '100.00', outstandingAmount: '100.00',
         credits: [{ id: 'credit-1', amount: '23.45', date: '2026-10-05', description: 'Estorno Mercado', originalExpenseId: 'purchase-1' }],
       },
       {
         ...statement,
         id: 'statement-2', closingDate: '2026-11-10', dueDate: '2026-11-17',
-        purchasesAmount: '30.00', creditsAmount: '30.00', totalAmount: '0.00',
+        purchasesAmount: '30.00', creditsAmount: '30.00', totalAmount: '0.00', outstandingAmount: '0.00',
         purchases: [{ id: 'purchase-2', amount: '30.00', date: '2026-10-20', description: 'Cinema', categoryName: 'Lazer', subcategoryName: null }],
         credits: [{ id: 'credit-2', amount: '30.00', date: '2026-10-21', description: 'Estorno Cinema', originalExpenseId: 'purchase-2' }],
       },
@@ -303,7 +303,43 @@ describe('CreditCardsPage', () => {
     expect(screen.getByRole('button', { name: 'Pagar fatura integral' })).toBeEnabled()
   })
 
-  it('refuses an invalid typed amount before calling the API', async () => {
+  it('masks what is typed instead of refusing the format the placeholder suggests', async () => {
+    vi.spyOn(creditCardsApi, 'list').mockResolvedValue({ items: [card] })
+    vi.spyOn(creditCardsApi, 'statements').mockResolvedValue({ items: [
+      { ...statement, totalAmount: '1234.56', outstandingAmount: '1234.56', purchases: [{ ...statement.purchases[0]!, amount: '1234.56' }] },
+    ] })
+    const paySpy = vi.spyOn(creditCardsApi, 'payStatement').mockResolvedValue({
+      ...statement, totalAmount: '1234.56', outstandingAmount: '0.00', paidDate: '2026-10-15', paidAmount: '1234.56',
+    })
+    render(<CreditCardsPage userEmail="user@example.com" isLoggingOut={false} onLogout={vi.fn()} />)
+
+    expect(await screen.findByText('Mercado')).toBeVisible()
+    const field = screen.getByLabelText('Valor do pagamento')
+    // O placeholder sugere exatamente este formato, com separador de milhar.
+    expect(field).toHaveAttribute('placeholder', 'Integral (R$ 1.234,56)')
+    const user = userEvent.setup()
+    await user.type(field, '1.234,56')
+    expect(field).toHaveValue('1.234,56')
+    await user.click(screen.getByRole('button', { name: 'Pagar valor informado' }))
+
+    // A API recebe o valor canônico, não o que apareceu na tela.
+    await waitFor(() => expect(paySpy).toHaveBeenCalledWith('card-1', 'statement-1', expect.any(String), '1234.56'))
+  })
+
+  it('drops a character the money field never accepts, instead of sending it', async () => {
+    vi.spyOn(creditCardsApi, 'list').mockResolvedValue({ items: [card] })
+    vi.spyOn(creditCardsApi, 'statements').mockResolvedValue({ items: [statement] })
+    render(<CreditCardsPage userEmail="user@example.com" isLoggingOut={false} onLogout={vi.fn()} />)
+
+    expect(await screen.findByText('Mercado')).toBeVisible()
+    const field = screen.getByLabelText('Valor do pagamento')
+    const user = userEvent.setup()
+    await user.type(field, '12a,3x4')
+    // A máscara mantém só o que é dinheiro, e a terceira casa decimal não entra.
+    expect(field).toHaveValue('12,34')
+  })
+
+  it('refuses a zero amount before calling the API', async () => {
     vi.spyOn(creditCardsApi, 'list').mockResolvedValue({ items: [card] })
     vi.spyOn(creditCardsApi, 'statements').mockResolvedValue({ items: [statement] })
     const paySpy = vi.spyOn(creditCardsApi, 'payStatement')
@@ -311,10 +347,10 @@ describe('CreditCardsPage', () => {
 
     expect(await screen.findByText('Mercado')).toBeVisible()
     const user = userEvent.setup()
-    await user.type(screen.getByLabelText('Valor do pagamento'), '12,345')
+    await user.type(screen.getByLabelText('Valor do pagamento'), '0,00')
     await user.click(screen.getByRole('button', { name: 'Pagar valor informado' }))
 
-    expect(await screen.findByText(/Informe um valor válido, com até duas casas decimais/)).toBeVisible()
+    expect(await screen.findByText(/Informe um valor maior que zero, no formato 1.234,56/)).toBeVisible()
     expect(paySpy).not.toHaveBeenCalled()
   })
 

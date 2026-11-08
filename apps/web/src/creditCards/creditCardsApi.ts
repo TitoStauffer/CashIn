@@ -57,7 +57,7 @@ export type CreditCardStatement = {
   totalAmount: string
   paymentsAmount?: string
   // Total minus payments; never negative, so an overpayment reads as settled instead of as debt.
-  outstandingAmount?: string
+  outstandingAmount: string
   purchases: CreditCardPurchase[]
   credits?: CreditCardStatementCredit[]
   payments?: CreditCardStatementPayment[]
