@@ -2,8 +2,12 @@
 // purely declarative, and the session-state expressions among them hold the subtlest rule of the
 // module — whether an import can still be undone, which depends on every kind of result an item may
 // have produced. Keeping them here makes the repository readable and gives this rule one home.
+//
+// The session list takes the SQL placeholder of the user reading it, because who imported a file is
+// part of the history and the identity served with it depends on the reader.
 
-export const sessionColumns = `
+export function sessionColumns(viewer: string): string {
+  return `
   session.id,
   session.format,
   session.kind,
@@ -17,6 +21,21 @@ export const sessionColumns = `
   session.original_filename,
   session.file_size_bytes,
   session.file_hash,
+  session.created_by_user_id,
+  -- Who imported the file. An e-mail is the only identity a person has in this product, and a
+  -- wallet's members are listed to its owner alone, so the e-mail is served to the importer and to
+  -- the owner; every other member reads the identifier and nothing else.
+  CASE
+    WHEN session.created_by_user_id = ${viewer}::uuid
+      OR EXISTS (
+        SELECT 1 FROM wallet_members AS viewer_member
+        WHERE viewer_member.wallet_id = session.wallet_id
+          AND viewer_member.user_id = ${viewer}::uuid
+          AND viewer_member.role = 'owner'
+      )
+    THEN (SELECT importer.email FROM users AS importer WHERE importer.id = session.created_by_user_id)
+    ELSE NULL
+  END AS created_by_email,
   session.status,
   session.item_count,
   session.valid_count,
@@ -151,6 +170,7 @@ export const sessionColumns = `
     ) THEN 'Uma fatura com lançamentos desta importação já foi paga.'
     ELSE NULL
   END AS undo_blocked_reason`;
+}
 
 export const itemColumns = `
   item.id,

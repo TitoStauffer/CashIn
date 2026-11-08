@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createApp } from "./app.js";
+import { createApp, requestLoggerOptions } from "./app.js";
 import type { Database, QueryExecutor } from "./database.js";
 
 function createHealthDatabase(
@@ -44,4 +44,23 @@ test("GET /health reports database failures without exposing internals", async (
   });
   assert.equal(response.body.includes("private connection details"), false);
   await app.close();
+});
+
+// What a request contributes to a log line. A session cookie and a payload are the two things a log
+// must never carry, so this checks the configuration itself: the serializer decides what is written,
+// and the redaction is the second lock for a field a future log line might add.
+test("request logging keeps credentials and payloads out of every log line", () => {
+  const serialized = requestLoggerOptions.serializers.req({
+    method: "POST",
+    url: "/financial-imports",
+    ip: "203.0.113.10",
+    headers: { cookie: "cashin_session=segredo" },
+    body: Buffer.from("conteudo do extrato"),
+  } as never);
+
+  assert.deepEqual(serialized, { method: "POST", url: "/financial-imports", remoteAddress: "203.0.113.10" });
+  assert.deepEqual(requestLoggerOptions.serializers.res({ statusCode: 201, headers: { "set-cookie": "x" } } as never), { statusCode: 201 });
+  for (const path of ["req.headers", "req.body", "res.headers"]) {
+    assert.ok(requestLoggerOptions.redact.paths.includes(path), `${path} must be redacted`);
+  }
 });

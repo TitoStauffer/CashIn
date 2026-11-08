@@ -26,6 +26,12 @@ import {
 
 export const MAX_FINANCIAL_IMPORT_FILE_SIZE = 10 * 1024 * 1024;
 export const MAX_FINANCIAL_IMPORT_ITEMS = 10_000;
+// How long an import may stay in `processing` before it is treated as interrupted. Parsing the
+// largest file the API accepts takes seconds, so this window only catches a request that died
+// between the session row and its preview: a timeout, a dropped connection, a restarted process.
+export const FINANCIAL_IMPORT_PROCESSING_TIMEOUT_MINUTES = 15;
+const EXPIRED_IMPORT_FAILURE_MESSAGE =
+  "A importação foi interrompida antes de gerar a prévia. Envie o arquivo novamente.";
 const MAX_FINANCIAL_IMPORT_FILE_NAME_BYTES = 512;
 const MAX_FINANCIAL_IMPORT_DESCRIPTION_BYTES = 4_000;
 const MAX_FINANCIAL_IMPORT_FAILURE_MESSAGE_BYTES = 1_000;
@@ -350,6 +356,9 @@ export class FinancialImportsService {
       }
     }
     const card = cardOptions ? await this.findImportCreditCard(walletId, cardOptions.creditCardId) : null;
+    // A new upload is also the retry of an interrupted one: close out whatever was left hanging
+    // before this session joins the history.
+    await this.expireStaleImports(walletId);
     const fileHash = createHash("sha256").update(content).digest("hex");
     const session = await this.repository.createImport(userId, walletId, {
       format,
@@ -430,8 +439,19 @@ export class FinancialImportsService {
     return card;
   }
 
-  listImports(userId: string, walletId: string): Promise<FinancialImportSession[]> {
+  // The history is where an interrupted import is noticed, so it is also where it stops being an
+  // import that never ends: the expiry runs first and the list already shows it as a failure.
+  async listImports(userId: string, walletId: string): Promise<FinancialImportSession[]> {
+    await this.expireStaleImports(walletId);
     return this.repository.listImports(userId, walletId);
+  }
+
+  private expireStaleImports(walletId: string): Promise<number> {
+    return this.repository.expireStaleImports(
+      walletId,
+      FINANCIAL_IMPORT_PROCESSING_TIMEOUT_MINUTES,
+      EXPIRED_IMPORT_FAILURE_MESSAGE,
+    );
   }
 
   listCategorizationRules(walletId: string): Promise<FinancialCategorizationRule[]> {

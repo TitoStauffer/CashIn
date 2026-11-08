@@ -112,7 +112,10 @@ export function registerFinancialImportRoutes(app: FastifyInstance, options: Rou
   app.post<{ Headers: ImportUploadHeaders; Body: Buffer }>(
     "/financial-imports",
     {
-      preHandler: [app.authenticate, app.resolveWalletContext],
+      // Authorization runs in `onRequest`, before the body is read: Fastify parses the payload only
+      // after this hook, so a request without a session or without access to the wallet is refused
+      // without the API ever buffering the file it was sending.
+      onRequest: [app.authenticate, app.resolveWalletContext],
       bodyLimit: MAX_FINANCIAL_IMPORT_FILE_SIZE,
     },
     async (request, reply) => {
@@ -147,7 +150,8 @@ export function registerFinancialImportRoutes(app: FastifyInstance, options: Rou
 
   app.post<{ Headers: ImportUploadHeaders; Body: Buffer }>(
     "/financial-imports/csv/inspect",
-    { preHandler: [app.authenticate, app.resolveWalletContext], bodyLimit: MAX_FINANCIAL_IMPORT_FILE_SIZE },
+    // Same reason as the upload above: the file is only read once the request is authorized.
+    { onRequest: [app.authenticate, app.resolveWalletContext], bodyLimit: MAX_FINANCIAL_IMPORT_FILE_SIZE },
     async (request, reply) => {
       try {
         if (!Buffer.isBuffer(request.body)) throw new FinancialImportError("Envie o arquivo como application/octet-stream.", 415);

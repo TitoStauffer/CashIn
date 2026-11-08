@@ -1,6 +1,6 @@
 # Importação financeira OFX e CSV
 
-**Status:** importação OFX e CSV com regras por carteira (DEV-55), faturas de cartão (DEV-56), conciliação do pagamento da fatura na API (DEV-85) e na tela (DEV-57) e transferências entre carteiras na API (DEV-88) e na tela (DEV-58)
+**Status:** importação OFX e CSV com regras por carteira (DEV-55), faturas de cartão (DEV-56), conciliação do pagamento da fatura na API (DEV-85) e na tela (DEV-57), transferências entre carteiras na API (DEV-88) e na tela (DEV-58) e segurança, permissões e rastreabilidade (DEV-59)
 **Última revisão:** 07/11/2026
 
 ## Fluxo definido
@@ -70,6 +70,17 @@ Sessões desfeitas não bloqueiam uma importação futura, pois somente itens ai
 - **Desfazer:** libera o lado da importação desfeita. A transferência permanece se o outro lado continuar conciliado e volta a ser oferecida como candidata; sem nenhum lado, é removida.
 - **Na tela (DEV-58):** as duas conciliações de um `transfer` — a fatura que ele paga e a carteira do outro lado — aparecem como um único campo "Conciliar com", agrupado em fatura paga, transferência já registrada e carteira de destino ou origem. Escolher uma limpa a outra, que é o que a API exige. A carteira é nomeada pela direção da linha ("para Poupança", "de Família"). Sem fatura em aberto e sem outra carteira, a prévia explica em vez de oferecer uma lista vazia. No dashboard, o enviado entra na saída de dinheiro e o recebido na entrada, com as duas linhas nomeadas à parte e a nota de que transferência não é receita nem despesa.
 
+## Segurança, permissões e rastreabilidade (DEV-59)
+
+- **Autorização antes do arquivo:** nas duas rotas que recebem conteúdo — o upload e a inspeção de CSV — autenticação e resolução da carteira rodam em `onRequest`, que o Fastify executa antes de ler o corpo. Requisição sem sessão ou sem acesso à carteira é recusada sem que a API bufferize o arquivo; o limite de 10 MB continua valendo depois disso. O sinal de que a ordem está certa é a resposta a um arquivo grande demais sem sessão: 401, não 413.
+- **Papéis:** o modelo tem `owner` e `member`, sem papel somente-leitura, então "membro com permissão de edição" é todo membro. Quem não é membro da carteira recebe 404 e nenhuma linha de `import_sessions` é criada.
+- **Quem importou:** a sessão expõe `importedBy` com o identificador do importador, se é quem está lendo e o e-mail. O e-mail só é servido a quem já poderia conhecê-lo — o próprio importador e o proprietário da carteira, único membro autorizado a listar os membros. Para os demais membros o e-mail vem nulo e a tela diz "importado por outro membro da carteira": a importação tem dono em todos os casos, nunca "desconhecido".
+- **O que foi criado ou ignorado:** cada item carrega seu `validationStatus` (`imported`, `duplicate`, `invalid`, `uncategorized`) e o resumo da sessão conta cada um deles, o que distingue o que entrou do que foi ignorado e por quê.
+- **Arquivo original:** nunca é persistido. O conteúdo existe apenas como corpo da requisição; o banco guarda nome, tamanho e o SHA-256, que é a identidade do arquivo para a duplicidade.
+- **Importação interrompida:** uma requisição que morre entre a linha da sessão e a prévia deixaria a importação em `processing` para sempre, sem nada que a avance. Depois de `FINANCIAL_IMPORT_PROCESSING_TIMEOUT_MINUTES` (15 minutos) ela é encerrada como falha com motivo próprio, tanto na leitura do histórico quanto no próximo upload da carteira — que é a retentativa. A janela é folgada de propósito: processar o maior arquivo aceito leva segundos, então a expiração nunca corta um processamento vivo.
+- **Logs:** o logger serializa de cada requisição apenas método, rota e endereço de origem, e de cada resposta apenas o código; `req.headers`, `res.headers` e `req.body` estão na redação do pino. Nenhum log carrega cookie de sessão, conteúdo de arquivo ou valor financeiro.
+- **Fórmulas de CSV:** avaliado e não aplicável hoje. O projeto não gera nem exporta CSV em nenhum ponto, então não existe o destino onde uma descrição iniciada por `=`, `+`, `-` ou `@` se tornaria fórmula. A sanitização existente trata o que tem destino real: remoção de `\u0000`, limites em bytes UTF-8 e nome de arquivo sem caminho nem caractere de controle. Quem introduzir exportação precisa neutralizar o prefixo na geração.
+
 ## Fontes verificáveis
 
 - [`docs/financial-imports-contract.md`](../../financial-imports-contract.md)
@@ -82,6 +93,9 @@ Sessões desfeitas não bloqueiam uma importação futura, pois somente itens ai
 - [`apps/api/src/financial-imports/postgres-financial-imports.duplicates.ts`](../../../apps/api/src/financial-imports/postgres-financial-imports.duplicates.ts)
 - [`apps/api/src/financial-imports/postgres-financial-imports.undo.ts`](../../../apps/api/src/financial-imports/postgres-financial-imports.undo.ts)
 - [`apps/api/src/financial-imports/postgres-financial-imports.columns.ts`](../../../apps/api/src/financial-imports/postgres-financial-imports.columns.ts)
+- [`apps/api/src/financial-imports/financial-imports.routes.ts`](../../../apps/api/src/financial-imports/financial-imports.routes.ts)
+- [`apps/api/src/financial-imports/financial-imports.security.integration.test.ts`](../../../apps/api/src/financial-imports/financial-imports.security.integration.test.ts)
+- [`apps/api/src/app.ts`](../../../apps/api/src/app.ts)
 - [`apps/api/src/financial-imports/postgres-wallet-transfer-reconciliation.ts`](../../../apps/api/src/financial-imports/postgres-wallet-transfer-reconciliation.ts)
 - [`apps/api/migrations/020_wallet_transfers.sql`](../../../apps/api/migrations/020_wallet_transfers.sql)
 - [`apps/api/src/financial-imports/financial-categorization-rules.service.ts`](../../../apps/api/src/financial-imports/financial-categorization-rules.service.ts)

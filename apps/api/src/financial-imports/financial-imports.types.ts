@@ -91,8 +91,17 @@ export interface FinancialImportStatementPreview {
   isPaid: boolean;
 }
 
+// Who imported a file, for the history. The e-mail is only present for the importer themself and for
+// the wallet's owner, who is the only member allowed to list the wallet's members.
+export interface FinancialImportImporter {
+  userId: string;
+  email: string | null;
+  isCurrentUser: boolean;
+}
+
 export interface FinancialImportSession {
   id: string;
+  importedBy: FinancialImportImporter;
   format: FinancialImportFormat;
   kind: FinancialImportKind;
   creditCardId: string | null;
@@ -282,6 +291,10 @@ export interface FinancialImportRepository {
   listImports(userId: string, walletId: string): Promise<FinancialImportSession[]>;
   getImport(userId: string, walletId: string, importId: string): Promise<FinancialImportSession | null>;
   markFailed(userId: string, walletId: string, importId: string, failureMessage: string): Promise<void>;
+  // An upload interrupted between the session row and its preview stays in `processing` with nothing
+  // to advance it. This closes those out as failures, so the state is recoverable and the history
+  // says what happened instead of showing an import that never ends.
+  expireStaleImports(walletId: string, olderThanMinutes: number, failureMessage: string): Promise<number>;
   updateItem(
     userId: string,
     walletId: string,

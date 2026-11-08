@@ -19,6 +19,7 @@ function deferred<T>() {
 
 const previewSession: FinancialImportSession = {
   id: 'import-1',
+  importedBy: { userId: 'user-1', email: 'eu@example.test', isCurrentUser: true },
   format: 'ofx',
   fileName: 'extrato.ofx',
   fileSize: 2048,
@@ -745,6 +746,32 @@ describe('FinancialImportsPage', () => {
     await user.selectOptions(screen.getByRole('combobox', { name: /Carteira ativa/ }), 'wallet-shared')
     await waitFor(() => expect(importsApi.list).toHaveBeenCalledTimes(2))
     expect(screen.getByText((_, element) => Boolean(element?.classList.contains('imports-wallet') && element.textContent === 'Carteira: Família'))).toBeVisible()
+  })
+
+  // The history is the audit trail of a shared wallet, so each line says who sent the file. The
+  // e-mail only arrives for imports the reader may already attribute; the others are still named as
+  // someone else's, never as unknown.
+  it('names who imported each file in the history', async () => {
+    vi.mocked(importsApi.list).mockResolvedValue({ items: [
+      { ...completedSession, id: 'import-own', items: undefined },
+      {
+        ...completedSession,
+        id: 'import-named',
+        importedBy: { userId: 'user-2', email: 'socia@example.test', isCurrentUser: false },
+        items: undefined,
+      },
+      {
+        ...completedSession,
+        id: 'import-anonymous',
+        importedBy: { userId: 'user-3', email: null, isCurrentUser: false },
+        items: undefined,
+      },
+    ] })
+    await renderPage()
+
+    expect(await screen.findByText(/importado por você/)).toBeVisible()
+    expect(screen.getByText(/importado por socia@example\.test/)).toBeVisible()
+    expect(screen.getByText(/importado por outro membro da carteira/)).toBeVisible()
   })
 
   it('discards a delayed upload response after the active wallet changes', async () => {

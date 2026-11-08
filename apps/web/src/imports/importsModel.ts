@@ -223,3 +223,14 @@ export function hasDraftChanged(item: FinancialImportItem, draft: FinancialImpor
 export function describeStatementCandidate(candidate: BankPaymentCandidate) {
   return `${candidate.creditCardName} · vence ${formatIsoDate(candidate.dueDate)} · falta ${formatBrazilianCurrency(candidate.outstandingAmount)}`
 }
+
+// Who imported a file, for the wallet's history. The API only sends the e-mail when the reader may
+// already know it — their own imports, and, for the wallet's owner, everyone else's — so an import
+// by another member is named by the e-mail when it comes and acknowledged as someone else's when it
+// does not. Never "desconhecido": the import has an owner either way.
+export function describeImporter(session: FinancialImportSession): string {
+  if (session.importedBy.isCurrentUser) return 'importado por você'
+  return session.importedBy.email
+    ? `importado por ${session.importedBy.email}`
+    : 'importado por outro membro da carteira'
+}

@@ -8,6 +8,9 @@ A API mantém sessões de importação por carteira para que o cliente possa env
 - O arquivo pode ter até 10 MB e a prévia pode conter até 10.000 movimentações.
 - `x-file-name` contém o nome codificado com `encodeURIComponent` e `x-file-format` aceita `ofx` ou `csv`.
 - Todas as operações exigem sessão autenticada e respeitam a carteira selecionada por `x-wallet-id`.
+- Nas rotas que recebem conteúdo — `POST /financial-imports` e `POST /financial-imports/csv/inspect` — a autenticação e a resolução da carteira acontecem antes da leitura do corpo. Sem sessão a resposta é `401` e sem acesso à carteira é `404`, mesmo quando o arquivo enviado excede o limite; o `413` do limite só vale para uma requisição autorizada.
+- Quem não é membro da carteira não cria sessão de importação alguma.
+- Os logs da API registram de cada requisição apenas método, rota e endereço de origem, e de cada resposta apenas o código. Cabeçalhos e corpo nunca são registrados.
 - Valores monetários permanecem como strings decimais com duas casas no contrato e como `numeric(14,2)` no PostgreSQL.
 
 ## Extratos OFX
@@ -51,7 +54,7 @@ A API mantém sessões de importação por carteira para que o cliente possa env
 | `PATCH` | `/financial-imports/rules/:ruleId` | Substitui tipo, descrição, categoria, subcategoria e estado (`isActive`) da regra. |
 | `DELETE` | `/financial-imports/rules/:ruleId` | Exclui a regra da carteira. |
 
-As sessões usam os estados `processing`, `preview`, `confirming`, `completed`, `failed` e `undone`. O resumo separa itens `valid`, `duplicate`, `invalid`, `uncategorized` e `imported`. `canUndo` e `undoBlockedReason` permitem que o cliente apresente a elegibilidade do desfazer sem presumir o estado. Falhas persistidas expõem somente uma mensagem segura em `failureMessage`.
+Cada sessão traz `importedBy` com `userId`, `isCurrentUser` e `email`. O `email` só é preenchido para as importações do próprio leitor e, para o proprietário da carteira, para as de qualquer membro; nos demais casos vem `null` e o cliente identifica a importação como de outro membro. As sessões usam os estados `processing`, `preview`, `confirming`, `completed`, `failed` e `undone`. O resumo separa itens `valid`, `duplicate`, `invalid`, `uncategorized` e `imported`. `canUndo` e `undoBlockedReason` permitem que o cliente apresente a elegibilidade do desfazer sem presumir o estado. Falhas persistidas expõem somente uma mensagem segura em `failureMessage`. Uma importação interrompida antes da prévia permanece em `processing` por no máximo 15 minutos: depois disso o histórico e o próximo upload da carteira a encerram como `failed`, com o motivo em `failureMessage` e o instante em `failedAt`.
 
 Linhas inválidas permanecem na prévia com motivo explícito. `canEdit` identifica as linhas que podem ser corrigidas pelo usuário; valor inválido, sequência de origem inválida, duplicidade confirmada ou sequência repetida não podem ser reparados manualmente. `canIncludeDuplicate` permite importar explicitamente somente possíveis duplicidades. A posição persistida é sempre única e os campos inválidos são armazenados de forma nula internamente, evitando que uma linha defeituosa descarte as demais.
 
