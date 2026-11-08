@@ -35,6 +35,24 @@ export class DefaultFinancialImportParser implements FinancialImportParser {
 // reconciled with the bank statement instead of being imported as refunds.
 const INVOICE_PAYMENT_PATTERN = /\b(pagamento|pgto)\b/i;
 
+// A refund that names the payment it reverses — "Estorno de pagamento duplicado" — is a credit on the
+// statement, not a payment of it. The description heuristic keys on a word that appears inside the
+// refund's own explanation, so it has to be guarded. `TRNTYPE=PAYMENT` stays authoritative: it is the
+// bank's own classification, and overriding it from prose would trade this misclassification for a
+// worse one, since a payment imported as a refund would abate the statement it should settle.
+// Deliberately shorter than the prefix list of `normalizeRefundDescription`, which also strips
+// "crédito": that one exists to find the purchase a credit reverses, where a prefix stripped by
+// mistake only fails to match. This one decides whether a line is a payment of the statement, and a
+// payment classified as a refund would abate the statement it should settle — money in the wrong
+// place instead of a line the user retypes. "Crédito de pagamento em dobro" therefore stays a
+// payment until `TRNTYPE` says otherwise, and that asymmetry is the point, not an oversight.
+//
+// Anchored at the start of any segment, not of the whole description: `buildDescription` joins NAME
+// and MEMO with " — ", so an issuer that puts the label in NAME and the explanation in MEMO produces
+// "CARTAO — Estorno de pagamento duplicado". Anchoring only at `^` let exactly that line fall back
+// to the old heuristic.
+const REFUND_PREFIX_PATTERN = /(?:^|—)\s*(estorno|reembolso|devolu[çc][ãa]o|cancelamento)\b/i;
+
 // Normalizes a card statement to one sign convention, so the same purchase has the same fingerprint
 // in OFX and CSV: purchases are negative expenses, refunds and chargebacks are positive card credits.
 export function toCreditCardStatementImport(
@@ -47,8 +65,10 @@ export function toCreditCardStatementImport(
       if (item.signedAmount === null) return { ...item, type: "expense" };
       const signedAmount = purchasesArePositive ? negateAmount(item.signedAmount) : item.signedAmount;
       const isCredit = !signedAmount.startsWith("-");
+      const description = item.description ?? "";
       const isInvoicePayment = isCredit && (
-        item.sourceTransactionType === "PAYMENT" || INVOICE_PAYMENT_PATTERN.test(item.description ?? "")
+        item.sourceTransactionType === "PAYMENT"
+        || (!REFUND_PREFIX_PATTERN.test(description) && INVOICE_PAYMENT_PATTERN.test(description))
       );
       const type = isInvoicePayment ? "transfer" : isCredit ? "card_credit" : "expense";
       return {
