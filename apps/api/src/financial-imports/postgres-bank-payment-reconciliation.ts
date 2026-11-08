@@ -130,7 +130,9 @@ export function suggestStatement(candidates: BankPaymentCandidate[], signedAmoun
 
 // Shared with updateItem, so the preview and the edit never disagree about what is missing.
 export const SELECT_STATEMENT_MESSAGE = "Selecione a fatura que este pagamento liquida para incluí-lo na importação.";
-const NO_CANDIDATE_MESSAGE = "Nenhuma fatura em aberto corresponde a este pagamento. Escolha outro tipo ou deixe-o fora da importação.";
+// A linha pode ser uma transferência entre carteiras, de entrada ou de saída, e o contrato expõe o
+// valor em módulo: a mensagem não afirma que ela é um pagamento nem que é uma saída.
+const NO_CANDIDATE_MESSAGE = "Nenhuma fatura em aberto corresponde a esta movimentação. Escolha outro tipo ou deixe-a fora da importação.";
 
 export function reconciliationMessage(candidateCount: number): string {
   return candidateCount === 0 ? NO_CANDIDATE_MESSAGE : SELECT_STATEMENT_MESSAGE;
