@@ -147,8 +147,17 @@ export type FinancialCategorizationRuleInput = {
   isActive?: boolean
 }
 
+// Who imported a file. The e-mail only comes for the viewer's own imports and, for the wallet's
+// owner, for everyone else's — the owner is the only member who may list the wallet's members.
+export type FinancialImportImporter = {
+  userId: string
+  email: string | null
+  isCurrentUser: boolean
+}
+
 export type FinancialImportSession = {
   id: string
+  importedBy: FinancialImportImporter
   format: FinancialImportFormat
   kind?: FinancialImportKind
   creditCardId?: string | null

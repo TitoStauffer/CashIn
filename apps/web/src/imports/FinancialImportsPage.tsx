@@ -35,6 +35,7 @@ import {
   formatFileSize,
   createDraft,
   hasDraftChanged,
+  describeImporter,
 } from './importsModel'
 import './FinancialImportsPage.css'
 
@@ -988,7 +989,7 @@ function FinancialImportsWalletPage({ userEmail, isLoggingOut, onLogout }: Finan
                             <span className={`imports-status imports-status--${session.status}`}>{getSessionStatusLabel(session)}</span>
                             <div>
                               <h3>{session.fileName}</h3>
-                              <p>{isCardSession(session) ? `Fatura · ${session.creditCardName ?? 'cartão'} · ` : ''}{session.format.toUpperCase()} · {formatFileSize(session.fileSize)} · iniciado em {formatDateTime(session.createdAt)}</p>
+                              <p>{isCardSession(session) ? `Fatura · ${session.creditCardName ?? 'cartão'} · ` : ''}{session.format.toUpperCase()} · {formatFileSize(session.fileSize)} · iniciado em {formatDateTime(session.createdAt)} · {describeImporter(session)}</p>
                             </div>
                           </div>
                           <div className="imports-history-summary">

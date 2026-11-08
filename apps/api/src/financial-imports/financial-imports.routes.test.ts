@@ -9,6 +9,10 @@ import { hashToken } from "../auth/token.js";
 import type { AuthRepository, AuthUser, PendingAccount, StoredUser } from "../auth/auth.types.js";
 import { WalletsTestFixture } from "../wallets/wallets-test-fixture.js";
 import { FinancialImportError } from "./financial-imports.errors.js";
+import {
+  FINANCIAL_IMPORT_PROCESSING_TIMEOUT_MINUTES,
+  MAX_FINANCIAL_IMPORT_FILE_SIZE,
+} from "./financial-imports.service.js";
 import type {
   CreateCsvMappingInput,
   CsvMapping,
@@ -34,11 +38,18 @@ const CSV_MAPPING_HEADER = encodeURIComponent(JSON.stringify({
   columns: { date: 0, description: 1, amount: 2, credit: null, debit: null, externalId: null },
 }));
 
-interface StoredSession extends FinancialImportSession {
+// The importer is derived from the stored session and the reader, exactly as the database does it,
+// so the fake cannot answer "who imported" more generously than production.
+interface StoredSession extends Omit<FinancialImportSession, "importedBy"> {
   userId: string;
   walletId: string;
   items: FinancialImportItem[];
 }
+
+const USER_EMAILS: Record<string, string> = {
+  [USER_A]: "usuario-a@example.test",
+  [USER_B]: "usuario-b@example.test",
+};
 
 class MemoryFinancialImportRepository implements FinancialImportRepository {
   readonly sessions = new Map<string, StoredSession>();
@@ -108,7 +119,7 @@ class MemoryFinancialImportRepository implements FinancialImportRepository {
       items: [],
     };
     this.sessions.set(id, session);
-    return this.publicSession(session);
+    return this.publicSession(session, userId);
   }
 
   async savePreview(
@@ -140,17 +151,17 @@ class MemoryFinancialImportRepository implements FinancialImportRepository {
     session.status = "preview";
     session.updatedAt = now;
     this.refreshSummary(session);
-    return this.publicSession(session);
+    return this.publicSession(session, userId);
   }
 
-  async listImports(_userId: string, walletId: string): Promise<FinancialImportSession[]> {
-    return [...this.sessions.values()].filter((session) => session.walletId === walletId).map((session) => this.publicSession(session));
+  async listImports(userId: string, walletId: string): Promise<FinancialImportSession[]> {
+    return [...this.sessions.values()].filter((session) => session.walletId === walletId).map((session) => this.publicSession(session, userId));
   }
 
-  async getImport(_userId: string, walletId: string, importId: string): Promise<FinancialImportSession | null> {
+  async getImport(userId: string, walletId: string, importId: string): Promise<FinancialImportSession | null> {
     const session = this.sessions.get(importId);
     if (!session || session.walletId !== walletId) return null;
-    return { ...this.publicSession(session), items: session.items.map((item) => ({ ...item })) };
+    return { ...this.publicSession(session, userId), items: session.items.map((item) => ({ ...item })) };
   }
 
   async markFailed(userId: string, walletId: string, importId: string, failureMessage: string): Promise<void> {
@@ -160,6 +171,23 @@ class MemoryFinancialImportRepository implements FinancialImportRepository {
     session.failureMessage = failureMessage;
     session.failedAt = new Date().toISOString();
     session.updatedAt = session.failedAt;
+  }
+
+  // Mirrors the SQL: only sessions of this wallet still in `processing` and older than the window.
+  async expireStaleImports(walletId: string, olderThanMinutes: number, failureMessage: string): Promise<number> {
+    const threshold = Date.now() - olderThanMinutes * 60_000;
+    let expired = 0;
+    for (const session of this.sessions.values()) {
+      if (session.walletId !== walletId || session.status !== "processing") continue;
+      if (Date.parse(session.createdAt) >= threshold) continue;
+      const now = new Date().toISOString();
+      session.status = "failed";
+      session.failureMessage = failureMessage;
+      session.failedAt = now;
+      session.updatedAt = now;
+      expired += 1;
+    }
+    return expired;
   }
 
   async updateItem(
@@ -204,7 +232,7 @@ class MemoryFinancialImportRepository implements FinancialImportRepository {
     session.canUndo = true;
     session.undoBlockedReason = null;
     this.refreshSummary(session);
-    return this.publicSession(session);
+    return this.publicSession(session, userId);
   }
 
   async undoImport(userId: string, walletId: string, importId: string): Promise<FinancialImportSession | null> {
@@ -224,7 +252,7 @@ class MemoryFinancialImportRepository implements FinancialImportRepository {
     session.canUndo = false;
     session.undoBlockedReason = "Somente importações concluídas podem ser desfeitas.";
     this.refreshSummary(session);
-    return this.publicSession(session);
+    return this.publicSession(session, userId);
   }
 
   async discardImport(userId: string, walletId: string, importId: string): Promise<FinancialImportSession | null> {
@@ -247,7 +275,7 @@ class MemoryFinancialImportRepository implements FinancialImportRepository {
     session.canUndo = false;
     session.undoBlockedReason = "Somente importações concluídas podem ser desfeitas.";
     this.refreshSummary(session);
-    return { ...this.publicSession(session), items: session.items.map((item) => ({ ...item })) };
+    return { ...this.publicSession(session, userId), items: session.items.map((item) => ({ ...item })) };
   }
 
   private mutableSession(userId: string, walletId: string, importId: string, status: StoredSession["status"]) {
@@ -266,9 +294,13 @@ class MemoryFinancialImportRepository implements FinancialImportRepository {
     };
   }
 
-  private publicSession(session: StoredSession): FinancialImportSession {
-    const { userId: _userId, walletId: _walletId, items: _items, ...result } = session;
-    return structuredClone(result);
+  private publicSession(session: StoredSession, viewerUserId: string): FinancialImportSession {
+    const { userId, walletId: _walletId, items: _items, ...result } = session;
+    const isCurrentUser = userId === viewerUserId;
+    return structuredClone({
+      ...result,
+      importedBy: { userId, email: isCurrentUser ? USER_EMAILS[userId] ?? null : null, isCurrentUser },
+    });
   }
 }
 
@@ -763,6 +795,93 @@ test("upload and preview edits enforce UTF-8 byte limits before persistence", as
     headers: { cookie: authCookie() },
   });
   assert.equal(unchangedDetail.json().items[0].description, descriptionAtLimit);
+  await app.close();
+});
+
+// The request below is larger than the upload accepts, so the answer says where it was stopped: a
+// 413 means the API read the file and only then looked at who was sending it, while 401 and 404 mean
+// authorization came first and the payload was never buffered.
+test("an unauthorized upload is refused before the file is read", async () => {
+  const { app, repository } = createTestApp();
+  const oversized = Buffer.alloc(MAX_FINANCIAL_IMPORT_FILE_SIZE + 1_024, 0x41);
+  const uploadHeaders = {
+    "content-type": "application/octet-stream",
+    "x-file-name": encodeURIComponent("extrato.csv"),
+    "x-file-format": "csv",
+    "x-csv-mapping": CSV_MAPPING_HEADER,
+  };
+
+  const anonymous = await app.inject({ method: "POST", url: "/financial-imports", headers: uploadHeaders, payload: oversized });
+  assert.equal(anonymous.statusCode, 401);
+  assert.equal(anonymous.json().message, "Autenticação necessária.");
+
+  const otherWallet = await app.inject({
+    method: "POST",
+    url: "/financial-imports",
+    headers: { ...uploadHeaders, cookie: authCookie(), "x-wallet-id": USER_B },
+    payload: oversized,
+  });
+  assert.equal(otherWallet.statusCode, 404);
+
+  const anonymousInspection = await app.inject({
+    method: "POST",
+    url: "/financial-imports/csv/inspect",
+    headers: { "content-type": "application/octet-stream" },
+    payload: oversized,
+  });
+  assert.equal(anonymousInspection.statusCode, 401);
+
+  // Nothing about the refused requests was recorded, and the limit still applies once authorized.
+  assert.equal(repository.sessions.size, 0);
+  const authorized = await app.inject({
+    method: "POST",
+    url: "/financial-imports",
+    headers: { ...uploadHeaders, cookie: authCookie() },
+    payload: oversized,
+  });
+  assert.equal(authorized.statusCode, 413);
+  assert.equal(authorized.json().message, "O arquivo deve ter no máximo 10 MB.");
+  await app.close();
+});
+
+// The history is the audit trail, so it has to say who imported each file.
+test("the import history attributes each import to the member who sent it", async () => {
+  const { app } = createTestApp();
+  const created = (await upload(app)).json() as FinancialImportSession;
+  assert.deepEqual(created.importedBy, { userId: USER_A, email: "usuario-a@example.test", isCurrentUser: true });
+
+  const list = await app.inject({ method: "GET", url: "/financial-imports", headers: { cookie: authCookie() } });
+  assert.deepEqual(
+    (list.json() as { items: FinancialImportSession[] }).items.map((session) => session.importedBy),
+    [{ userId: USER_A, email: "usuario-a@example.test", isCurrentUser: true }],
+  );
+  await app.close();
+});
+
+// An upload that died between its session row and its preview has nothing left to advance it. The
+// history closes it out, so the import stops being one that never ends and says why it failed.
+test("an import interrupted before its preview expires into a traceable failure", async () => {
+  const { app, repository } = createTestApp();
+  const created = (await upload(app)).json() as FinancialImportSession;
+  const stuck = repository.sessions.get(created.id)!;
+  stuck.status = "processing";
+  stuck.createdAt = new Date(Date.now() - (FINANCIAL_IMPORT_PROCESSING_TIMEOUT_MINUTES + 5) * 60_000).toISOString();
+
+  const list = await app.inject({ method: "GET", url: "/financial-imports", headers: { cookie: authCookie() } });
+  const session = (list.json() as { items: FinancialImportSession[] }).items[0]!;
+  assert.equal(session.status, "failed");
+  assert.equal(session.failureMessage, "A importação foi interrompida antes de gerar a prévia. Envie o arquivo novamente.");
+  assert.ok(session.failedAt, "an expired import must record when it was closed out");
+  await app.close();
+});
+
+test("an import still inside the processing window is left alone", async () => {
+  const { app, repository } = createTestApp();
+  const created = (await upload(app)).json() as FinancialImportSession;
+  repository.sessions.get(created.id)!.status = "processing";
+
+  const list = await app.inject({ method: "GET", url: "/financial-imports", headers: { cookie: authCookie() } });
+  assert.equal((list.json() as { items: FinancialImportSession[] }).items[0]!.status, "processing");
   await app.close();
 });
 

@@ -116,7 +116,7 @@ export class PostgresFinancialImportsRepository implements FinancialImportReposi
       `INSERT INTO import_sessions (
          wallet_id, created_by_user_id, format, original_filename, file_size_bytes, file_hash, kind, credit_card_id
        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8::uuid)
-       RETURNING ${sessionColumns.replaceAll("session.", "import_sessions.")}`,
+       RETURNING ${sessionColumns("$2").replaceAll("session.", "import_sessions.")}`,
       [
         walletId,
         userId,
@@ -128,7 +128,7 @@ export class PostgresFinancialImportsRepository implements FinancialImportReposi
         input.creditCardId ?? null,
       ],
     );
-    return mapSession(result.rows[0]!);
+    return mapSession(result.rows[0]!, userId);
   }
 
   async findImportCreditCard(walletId: string, creditCardId: string): Promise<ImportCreditCard | null> {
@@ -300,15 +300,15 @@ export class PostgresFinancialImportsRepository implements FinancialImportReposi
     });
   }
 
-  async listImports(_userId: string, walletId: string): Promise<FinancialImportSession[]> {
+  async listImports(userId: string, walletId: string): Promise<FinancialImportSession[]> {
     const result = await this.database.query<ImportSessionRow>(
-      `SELECT ${sessionColumns}
+      `SELECT ${sessionColumns("$2")}
        FROM import_sessions AS session
        WHERE session.wallet_id = $1
        ORDER BY session.created_at DESC, session.id DESC`,
-      [walletId],
+      [walletId, userId],
     );
-    return result.rows.map(mapSession);
+    return result.rows.map((row) => mapSession(row, userId));
   }
 
   async getImport(userId: string, walletId: string, importId: string): Promise<FinancialImportSession | null> {
@@ -327,6 +327,19 @@ export class PostgresFinancialImportsRepository implements FinancialImportReposi
        WHERE id = $1 AND wallet_id = $2 AND status = 'processing'`,
       [importId, walletId, failureMessage],
     );
+  }
+
+  async expireStaleImports(walletId: string, olderThanMinutes: number, failureMessage: string): Promise<number> {
+    if (!Number.isSafeInteger(olderThanMinutes) || olderThanMinutes <= 0) return 0;
+    const result = await this.database.query(
+      `UPDATE import_sessions
+       SET status = 'failed', failure_message = $3, failed_at = now(), updated_at = now()
+       WHERE wallet_id = $1
+         AND status = 'processing'
+         AND created_at < now() - ($2::integer * interval '1 minute')`,
+      [walletId, olderThanMinutes, failureMessage],
+    );
+    return result.rowCount ?? 0;
   }
 
   async updateItem(

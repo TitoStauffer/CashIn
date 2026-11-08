@@ -57,6 +57,25 @@ import { DefaultFinancialImportParser } from "./financial-imports/financial-impo
 import { registerFinancialImportRoutes } from "./financial-imports/financial-imports.routes.js";
 import type { FinancialCategorizationRulesRepository, FinancialImportParser, FinancialImportRepository } from "./financial-imports/financial-imports.types.js";
 
+// What a request contributes to a log line, decided here instead of left to the defaults. Nothing in
+// the API logs a payload or a header today, and this is what keeps it that way: the serializers let
+// only the method, the route and the caller's address through, and the redaction covers the headers
+// that carry a session cookie, so a log line can never become a credential or a financial record.
+export const requestLoggerOptions = {
+  redact: {
+    paths: ["req.headers", "res.headers", "req.body", "req.raw", "res.raw"],
+    censor: "[redacted]",
+  },
+  serializers: {
+    req: (request: { method: string; url: string; ip?: string }) => ({
+      method: request.method,
+      url: request.url,
+      remoteAddress: request.ip,
+    }),
+    res: (reply: { statusCode: number }) => ({ statusCode: reply.statusCode }),
+  },
+};
+
 export interface AppOptions {
   logger?: boolean;
   emailSender?: EmailSender;
@@ -84,7 +103,7 @@ export function createApp(
   database: Database,
   options: AppOptions = {},
 ): FastifyInstance {
-  const app = Fastify({ logger: options.logger ?? false });
+  const app = Fastify({ logger: options.logger ? requestLoggerOptions : false });
   const walletsService = new WalletsService(
     options.walletRepository ?? new PostgresWalletsRepository(database),
   );

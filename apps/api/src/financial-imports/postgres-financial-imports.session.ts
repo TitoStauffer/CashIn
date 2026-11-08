@@ -32,6 +32,8 @@ export interface ImportSessionRow {
   original_filename: string;
   file_size_bytes: string | number;
   file_hash: string;
+  created_by_user_id: string;
+  created_by_email: string | null;
   status: FinancialImportStatus;
   item_count: number;
   valid_count: number;
@@ -72,8 +74,15 @@ export interface ImportItemRow {
   updated_at: string | Date;
 }
 
-export function mapSession(row: ImportSessionRow): FinancialImportSession {
+// The reader is needed to say whether the import is theirs; the e-mail was already decided in SQL,
+// where the rule that governs it can be read next to the column it fills.
+export function mapSession(row: ImportSessionRow, viewerUserId: string): FinancialImportSession {
   return {
+    importedBy: {
+      userId: row.created_by_user_id,
+      email: row.created_by_email,
+      isCurrentUser: row.created_by_user_id === viewerUserId,
+    },
     id: row.id,
     format: row.format,
     kind: row.kind,
@@ -146,13 +155,14 @@ export function sessionCard(row: ImportSessionRow): ImportCreditCard | null {
 export async function getSessionRow(
   executor: QueryExecutor,
   walletId: string,
+  userId: string,
   importId: string,
 ): Promise<ImportSessionRow | null> {
   const result = await executor.query<ImportSessionRow>(
-    `SELECT ${sessionColumns}
+    `SELECT ${sessionColumns("$3")}
      FROM import_sessions AS session
      WHERE session.id = $1 AND session.wallet_id = $2`,
-    [importId, walletId],
+    [importId, walletId, userId],
   );
   return result.rows[0] ?? null;
 }
@@ -163,9 +173,9 @@ export async function getSessionWithItems(
   userId: string,
   importId: string,
 ): Promise<FinancialImportSession | null> {
-  const row = await getSessionRow(executor, walletId, importId);
+  const row = await getSessionRow(executor, walletId, userId, importId);
   if (!row) return null;
-  const session = mapSession(row);
+  const session = mapSession(row, userId);
   const card = sessionCard(row);
   const items = await executor.query<ImportItemRow>(
     `SELECT ${itemColumns}

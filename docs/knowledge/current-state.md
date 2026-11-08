@@ -1,6 +1,6 @@
 # Estado atual do projeto
 
-**Status:** atualizado pela DEV-58
+**Status:** atualizado pela DEV-59
 **Última revisão:** 07/11/2026
 **Ticket de criação:** [DEV-64](https://titostauffer.atlassian.net/browse/DEV-64)
 
@@ -17,6 +17,7 @@
 - Dashboard financeiro com resumo, comparação, metas e categorias de maior gasto.
 - Fundação de importação financeira com upload, prévia, edição, confirmação atômica, histórico e desfazer.
 - Regras de categorização por carteira, criadas só com confirmação do usuário e aplicadas às novas prévias.
+- Importação autorizada antes de ler o arquivo, atribuída a quem a enviou no histórico e recuperável quando a requisição é interrompida.
 - Importação de faturas de cartão (OFX e CSV), com cartão obrigatório, fatura calculada por item e corrigível na prévia, estornos como créditos na fatura e duplicidade por cartão. A página de cartões mostra os estornos e bloqueia o pagamento sem saldo devedor.
 
 ## Estado da importação
@@ -36,6 +37,7 @@ O fluxo ativo executa validação de título, API, Web, ferramentas de automaç�
 - Transferências entre carteiras do mesmo usuário estão disponíveis de ponta a ponta: a prévia da importação concilia a linha com a carteira do outro lado ou com uma transferência já registrada, e o dashboard mostra o enviado e o recebido no fluxo de caixa, sem virar receita ou despesa.
 - A conciliação do pagamento da fatura está disponível de ponta a ponta: a prévia da importação deixa escolher a fatura que o pagamento liquida, e a tela do cartão mostra os pagamentos, o que falta pagar e aceita pagamento parcial.
 - Estornos de cartão abatem a fatura, mas ainda não reduzem os totais de despesa e de gasto por categoria do dashboard.
+- Não existe papel somente-leitura em carteira compartilhada: todo membro pode importar. O e-mail de outro membro continua visível apenas ao proprietário.
 - Mobile e deploy em nuvem estão fora do estado atual.
 
 ## Fontes verificáveis
