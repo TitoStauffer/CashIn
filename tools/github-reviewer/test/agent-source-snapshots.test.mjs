@@ -136,7 +136,7 @@ test('replays the authenticated PR 50 context below the final Codex prompt budge
 
   assert.equal(fixture.pullRequest.headSha, '4fe8bc7d866e19f798e26936cf37d844fbb54ec8');
   assert.equal(fixture.inputs.changedFiles.length, 11);
-  assert.equal(Buffer.byteLength(prompt, 'utf8'), 387_111);
+  assert.equal(Buffer.byteLength(prompt, 'utf8'), 387_496);
   assert.doesNotThrow(() => assertCodexPromptWithinBudget(prompt));
 });
 
@@ -147,4 +147,23 @@ test('checks only newly introduced PR content for prompt injection', () => {
   assert.equal(detectPullRequestPromptInjection({ ...metadata, diff: `@@ -0,0 +1 @@\n+${maliciousText}` }), true);
   assert.equal(detectPullRequestPromptInjection({ ...metadata, diff: `@@ -1 +1 @@\n ${maliciousText}` }), false);
   assert.equal(detectPullRequestPromptInjection({ ...metadata, diff: '', sourceFiles: [{ content: maliciousText }] }), false);
+});
+
+// O marcador do vault é a citação, não a fonte: deduplicar por ele apagaria o corpo do arquivo
+// alterado, que é justamente o que precisa ser revisado.
+test('keeps the changed file body when its vault snapshot only carries the omission marker', () => {
+  const body = 'export const reviewableMarker = true;';
+  const prompt = buildPrompt('codeReview', {
+    repository: 'TitoStauffer/CashIn', pullRequestNumber: 77, commitSha: 'a'.repeat(40), executionId: 'test-run', priorResults: [],
+  }, {
+    pullRequest: { number: 77, title: 'Example', url: 'https://example.test/pull/77', body: '', headSha: 'a'.repeat(40), baseBranch: 'master', diff: '' },
+    checks: { api: 'PASSED', web: 'PASSED', githubReviewer: 'PASSED', sonarQube: 'PASSED', sonarCloud: 'PASSED' },
+    repositoryInstructions: 'Trusted project policy',
+    vaultContext: [{ path: 'src/example.ts', revision: 'head', content: '[vault-cited source omitted from model context for the vault context budget; path=src/example.ts; sourceBytes=37; sourceSha256=' + 'f'.repeat(64) + ']', contentOmitted: true }],
+    sourceFiles: [{ path: 'src/example.ts', revision: 'head', content: body }],
+  });
+
+  assert.match(prompt, /export const reviewableMarker = true;/);
+  assert.match(prompt, /vault-cited source omitted from model context/);
+  assert.match(prompt, /an omitted body is not an empty file/);
 });
