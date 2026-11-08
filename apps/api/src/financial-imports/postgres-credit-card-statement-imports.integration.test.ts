@@ -331,6 +331,32 @@ test("PostgreSQL credit card statement import posts purchases and credits to the
       [importedStatement!.id, "0.00", "50.00", null],
     );
     assert.deepEqual(keptStatement!.payments.map((payment) => [payment.amount, payment.source]), [["50.00", "manual"]]);
+
+    // A statement import that carries only refunds posts no expense, so it has to confirm even with
+    // no active credit payment method in the wallet. This case crosses the confirmation on purpose:
+    // the unit cases exercise `prepareCardPosting` and `cardPurchasePosting` in isolation, and the
+    // first attempt at this delivery passed all of them while the confirmation still answered 409.
+    await database.query("UPDATE payment_methods SET is_active = false WHERE wallet_id = $1 AND nature = 'credit_card'", [walletId]);
+    const refundsOnlyCard = (await app.inject({
+      method: "POST", url: "/credit-cards", headers: ownerHeaders, payload: { nickname: "Só estornos", closingDay: 10, dueDay: 20 },
+    })).json() as { id: string };
+    const refundsOnly = (await upload(
+      Buffer.from("Data;Descrição;Valor\n06/06/2026;Estorno LIVRARIA;-40,00\n", "utf8"),
+      { ...csvHeaders, "x-file-name": "estornos.csv", "x-credit-card-id": refundsOnlyCard.id, "x-card-amount-sign": "purchases_positive" },
+    )).json() as FinancialImportSession;
+    assert.deepEqual(refundsOnly.items!.map((item) => item.type), ["card_credit"]);
+
+    const confirmedRefundsOnly = await app.inject({
+      method: "POST", url: `/financial-imports/${refundsOnly.id}/confirm`, headers: ownerHeaders,
+    });
+
+    assert.equal(confirmedRefundsOnly.statusCode, 200);
+    assert.equal(confirmedRefundsOnly.json().status, "completed");
+    const [refundsOnlyStatement] = await statementsOf(refundsOnlyCard.id);
+    assert.deepEqual(
+      [refundsOnlyStatement!.purchasesAmount, refundsOnlyStatement!.creditsAmount],
+      ["0.00", "40.00"],
+    );
   } finally {
     await app?.close();
     await scopedPool?.end();

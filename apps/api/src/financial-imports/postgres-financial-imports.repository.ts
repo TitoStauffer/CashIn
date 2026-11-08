@@ -664,9 +664,11 @@ export class PostgresFinancialImportsRepository implements FinancialImportReposi
       for (const type of ["income", "expense"] as const) {
         const target = type === "income" ? "incomes" : "expenses";
         const resultColumn = type === "income" ? "resulting_income_id" : "resulting_expense_id";
+        const rows = items.rows.filter((item) => item.type === type);
+        // Nothing that assumes a purchase runs for a type with no rows: see cardPurchasePosting.
+        if (rows.length === 0) continue;
         const cardPurchase = cardPurchasePosting(type, cardPosting);
-        for (const batch of chunks(items.rows.filter((item) => item.type === type))) {
-          if (batch.length === 0) continue;
+        for (const batch of chunks(rows)) {
           const payload = batch.map((item) => ({
             import_item_id: item.id,
             movement_id: randomUUID(),

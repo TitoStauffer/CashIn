@@ -41,7 +41,8 @@ Sessões desfeitas não bloqueiam uma importação futura, pois somente itens ai
 - **Seleção do cartão:** a sessão de fatura (`kind = credit_card_statement`) exige um cartão ativo da carteira, gravado em `import_sessions.credit_card_id` com FK composta pela carteira.
 - **Formatos:** o OFX deve ter um único `CCSTMTRS`; o CSV informa o sinal das compras (`x-card-amount-sign`).
 - **Sinais:** são normalizados para compra negativa (`expense`) e crédito positivo (`card_credit`), o que mantém a impressão digital igual entre OFX e CSV.
-- **Pagamento da fatura anterior:** a linha positiva com `PAYMENT` ou "pagamento" vira `transfer` e não é importada, porque quem registra o pagamento é a conciliação feita no extrato bancário.
+- **Pagamento da fatura anterior:** a linha positiva com `PAYMENT` ou "pagamento" vira `transfer` e não é importada, porque quem registra o pagamento é a conciliação feita no extrato bancário. A descrição que **começa** com prefixo de estorno — "Estorno de pagamento duplicado" — é exceção e continua `card_credit`: a palavra "pagamento" ali pertence à explicação do próprio estorno. `TRNTYPE=PAYMENT` segue decidindo acima da descrição, porque um pagamento importado como estorno abateria a fatura que deveria liquidar.
+- **Forma de pagamento na confirmação:** só é exigida quando a sessão tem compra. Uma importação de fatura que carrega apenas estornos é confirmada sem nenhuma forma de pagamento `credit_card` ativa na carteira, porque estorno não lança despesa.
 - **Fatura de destino:** `import_items.statement_closing_date` é calculado pelo fechamento do cartão e pode ser movido para a fatura anterior ou a seguinte. Item em fatura paga fica inválido e reparável, e a confirmação revalida.
 - **Confirmação:**
   - Compras viram despesas de natureza `credit_card` na fatura do item e só saem do saldo no pagamento.

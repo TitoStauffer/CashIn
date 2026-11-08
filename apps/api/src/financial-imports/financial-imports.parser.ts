@@ -40,6 +40,12 @@ const INVOICE_PAYMENT_PATTERN = /\b(pagamento|pgto)\b/i;
 // refund's own explanation, so it has to be guarded. `TRNTYPE=PAYMENT` stays authoritative: it is the
 // bank's own classification, and overriding it from prose would trade this misclassification for a
 // worse one, since a payment imported as a refund would abate the statement it should settle.
+// Deliberately shorter than the prefix list of `normalizeRefundDescription`, which also strips
+// "crédito": that one exists to find the purchase a credit reverses, where a prefix stripped by
+// mistake only fails to match. This one decides whether a line is a payment of the statement, and a
+// payment classified as a refund would abate the statement it should settle — money in the wrong
+// place instead of a line the user retypes. "Crédito de pagamento em dobro" therefore stays a
+// payment until `TRNTYPE` says otherwise, and that asymmetry is the point, not an oversight.
 const REFUND_PREFIX_PATTERN = /^\s*(estorno|reembolso|devolu[çc][ãa]o|cancelamento)\b/i;
 
 // Normalizes a card statement to one sign convention, so the same purchase has the same fingerprint
