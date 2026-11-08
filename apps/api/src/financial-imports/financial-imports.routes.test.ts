@@ -536,3 +536,52 @@ test("impossible dates, zero values, and repeated source sequences remain in pre
   assert.equal(afterConfirmation.json().items.filter((item: FinancialImportItem) => item.validationStatus === "invalid").length, 3);
   await app.close();
 });
+
+// DEV-96: a tela de detalhe faz polling enquanto a importação está ocupada, então era ali que uma
+// importação interrompida continuava dizendo "processando" até alguém abrir o histórico.
+test("the import detail expires an interrupted import instead of answering processing forever", async () => {
+  const { app, repository } = createTestApp();
+  const created = (await upload(app)).json() as FinancialImportSession;
+  const stuck = repository.sessions.get(created.id)!;
+  stuck.status = "processing";
+  stuck.createdAt = new Date(Date.now() - (FINANCIAL_IMPORT_PROCESSING_TIMEOUT_MINUTES + 5) * 60_000).toISOString();
+
+  const detail = await app.inject({ method: "GET", url: `/financial-imports/${created.id}`, headers: { cookie: authCookie() } });
+  const session = detail.json() as FinancialImportSession;
+  assert.equal(session.status, "failed");
+  assert.equal(session.failureMessage, "A importação foi interrompida antes de gerar a prévia. Envie o arquivo novamente.");
+  assert.ok(session.failedAt, "an expired import must record when it was closed out");
+  await app.close();
+});
+
+test("the import detail of a healthy processing import stays a pure read", async () => {
+  const { app, repository } = createTestApp();
+  const created = (await upload(app)).json() as FinancialImportSession;
+  repository.sessions.get(created.id)!.status = "processing";
+  repository.expireCalls = 0;
+
+  const detail = await app.inject({ method: "GET", url: `/financial-imports/${created.id}`, headers: { cookie: authCookie() } });
+
+  assert.equal((detail.json() as FinancialImportSession).status, "processing");
+  // O polling bate a cada 1,5 s: escrever em cada leitura transformaria uma importação travada em
+  // centenas de escritas que não casam com nada.
+  assert.equal(repository.expireCalls, 0);
+  await app.close();
+});
+
+test("the import detail of a session that is not processing never attempts the expiry", async () => {
+  const { app, repository } = createTestApp();
+  const created = (await upload(app)).json() as FinancialImportSession;
+  const confirming = repository.sessions.get(created.id)!;
+  confirming.status = "confirming";
+  confirming.createdAt = new Date(Date.now() - (FINANCIAL_IMPORT_PROCESSING_TIMEOUT_MINUTES + 5) * 60_000).toISOString();
+  repository.expireCalls = 0;
+
+  const detail = await app.inject({ method: "GET", url: `/financial-imports/${created.id}`, headers: { cookie: authCookie() } });
+
+  // A tela também faz polling em `confirming`, e a expiração é escrita só para `processing`: uma
+  // confirmação em andamento não pode ser tocada por idade.
+  assert.equal((detail.json() as FinancialImportSession).status, "confirming");
+  assert.equal(repository.expireCalls, 0);
+  await app.close();
+});

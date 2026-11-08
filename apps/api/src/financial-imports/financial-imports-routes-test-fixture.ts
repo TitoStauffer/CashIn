@@ -158,7 +158,12 @@ export class MemoryFinancialImportRepository implements FinancialImportRepositor
   }
 
   // Mirrors the SQL: only sessions of this wallet still in `processing` and older than the window.
+  // Counts the attempts, not the expirations: it is what lets a test assert that a healthy poll of
+  // the detail stays a pure read.
+  expireCalls = 0;
+
   async expireStaleImports(walletId: string, olderThanMinutes: number, failureMessage: string): Promise<number> {
+    this.expireCalls += 1;
     const threshold = Date.now() - olderThanMinutes * 60_000;
     let expired = 0;
     for (const session of this.sessions.values()) {
