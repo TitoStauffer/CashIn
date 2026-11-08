@@ -56,8 +56,23 @@ function fakeFetch({ checkValue = check, jobValue = job, checkValues, jobValues,
   };
 }
 
-function read(fetchImpl, checkValue = check) {
-  return loadActionsEvidence(fetchImpl, 'owner/repo', 7, sha, checkValue, 'not-a-real-token');
+function read(fetchImpl, checkValue = check, retry = { wait: async () => {} }) {
+  return loadActionsEvidence(fetchImpl, 'owner/repo', 7, sha, checkValue, 'not-a-real-token', retry);
+}
+
+// Counts job reads so the retry cases can assert how many times the evidence was fetched, and lets the
+// first read answer differently from the ones after it.
+function countingFetch({ first, rest = job }) {
+  const state = { reads: 0 };
+  const base = fakeFetch({ jobValue: rest });
+  state.fetch = async (url, options) => {
+    if (/\/jobs\/\d+$/.test(new URL(url).pathname)) {
+      state.reads += 1;
+      if (state.reads === 1 && first) return Response.json(first);
+    }
+    return base(url, options);
+  };
+  return state;
 }
 
 test('loads verified Actions steps and current-HEAD configuration through review inputs without reading logs', async () => {
@@ -183,11 +198,43 @@ test('does not expose malformed response content in JSON parse errors', async ()
   await assert.rejects(read(async () => new Response('sensitive-non-json-response')), (error) => error.message === 'GitHub evidence response is not valid JSON.');
 });
 
-for (const steps of [undefined, [], Array.from({ length: 41 }, (_, number) => ({ number: number + 1, name: 'step', status: 'completed', conclusion: 'success' })), [{ number: 1, name: 'x'.repeat(161) }], [job.steps[0], job.steps[0]]]) {
-  test(`rejects missing, excessive or malformed step evidence ${steps?.length ?? 'missing'}`, async () => {
-    await assert.rejects(read(fakeFetch({ jobValue: { ...job, steps } })), /steps|step evidence/);
+// A single message for three different conditions sent a past investigation to the 40-step limit while
+// the real cause was an empty list, so each condition is asserted by its own wording.
+for (const [label, steps, expected] of [
+  ['an absent', undefined, /carries no step list/],
+  ['an empty', [], /empty step list after every retry/],
+  ['an excessive', Array.from({ length: 41 }, (_, number) => ({ number: number + 1, name: 'step', status: 'completed', conclusion: 'success' })), /more steps than the supported limit of 40/],
+  ['a malformed', [{ number: 1, name: 'x'.repeat(161) }], /invalid step evidence/],
+  ['a duplicated', [job.steps[0], job.steps[0]], /duplicate step evidence/],
+]) {
+  test(`rejects ${label} step list with its own message`, async () => {
+    await assert.rejects(read(fakeFetch({ jobValue: { ...job, steps } })), expected);
   });
 }
+
+test('re-reads an empty step list and accepts the steps published on the next read', async () => {
+  const state = countingFetch({ first: { ...job, steps: [] } });
+  const waits = [];
+  const evidence = await read(state.fetch, check, { wait: async (ms) => { waits.push(ms); } });
+
+  assert.deepEqual(evidence.steps, job.steps);
+  assert.equal(state.reads, 2);
+  assert.deepEqual(waits, [3_000]);
+});
+
+test('keeps refusing a step list that is still empty once the attempts run out', async () => {
+  const state = countingFetch({ rest: { ...job, steps: [] } });
+
+  await assert.rejects(read(state.fetch), /empty step list after every retry/);
+  assert.equal(state.reads, 4);
+});
+
+test('does not re-read an absent step list, which is a malformed payload and not a publication delay', async () => {
+  const state = countingFetch({ rest: { ...job, steps: undefined } });
+
+  await assert.rejects(read(state.fetch), /carries no step list/);
+  assert.equal(state.reads, 1);
+});
 
 for (const workflowValue of ['env: { TOKEN: placeholder }', 'env:\n  TOKEN: |\n    placeholder', "env:\n  TOKEN: 'multiline\n    placeholder'", 'env:\n  TOKEN:\n    nested: placeholder', '"env":\n  TOKEN: placeholder', '- env:\n    TOKEN: placeholder', 'env :\n  TOKEN: placeholder', 'x'.repeat(32_001)]) {
   test('fails closed on unsafe or oversized CI configuration projection', async () => {
