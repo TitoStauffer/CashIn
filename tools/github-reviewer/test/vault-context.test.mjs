@@ -371,7 +371,7 @@ test('loads a complete documentation evidence graph above the previous byte ceil
   assert.equal(result.filter(({ path }) => path.startsWith('apps/api/src/source-')).length, 8);
 });
 
-test('fails closed when the vault evidence graph exceeds the byte limit', async () => {
+test('marks the cited sources beyond the byte limit instead of aborting the review', async () => {
   const sources = Array.from({ length: 11 }, (_, index) => `apps/api/src/source-${index}.ts`);
   const files = baseVault({
     'docs/knowledge/note.md': {
@@ -380,17 +380,22 @@ test('fails closed when the vault evidence graph exceeds the byte limit', async 
     ...Object.fromEntries(sources.map((source) => [source, { value: 'x'.repeat(60_000) }])),
   });
 
-  await assert.rejects(
-    loadVaultContext(
-      fakeFetch(files),
-      repository,
-      [{ filename: 'docs/knowledge/note.md', status: 'added' }],
-      headSha,
-      baseSha,
-      'token',
-    ),
-    /item or byte limit/,
+  const result = await loadVaultContext(
+    fakeFetch(files),
+    repository,
+    [{ filename: 'docs/knowledge/note.md', status: 'added' }],
+    headSha,
+    baseSha,
+    'token',
   );
+
+  const loaded = result.filter(({ path }) => path.startsWith('apps/api/src/source-'));
+  assert.equal(loaded.length, 11);
+  assert.equal(loaded.filter(({ contentOmitted }) => !contentOmitted).length, 10);
+  assert.equal(loaded.filter(({ contentOmitted }) => contentOmitted).length, 1);
+  // O orçamento continua respeitado: a diferença é que ele passou a custar o corpo da fonte citada,
+  // e não a revisão inteira.
+  assert.ok(result.reduce((total, { content }) => total + Buffer.byteLength(content, 'utf8'), 0) <= 650_000);
 });
 
 test('fails closed before fetching evidence when the item limit would be exceeded', async () => {
@@ -457,5 +462,141 @@ test('fails closed when a cited source response exceeds the single-response ceil
   await assert.rejects(
     loadVaultContext(fakeFetch(files), repository, [{ filename: 'apps/api/src/route.ts', status: 'modified' }], headSha, baseSha, 'token'),
     /response exceeds the supported size|Could not read vault context source/,
+  );
+});
+
+// O orçamento de bytes do vault passou a ser estourado pelo tamanho do código citado pelas notas, e
+// não pelo vault: derrubar a revisão por isso bloqueava qualquer PR.
+test('keeps a cited source as a marker when its body does not fit the vault budget', async () => {
+  const first = 'a'.repeat(250_000);
+  const second = 'b'.repeat(250_000);
+  const third = 'c'.repeat(250_000);
+  const files = baseVault({
+    'docs/knowledge/context-map.json': { value: JSON.stringify({ version: 1, routes: [{ paths: ['apps/api/src/**'], documents: ['docs/knowledge/domains/backend.md'] }] }) },
+    'docs/knowledge/domains/backend.md': { value: '# Backend\n[First](../../../apps/api/src/first.ts)\n[Second](../../../apps/api/src/second.ts)\n[Third](../../../apps/api/src/third.ts)\n' },
+    'apps/api/src/first.ts': { value: first },
+    'apps/api/src/second.ts': { value: second },
+    'apps/api/src/third.ts': { value: third },
+  });
+
+  const result = await loadVaultContext(fakeFetch(files), repository, [{ filename: 'apps/api/src/route.ts', status: 'modified' }], headSha, baseSha, 'token');
+
+  assert.equal(result.find(({ path }) => path === 'apps/api/src/first.ts')?.content, first);
+  assert.equal(result.find(({ path }) => path === 'apps/api/src/second.ts')?.content, second);
+  const omitted = result.find(({ path }) => path === 'apps/api/src/third.ts');
+  assert.equal(omitted?.contentOmitted, true);
+  assert.match(omitted.content, /^\[vault-cited source omitted from model context for the vault context budget; path=apps\/api\/src\/third\.ts; sourceBytes=250000; sourceSha256=[0-9a-f]{64}\]$/);
+  // O marcador diz que o corpo foi omitido; um arquivo vazio seria uma afirmação diferente.
+  assert.notEqual(omitted.content, '');
+});
+
+test('fails closed when the vault documents alone exceed the budget', async () => {
+  const note = (name) => `# ${name}\n${name.repeat(50_000)}\n`;
+  const files = baseVault({
+    'docs/knowledge/context-map.json': { value: JSON.stringify({ version: 1, routes: [{ paths: ['apps/api/src/**'], documents: ['docs/knowledge/domains/first.md', 'docs/knowledge/domains/second.md', 'docs/knowledge/domains/third.md'] }] }) },
+    'docs/knowledge/domains/first.md': { value: note('aaaaa') },
+    'docs/knowledge/domains/second.md': { value: note('bbbbb') },
+    'docs/knowledge/domains/third.md': { value: note('ccccc') },
+  });
+
+  await assert.rejects(
+    loadVaultContext(fakeFetch(files), repository, [{ filename: 'apps/api/src/route.ts', status: 'modified' }], headSha, baseSha, 'token'),
+    /Vault context documents and evidence exceed the supported item or byte limit: docs\/knowledge\/domains\/third\.md\./,
+  );
+});
+
+test('still fails when a cited source does not exist at the PR HEAD', async () => {
+  const files = baseVault({
+    'docs/knowledge/context-map.json': { value: JSON.stringify({ version: 1, routes: [{ paths: ['apps/api/src/**'], documents: ['docs/knowledge/domains/backend.md'] }] }) },
+    'docs/knowledge/domains/backend.md': { value: '# Backend\n[Gone](../../../apps/api/src/gone.ts)\n' },
+  });
+
+  await assert.rejects(
+    loadVaultContext(fakeFetch(files), repository, [{ filename: 'apps/api/src/route.ts', status: 'modified' }], headSha, baseSha, 'token'),
+    /GitHub API request failed \(404\)/,
+  );
+});
+
+// Achado HIGH da rodada 1 do PR #78: o obrigatorio era lido depois dos corpos opcionais ja
+// admitidos, entao a revisao continuava abortando por inteiro — so a mensagem mudava.
+test('gives up an already admitted cited body so the required GitHub evidence still fits', async () => {
+  const reviewPath = '/repos/owner/repo/pulls/44/reviews/123';
+  const sources = [['first', 230_000], ['second', 220_000], ['third', 210_000]];
+  const files = baseVault({
+    'docs/knowledge/context-map.json': { value: JSON.stringify({ version: 1, routes: [{ paths: ['apps/api/src/**'], documents: ['docs/knowledge/domains/backend.md'] }] }) },
+    'docs/knowledge/domains/backend.md': {
+      value: '# Backend\n'
+        + sources.map(([name]) => `[${name}](../../../apps/api/src/${name}.ts)`).join('\n')
+        + '\n[Review](https://github.com/owner/repo/pull/44#pullrequestreview-123)\n',
+    },
+    ...Object.fromEntries(sources.map(([name, bytes], index) => [`apps/api/src/${name}.ts`, { value: String(index).repeat(bytes) }])),
+  });
+  // Evidencia grande o suficiente para nao caber na folga deixada pelo guloso.
+  const review = { id: 123, state: 'CHANGES_REQUESTED', body: 'E'.repeat(200_000), html_url: 'https://github.com/owner/repo/pull/44#pullrequestreview-123' };
+
+  const result = await loadVaultContext(
+    fakeFetch(files, { [reviewPath]: review }),
+    repository,
+    [{ filename: 'apps/api/src/route.ts', status: 'modified' }],
+    headSha,
+    baseSha,
+    'token',
+  );
+
+  const evidence = result.find(({ path }) => path.startsWith('github-evidence://'));
+  assert.equal(evidence?.contentOmitted, undefined);
+  assert.match(evidence.content, /E{200000}/);
+  const cited = result.filter(({ path }) => path.startsWith('apps/api/src/'));
+  assert.equal(cited.length, 3);
+  // Os maiores cedem primeiro, ate o obrigatorio caber: sobra um corpo.
+  assert.deepEqual(cited.filter(({ contentOmitted }) => !contentOmitted).map(({ path }) => path), ['apps/api/src/second.ts']);
+  assert.ok(result.reduce((total, { content }) => total + Buffer.byteLength(content, 'utf8'), 0) <= 650_000);
+});
+
+test('gives up an already admitted cited body so a note reached by link still fits', async () => {
+  const sources = [['first', 230_000], ['second', 220_000], ['third', 210_000]];
+  const files = baseVault({
+    'docs/knowledge/context-map.json': { value: JSON.stringify({ version: 1, routes: [{ paths: ['apps/api/src/**'], documents: ['docs/knowledge/domains/backend.md'] }] }) },
+    'docs/knowledge/domains/backend.md': {
+      value: '# Backend\n'
+        + sources.map(([name]) => `[${name}](../../../apps/api/src/${name}.ts)`).join('\n')
+        + '\n[Deep](deep.md)\n',
+    },
+    'docs/knowledge/domains/deep.md': { value: `# Deep\n${'d'.repeat(200_000)}\n` },
+    ...Object.fromEntries(sources.map(([name, bytes], index) => [`apps/api/src/${name}.ts`, { value: String(index).repeat(bytes) }])),
+  });
+
+  const result = await loadVaultContext(
+    fakeFetch(files),
+    repository,
+    [{ filename: 'apps/api/src/route.ts', status: 'modified' }],
+    headSha,
+    baseSha,
+    'token',
+  );
+
+  const deep = result.find(({ path }) => path === 'docs/knowledge/domains/deep.md');
+  assert.equal(deep?.contentOmitted, undefined);
+  assert.equal(Buffer.byteLength(deep.content, 'utf8'), 200_008);
+  const cited = result.filter(({ path }) => path.startsWith('apps/api/src/'));
+  assert.deepEqual(cited.filter(({ contentOmitted }) => !contentOmitted).map(({ path }) => path), ['apps/api/src/second.ts']);
+  assert.ok(result.reduce((total, { content }) => total + Buffer.byteLength(content, 'utf8'), 0) <= 650_000);
+});
+
+// Rebaixar corpo libera bytes, nunca itens: o teto de itens continua falhando fechado, porque nem o
+// marcador cabe.
+test('fails closed when not even the marker fits the item limit', async () => {
+  const sources = Array.from({ length: 170 }, (_, index) => `apps/api/src/source-${index}.ts`);
+  const files = baseVault({
+    'docs/knowledge/context-map.json': { value: JSON.stringify({ version: 1, routes: [{ paths: ['apps/api/src/**'], documents: ['docs/knowledge/domains/backend.md'] }] }) },
+    'docs/knowledge/domains/backend.md': {
+      value: '# Backend\n' + sources.map((source, index) => `[Source ${index}](../../../${source})`).join('\n') + '\n',
+    },
+    ...Object.fromEntries(sources.map((source) => [source, { value: 'x' }])),
+  });
+
+  await assert.rejects(
+    loadVaultContext(fakeFetch(files), repository, [{ filename: 'apps/api/src/route.ts', status: 'modified' }], headSha, baseSha, 'token'),
+    /^Error: Vault context exceeds the supported item or byte limit\.$/,
   );
 });
