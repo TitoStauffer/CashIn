@@ -425,3 +425,132 @@ test("PostgreSQL transfer candidates hide the other wallet's name once access to
     await adminPool.end();
   }
 });
+
+// The preview of a bank statement always sends the three reconciliation lists, so an empty list
+// means evaluated and empty. What the API still has to say is what it left OUT of the evaluation,
+// because that is what tells the person which action unblocks the line.
+test("PostgreSQL preview distinguishes a line with no reconciliation option from one it did not evaluate", {
+  skip: !testDatabaseUrl,
+}, async () => {
+  const schemaName = `reconciliation_reason_${randomBytes(8).toString("hex")}`;
+  const adminPool = new Pool({ connectionString: testDatabaseUrl });
+  let scopedPool: Pool | undefined;
+  let app: ReturnType<typeof createApp> | undefined;
+
+  try {
+    await adminPool.query(`CREATE SCHEMA ${schemaName}`);
+    scopedPool = new Pool({ connectionString: testDatabaseUrl, options: `-c search_path=${schemaName}` });
+    const database = createDatabase(scopedPool);
+    await runMigrations(database);
+
+    // A single wallet and no credit card: there is genuinely nothing to reconcile with, which is the
+    // only way to tell "no option" apart from "not evaluated".
+    const users = await database.query<{ id: string }>(
+      `INSERT INTO users (email, password_hash, email_verified_at)
+       VALUES ($1, 'test-hash', now()) RETURNING id`,
+      [`alone-${schemaName}@example.com`],
+    );
+    const userId = users.rows[0]!.id;
+    const wallet = await database.query<{ id: string }>(
+      "SELECT id FROM wallets WHERE owner_user_id = $1 AND is_personal",
+      [userId],
+    );
+    const walletId = wallet.rows[0]!.id;
+
+    const authRepository = new PostgresAuthRepository(database);
+    const sessionToken = createOpaqueToken();
+    await authRepository.createSession(userId, hashToken(sessionToken), new Date(Date.now() + 120_000));
+    app = createApp(database);
+    await app.ready();
+    const headers = { cookie: `cashin_session=${sessionToken}`, "x-wallet-id": walletId };
+    const read = async (importId: string) => (await app!.inject({
+      method: "GET", url: `/financial-imports/${importId}`, headers,
+    })).json() as FinancialImportSession;
+    const setType = (importId: string, itemId: string, item: { date: string; description: string | null }) => app!.inject({
+      method: "PATCH",
+      url: `/financial-imports/${importId}/items/${itemId}`,
+      headers,
+      payload: { date: item.date, description: item.description, type: "transfer" },
+    });
+
+    const created = (await app.inject({
+      method: "POST",
+      url: "/financial-imports",
+      headers: { ...headers, "content-type": "application/octet-stream", "x-file-name": "extrato.ofx", "x-file-format": "ofx" },
+      payload: bankOfx([
+        { id: "r-market", date: "2026-10-05", amount: "-50.00", name: "MERCADO" },
+        { id: "r-card", date: "2026-10-06", amount: "-400.00", name: "PAGAMENTO FATURA CARTAO" },
+        // Declared a transfer by the file, with a date the parser cannot read: it is persisted
+        // invalid and repairable, so it stays editable and typed as a transfer.
+        { id: "r-nodate", date: "nao-e-data", amount: "-70.00", name: "TRANSFERENCIA SEM DATA", type: "XFER" },
+        // Sem data e com descrição de pagamento de cartão: as faturas nem são consultadas nesse
+        // estado, então a descrição não é o impedimento e não pode ser declarada como causa.
+        { id: "r-nodate-card", date: "nao-e-data", amount: "-80.00", name: "PAGAMENTO FATURA CARTAO", type: "XFER" },
+      ]),
+    })).json() as FinancialImportSession;
+
+    // Neither line is stored as a transfer: an ordinary debit stays an expense, and so does a card
+    // payment with no open statement to pay. Nothing was evaluated for either.
+    const initial = await read(created.id);
+    const datelessLine = initial.items!.find((item) => item.description === "TRANSFERENCIA SEM DATA")!;
+    const datelessCardLine = initial.items!.find((item) => item.description === "PAGAMENTO FATURA CARTAO" && item.date === "")!;
+    const datelessIds = new Set([datelessLine.id, datelessCardLine.id]);
+    for (const item of initial.items!.filter((candidate) => !datelessIds.has(candidate.id))) {
+      assert.equal(item.type, "expense");
+      assert.deepEqual(item.statementCandidates, []);
+      assert.deepEqual(item.transferCandidates, []);
+      assert.deepEqual(item.transferCounterpartWallets, []);
+      assert.equal(item.reconciliationUnavailableReason, "not_a_transfer");
+    }
+
+    // The line left out of the transfer evaluation for a missing date must NOT be told its problem
+    // is the description: that was the defect of the first round, a cause asserted by elimination.
+    // Its real impediment is already in its own error message, so the reason is simply "no option".
+    assert.equal(datelessLine.type, "transfer");
+    assert.equal(datelessLine.validationStatus, "invalid");
+    assert.equal(datelessLine.canEdit, true);
+    assert.equal(datelessLine.date, "");
+    assert.match(datelessLine.errorMessage!, /data da movimentação é inválida/i);
+    assert.deepEqual(datelessLine.statementCandidates, []);
+    assert.deepEqual(datelessLine.transferCandidates, []);
+    assert.deepEqual(datelessLine.transferCounterpartWallets, []);
+    assert.equal(datelessLine.reconciliationUnavailableReason, null);
+
+    // A descrição casa com pagamento de cartão, mas sem data as faturas não foram consultadas: a
+    // causa declarada seria falsa, então a razão também é apenas "sem opção".
+    assert.equal(datelessCardLine.type, "transfer");
+    assert.equal(datelessCardLine.canEdit, true);
+    assert.equal(datelessCardLine.date, "");
+    assert.deepEqual(datelessCardLine.statementCandidates, []);
+    assert.equal(datelessCardLine.reconciliationUnavailableReason, null);
+
+    const cardLine = initial.items!.find((item) => item.description === "PAGAMENTO FATURA CARTAO")!;
+    const marketLine = initial.items!.find((item) => item.description === "MERCADO")!;
+
+    // Saved as a transfer, the card payment line is reserved to the statement reconciliation: the
+    // transfer options are deliberately not evaluated for it, and the API says so.
+    assert.equal((await setType(created.id, cardLine.id, cardLine)).statusCode, 200);
+    const withCardTransfer = await read(created.id);
+    const reservedLine = withCardTransfer.items!.find((item) => item.id === cardLine.id)!;
+    assert.equal(reservedLine.type, "transfer");
+    assert.deepEqual(reservedLine.statementCandidates, []);
+    assert.deepEqual(reservedLine.transferCandidates, []);
+    assert.deepEqual(reservedLine.transferCounterpartWallets, []);
+    assert.equal(reservedLine.reconciliationUnavailableReason, "card_payment");
+
+    // Saved as a transfer and not a card payment, the ordinary line IS evaluated — and there is
+    // nothing: no open statement, no pending transfer, no other wallet. That is a null reason.
+    assert.equal((await setType(created.id, marketLine.id, marketLine)).statusCode, 200);
+    const evaluated = (await read(created.id)).items!.find((item) => item.id === marketLine.id)!;
+    assert.equal(evaluated.type, "transfer");
+    assert.deepEqual(evaluated.statementCandidates, []);
+    assert.deepEqual(evaluated.transferCandidates, []);
+    assert.deepEqual(evaluated.transferCounterpartWallets, []);
+    assert.equal(evaluated.reconciliationUnavailableReason, null);
+  } finally {
+    if (app) await app.close();
+    await scopedPool?.end();
+    await adminPool.query(`DROP SCHEMA IF EXISTS ${schemaName} CASCADE`);
+    await adminPool.end();
+  }
+});

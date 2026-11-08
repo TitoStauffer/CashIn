@@ -6,6 +6,7 @@ import { moneyToCents } from "../shared/money.js";
 import type {
   FinancialImportItem,
   ParsedFinancialImportItem,
+  ReconciliationUnavailableReason,
   TransferCounterpartWallet,
   WalletTransferCandidate,
 } from "./financial-imports.types.js";
@@ -265,7 +266,67 @@ export async function attachTransferOptions(
   if (status !== "preview") return items;
   const pending = items.filter((item) => item.validationStatus !== "imported"
     && item.type === "transfer" && !item.creditCardStatementId && !looksLikeCardPayment(item.description) && item.date);
-  if (pending.length === 0) return items;
+  const candidatesByItem = new Map<string, WalletTransferCandidate[]>();
+  for (const item of pending) candidatesByItem.set(item.id, []);
+  if (pending.length > 0) await loadTransferCandidates(executor, walletId, userId, importId, pending, candidatesByItem);
+  // The wallets are only offered to a line that was evaluated as a transfer, so a preview with none
+  // does not pay for the query.
+  const counterpartWallets = pending.length > 0
+    ? await findCounterpartWallets(executor, userId, walletId)
+    : [];
+  return items.map((item) => {
+    // Only a line the user can still edit gets the lists: an imported one is settled, and an invalid
+    // line beyond repair has no reconciliation to offer and no action to take about it. Saying
+    // "not a transfer" there would answer a question nobody can act on.
+    if (!item.canEdit) return item;
+    const evaluated = candidatesByItem.has(item.id);
+    const transferCandidates = candidatesByItem.get(item.id) ?? [];
+    const statementCandidates = item.statementCandidates ?? [];
+    const wallets = evaluated ? counterpartWallets : [];
+    return {
+      ...item,
+      statementCandidates,
+      transferCandidates,
+      transferCounterpartWallets: wallets,
+      reconciliationUnavailableReason: reconciliationUnavailableReason(item, {
+        statements: statementCandidates.length,
+        transfers: transferCandidates.length,
+        wallets: wallets.length,
+      }),
+    };
+  });
+}
+
+// Said only when there is nothing to offer: with any option available the client has what it needs.
+//
+// Each reason is decided by its own condition, never by elimination. The filter that leaves a line
+// out of the transfer evaluation does so for three different motives — a description pointing to a
+// card payment, a statement already chosen, and a missing date — so "left out" is not a cause. A
+// field whose whole purpose is to stop the client from guessing a cause cannot guess one itself.
+function reconciliationUnavailableReason(
+  item: FinancialImportItem,
+  counts: { statements: number; transfers: number; wallets: number },
+): ReconciliationUnavailableReason {
+  if (counts.statements > 0 || counts.transfers > 0 || counts.wallets > 0) return null;
+  if (item.type !== "transfer") return "not_a_transfer";
+  // Reserved to the statement reconciliation, which is the more specific one for this description —
+  // but only when the statements were really consulted. Without a date not even that query runs
+  // (`attachStatementCandidates` skips it), so the description is not what blocks the line.
+  if (item.date && looksLikeCardPayment(item.description)) return "card_payment";
+  // Left out for a missing date, or because a statement was already chosen for it. Neither is a
+  // reconciliation cause, and an invalid line already carries the real impediment in its own
+  // `errorMessage`, so there is nothing to add here beyond "no option".
+  return null;
+}
+
+async function loadTransferCandidates(
+  executor: QueryExecutor,
+  walletId: string,
+  userId: string,
+  importId: string,
+  pending: FinancialImportItem[],
+  candidatesByItem: Map<string, WalletTransferCandidate[]>,
+): Promise<void> {
   const result = await executor.query<CandidateRow & { item_id: string }>(
     `WITH pending AS (
        SELECT item.id,
@@ -321,8 +382,6 @@ export async function attachTransferOptions(
      ) AS candidate`,
     [importId, walletId, TRANSFER_DATE_WINDOW_DAYS, MAX_CANDIDATES, pending.map((item) => item.id), userId],
   );
-  const candidatesByItem = new Map<string, WalletTransferCandidate[]>();
-  for (const item of pending) candidatesByItem.set(item.id, []);
   for (const row of result.rows) {
     candidatesByItem.get(row.item_id)?.push({
       walletTransferId: row.id,
@@ -334,10 +393,6 @@ export async function attachTransferOptions(
       direction: row.direction,
     });
   }
-  const counterpartWallets = await findCounterpartWallets(executor, userId, walletId);
-  return items.map((item) => candidatesByItem.has(item.id)
-    ? { ...item, transferCandidates: candidatesByItem.get(item.id) ?? [], transferCounterpartWallets: counterpartWallets }
-    : item);
 }
 
 // Validates the wallet the user chose for the other end: it must exist and be reachable by them.

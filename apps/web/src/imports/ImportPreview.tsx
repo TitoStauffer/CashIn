@@ -15,6 +15,7 @@ import {
   describeCounterpartWallet,
   describeStatementCandidate,
   describeTransferCandidate,
+  describeMissingReconciliation,
   reconciliationChoiceDraft,
   reconciliationChoiceValue,
   transferDirection,
@@ -162,10 +163,9 @@ export function ImportPreview({
             const candidates = canReconcilePayment ? item.statementCandidates ?? [] : []
             const transferCandidates = canReconcilePayment ? item.transferCandidates ?? [] : []
             const counterpartWallets = canReconcilePayment ? item.transferCounterpartWallets ?? [] : []
-            // The API omits these lists for a line it left to the statement reconciliation, and for a
-            // type the user just changed by hand. Absent is not the same as empty: only an empty list
-            // the API actually sent means there is nothing to reconcile.
-            const knowsTransferOptions = item.transferCounterpartWallets !== undefined
+            // A bank statement preview sends the three lists for every editable line, so an empty list
+            // means evaluated and empty, and `reconciliationUnavailableReason` says what was left out of
+            // the evaluation. The `?? []` below is only for an API older than that field.
             // The candidate lists only hold what is still open — a statement with an outstanding
             // balance, a transfer whose side here is free — so what was already chosen drops out of
             // them. It stays selectable, otherwise saving the item again would silently undo the
@@ -176,9 +176,9 @@ export function ImportPreview({
             const choice = currentReconciliationChoice(draft)
             const direction = transferDirection(transferCandidates)
             const hasReconciliationOption = candidates.length > 0 || transferCandidates.length > 0 || counterpartWallets.length > 0
-            // The API attaches the statements and wallets to a line already stored as a transfer, so a
-            // type just changed by hand has none yet: saying there is nothing to reconcile would be
-            // false.
+            // A type the user just changed by hand is still the old one for the API, which therefore
+            // evaluated nothing for it — `not_a_transfer`. The hint says to save the type, instead of
+            // claiming there is nothing to reconcile.
             const selectedCategory = categories.find((category) => category.id === draft.categoryId)
             const isEditable = session.status === 'preview' && item.canEdit
             const isSavingItem = pendingAction === `item:${item.id}`
@@ -282,9 +282,7 @@ export function ImportPreview({
                     </label>
                   ) : (
                     <p className="imports-item-hint" role="note">
-                      {knowsTransferOptions
-                        ? 'Nenhuma fatura em aberto e nenhuma outra carteira para conciliar esta movimentação. Escolha outro tipo ou deixe-a fora da importação.'
-                        : 'Esta movimentação não tem conciliação disponível nesta prévia. Salve o ajuste e revise, escolha outro tipo ou deixe-a fora da importação.'}
+                      {describeMissingReconciliation(item)}
                     </p>
                   ))}
                   <label className="imports-item-description">

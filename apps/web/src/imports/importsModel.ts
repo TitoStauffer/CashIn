@@ -237,3 +237,23 @@ export function describeImporter(session: FinancialImportSession): string {
     ? `importado por ${session.importedBy.email}`
     : 'importado por outro membro da carteira'
 }
+
+// What to tell the person when the preview has nothing to reconcile this line with. The API says
+// what it left out of the evaluation, so each case gets the action that actually unblocks it; an
+// older API that does not say stays with the generic sentence, which claims no absence.
+export function describeMissingReconciliation(item: FinancialImportItem): string {
+  // Uma linha que não pode ser editada não recebe a razão da API, e pedir para salvar o ajuste nela
+  // seria orientar uma ação impossível: ela só constata que não há conciliação.
+  if (!item.canEdit) return 'Esta movimentação não tem conciliação disponível nesta prévia.'
+  switch (item.reconciliationUnavailableReason) {
+    case 'not_a_transfer':
+      return 'Esta movimentação ainda está salva como ' + (item.type === 'income' ? 'entrada' : 'saída')
+        + '. Salve o tipo Transferência para a prévia buscar faturas em aberto e carteiras para conciliar.'
+    case 'card_payment':
+      return 'A descrição aponta pagamento de fatura, então esta linha é conciliada com uma fatura, não com outra carteira — e nenhuma fatura em aberto corresponde a ela. Ajuste a descrição, escolha outro tipo ou deixe-a fora da importação.'
+    case null:
+      return 'Nenhuma fatura em aberto e nenhuma outra carteira para conciliar esta movimentação. Escolha outro tipo ou deixe-a fora da importação.'
+    default:
+      return 'Esta movimentação não tem conciliação disponível nesta prévia. Salve o ajuste e revise, escolha outro tipo ou deixe-a fora da importação.'
+  }
+}

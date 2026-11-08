@@ -1567,7 +1567,12 @@ describe('FinancialImportsPage', () => {
     it('states both absences when the API reported empty lists', async () => {
       mockTransferSession({
         ...transferSession,
-        items: [{ ...transferItem, transferCandidates: [], transferCounterpartWallets: [], statementCandidates: [] }],
+        items: [{
+          ...transferItem,
+          transferCandidates: [], transferCounterpartWallets: [], statementCandidates: [],
+          // Evaluated and empty, which is what the API says with a null reason.
+          reconciliationUnavailableReason: null,
+        }],
       })
       const user = userEvent.setup()
       await renderPage()
@@ -1575,6 +1580,71 @@ describe('FinancialImportsPage', () => {
 
       const line = (await screen.findByText('Movimentação 1')).closest('li') as HTMLElement
       expect(within(line).getByText(/Nenhuma fatura em aberto e nenhuma outra carteira/)).toBeVisible()
+    })
+
+    // The line is still saved as an expense, so the API evaluated nothing. The hint says the one
+    // thing that unblocks it instead of a sentence that fits every case.
+    it('tells the user to save the transfer type when the line is not one yet', async () => {
+      mockTransferSession({
+        ...transferSession,
+        items: [{
+          ...transferItem,
+          type: 'expense',
+          transferCandidates: [], transferCounterpartWallets: [], statementCandidates: [],
+          reconciliationUnavailableReason: 'not_a_transfer',
+        }],
+      })
+      const user = userEvent.setup()
+      await renderPage()
+      await user.click(await screen.findByRole('button', { name: 'Ver detalhes' }))
+
+      const line = (await screen.findByText('Movimentação 1')).closest('li') as HTMLElement
+      // The hint belongs to the moment the user picked "Transferência" without saving yet: the line is
+      // still an expense for the API, so it evaluated nothing.
+      await user.selectOptions(within(line).getByRole('combobox', { name: 'Tipo' }), 'transfer')
+      expect(within(line).getByText(/ainda está salva como saída/)).toBeVisible()
+      expect(within(line).getByText(/Salve o tipo Transferência/)).toBeVisible()
+    })
+
+    // Reserved to the statement reconciliation, with no open statement matching it.
+    it('explains that a card payment line is reconciled with a statement, not a wallet', async () => {
+      mockTransferSession({
+        ...transferSession,
+        items: [{
+          ...transferItem,
+          description: 'PAGAMENTO FATURA CARTAO',
+          transferCandidates: [], transferCounterpartWallets: [], statementCandidates: [],
+          reconciliationUnavailableReason: 'card_payment',
+        }],
+      })
+      const user = userEvent.setup()
+      await renderPage()
+      await user.click(await screen.findByRole('button', { name: 'Ver detalhes' }))
+
+      const line = (await screen.findByText('Movimentação 1')).closest('li') as HTMLElement
+      expect(within(line).getByText(/A descrição aponta pagamento de fatura/)).toBeVisible()
+      expect(within(line).getByText(/nenhuma fatura em aberto corresponde a ela/)).toBeVisible()
+    })
+
+    // Uma linha que não pode ser editada não recebe razão da API, e a dica não manda salvar nada.
+    it('only states the absence on a line that cannot be edited', async () => {
+      mockTransferSession({
+        ...transferSession,
+        status: 'completed',
+        items: [{
+          ...transferItem,
+          canEdit: false,
+          validationStatus: 'duplicate',
+          transferCandidates: [], transferCounterpartWallets: [], statementCandidates: [],
+        }],
+      })
+      const user = userEvent.setup()
+      await renderPage()
+      await user.click(await screen.findByRole('button', { name: 'Ver detalhes' }))
+
+      const line = (await screen.findByText('Movimentação 1')).closest('li') as HTMLElement
+      expect(within(line).queryByText(/Salve o ajuste e revise/)).toBeNull()
+      expect(within(line).queryByText(/Salve o tipo Transferência/)).toBeNull()
     })
 
     it('keeps a transfer chosen earlier when it is no longer among the candidates', async () => {

@@ -21,6 +21,12 @@ export interface FinancialImportSummary {
   uncategorized: number;
   imported: number;
 }
+// `not_a_transfer`: nothing was evaluated, because the line is not stored as a transfer — switching
+// the type in the preview without saving leaves it here. `card_payment`: only statements were
+// evaluated, because the description points to a card payment and that reconciliation is the more
+// specific one. `null`: everything in scope was evaluated and there is genuinely no option.
+export type ReconciliationUnavailableReason = "not_a_transfer" | "card_payment" | null;
+
 export interface FinancialImportItem {
   id: string;
   sequence: number;
@@ -48,6 +54,11 @@ export interface FinancialImportItem {
   transferCounterpartWalletId?: string | null;
   transferCandidates?: WalletTransferCandidate[];
   transferCounterpartWallets?: TransferCounterpartWallet[];
+  // Why a line of a bank statement preview has nothing to reconcile with, when it has nothing. The
+  // three lists above are always sent for such a preview, so an empty list means evaluated and
+  // empty — never "not looked at". This says what was left out of the evaluation and why, which is
+  // what a client needs to tell the person what to do instead of guessing from a missing field.
+  reconciliationUnavailableReason?: ReconciliationUnavailableReason;
   createdAt: string;
   updatedAt: string;
 }
