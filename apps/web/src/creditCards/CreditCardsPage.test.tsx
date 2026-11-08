@@ -322,8 +322,34 @@ describe('CreditCardsPage', () => {
     expect(field).toHaveValue('1.234,56')
     await user.click(screen.getByRole('button', { name: 'Pagar valor informado' }))
 
-    // A API recebe o valor canônico, não o que apareceu na tela.
+    // The API receives the canonical amount, not what showed up on screen.
     await waitFor(() => expect(paySpy).toHaveBeenCalledWith('card-1', 'statement-1', expect.any(String), '1234.56'))
+  })
+
+  // `aria-invalid` without a description announces "invalid" and nothing else, and the flag used to
+  // survive a payment that worked — so the field stayed marked invalid with no reason given.
+  it('describes why the amount is invalid and stops saying so after a successful payment', async () => {
+    vi.spyOn(creditCardsApi, 'list').mockResolvedValue({ items: [card] })
+    vi.spyOn(creditCardsApi, 'statements').mockResolvedValue({ items: [statement] })
+    // A partial payment keeps the form on screen, which is the only case where a leftover invalid flag
+    // is observable — and the case where it actually hurts, because the field stays usable.
+    vi.spyOn(creditCardsApi, 'payStatement').mockResolvedValue({ ...statement, paidDate: null, paidAmount: null, outstandingAmount: '23.45' })
+    render(<CreditCardsPage userEmail="user@example.com" isLoggingOut={false} onLogout={vi.fn()} />)
+
+    expect(await screen.findByText('Mercado')).toBeVisible()
+    const field = screen.getByLabelText('Valor do pagamento')
+    const user = userEvent.setup()
+    await user.type(field, '1,234')
+
+    expect(field).toHaveAttribute('aria-invalid', 'true')
+    const error = screen.getByRole('alert')
+    expect(field).toHaveAttribute('aria-describedby', error.id)
+    expect(error).toBeVisible()
+
+    await user.click(screen.getByRole('button', { name: 'Pagar valor informado' }))
+
+    await waitFor(() => expect(screen.getByLabelText('Valor do pagamento')).toHaveAttribute('aria-invalid', 'false'))
+    expect(screen.getByLabelText('Valor do pagamento')).not.toHaveAttribute('aria-describedby')
   })
 
   it('drops a character the money field never accepts, instead of sending it', async () => {
@@ -335,7 +361,7 @@ describe('CreditCardsPage', () => {
     const field = screen.getByLabelText('Valor do pagamento')
     const user = userEvent.setup()
     await user.type(field, '12a,3x4')
-    // A máscara mantém só o que é dinheiro, e a terceira casa decimal não entra.
+    // The mask keeps only what is money, and the third decimal place never gets in.
     expect(field).toHaveValue('12,34')
   })
 

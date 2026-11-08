@@ -32,10 +32,9 @@ function getErrorMessage(error: unknown, action: 'load' | 'save' | 'pay') {
 }
 
 // The API sends decimal strings with two places; only the sign matters here, so no money arithmetic is done.
-// What is left to pay is the outstanding balance, which already discounts the payments; an older API
-// without it falls back to the statement total.
-// O contrato da API devolve `outstandingAmount` em toda fatura, então não há o que substituir: cair
-// para o total superestimaria o "Falta …" de uma fatura com pagamento parcial.
+// What is left to pay is the outstanding balance, which already discounts the payments. The contract
+// returns `outstandingAmount` on every statement, so there is nothing to fall back to: falling back to
+// the statement total would overstate "Falta …" for a statement with a partial payment.
 function amountDue(statement: CreditCardStatement) {
   return statement.outstandingAmount
 }
@@ -81,8 +80,8 @@ export function CreditCardsPage({ userEmail, isLoggingOut, onLogout }: { userEma
   const [editor, setEditor] = useState<EditorState | null>(null)
   const [paymentDates, setPaymentDates] = useState<Record<string, string>>({})
   const [paymentAmounts, setPaymentAmounts] = useState<Record<string, string>>({})
-  // O que o usuário digitou e a máscara descartou, por fatura: o campo sinaliza enquanto se digita,
-  // como nas outras telas de valor.
+  // What the user typed and the mask dropped, per statement: the field signals while typing, the way
+  // the other amount screens do.
   const [invalidPaymentAmounts, setInvalidPaymentAmounts] = useState<Record<string, boolean>>({})
   const [isLoading, setIsLoading] = useState(true)
   const [loadedWalletId, setLoadedWalletId] = useState<string | null>(null)
@@ -222,6 +221,9 @@ export function CreditCardsPage({ userEmail, isLoggingOut, onLogout }: { userEma
       const updated = await creditCardsApi.payStatement(statement.creditCardId, statement.id, date, amount)
       setStatements((current) => current.map((item) => item.id === updated.id ? updated : item))
       setPaymentAmounts((current) => ({ ...current, [statement.id]: '' }))
+      // Clearing the field without clearing its invalid flag left the input marked invalid after a
+      // payment that worked, and a screen reader kept announcing it.
+      setInvalidPaymentAmounts((current) => ({ ...current, [statement.id]: false }))
       // A partial payment does not settle the statement, so the message says what really happened.
       // paidAmount only exists once the statement is settled, which is what tells the two apart even
       // if the response omits the settlement date.
@@ -354,10 +356,14 @@ export function CreditCardsPage({ userEmail, isLoggingOut, onLogout }: { userEma
                 <footer className="statement-card__footer">
                   {statement.paidDate ? <p className="statement-paid">Paga em {formatDate(statement.paidDate)} · {displayMoney(statement.paidAmount)}</p> : <>
                     <label>Data do pagamento <input type="date" value={paymentDates[statement.id] ?? today()} onChange={(event) => setPaymentDates((current) => ({ ...current, [statement.id]: event.target.value }))} /></label>
-                    <label>Valor do pagamento <input type="text" inputMode="decimal" placeholder={`Integral (${formatBrazilianCurrency(amountDue(statement))})`} value={paymentAmounts[statement.id] ?? ''} aria-invalid={invalidPaymentAmounts[statement.id] ?? false} onChange={(event) => {
+                    <label>Valor do pagamento <input type="text" inputMode="decimal" placeholder={`Integral (${formatBrazilianCurrency(amountDue(statement))})`} value={paymentAmounts[statement.id] ?? ''} aria-invalid={invalidPaymentAmounts[statement.id] ?? false} aria-describedby={invalidPaymentAmounts[statement.id] ? `statement-amount-error-${statement.id}` : undefined} onChange={(event) => {
                       setInvalidPaymentAmounts((current) => ({ ...current, [statement.id]: hasInvalidBrazilianCurrencyInput(event.target.value) }))
                       setPaymentAmounts((current) => ({ ...current, [statement.id]: maskBrazilianCurrencyInput(event.target.value) }))
                     }} /></label>
+                    {/* `aria-invalid` alone announces "invalid" and nothing else. The reason is described
+                        the way `ExpensesPage` and `IncomesPage` already do it, keyed per statement because
+                        every open statement renders its own field. */}
+                    {invalidPaymentAmounts[statement.id] && <small id={`statement-amount-error-${statement.id}`} role="alert">Use apenas números, até duas casas decimais e respeite o limite de R$ 999.999.999.999,99.</small>}
                     <button type="button" className="credit-cards-primary" onClick={() => void payStatement(statement)} disabled={isSaving || statement.purchases.length === 0 || !hasAmountDue(statement)} aria-describedby={statement.purchases.length === 0 || !hasAmountDue(statement) ? `statement-payment-hint-${statement.id}` : undefined}>{(paymentAmounts[statement.id] ?? '').trim() ? 'Pagar valor informado' : 'Pagar fatura integral'}</button>
                     {statement.purchases.length === 0 && <p id={`statement-payment-hint-${statement.id}`} className="statement-period">Esta fatura não possui compras para pagar. Registre uma despesa vinculada ao cartão para gerar uma fatura com valor.</p>}
                     {statement.purchases.length > 0 && !hasAmountDue(statement) && <p id={`statement-payment-hint-${statement.id}`} className="statement-period">{hasPayments(statement) ? 'Os pagamentos registrados cobrem o total desta fatura: não há saldo a pagar.' : 'Os estornos e créditos cobrem as compras desta fatura: não há saldo a pagar.'}</p>}

@@ -130,8 +130,9 @@ export function suggestStatement(candidates: BankPaymentCandidate[], signedAmoun
 
 // Shared with updateItem, so the preview and the edit never disagree about what is missing.
 export const SELECT_STATEMENT_MESSAGE = "Selecione a fatura que este pagamento liquida para incluí-lo na importação.";
-// A linha pode ser uma transferência entre carteiras, de entrada ou de saída, e o contrato expõe o
-// valor em módulo: a mensagem não afirma que ela é um pagamento nem que é uma saída.
+// Only outflows reach this message: `isBankPaymentCandidateItem` requires a negative `signedAmount`,
+// so an inflow never gets here. The wording stays general for a different reason — an outflow may be a
+// transfer between wallets rather than a statement payment, so the message must not call it a payment.
 const NO_CANDIDATE_MESSAGE = "Nenhuma fatura em aberto corresponde a esta movimentação. Escolha outro tipo ou deixe-a fora da importação.";
 
 export function reconciliationMessage(candidateCount: number): string {
