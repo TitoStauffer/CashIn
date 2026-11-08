@@ -7,49 +7,52 @@
  * deterministic, costs no model call, and its published report is what the readiness gate reads to
  * confirm the track instead of accepting a missing report.
  *
- * The classification fails closed. Anything that is not provably a test file under a runtime directory
- * demands the full track, and an unusable file list demands it too.
+ * The rule is an allowlist of inert paths, not a denylist of sensitive ones. The first implementation
+ * listed what demands the full track — `apps/api/src/`, `apps/web/src/`, and later the privileged
+ * automation — and the Code Review of PR #91 proved that shape unsafe: `apps/api/migrations/**`, the
+ * application manifests, the Dockerfiles and `compose.yaml` all change runtime and all sat outside the
+ * list, so a migration or a production dependency bump would have reached merge without QA. Listing
+ * what is harmless inverts the failure: a path nobody classified yet, including a directory that does
+ * not exist today, demands the full track by omission instead of escaping QA by omission.
  */
 export type ReviewTrack = 'light' | 'full';
 
 /**
- * Directories whose non-test contents demand the full track.
+ * A changed file only allows the light track when it is documentation or a test.
  *
- * The first two are the product runtime: what reaches users. The last two are the privileged automation
- * that decides whether a change is ready to merge — the workflows and the orchestration/readiness code
- * they run. DEV-116 asks for the light track to be chosen from the product runtime alone, and names as
- * a point of attention that the change to this very automation "pede o trilho completo — e é bom que
- * peça". It does not, under the product-only rule: a Pull Request that rewrites the readiness evaluator
- * touches no `apps/*` file, so it would review itself on the cheaper track. These two prefixes are what
- * makes that point of attention true.
+ * - `*.md` anywhere: `AGENTS.md`, the knowledge vault, every README, the Pull Request template. These
+ *   are the deliveries the light track exists for — DEV-115 and DEV-119 changed `AGENTS.md` alone and
+ *   each consumed a full round of the serialized runner.
+ * - `docs/knowledge/context-map.json`: the only non-Markdown file under `docs/`, read by the vault
+ *   loader to pick notes. It steers review context, never product behaviour.
+ * - `*.test.*` anywhere: a regression proves behaviour, it does not ship it.
+ *
+ * Everything else is full-track, deliberately including fixtures, shared test helpers, the Vitest
+ * setup, lockfiles, `tsconfig`, the Jira dispatcher and `.claude/settings.json`. Being strict costs a
+ * round; being permissive costs a missing QA on a change that reaches users.
  */
-const RUNTIME_PREFIXES = [
-  'apps/api/src/',
-  'apps/web/src/',
-  '.github/workflows/',
-  'tools/github-reviewer/src/',
-] as const;
-
-/**
- * Only the `*.test.*` suffix counts as a test file. Fixtures, shared test helpers and the Vitest setup
- * live under the same directories and are deliberately left out: admitting them would widen the light
- * track, and a malformed fixture changes what an integration test proves. Being strict here only costs
- * a full round.
- */
+const LIGHT_TRACK_EXACT = ['docs/knowledge/context-map.json'] as const;
+const MARKDOWN_FILE = /\.md$/i;
 const TEST_FILE = /\.test\.[cm]?[jt]sx?$/i;
 
-export function isRuntimeAffectingPath(path: string): boolean {
-  if (typeof path !== 'string') return true;
+function normalize(path: string): string | undefined {
+  if (typeof path !== 'string') return undefined;
   const normalized = path.trim().replaceAll('\\', '/').replace(/^\.\//, '');
-  if (!normalized || normalized.includes('..')) return true;
-  if (!RUNTIME_PREFIXES.some((prefix) => normalized.startsWith(prefix))) return false;
-  return !TEST_FILE.test(normalized);
+  // A traversal segment, an absolute path or an empty entry is not a path this rule can reason about.
+  if (!normalized || normalized.includes('..') || normalized.startsWith('/')) return undefined;
+  return normalized;
+}
+
+export function isRuntimeAffectingPath(path: string): boolean {
+  const normalized = normalize(path);
+  if (normalized === undefined) return true;
+  if (LIGHT_TRACK_EXACT.includes(normalized as (typeof LIGHT_TRACK_EXACT)[number])) return false;
+  return !MARKDOWN_FILE.test(normalized) && !TEST_FILE.test(normalized);
 }
 
 export function classifyReviewTrack(changedFiles: readonly string[] | undefined): ReviewTrack {
   // An empty or unusable list is not evidence of a documentation change; it is absence of evidence.
   if (!Array.isArray(changedFiles) || changedFiles.length === 0) return 'full';
-  if (changedFiles.some((path) => typeof path !== 'string' || path.trim().length === 0)) return 'full';
   return changedFiles.some(isRuntimeAffectingPath) ? 'full' : 'light';
 }
 
@@ -62,3 +65,6 @@ export function runtimeAffectingPaths(changedFiles: readonly string[] | undefine
   if (!Array.isArray(changedFiles)) return [];
   return changedFiles.filter((path) => typeof path === 'string' && isRuntimeAffectingPath(path));
 }
+
+/** How the light track is defined, for the reports that have to state the rule they applied. */
+export const LIGHT_TRACK_RULE = 'arquivos `*.md`, arquivos `*.test.*` e `docs/knowledge/context-map.json`';

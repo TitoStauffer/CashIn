@@ -2,7 +2,7 @@ import type { AgentStage, AgentStageResult } from './agent-orchestrator.js';
 import { hasLaterChangeRequest, latestCurrentFormalReview, parseStoredAgentComment, parseStoredFormalReview } from './agent-evidence.js';
 import { isAgentStageResult, validateAgentResultCompleteness } from './agent-result-validation.js';
 import type { CheckSummary } from './codex-cli-agent.js';
-import { classifyReviewTrack, runtimeAffectingPaths, type ReviewTrack } from './review-track.js';
+import { LIGHT_TRACK_RULE, classifyReviewTrack, runtimeAffectingPaths, type ReviewTrack } from './review-track.js';
 
 export interface StageEvidenceContext {
   commitSha: string;
@@ -105,15 +105,12 @@ export function evaluateDeterministicQualityGate(input: StageEvidenceContext & {
   }
   const decision = reasons.length === 0 ? 'APPROVED' : rejected ? 'CHANGES_REQUESTED' : 'INCONCLUSIVE';
   const runtimePaths = runtimeAffectingPaths(input.changedFiles);
-  // The report must survive an unusable list: that case already failed closed to the full track, and a
-  // thrown TypeError here would turn a safe classification into a crashed stage.
-  const changedFileCount = Array.isArray(input.changedFiles) ? input.changedFiles.length : 0;
   return {
     stage: 'qualityGate', decision, reviewTrack, commitSha: input.commitSha, contextHash: input.contextHash,
     reportMarkdown: [
       `**Trilho de revisão:** ${reviewTrack === 'light' ? 'leve' : 'completo'}.`,
       reviewTrack === 'light'
-        ? `- Nenhum dos ${changedFileCount} arquivo(s) alterado(s) toca \`apps/api/src/**\` ou \`apps/web/src/**\` fora de arquivos de teste, então o QA não é exigido. Classificado pela lista de arquivos lida da API do GitHub, não pelo corpo do Pull Request.`
+        ? `- Todos os ${input.changedFiles.length} arquivo(s) alterado(s) são ${LIGHT_TRACK_RULE}, então o QA não é exigido. Classificado pela lista de arquivos lida da API do GitHub, não pelo corpo do Pull Request.`
         : `- Exige QA porque ${runtimePaths.length} arquivo(s) alteram runtime: ${runtimePaths.slice(0, 10).map((path) => `\`${path}\``).join(', ')}${runtimePaths.length > 10 ? ', …' : ''}.`,
       '',
       '**Checks verificados:**',

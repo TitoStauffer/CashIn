@@ -1,13 +1,26 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { classifyReviewTrack, isReviewTrack, isRuntimeAffectingPath, runtimeAffectingPaths } from '../dist/review-track.js';
+import { LIGHT_TRACK_RULE, classifyReviewTrack, isReviewTrack, isRuntimeAffectingPath, runtimeAffectingPaths } from '../dist/review-track.js';
 
-test('a change outside the runtime directories takes the light track', () => {
+test('a documentation-only change takes the light track', () => {
+  // These are the deliveries the light track exists for: DEV-115 and DEV-119 changed `AGENTS.md`
+  // alone and each consumed a full round of the serialized runner.
+  assert.equal(classifyReviewTrack(['AGENTS.md', 'docs/knowledge/learnings/agent-process.md']), 'light');
   assert.equal(classifyReviewTrack([
-    'AGENTS.md',
-    'docs/knowledge/learnings/code-review-findings.md',
+    'docs/hosted-agent-orchestration.md',
     '.github/pull_request_template.md',
-    'tools/jira-dispatcher/README.md',
+    'tools/github-reviewer/README.md',
+    'apps/web/README.md',
+    'docs/knowledge/context-map.json',
+  ]), 'light');
+});
+
+test('a change limited to test files takes the light track', () => {
+  assert.equal(classifyReviewTrack([
+    'apps/api/src/wallets/wallets-routes.test.ts',
+    'apps/api/src/financial-imports/postgres-wallet-transfer-reconciliation.integration.test.ts',
+    'apps/web/src/creditCards/CreditCardsPage.test.tsx',
+    'tools/github-reviewer/test/merge-readiness.test.mjs',
   ]), 'light');
 });
 
@@ -17,12 +30,12 @@ test('a change to API or Web runtime source takes the full track', () => {
 });
 
 // The privileged automation decides whether a change may merge, so a change to it is reviewed on the
-// full track — including this delivery, which would otherwise classify itself as light.
+// full track — including this delivery, which the first implementation classified as light.
 test('a change to the privileged automation takes the full track', () => {
   assert.equal(classifyReviewTrack(['.github/workflows/agent-orchestration.yml']), 'full');
   assert.equal(classifyReviewTrack(['.github/workflows/merge-readiness.yml']), 'full');
   assert.equal(classifyReviewTrack(['tools/github-reviewer/src/merge-readiness.ts']), 'full');
-  assert.equal(classifyReviewTrack(['tools/github-reviewer/src/review-track.ts']), 'full');
+  assert.equal(classifyReviewTrack(['.claude/settings.json']), 'full');
   assert.equal(classifyReviewTrack([
     '.github/workflows/agent-orchestration.yml',
     'tools/github-reviewer/src/review-track.ts',
@@ -31,32 +44,40 @@ test('a change to the privileged automation takes the full track', () => {
   ]), 'full');
 });
 
-// Inert files beside the automation are not the automation: a README, a PR template or a dispatcher
-// document changes no decision about merging.
-test('documents and templates beside the automation stay on the light track', () => {
-  assert.equal(classifyReviewTrack(['.github/pull_request_template.md']), 'light');
-  assert.equal(classifyReviewTrack(['tools/github-reviewer/README.md']), 'light');
-  assert.equal(classifyReviewTrack(['tools/jira-dispatcher/README.md']), 'light');
-  assert.equal(classifyReviewTrack(['tools/github-reviewer/test/merge-readiness.test.mjs']), 'light');
+// The Code Review of PR #91 proved the first shape of this rule unsafe: it listed the sensitive paths,
+// so everything it had not thought of — migrations above all — escaped QA by omission. These are the
+// paths that were wrong, and each one is a regression of its own.
+test('database migrations take the full track', () => {
+  assert.equal(classifyReviewTrack(['apps/api/migrations/0123_new_column.sql']), 'full');
+  assert.equal(classifyReviewTrack(['apps/api/migrations/001_auth.sql', 'AGENTS.md']), 'full');
 });
 
-test('a change limited to test files under the runtime directories takes the light track', () => {
-  assert.equal(classifyReviewTrack([
-    'apps/api/src/wallets/wallets-routes.test.ts',
-    'apps/api/src/financial-imports/postgres-wallet-transfer-reconciliation.integration.test.ts',
-    'apps/web/src/creditCards/CreditCardsPage.test.tsx',
-  ]), 'light');
+test('manifests, lockfiles and build configuration take the full track', () => {
+  for (const path of [
+    'apps/api/package.json',
+    'apps/api/package-lock.json',
+    'apps/web/package.json',
+    'apps/web/package-lock.json',
+    'apps/web/vite.config.ts',
+    'apps/web/tsconfig.app.json',
+    'apps/web/index.html',
+    'apps/web/.oxlintrc.json',
+  ]) {
+    assert.equal(classifyReviewTrack([path]), 'full', path);
+  }
 });
 
-test('one runtime file among many test files still forces the full track', () => {
-  const changed = [
-    'apps/web/src/creditCards/CreditCardsPage.test.tsx',
-    'apps/api/src/wallets/wallets-routes.test.ts',
-    'apps/api/src/wallets/wallets-service.ts',
-  ];
+test('container and environment definitions take the full track', () => {
+  for (const path of ['compose.yaml', 'apps/api/Dockerfile', 'apps/web/Dockerfile', '.env.example', 'sonar-project.properties']) {
+    assert.equal(classifyReviewTrack([path]), 'full', path);
+  }
+});
+
+test('one runtime file among many documentation files still forces the full track', () => {
+  const changed = ['AGENTS.md', 'docs/knowledge/current-state.md', 'apps/api/migrations/0124_index.sql'];
 
   assert.equal(classifyReviewTrack(changed), 'full');
-  assert.deepEqual(runtimeAffectingPaths(changed), ['apps/api/src/wallets/wallets-service.ts']);
+  assert.deepEqual(runtimeAffectingPaths(changed), ['apps/api/migrations/0124_index.sql']);
 });
 
 // A Pull Request that starts as documentation and receives a runtime commit has to climb to the full
@@ -68,12 +89,20 @@ test('adding a runtime file to a previously light change flips the track up, nev
   assert.equal(classifyReviewTrack([...documentationOnly, 'apps/api/src/app.ts']), 'full');
 });
 
+// Renaming a runtime file out of the runtime directories used to classify as light under the previous
+// shape, because the list only carries the new path. With an allowlist the new path is what is judged,
+// and a `.ts` anywhere is full-track.
+test('renaming a runtime file to another directory stays on the full track', () => {
+  assert.equal(classifyReviewTrack(['tools/archive/legacy.ts']), 'full');
+  assert.equal(classifyReviewTrack(['docs/archive/legacy.ts']), 'full');
+});
+
 test('fixtures, shared test helpers and the test setup stay on the full track', () => {
-  // Deliberately strict: these live under the runtime directories and change what the tests prove,
-  // so they are not treated as test files. Being wrong here costs a round, never a missing QA.
+  // Deliberately strict: they change what the tests prove, so they are not treated as test files.
   assert.equal(classifyReviewTrack(['apps/api/src/financial-imports/fixtures/valid-bank.ofx']), 'full');
   assert.equal(classifyReviewTrack(['apps/api/src/wallets/wallets-test-fixture.ts']), 'full');
   assert.equal(classifyReviewTrack(['apps/web/src/test/setup.ts']), 'full');
+  assert.equal(classifyReviewTrack(['tools/github-reviewer/test/fixtures/sample.json']), 'full');
 });
 
 test('an unusable changed-file list fails closed to the full track', () => {
@@ -85,18 +114,21 @@ test('an unusable changed-file list fails closed to the full track', () => {
   assert.equal(classifyReviewTrack('AGENTS.md'), 'full');
 });
 
-test('a path that tries to escape the runtime check is treated as runtime', () => {
-  assert.equal(isRuntimeAffectingPath('apps/api/src/../../../etc/passwd'), true);
-  assert.equal(isRuntimeAffectingPath('apps/web/src/../api/src/app.ts'), true);
-  // A backslash-separated path still resolves to the same runtime file.
+test('a path that cannot be reasoned about is treated as runtime', () => {
+  assert.equal(isRuntimeAffectingPath('../outside/AGENTS.md'), true);
+  assert.equal(isRuntimeAffectingPath('docs/../AGENTS.md'), true);
+  assert.equal(isRuntimeAffectingPath('/etc/passwd.md'), true);
+  // A backslash-separated path still resolves to the same file.
+  assert.equal(isRuntimeAffectingPath('docs\\knowledge\\README.md'), false);
   assert.equal(isRuntimeAffectingPath('apps\\api\\src\\app.ts'), true);
-  assert.equal(isRuntimeAffectingPath('apps\\api\\src\\app.test.ts'), false);
 });
 
-test('a directory that merely starts with a runtime name is not runtime', () => {
-  assert.equal(isRuntimeAffectingPath('apps/api/srcx/app.ts'), false);
-  assert.equal(isRuntimeAffectingPath('apps/api-docs/src/app.ts'), false);
-  assert.equal(isRuntimeAffectingPath('apps/api/package.json'), false);
+test('a file that merely looks like documentation is not documentation', () => {
+  assert.equal(isRuntimeAffectingPath('apps/api/src/markdown.ts'), true);
+  assert.equal(isRuntimeAffectingPath('apps/api/src/README.md.ts'), true);
+  assert.equal(isRuntimeAffectingPath('docs/knowledge/context-map.json.ts'), true);
+  // Only the exact context map is allowed, not any file named like it elsewhere.
+  assert.equal(isRuntimeAffectingPath('apps/api/src/context-map.json'), true);
 });
 
 test('isReviewTrack accepts only the two tracks', () => {
@@ -105,4 +137,11 @@ test('isReviewTrack accepts only the two tracks', () => {
   assert.equal(isReviewTrack('LIGHT'), false);
   assert.equal(isReviewTrack(''), false);
   assert.equal(isReviewTrack(undefined), false);
+});
+
+test('the published rule names every path the light track allows', () => {
+  // The Coordinator's report quotes this constant, so it cannot drift from the implementation.
+  assert.match(LIGHT_TRACK_RULE, /\*\.md/);
+  assert.match(LIGHT_TRACK_RULE, /\*\.test\.\*/);
+  assert.match(LIGHT_TRACK_RULE, /docs\/knowledge\/context-map\.json/);
 });

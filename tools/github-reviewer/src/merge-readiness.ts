@@ -247,10 +247,18 @@ export async function evaluateMergeReadiness(options: MergeReadinessOptions): Pr
   const qualityGate = findStructuredReport(reportComments, appLogins, 'qualityGate', headSha, contextHash);
   evidence.reports = { qa: qa.evidence, qualityGate: qualityGate.evidence };
   // The Coordinator's report is required on both tracks: it is the App-signed record that states which
-  // track was taken. QA is required only when the change touches runtime. A QA report that exists for
-  // this SHA and context and is not approved still blocks, whatever the track says.
+  // track was taken. QA is required only when the change touches runtime.
+  //
+  // On the light track a QA report still blocks when it belongs to the current SHA and context and is
+  // not approved — skipping the stage is a decision about cost, not permission to drop evidence that
+  // exists. `MISSING`, `STALE` and `UNSTRUCTURED` are not that evidence: they say the report is absent,
+  // from another SHA/context, or unusable. Blocking those used to strand a Pull Request that touched
+  // runtime, published QA, then reverted the runtime part: the old comment turns `STALE` at the new SHA
+  // and no stage republishes it, because QA no longer runs. The Coordinator already ignores such a
+  // comment, so blocking here also made the two evaluators disagree.
+  const qaEvidenceIsCurrent = !['APPROVED', 'MISSING', 'STALE', 'UNSTRUCTURED'].includes(qa.status);
   if (reviewTrack === 'full' && qa.status !== 'APPROVED') reasons.push(qa.reason);
-  if (reviewTrack === 'light' && !['APPROVED', 'MISSING'].includes(qa.status)) reasons.push(qa.reason);
+  if (reviewTrack === 'light' && qaEvidenceIsCurrent) reasons.push(qa.reason);
   if (qualityGate.status !== 'APPROVED') reasons.push(qualityGate.reason);
   if (threads.some((resolved) => !resolved)) reasons.push('Há conversas de revisão não resolvidas.');
 

@@ -384,17 +384,38 @@ test('light track still requires the Coordinator report', async () => {
   assert.ok(outcome.reasons.some((reason) => /Quality Gate/.test(reason)), outcome.reasons.join(' | '));
 });
 
-test('light track blocks a stale QA report instead of treating it as absent', async () => {
+// A report from another SHA is not evidence about this one. Blocking it stranded a Pull Request that
+// touched runtime, published QA, then reverted the runtime part: the old comment turns stale at the new
+// SHA and nothing republishes it, because QA no longer runs. The first version of this test asserted
+// that block, encoding the defect; the Code Review of PR #91 proved the scenario reachable.
+test('light track treats a QA report from another SHA as absent', async () => {
   const outcome = await evaluateTrack({
     files: ['AGENTS.md'],
     buildComments: (hash) => [report('Codex — QA Agent', 'Verificações de QA', oldSha, hash), coordinator(hash)],
   });
 
+  assert.equal(outcome.status, 'READY_TO_MERGE');
+  assert.equal(outcome.evidence.reviewTrack, 'light');
+  assert.ok(!outcome.reasons.some((reason) => /QA/.test(reason)), outcome.reasons.join(' | '));
+});
+
+// What the light track must never ignore is a QA that ran against this very SHA and context and did not
+// approve. Skipping the stage is a decision about cost, not permission to drop evidence that exists.
+test('light track still blocks a QA report for the current SHA that is not approved', async () => {
+  const outcome = await evaluateTrack({
+    files: ['AGENTS.md'],
+    buildComments: (hash) => [
+      {
+        ...report('Codex — QA Agent', 'Verificações de QA', sha, hash),
+        body: report('Codex — QA Agent', 'Verificações de QA', sha, hash).body.replace('**Status:** APPROVED', '**Status:** CHANGES_REQUESTED'),
+      },
+      coordinator(hash),
+    ],
+  });
+
   assert.equal(outcome.status, 'BLOCKED');
   assert.equal(outcome.evidence.reviewTrack, 'light');
-  // The qa entry under evidence.reports carries the status written inside the report, not the verdict
-  // about it: a stale report still says APPROVED in its own body. The verdict is in the blocking reasons.
-  assert.ok(outcome.reasons.some((reason) => /Relatório de QA ausente ou associado a outro SHA/.test(reason)), outcome.reasons.join(' | '));
+  assert.ok(outcome.reasons.some((reason) => /Relatório de QA não está aprovado/.test(reason)), outcome.reasons.join(' | '));
 });
 
 // A runtime file arriving mid-evaluation moves the context hash too, so this is defence in depth; it is

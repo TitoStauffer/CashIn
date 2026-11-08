@@ -7,6 +7,7 @@ import { pathToFileURL } from 'node:url';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { evaluateDeterministicQualityGate, mayRetryInconclusive, selectReusableStageResult } from '../dist/agent-stage-policy.js';
+import { LIGHT_TRACK_RULE } from '../dist/review-track.js';
 import { formatFormalReviewEvidence } from '../dist/agent-evidence.js';
 import { formatPullRequestReport } from '../dist/github-report-publisher.js';
 import { REVIEW_RISK_AREAS, validateAgentResultCompleteness } from '../dist/agent-result-validation.js';
@@ -85,6 +86,10 @@ test('coordinator approves the light track without QA and says so in the report'
   assert.equal(outcome.reviewTrack, 'light');
   assert.match(outcome.reportMarkdown, /\*\*Trilho de revisão:\*\* leve\./);
   assert.match(outcome.reportMarkdown, /QA dispensado pelo trilho leve/);
+  // The report is the durable App-signed justification for skipping a mandatory stage, so it must
+  // quote the rule the classifier actually applies. Its first version named only apps/*/src, which
+  // was already narrower than the implementation.
+  assert.ok(outcome.reportMarkdown.includes(LIGHT_TRACK_RULE), outcome.reportMarkdown);
   assert.match(outcome.reportMarkdown, /lida da API do GitHub, não pelo corpo do Pull Request/);
 });
 
