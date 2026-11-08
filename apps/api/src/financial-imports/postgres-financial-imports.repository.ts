@@ -25,6 +25,7 @@ import {
   markItemsInPaidStatements,
   markValidItemsInPaidStatements,
   paidStatementMessage,
+  cardPurchasePosting,
   prepareCardPosting,
   previewStatements,
 } from "./postgres-card-statement-imports.js";
@@ -663,7 +664,7 @@ export class PostgresFinancialImportsRepository implements FinancialImportReposi
       for (const type of ["income", "expense"] as const) {
         const target = type === "income" ? "incomes" : "expenses";
         const resultColumn = type === "income" ? "resulting_income_id" : "resulting_expense_id";
-        const cardColumns = type === "expense" && cardPosting;
+        const cardPurchase = cardPurchasePosting(type, cardPosting);
         for (const batch of chunks(items.rows.filter((item) => item.type === type))) {
           if (batch.length === 0) continue;
           const payload = batch.map((item) => ({
@@ -674,9 +675,9 @@ export class PostgresFinancialImportsRepository implements FinancialImportReposi
             amount: item.amount,
             transaction_date: dateValue(item.transaction_date),
             description: item.description,
-            statement_id: cardColumns ? cardPosting.statementIds.get(dateValue(item.statement_closing_date)) ?? null : null,
+            statement_id: cardPurchase ? cardPurchase.statementIds.get(dateValue(item.statement_closing_date)) ?? null : null,
           }));
-          if (cardColumns && payload.some((entry) => entry.statement_id === null)) {
+          if (cardPurchase && payload.some((entry) => entry.statement_id === null)) {
             throw new FinancialImportError("Uma compra da fatura não possui fatura de destino válida.", 409);
           }
           const imported = await transaction.query<{ id: string }>(
@@ -693,12 +694,12 @@ export class PostgresFinancialImportsRepository implements FinancialImportReposi
                )
              ), inserted AS (
                INSERT INTO ${target} (
-                 id, user_id, wallet_id, category_id, subcategory_id, amount, date, description${cardColumns
+                 id, user_id, wallet_id, category_id, subcategory_id, amount, date, description${cardPurchase
                    ? ", payment_method_id, payment_method_nature, credit_card_statement_id"
                    : ""}
                )
                SELECT input.movement_id, $1, $2, category.id, input.subcategory_id,
-                      input.amount, input.transaction_date, input.description${cardColumns
+                      input.amount, input.transaction_date, input.description${cardPurchase
                         ? ", $5::uuid, 'credit_card', input.statement_id"
                         : ""}
                FROM input
@@ -727,8 +728,8 @@ export class PostgresFinancialImportsRepository implements FinancialImportReposi
                AND item.wallet_id = $2
                AND item.validation_status = 'valid'
              RETURNING item.id`,
-            cardColumns
-              ? [userId, walletId, JSON.stringify(payload), importId, cardPosting.paymentMethodId]
+            cardPurchase
+              ? [userId, walletId, JSON.stringify(payload), importId, cardPurchase.paymentMethodId]
               : [userId, walletId, JSON.stringify(payload), importId],
           );
           if (imported.rows.length !== batch.length) {

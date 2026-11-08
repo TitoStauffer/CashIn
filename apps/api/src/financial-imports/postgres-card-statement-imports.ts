@@ -115,21 +115,31 @@ export async function markValidItemsInPaidStatements(
 }
 
 // Resolves the credit payment method and the (locked, unpaid) statements the items are posted to.
+//
+// `paymentMethodId` is null exactly when the session has no purchase, because only a purchase posts
+// with it. A caller that posts a purchase must therefore treat null as a broken invariant and refuse,
+// never as a reason to post that purchase as a plain expense without its statement.
 export async function prepareCardPosting(
   executor: QueryExecutor,
   walletId: string,
   card: ImportCreditCard,
   items: Array<{ type: FinancialImportItemType; statement_closing_date: string | Date | null }>,
-): Promise<{ paymentMethodId: string; statementIds: Map<string, string> }> {
-  const method = await executor.query<{ id: string }>(
-    `SELECT id FROM payment_methods
-     WHERE wallet_id = $1 AND nature = 'credit_card' AND is_active
-     ORDER BY created_at, id
-     LIMIT 1`,
-    [walletId],
-  );
-  const paymentMethodId = method.rows[0]?.id;
-  if (!paymentMethodId) {
+): Promise<{ paymentMethodId: string | null; statementIds: Map<string, string> }> {
+  // The payment method exists to post a purchase. A statement import that carries only refunds never
+  // posts one, so demanding it refused a legitimate import: the user was told to register a credit
+  // payment method that nothing in the session would have used.
+  const hasPurchase = items.some((item) => item.type === "expense");
+  const method = hasPurchase
+    ? await executor.query<{ id: string }>(
+      `SELECT id FROM payment_methods
+       WHERE wallet_id = $1 AND nature = 'credit_card' AND is_active
+       ORDER BY created_at, id
+       LIMIT 1`,
+      [walletId],
+    )
+    : null;
+  const paymentMethodId = method?.rows[0]?.id ?? null;
+  if (hasPurchase && !paymentMethodId) {
     throw new FinancialImportError("Cadastre ou ative uma forma de pagamento do tipo cartão de crédito nesta carteira.", 409);
   }
   const closingDates = [...new Set(items
@@ -158,6 +168,22 @@ export async function prepareCardPosting(
     statementIds.set(closingDate, row.id);
   }
   return { paymentMethodId, statementIds };
+}
+
+// What a purchase of this session posts with, or null when this batch has no purchase to post.
+// Keeping the guard here, next to `prepareCardPosting`, is what makes the invariant one decision
+// instead of a condition repeated by every caller.
+export function cardPurchasePosting(
+  type: FinancialImportItemType,
+  posting: { paymentMethodId: string | null; statementIds: Map<string, string> } | null,
+): { paymentMethodId: string; statementIds: Map<string, string> } | null {
+  if (type !== "expense" || !posting) return null;
+  // Refusing instead of returning null: a purchase without its payment method would be posted as a
+  // plain expense, outside its statement, which is silent data loss rather than a missing column.
+  if (!posting.paymentMethodId) {
+    throw new FinancialImportError("Cadastre ou ative uma forma de pagamento do tipo cartão de crédito nesta carteira.", 409);
+  }
+  return { paymentMethodId: posting.paymentMethodId, statementIds: posting.statementIds };
 }
 
 // Locks the card purchases a refund may be linked to. Called before the statements are locked, so the

@@ -528,6 +528,33 @@ test("credit card OFX statements become purchases, card credits and invoice paym
   assert.match(result.sourceMetadata?.accountReferenceHash ?? "", /^[0-9a-f]{64}$/);
 });
 
+// A refund whose description names the payment it reverses was classified as an invoice payment,
+// so the line left the import until the user changed its type by hand. The word the heuristic keys on
+// belongs to the refund's own explanation here, and `TRNTYPE` says what the line is.
+test("a refund that names the payment it reverses stays a card credit", async () => {
+  const result = await new DefaultFinancialImportParser().parse({
+    format: "ofx",
+    fileName: "fatura.ofx",
+    statementKind: "credit_card_statement",
+    content: cardStatementOfx([
+      "<STMTTRN><TRNTYPE>CREDIT<DTPOSTED>20261012<TRNAMT>30.00<FITID>r1<NAME>Estorno de pagamento duplicado</STMTTRN>",
+      "<STMTTRN><TRNTYPE>CREDIT<DTPOSTED>20261013<TRNAMT>40.00<FITID>r2<NAME>Reembolso do pagamento em dobro</STMTTRN>",
+      "<STMTTRN><TRNTYPE>CREDIT<DTPOSTED>20261014<TRNAMT>50.00<FITID>pay1<NAME>Pagamento recebido</STMTTRN>",
+      "<STMTTRN><TRNTYPE>PAYMENT<DTPOSTED>20261015<TRNAMT>60.00<FITID>pay2<NAME>Estorno de pagamento</STMTTRN>",
+    ].join("\n")),
+  });
+
+  assert.deepEqual(result.items.map((item) => [item.description, item.type]), [
+    // The refund prefix wins over the word "pagamento" inside its own description.
+    ["Estorno de pagamento duplicado", "card_credit"],
+    ["Reembolso do pagamento em dobro", "card_credit"],
+    // A credit that only announces a payment is still the payment of the previous statement.
+    ["Pagamento recebido", "transfer"],
+    // `TRNTYPE=PAYMENT` is the bank's own classification and stays authoritative over the prose.
+    ["Estorno de pagamento", "transfer"],
+  ]);
+});
+
 test("statement kind and OFX document must match", async () => {
   const parser = new DefaultFinancialImportParser();
   const card = cardStatementOfx("<STMTTRN><TRNTYPE>DEBIT<DTPOSTED>20261010<TRNAMT>-1.00<FITID>p1<NAME>X</STMTTRN>");
