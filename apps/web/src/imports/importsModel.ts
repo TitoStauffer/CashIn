@@ -242,6 +242,9 @@ export function describeImporter(session: FinancialImportSession): string {
 // what it left out of the evaluation, so each case gets the action that actually unblocks it; an
 // older API that does not say stays with the generic sentence, which claims no absence.
 export function describeMissingReconciliation(item: FinancialImportItem): string {
+  // Uma linha que não pode ser editada não recebe a razão da API, e pedir para salvar o ajuste nela
+  // seria orientar uma ação impossível: ela só constata que não há conciliação.
+  if (!item.canEdit) return 'Esta movimentação não tem conciliação disponível nesta prévia.'
   switch (item.reconciliationUnavailableReason) {
     case 'not_a_transfer':
       return 'Esta movimentação ainda está salva como ' + (item.type === 'income' ? 'entrada' : 'saída')

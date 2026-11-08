@@ -483,6 +483,9 @@ test("PostgreSQL preview distinguishes a line with no reconciliation option from
         // Declared a transfer by the file, with a date the parser cannot read: it is persisted
         // invalid and repairable, so it stays editable and typed as a transfer.
         { id: "r-nodate", date: "nao-e-data", amount: "-70.00", name: "TRANSFERENCIA SEM DATA", type: "XFER" },
+        // Sem data e com descrição de pagamento de cartão: as faturas nem são consultadas nesse
+        // estado, então a descrição não é o impedimento e não pode ser declarada como causa.
+        { id: "r-nodate-card", date: "nao-e-data", amount: "-80.00", name: "PAGAMENTO FATURA CARTAO", type: "XFER" },
       ]),
     })).json() as FinancialImportSession;
 
@@ -490,7 +493,9 @@ test("PostgreSQL preview distinguishes a line with no reconciliation option from
     // payment with no open statement to pay. Nothing was evaluated for either.
     const initial = await read(created.id);
     const datelessLine = initial.items!.find((item) => item.description === "TRANSFERENCIA SEM DATA")!;
-    for (const item of initial.items!.filter((candidate) => candidate.id !== datelessLine.id)) {
+    const datelessCardLine = initial.items!.find((item) => item.description === "PAGAMENTO FATURA CARTAO" && item.date === "")!;
+    const datelessIds = new Set([datelessLine.id, datelessCardLine.id]);
+    for (const item of initial.items!.filter((candidate) => !datelessIds.has(candidate.id))) {
       assert.equal(item.type, "expense");
       assert.deepEqual(item.statementCandidates, []);
       assert.deepEqual(item.transferCandidates, []);
@@ -510,6 +515,14 @@ test("PostgreSQL preview distinguishes a line with no reconciliation option from
     assert.deepEqual(datelessLine.transferCandidates, []);
     assert.deepEqual(datelessLine.transferCounterpartWallets, []);
     assert.equal(datelessLine.reconciliationUnavailableReason, null);
+
+    // A descrição casa com pagamento de cartão, mas sem data as faturas não foram consultadas: a
+    // causa declarada seria falsa, então a razão também é apenas "sem opção".
+    assert.equal(datelessCardLine.type, "transfer");
+    assert.equal(datelessCardLine.canEdit, true);
+    assert.equal(datelessCardLine.date, "");
+    assert.deepEqual(datelessCardLine.statementCandidates, []);
+    assert.equal(datelessCardLine.reconciliationUnavailableReason, null);
 
     const cardLine = initial.items!.find((item) => item.description === "PAGAMENTO FATURA CARTAO")!;
     const marketLine = initial.items!.find((item) => item.description === "MERCADO")!;

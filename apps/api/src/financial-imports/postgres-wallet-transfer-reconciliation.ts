@@ -309,8 +309,10 @@ function reconciliationUnavailableReason(
 ): ReconciliationUnavailableReason {
   if (counts.statements > 0 || counts.transfers > 0 || counts.wallets > 0) return null;
   if (item.type !== "transfer") return "not_a_transfer";
-  // Reserved to the statement reconciliation, which is the more specific one for this description.
-  if (looksLikeCardPayment(item.description)) return "card_payment";
+  // Reserved to the statement reconciliation, which is the more specific one for this description —
+  // but only when the statements were really consulted. Without a date not even that query runs
+  // (`attachStatementCandidates` skips it), so the description is not what blocks the line.
+  if (item.date && looksLikeCardPayment(item.description)) return "card_payment";
   // Left out for a missing date, or because a statement was already chosen for it. Neither is a
   // reconciliation cause, and an invalid line already carries the real impediment in its own
   // `errorMessage`, so there is nothing to add here beyond "no option".

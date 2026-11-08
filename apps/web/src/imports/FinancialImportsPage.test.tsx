@@ -1626,6 +1626,27 @@ describe('FinancialImportsPage', () => {
       expect(within(line).getByText(/nenhuma fatura em aberto corresponde a ela/)).toBeVisible()
     })
 
+    // Uma linha que não pode ser editada não recebe razão da API, e a dica não manda salvar nada.
+    it('only states the absence on a line that cannot be edited', async () => {
+      mockTransferSession({
+        ...transferSession,
+        status: 'completed',
+        items: [{
+          ...transferItem,
+          canEdit: false,
+          validationStatus: 'duplicate',
+          transferCandidates: [], transferCounterpartWallets: [], statementCandidates: [],
+        }],
+      })
+      const user = userEvent.setup()
+      await renderPage()
+      await user.click(await screen.findByRole('button', { name: 'Ver detalhes' }))
+
+      const line = (await screen.findByText('Movimentação 1')).closest('li') as HTMLElement
+      expect(within(line).queryByText(/Salve o ajuste e revise/)).toBeNull()
+      expect(within(line).queryByText(/Salve o tipo Transferência/)).toBeNull()
+    })
+
     it('keeps a transfer chosen earlier when it is no longer among the candidates', async () => {
       mockTransferSession({
         ...transferSession,
