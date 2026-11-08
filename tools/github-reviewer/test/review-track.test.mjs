@@ -140,8 +140,24 @@ test('isReviewTrack accepts only the two tracks', () => {
 });
 
 test('the published rule names every path the light track allows', () => {
-  // The Coordinator's report quotes this constant, so it cannot drift from the implementation.
+  // The Coordinator's report quotes this constant as the durable, App-signed justification for skipping
+  // a mandatory stage, so it cannot claim more than the classifier accepts. The rule used to say
+  // `*.test.*`, which reads as any extension, while only code extensions are accepted.
   assert.match(LIGHT_TRACK_RULE, /\*\.md/);
-  assert.match(LIGHT_TRACK_RULE, /\*\.test\.\*/);
   assert.match(LIGHT_TRACK_RULE, /docs\/knowledge\/context-map\.json/);
+
+  // The published extension list is compared on its own, so the `context-map.json` mention cannot make
+  // a `.json` test fixture look advertised.
+  const published = LIGHT_TRACK_RULE.match(/\*\.test\.\{([^}]+)\}/)?.[1].split(',') ?? [];
+  assert.deepEqual(published, ['ts', 'tsx', 'js', 'jsx', 'mjs', 'cjs'], LIGHT_TRACK_RULE);
+
+  for (const extension of published) {
+    assert.equal(isRuntimeAffectingPath(`apps/api/src/thing.test.${extension}`), false, extension);
+  }
+  // An extension the classifier refuses must not appear in the published list. `md` is left out of this
+  // loop on purpose: a `.md` file is inert wherever it lives, whether or not its name says "test".
+  for (const extension of ['json', 'sql', 'yaml', 'ofx']) {
+    assert.equal(isRuntimeAffectingPath(`apps/api/src/fixture.test.${extension}`), true, extension);
+    assert.ok(!published.includes(extension), `${extension} anunciado como inerte e recusado pelo classificador`);
+  }
 });

@@ -110,7 +110,7 @@ Se não houver riscos ou limitações conhecidos, declare isso explicitamente.
 
 ## 12. Checklist de conclusão
 
-O Agent de Product Manager é responsável por conferir e atualizar este checklist com base nas evidências fornecidas pelo Agent técnico principal. Faça a conferência final após Code Review, QA e checks configurados, antes do merge.
+O Agent de Product Manager é responsável por conferir e atualizar este checklist com base nas evidências fornecidas pelo Agent técnico principal. Faça a conferência final após Code Review, QA quando o trilho de revisão for completo, e checks configurados, antes do merge.
 
 - [ ] O PR está vinculado ao ticket correto do Jira.
 - [ ] O escopo implementado corresponde ao ticket.

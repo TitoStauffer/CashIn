@@ -5,7 +5,7 @@
 
 ## Contexto
 
-O processo exige Code Review, QA e consolidação de qualidade vinculados ao SHA correto, usando o Codex autenticado pelo plano existente e a identidade do GitHub App para publicar evidências.
+O processo exige Code Review e consolidação de qualidade vinculados ao SHA correto, mais QA quando o trilho de revisão for completo (DEV-116), usando o Codex autenticado pelo plano existente e a identidade do GitHub App para publicar evidências.
 
 ## Decisão
 

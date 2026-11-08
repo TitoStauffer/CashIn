@@ -76,4 +76,4 @@ export function runtimeAffectingPaths(changedFiles: readonly string[] | undefine
 export const REVIEW_TRACK_OUTPUT = 'review_track';
 
 /** How the light track is defined, for the reports that have to state the rule they applied. */
-export const LIGHT_TRACK_RULE = 'arquivos `*.md`, arquivos `*.test.*` e `docs/knowledge/context-map.json`';
+export const LIGHT_TRACK_RULE = 'arquivos `*.md`, arquivos de teste `*.test.{ts,tsx,js,jsx,mjs,cjs}` e `docs/knowledge/context-map.json`';
