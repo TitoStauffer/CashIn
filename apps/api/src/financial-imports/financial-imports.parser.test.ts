@@ -541,6 +541,9 @@ test("a refund that names the payment it reverses stays a card credit", async ()
       "<STMTTRN><TRNTYPE>CREDIT<DTPOSTED>20261013<TRNAMT>40.00<FITID>r2<NAME>Reembolso do pagamento em dobro</STMTTRN>",
       "<STMTTRN><TRNTYPE>CREDIT<DTPOSTED>20261014<TRNAMT>50.00<FITID>pay1<NAME>Pagamento recebido</STMTTRN>",
       "<STMTTRN><TRNTYPE>PAYMENT<DTPOSTED>20261015<TRNAMT>60.00<FITID>pay2<NAME>Estorno de pagamento</STMTTRN>",
+      // NAME holds the label and MEMO the explanation, so `buildDescription` joins them with " — ":
+      // the prefix is not at the start of the whole description, only at the start of a segment.
+      "<STMTTRN><TRNTYPE>CREDIT<DTPOSTED>20261017<TRNAMT>70.00<FITID>r3<NAME>CARTAO<MEMO>Estorno de pagamento duplicado</STMTTRN>",
     ].join("\n")),
   });
 
@@ -552,6 +555,7 @@ test("a refund that names the payment it reverses stays a card credit", async ()
     ["Pagamento recebido", "transfer"],
     // `TRNTYPE=PAYMENT` is the bank's own classification and stays authoritative over the prose.
     ["Estorno de pagamento", "transfer"],
+    ["CARTAO — Estorno de pagamento duplicado", "card_credit"],
   ]);
 });
 

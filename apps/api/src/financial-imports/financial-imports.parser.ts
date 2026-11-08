@@ -46,7 +46,12 @@ const INVOICE_PAYMENT_PATTERN = /\b(pagamento|pgto)\b/i;
 // payment classified as a refund would abate the statement it should settle — money in the wrong
 // place instead of a line the user retypes. "Crédito de pagamento em dobro" therefore stays a
 // payment until `TRNTYPE` says otherwise, and that asymmetry is the point, not an oversight.
-const REFUND_PREFIX_PATTERN = /^\s*(estorno|reembolso|devolu[çc][ãa]o|cancelamento)\b/i;
+//
+// Anchored at the start of any segment, not of the whole description: `buildDescription` joins NAME
+// and MEMO with " — ", so an issuer that puts the label in NAME and the explanation in MEMO produces
+// "CARTAO — Estorno de pagamento duplicado". Anchoring only at `^` let exactly that line fall back
+// to the old heuristic.
+const REFUND_PREFIX_PATTERN = /(?:^|—)\s*(estorno|reembolso|devolu[çc][ãa]o|cancelamento)\b/i;
 
 // Normalizes a card statement to one sign convention, so the same purchase has the same fingerprint
 // in OFX and CSV: purchases are negative expenses, refunds and chargebacks are positive card credits.
