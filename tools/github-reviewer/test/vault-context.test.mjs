@@ -486,7 +486,7 @@ test('keeps a cited source as a marker when its body does not fit the vault budg
   const omitted = result.find(({ path }) => path === 'apps/api/src/third.ts');
   assert.equal(omitted?.contentOmitted, true);
   assert.match(omitted.content, /^\[vault-cited source omitted from model context for the vault context budget; path=apps\/api\/src\/third\.ts; sourceBytes=250000; sourceSha256=[0-9a-f]{64}\]$/);
-  // O marcador diz que o corpo foi omitido; um arquivo vazio seria uma afirmação diferente.
+  // The marker states the body was omitted; an empty file would be a different claim.
   assert.notEqual(omitted.content, '');
 });
 
@@ -501,7 +501,7 @@ test('fails closed when the vault documents alone exceed the budget', async () =
 
   await assert.rejects(
     loadVaultContext(fakeFetch(files), repository, [{ filename: 'apps/api/src/route.ts', status: 'modified' }], headSha, baseSha, 'token'),
-    /Vault context documents and evidence exceed the supported item or byte limit: docs\/knowledge\/domains\/third\.md\./,
+    /Vault context documents and evidence exceed the supported byte limit: docs\/knowledge\/domains\/third\.md\./,
   );
 });
 
@@ -583,8 +583,61 @@ test('gives up an already admitted cited body so a note reached by link still fi
   assert.ok(result.reduce((total, { content }) => total + Buffer.byteLength(content, 'utf8'), 0) <= 650_000);
 });
 
-// Rebaixar corpo libera bytes, nunca itens: o teto de itens continua falhando fechado, porque nem o
-// marcador cabe.
+// The optional path used to abort the whole review when a late citation's marker did not fit, even
+// though demotion — which the required path already used — could free hundreds of kilobytes from
+// bodies admitted earlier. Sizes are computed so the budget is left with less headroom than a marker
+// costs, which is the only state that reaches the refusal.
+test('demotes an already admitted cited body so a late citation still fits as a marker', async () => {
+  const map = JSON.stringify({ version: 1, routes: [{ paths: ['apps/api/src/**'], documents: ['docs/knowledge/domains/backend.md'] }] });
+  const note = '# Backend\n'
+    + '[Demoted](../../../apps/api/src/demoted.ts)\n'
+    + '[Kept](../../../apps/api/src/kept.ts)\n'
+    + '[Filler](../../../apps/api/src/filler.ts)\n'
+    + '[Late](../../../apps/api/src/late.ts)\n';
+  const fixedBytes = Buffer.byteLength('# Index\n', 'utf8')
+    + Buffer.byteLength('# Current state\n', 'utf8')
+    + Buffer.byteLength(map, 'utf8')
+    + Buffer.byteLength(note, 'utf8');
+  // Three bodies instead of two, each well under the per-response ceiling: the contents API answers in
+  // base64, so a source over ~300 KB would be refused by the response limit before the budget is even
+  // consulted. Distinct sizes keep "largest first" deterministic.
+  const demotedBytes = 260_000;
+  const keptBytes = 240_000;
+  // A marker runs past 200 bytes, so 40 bytes of headroom guarantees the late marker is refused and
+  // only demotion can save the review.
+  const fillerBytes = 650_000 - fixedBytes - demotedBytes - keptBytes - 40;
+
+  const files = baseVault({
+    'docs/knowledge/context-map.json': { value: map },
+    'docs/knowledge/domains/backend.md': { value: note },
+    'apps/api/src/demoted.ts': { value: 'd'.repeat(demotedBytes) },
+    'apps/api/src/kept.ts': { value: 'k'.repeat(keptBytes) },
+    'apps/api/src/filler.ts': { value: 'f'.repeat(fillerBytes) },
+    'apps/api/src/late.ts': { value: 'l'.repeat(10_000) },
+  });
+
+  const result = await loadVaultContext(
+    fakeFetch(files),
+    repository,
+    [{ filename: 'apps/api/src/route.ts', status: 'modified' }],
+    headSha,
+    baseSha,
+    'token',
+  );
+
+  const byPath = (path) => result.find((snapshot) => snapshot.path === path);
+  // The citation that arrived last survives as a marker instead of killing the review.
+  assert.equal(byPath('apps/api/src/late.ts')?.contentOmitted, true);
+  // The largest admitted body gave up its own, and the smaller one kept it.
+  assert.equal(byPath('apps/api/src/demoted.ts')?.contentOmitted, true);
+  assert.equal(byPath('apps/api/src/kept.ts')?.contentOmitted, undefined);
+  assert.equal(Buffer.byteLength(byPath('apps/api/src/kept.ts').content, 'utf8'), keptBytes);
+  assert.equal(byPath('apps/api/src/filler.ts')?.contentOmitted, undefined);
+  assert.ok(result.reduce((total, { content }) => total + Buffer.byteLength(content, 'utf8'), 0) <= 650_000);
+});
+
+// Demoting a body frees bytes, never items, so the item ceiling still fails closed: not even the
+// marker fits, and demoting the others cannot help.
 test('fails closed when not even the marker fits the item limit', async () => {
   const sources = Array.from({ length: 170 }, (_, index) => `apps/api/src/source-${index}.ts`);
   const files = baseVault({
@@ -597,6 +650,6 @@ test('fails closed when not even the marker fits the item limit', async () => {
 
   await assert.rejects(
     loadVaultContext(fakeFetch(files), repository, [{ filename: 'apps/api/src/route.ts', status: 'modified' }], headSha, baseSha, 'token'),
-    /^Error: Vault context exceeds the supported item or byte limit\.$/,
+    /^Error: Vault context exceeds the supported item limit: apps\/api\/src\/source-\d+\.ts\.$/,
   );
 });

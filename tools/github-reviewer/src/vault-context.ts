@@ -136,6 +136,11 @@ export async function loadVaultContext(
   const fits = (candidate: VaultContextSnapshot): boolean => snapshots.length < MAX_VAULT_ITEMS
     && totalBytes + Buffer.byteLength(candidate.content, 'utf8') <= MAX_VAULT_BYTES;
 
+  // Which ceiling refused the candidate. One message for both conditions cost a whole measurement
+  // round to find out it was bytes and not items, the same way a single message for three step
+  // conditions did in the Actions evidence loader.
+  const refusedBy = (): 'item' | 'byte' => (snapshots.length < MAX_VAULT_ITEMS ? 'byte' : 'item');
+
   // A required item is read after optional bodies have already been admitted — the link traversal
   // interleaves cited sources with notes reached by link, and the GitHub evidence comes last of all.
   // Admitting optional bodies greedily and never reconsidering them let the budget fill up before a
@@ -172,11 +177,18 @@ export async function loadVaultContext(
       if (bodyRequired) {
         // Demotion only frees bytes, never items, so the item ceiling still aborts.
         if (!demoteOptionalBodies(stored)) {
-          throw new Error(`Vault context documents and evidence exceed the supported item or byte limit: ${snapshot.path}.`);
+          throw new Error(`Vault context documents and evidence exceed the supported ${refusedBy()} limit: ${snapshot.path}.`);
         }
       } else {
         stored = omittedSourceSnapshot(snapshot);
-        if (!fits(stored)) throw new Error('Vault context exceeds the supported item or byte limit.');
+        // A marker costs about a hundred bytes, so what refuses it is a budget already filled by other
+        // optional bodies admitted before it. Reclaim from those — the same demotion the required path
+        // uses — instead of aborting the whole review over a citation we were already dropping. Without
+        // this, optional bodies admitted in arrival order filled the budget and a citation arriving late
+        // killed the review, with the fix sitting thirty lines above in this same file.
+        if (!fits(stored) && !demoteOptionalBodies(stored)) {
+          throw new Error(`Vault context exceeds the supported ${refusedBy()} limit: ${snapshot.path}.`);
+        }
       }
     }
     seen.add(key);
