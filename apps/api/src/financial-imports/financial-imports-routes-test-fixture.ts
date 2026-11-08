@@ -2,7 +2,6 @@
 // DEV-95 sem alterar nenhuma asserção: os casos de teste foram movidos, não reescritos.
 // O nome segue o precedente de `wallets/wallets-test-fixture.ts`.
 
-import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { createApp } from "../app.js";
 import type { Database, QueryExecutor } from "../database.js";

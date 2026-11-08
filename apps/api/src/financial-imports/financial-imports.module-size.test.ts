@@ -15,13 +15,18 @@ import test from "node:test";
 // vault cites it, and only a guard keeps a split from being undone one case at a time.
 const MAX_SOURCE_BYTES = 40_000;
 
-// The one file DEV-95 could not split, declared instead of silently excluded. It holds a single
-// `test` whose phases share mutable state — `app` is reassigned four times inside the body and the
-// `finally` closes whichever one is current — so moving phases out would have to hand that variable
-// back and forth, and splitting it into separate files would mean re-creating the schema, the
-// migrations and the setup. Both rewrite a careful integration test for a readability gain, which
-// DEV-95 explicitly ruled out. Removing it from this list is the decision to restructure the test.
-const DECLARED_OVERSIZED = ["postgres-financial-imports.integration.test.ts"];
+// The one file DEV-95 could not split under its own rule of leaving every assertion untouched: it
+// holds a single `test` whose phases share mutable state — `app` is reassigned four times inside the
+// body and the `finally` closes whichever one is current — so moving a phase out has to hand that
+// variable back, and separate files would re-create the schema, the migrations and the setup.
+//
+// Each entry names the ticket that removes it. An exception with no ticket is permanent, because
+// nothing ever brings it back up for decision; DEV-108 carries the restructuring, including the two
+// calls it has to make (the extra setup cost per file, and the test count that stops being constant
+// once one `test` becomes three). Emptying this list is that ticket's acceptance criterion.
+const DECLARED_OVERSIZED: Array<{ name: string; ticket: string }> = [
+  { name: "postgres-financial-imports.integration.test.ts", ticket: "DEV-108" },
+];
 
 test("every source of financial-imports stays within the size the hosted review can read", () => {
   const directory = fileURLToPath(new URL(".", import.meta.url));
@@ -33,15 +38,21 @@ test("every source of financial-imports stays within the size the hosted review 
   assert.ok(sources.length > 0, "the directory must expose sources to measure");
   const oversized = sources.filter((source) => source.bytes > MAX_SOURCE_BYTES);
   assert.deepEqual(
-    oversized.filter((source) => !DECLARED_OVERSIZED.includes(source.name)).map((source) => `${source.name} (${source.bytes} bytes)`),
+    oversized.filter((source) => !DECLARED_OVERSIZED.some((declared) => declared.name === source.name)).map((source) => `${source.name} (${source.bytes} bytes)`),
     [],
     `every source must stay at or below ${MAX_SOURCE_BYTES} bytes; split the oversized ones by responsibility`,
   );
   // A declaration that stopped being true is a stale exception, and a stale exception hides the next
   // oversized file behind a name nobody rechecks.
   assert.deepEqual(
-    DECLARED_OVERSIZED.filter((name) => !oversized.some((source) => source.name === name)),
+    DECLARED_OVERSIZED.filter((declared) => !oversized.some((source) => source.name === declared.name)).map((declared) => declared.name),
     [],
     "a declared exception that now fits the limit must be removed from DECLARED_OVERSIZED",
+  );
+  // An entry without a ticket key is the permanent exception this list exists to prevent.
+  assert.deepEqual(
+    DECLARED_OVERSIZED.filter((declared) => !/^DEV-\d+$/.test(declared.ticket)).map((declared) => declared.name),
+    [],
+    "every declared exception must name the ticket that removes it",
   );
 });

@@ -89,6 +89,6 @@ O workflow usa a organização `titostauffer` e o projeto `TitoStauffer_CashIn` 
 - O token só é fornecido ao passo do scanner pelo secret `SONAR_TOKEN`; nunca o coloque no repositório ou em logs.
 - PRs de forks pulam a análise porque não recebem secrets.
 - A cobertura da API e da Web vem do LCOV gerado na execução de `npm run test:coverage` de cada job; o workflow reescreve `SF:src/...` para caminhos relativos à raiz (`SF:apps/api/src/...` e `SF:apps/web/src/...`) antes de enviar os artefatos `api-coverage` e `web-coverage`.
-- Os testes `*.test.ts` e `*.test.tsx` são excluídos da análise de código de produção e classificados como testes no SonarQube.
+- Os testes `*.test.ts` e `*.test.tsx` são excluídos da análise de código de produção e classificados como testes no SonarQube. O mesmo vale para `*-test-fixture.ts`, que contém apenas fakes e helpers dos testes: medi-los como produção diluiria o sinal de cobertura com código que só existe para exercitar outro código. Esses arquivos também saem da cobertura da API pelo `--test-coverage-exclude`.
 - A análise CI-based aguarda o Quality Gate. O job `SonarQube` aparece no PR como verificação e falha se o Quality Gate reprovar. Quando o projeto está vinculado ao repositório GitHub, a decoração do SonarQube Cloud também pode exibir detalhes e o resultado da análise no PR.
 - O plano gratuito permite análise de PRs direcionada à branch principal e possui limite de linhas para projetos privados. O projeto precisa estar dentro desse limite e ter `master` configurada como branch principal.
