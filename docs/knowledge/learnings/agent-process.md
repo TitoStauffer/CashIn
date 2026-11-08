@@ -154,6 +154,16 @@
 - **Regra preventiva:** antes de abrir Tarefa para um achado não bloqueante, nomeie qual das quatro classes ele toca. Se nenhuma, registre no relatório da revisão e no comentário do Jira e siga. "O revisor está certo" não é uma das classes.
 - **Detecção:** fila que cresce mais rápido do que é consumida, e itens originais que nunca são tocados. Também o ticket cuja justificativa só consegue dizer que o apontamento é verdadeiro, sem dizer quem é afetado.
 
+## Varredura que confirma uma declaração usa o sinal da declaração
+
+- **Evidência:** relatório de QA do [PR #88](https://github.com/TitoStauffer/CashIn/pull/88), SHA `de6418c`, critério de aceitação 3 **FAILED**.
+- **Problema confirmado:** a entrega declarou ter traduzido para inglês os comentários em português do seu alcance. Eu conferi a declaração grepando por caracteres acentuados. O comentário que escapou — `// O placeholder sugere exatamente este formato, com separador de milhar.` — não tem nenhum acento, e ficava no mesmo bloco de teste cujo comentário irmão o próprio diff traduziu.
+- **Causa-raiz:** a declaração era sobre idioma; a varredura era sobre acentuação. Escolhi o sinal fácil de escrever em vez do sinal que a afirmação exigia, e o verde da varredura virou a confirmação da declaração. É a segunda vez no mesmo dia que confirmo uma afirmação pelo sinal errado: na entrega anterior inferi cobertura de CI pela lista de checks do PR em vez de ler o workflow, registrado em **Afirmação sobre cobertura de CI exige ler o workflow**.
+- **Impacto:** um critério de aceitação reprovado por QA e uma rodada inteira de orquestração hospedada gasta, num PR cujo corpo afirmava algo que o HEAD contradizia. Foi a segunda rodada seguida em que declarei traduzir comentários e deixei um para trás por varrer o lugar errado.
+- **Correção aplicada:** a varredura passou a procurar palavras portuguesas comuns, não acentos, e a rodar sobre os quatro arquivos que o PR #77 tocou — a pegada declarada —, não só sobre os que eu lembrava de ter mexido.
+- **Regra preventiva:** antes de afirmar num PR que uma varredura confirma uma declaração, escreva qual sinal a declaração exige e confirme que a varredura usa esse sinal. Se o sinal escolhido é um proxy — acento para idioma, lista de checks para cobertura, memória para alcance —, diga que é um proxy e cubra o resto, ou não faça a afirmação.
+- **Detecção:** teste a própria varredura contra o caso que ela deveria achar e que o proxy não vê. Um grep de idioma precisa achar frase sem acento; um grep de alcance precisa partir da lista de arquivos do diff de origem, não da memória.
+
 ## Afirmação sobre cobertura de CI exige ler o workflow
 
 - **Padrão:** `claim-about-ci-coverage-needs-the-workflow`.
