@@ -53,7 +53,7 @@ Sessões desfeitas não bloqueiam uma importação futura, pois somente itens ai
 ## Conciliação do pagamento da fatura (DEV-85)
 
 - **Onde acontece:** na prévia de um **extrato bancário**, onde o pagamento do cartão aparece como débito comum.
-- **Sugestão:** só para débito cuja descrição aponte cartão ou fatura, nunca para qualquer "pagamento". As candidatas são faturas da carteira não liquidadas, com saldo devedor e vencimento até 15 dias da data do pagamento.
+- **Sugestão:** só para débito cuja descrição aponte cartão ou fatura, nunca para qualquer "pagamento". As candidatas são faturas da carteira não liquidadas, com saldo devedor e vencimento até 15 dias da data do pagamento. Uma fatura é sugerida a no máximo uma linha da prévia (DEV-86), pela mesma razão das transferências: ela é paga uma vez, então duas saídas iguais deixam a segunda pendente de escolha em vez de chegarem ambas à confirmação como válidas. A recusa da confirmação nomeia a movimentação, para dizer qual linha corrigir.
 - **Correspondência única** (uma candidata com saldo devedor igual ao valor) vira `transfer` conciliado e `valid`. **Ambígua** vira `transfer` sem fatura, com as candidatas expostas para o usuário escolher; nada é confirmado sozinho.
 - **Confirmação:** cria o pagamento em `credit_card_statement_payments` e não lança a compra de novo, então a fatura não é contada duas vezes. `transfer` sem fatura continua bloqueando a confirmação.
 - **Desfazer:** remove os pagamentos e reabre a fatura que eles tinham liquidado. Uma fatura que ainda tenha pagamento registrado nunca é removida.

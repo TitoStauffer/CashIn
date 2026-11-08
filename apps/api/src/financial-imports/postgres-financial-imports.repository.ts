@@ -618,6 +618,7 @@ export class PostgresFinancialImportsRepository implements FinancialImportReposi
       }
       const items = await transaction.query<{
         id: string;
+        sequence: number;
         type: FinancialImportItemType;
         category_id: string | null;
         subcategory_id: string | null;
@@ -630,7 +631,7 @@ export class PostgresFinancialImportsRepository implements FinancialImportReposi
         transfer_counterpart_wallet_id: string | null;
         wallet_transfer_id: string | null;
       }>(
-        `SELECT id, type, category_id, subcategory_id, abs(signed_amount)::text AS amount,
+        `SELECT id, sequence, type, category_id, subcategory_id, abs(signed_amount)::text AS amount,
                 transaction_date, description, statement_closing_date, credit_card_statement_id,
                 signed_amount::text AS signed_amount, transfer_counterpart_wallet_id, wallet_transfer_id
          FROM import_items
