@@ -69,8 +69,11 @@ test("request logging keeps credentials and payloads out of every log line", () 
 // Redaction is the second lock, and this is the regression that proves it instead of leaving the
 // claim resting on a mutation that only ever runs on the author's machine. Each case builds the
 // logger with a serializer that leaks one of the redacted paths on purpose, keeping `redact` exactly
-// as production has it. One case per path: proving it for the headers alone would leave the other
-// two resting on the configuration assertion. No production configuration had to become injectable.
+// as production has it. One case per path the configuration assertion covers: proving it for the
+// request headers alone would leave the other two resting on that assertion. `req.raw` and `res.raw`
+// are redacted as well and have no case here, because no serializer of this project returns them —
+// a gap inherited from DEV-59, tracked separately. No production configuration had to become
+// injectable for any of this.
 const leakingSerializerCases = [
   {
     path: "req.headers",
