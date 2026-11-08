@@ -153,7 +153,11 @@ Decisão do usuário em 08/11/2026. Esta seção define o que acontece com o ach
 - Todo o resto **não entra na fila**: precisão de teste, forma de cobertura, redação, metadado de nota, limpeza, renomeação, preferência de estilo e tipagem interna.
 - Subir a barra não é esconder achado. O achado que não passa fica registrado em dois lugares duráveis: o relatório da própria revisão no Pull Request e o comentário do Jira do ticket da entrega, que deve nomear o achado, por que ele não passou na barra e o que o faria passar. Não registrar é descumprir esta seção tanto quanto abrir Tarefa para tudo.
 - **Exceção da pegada:** achado dentro da pegada do Pull Request aberto se fecha na própria rodada, e não vira Tarefa. A exceção existe para não terceirizar desleixo recém-criado, não para perseguir ajuste de redação indefinidamente — quando as rodadas restantes só trocariam prosa sem mudar comportamento, declare o critério de parada no PR e encerre.
-- Fechar um achado **sem implementar** não é resolvê-lo. Declare o fechamento sem implementação no comentário do Jira, com o motivo específico daquele achado e o que o reabriria. Não use a resolução padrão de conclusão, que afirmaria que o trabalho foi feito.
+- Fechar um achado **sem implementar** não é resolvê-lo, e o board não tem como dizer isso pelo status: o projeto `DEV` é team-managed, não expõe campo de resolução e sua única transição terminal é `Itens concluídos`. Então o status fica impreciso por limitação da ferramenta, e a precisão vive no comentário. Para fechar sem implementar:
+  - Transicione para `Itens concluídos`, que é a única terminal disponível.
+  - Comente na mesma ocasião, declarando na primeira linha que é **fechamento sem implementação**, e registrando o motivo específico daquele achado, quais das quatro classes da barra foram avaliadas e não tocadas, e o que reabriria o item.
+  - Diga no comentário que o status afirma conclusão por falta de resolução alternativa no board, para quem ler depois não concluir que houve entrega.
+  - Nunca feche assim um achado que toque uma das quatro classes. A saída para esse é implementar ou manter na fila, não declarar fechamento.
 - Esta seção governa a triagem do Agent técnico principal. Ela não autoriza o Agent de Code Review a omitir achado comprovado do relatório, nem altera as regras de severidade e de decisão da seção **Processo de Code Review no GitHub**.
 
 ### Merge Readiness Gate
