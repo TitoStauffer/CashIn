@@ -2,6 +2,7 @@ import type { AgentStage, AgentStageResult } from './agent-orchestrator.js';
 import { hasLaterChangeRequest, latestCurrentFormalReview, parseStoredAgentComment, parseStoredFormalReview } from './agent-evidence.js';
 import { isAgentStageResult, validateAgentResultCompleteness } from './agent-result-validation.js';
 import type { CheckSummary } from './codex-cli-agent.js';
+import { classifyReviewTrack, runtimeAffectingPaths, type ReviewTrack } from './review-track.js';
 
 export interface StageEvidenceContext {
   commitSha: string;
@@ -50,9 +51,13 @@ export function evaluateDeterministicQualityGate(input: StageEvidenceContext & {
   reviews: Array<Record<string, unknown>>;
   comments: Array<Record<string, unknown>>;
   priorResults: unknown[];
-}): AgentStageResult {
+}): AgentStageResult & { reviewTrack: ReviewTrack } {
   const reasons: string[] = [];
   let rejected = false;
+  // The track is recomputed here from the same changed-file list the stage read from the API, never
+  // taken from a previous report or from the Pull Request body.
+  const reviewTrack = classifyReviewTrack(input.changedFiles);
+  const requiredStages = reviewTrack === 'full' ? ['codeReview', 'qa'] as const : ['codeReview'] as const;
   const checkNames: Array<keyof CheckSummary> = ['api', 'web', 'githubReviewer', 'sonarQube', 'sonarCloud'];
   for (const name of checkNames) {
     const state = input.checks[name];
@@ -62,12 +67,17 @@ export function evaluateDeterministicQualityGate(input: StageEvidenceContext & {
   if (!/^[a-f0-9]{40}$/i.test(input.commitSha) || !/^[a-f0-9]{64}$/i.test(input.contextHash) || !input.botLogin.trim()) {
     throw new Error('Quality Gate requires a valid SHA, context hash, and App identity.');
   }
+  // The changed-file list decides the track, so an absent list is a broken stage, not a lighter one.
+  // Throwing here fails the job closed instead of letting a TypeError surface from the evidence checks.
+  if (!Array.isArray(input.changedFiles)) {
+    throw new Error('Quality Gate requires the changed-file list that determines the review track.');
+  }
   const latest = latestCurrentFormalReview(input.reviews, input.commitSha, input.botLogin);
   const formal = selectReusableStageResult('codeReview', input, input.reviews, input.comments);
   const qa = selectReusableStageResult('qa', input, [], input.comments);
   const laterRejection = latest && hasLaterChangeRequest(input.reviews, latest, input.commitSha, input.botLogin);
   if (laterRejection) { reasons.push('Existe solicitação de alterações posterior à revisão formal.'); rejected = true; }
-  for (const stage of ['codeReview', 'qa'] as const) {
+  for (const stage of requiredStages) {
     const published = stage === 'codeReview' ? formal : qa;
     const artifacts = input.priorResults.filter((result) => isAgentStageResult(result) && result.stage === stage);
     const artifact = artifacts[0];
@@ -87,16 +97,33 @@ export function evaluateDeterministicQualityGate(input: StageEvidenceContext & {
       reasons.push(`Artefato de ${stage} não corresponde à evidência autenticada publicada.`);
     }
   }
+  // The light track does not require QA, but it never ignores a QA that ran and refused: skipping the
+  // stage is a decision about cost, not permission to drop evidence that exists for this very context.
+  if (reviewTrack === 'light' && qa && isAgentStageResult(qa) && qa.decision !== 'APPROVED') {
+    reasons.push(`qa: ${qa.decision}.`);
+    if (qa.decision === 'CHANGES_REQUESTED') rejected = true;
+  }
   const decision = reasons.length === 0 ? 'APPROVED' : rejected ? 'CHANGES_REQUESTED' : 'INCONCLUSIVE';
+  const runtimePaths = runtimeAffectingPaths(input.changedFiles);
+  // The report must survive an unusable list: that case already failed closed to the full track, and a
+  // thrown TypeError here would turn a safe classification into a crashed stage.
+  const changedFileCount = Array.isArray(input.changedFiles) ? input.changedFiles.length : 0;
   return {
-    stage: 'qualityGate', decision, commitSha: input.commitSha, contextHash: input.contextHash,
+    stage: 'qualityGate', decision, reviewTrack, commitSha: input.commitSha, contextHash: input.contextHash,
     reportMarkdown: [
+      `**Trilho de revisão:** ${reviewTrack === 'light' ? 'leve' : 'completo'}.`,
+      reviewTrack === 'light'
+        ? `- Nenhum dos ${changedFileCount} arquivo(s) alterado(s) toca \`apps/api/src/**\` ou \`apps/web/src/**\` fora de arquivos de teste, então o QA não é exigido. Classificado pela lista de arquivos lida da API do GitHub, não pelo corpo do Pull Request.`
+        : `- Exige QA porque ${runtimePaths.length} arquivo(s) alteram runtime: ${runtimePaths.slice(0, 10).map((path) => `\`${path}\``).join(', ')}${runtimePaths.length > 10 ? ', …' : ''}.`,
+      '',
       '**Checks verificados:**',
       ...checkNames.map((name) => `- ${name}: ${input.checks[name] ?? 'UNKNOWN'}; SHA ${input.commitSha}.`),
       '',
       reasons.length ? '**Bloqueios e limitações:**' : '**Consolidação determinística:**',
       ...(reasons.length ? reasons.map((reason) => `- ${reason}`) : [
-        '- Code Review formal e QA publicados pelo App, completos e aprovados para o mesmo SHA e contexto.',
+        reviewTrack === 'full'
+          ? '- Code Review formal e QA publicados pelo App, completos e aprovados para o mesmo SHA e contexto.'
+          : '- Code Review formal publicado pelo App, completo e aprovado para o mesmo SHA e contexto. QA dispensado pelo trilho leve.',
         '- Artefatos das etapas correspondem às evidências publicadas. Nenhuma chamada de modelo realizada pelo Coordinator.',
       ]),
       '',

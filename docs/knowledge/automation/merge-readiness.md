@@ -22,6 +22,10 @@ O gate retorna somente:
 
 O gate exclui o próprio status da lista de dependências para evitar ciclo. Ele publica `Merge Readiness` no SHA avaliado, mas não executa merge.
 
+## Trilho de revisão
+
+O gate classifica a rodada a partir da lista de arquivos alterados, com a mesma regra da orquestração, e reclassifica ao final da avaliação. No trilho leve o relatório de QA não é exigido; o relatório do Coordinator continua obrigatório nos dois trilhos, e um relatório de QA presente e não aprovado continua bloqueando. Divergência entre a classificação inicial e a final bloqueia. Ver [fluxo de entrega](delivery-flow.md).
+
 ## Diagnóstico rápido
 
 `INCONCLUSIVE` deve ser resolvido pela limitação indicada: permissão do App, evidência ausente, SHA desatualizado, proteção inacessível ou falha de API. Nunca transformar limitação em aprovação.
