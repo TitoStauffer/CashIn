@@ -554,3 +554,105 @@ test("PostgreSQL preview distinguishes a line with no reconciliation option from
     await adminPool.end();
   }
 });
+
+test("PostgreSQL preview does not blame the description when a statement was already chosen", {
+  skip: !testDatabaseUrl,
+}, async () => {
+  const schemaName = `reconciliation_chosen_${randomBytes(8).toString("hex")}`;
+  const adminPool = new Pool({ connectionString: testDatabaseUrl });
+  let scopedPool: Pool | undefined;
+  let app: ReturnType<typeof createApp> | undefined;
+
+  try {
+    await adminPool.query(`CREATE SCHEMA ${schemaName}`);
+    scopedPool = new Pool({ connectionString: testDatabaseUrl, options: `-c search_path=${schemaName}` });
+    const database = createDatabase(scopedPool);
+    await runMigrations(database);
+
+    const users = await database.query<{ id: string }>(
+      `INSERT INTO users (email, password_hash, email_verified_at)
+       VALUES ($1, 'test-hash', now()) RETURNING id`,
+      [`chosen-${schemaName}@example.com`],
+    );
+    const userId = users.rows[0]!.id;
+    const wallet = await database.query<{ id: string }>(
+      "SELECT id FROM wallets WHERE owner_user_id = $1 AND is_personal",
+      [userId],
+    );
+    const walletId = wallet.rows[0]!.id;
+
+    // A statement that exists but is far outside the ±15-day window `findStatementCandidates` uses,
+    // so choosing it by hand is exactly the state where the candidate list comes back empty.
+    const card = await database.query<{ id: string }>(
+      "INSERT INTO credit_cards (wallet_id, alias, closing_day, due_day) VALUES ($1, 'Distante', 10, 20) RETURNING id",
+      [walletId],
+    );
+    const statement = await database.query<{ id: string }>(
+      `INSERT INTO credit_card_statements (wallet_id, credit_card_id, closing_date, due_date)
+       VALUES ($1, $2, '2027-05-10', '2027-05-20') RETURNING id`,
+      [walletId, card.rows[0]!.id],
+    );
+    const farStatementId = statement.rows[0]!.id;
+
+    // The statement needs an outstanding balance, or choosing it is refused with 409 ("A fatura
+    // escolhida não possui saldo devedor") and the state under test is never reached. That refusal is
+    // the API's own guard, and it is what makes this scenario a narrow one rather than impossible.
+    const category = await database.query<{ id: string }>(
+      "INSERT INTO categories (user_id, wallet_id, name, nature) VALUES ($1, $2, 'Compras', 'expense') RETURNING id",
+      [userId, walletId],
+    );
+    const creditMethod = await database.query<{ id: string }>(
+      "SELECT id FROM payment_methods WHERE wallet_id = $1 AND nature = 'credit_card' AND is_active ORDER BY created_at LIMIT 1",
+      [walletId],
+    );
+    await database.query(
+      `INSERT INTO expenses (user_id, wallet_id, category_id, payment_method_id, payment_method_nature, credit_card_statement_id, amount, date, description)
+       VALUES ($1, $2, $3, $4, 'credit_card', $5, 400.00, '2027-05-05', 'COMPRA DISTANTE')`,
+      [userId, walletId, category.rows[0]!.id, creditMethod.rows[0]!.id, farStatementId],
+    );
+
+    const authRepository = new PostgresAuthRepository(database);
+    const sessionToken = createOpaqueToken();
+    await authRepository.createSession(userId, hashToken(sessionToken), new Date(Date.now() + 120_000));
+    app = createApp(database);
+    await app.ready();
+    const headers = { cookie: `cashin_session=${sessionToken}`, "x-wallet-id": walletId };
+    const read = async (importId: string) => (await app!.inject({
+      method: "GET", url: `/financial-imports/${importId}`, headers,
+    })).json() as FinancialImportSession;
+
+    const created = (await app.inject({
+      method: "POST",
+      url: "/financial-imports",
+      headers: { ...headers, "content-type": "application/octet-stream", "x-file-name": "extrato.ofx", "x-file-format": "ofx" },
+      payload: bankOfx([{ id: "c-card", date: "2026-10-06", amount: "-400.00", name: "PAGAMENTO FATURA CARTAO" }]),
+    })).json() as FinancialImportSession;
+
+    const cardLine = (await read(created.id)).items![0]!;
+    const patched = await app.inject({
+      method: "PATCH",
+      url: `/financial-imports/${created.id}/items/${cardLine.id}`,
+      headers,
+      payload: { date: cardLine.date, description: cardLine.description, type: "transfer", creditCardStatementId: farStatementId },
+    });
+    assert.equal(patched.statusCode, 200);
+
+    const chosen = (await read(created.id)).items![0]!;
+    // The premise of the finding, asserted rather than assumed: the choice stuck and the window still
+    // offers nothing, so the line reaches the reason with every count at zero.
+    assert.equal(chosen.type, "transfer");
+    assert.equal(chosen.creditCardStatementId, farStatementId);
+    assert.deepEqual(chosen.statementCandidates, []);
+    assert.deepEqual(chosen.transferCandidates, []);
+    assert.deepEqual(chosen.transferCounterpartWallets, []);
+    // What the contract says for this state, and what the code used to contradict: a line left out
+    // because a statement was already chosen has no reconciliation cause to declare. Blaming the
+    // description would tell the person to change a description that is not the impediment.
+    assert.equal(chosen.reconciliationUnavailableReason, null);
+  } finally {
+    if (app) await app.close();
+    await scopedPool?.end();
+    await adminPool.query(`DROP SCHEMA IF EXISTS ${schemaName} CASCADE`);
+    await adminPool.end();
+  }
+});
