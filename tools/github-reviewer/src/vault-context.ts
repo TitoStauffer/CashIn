@@ -202,6 +202,11 @@ export async function loadVaultContext(
         // The need is the marker, so the smallest body that resolves it is the one to give up. Keeping
         // the candidate's own body instead was considered and rejected: it would cost demoting at least
         // as many bytes as it saves, and the candidate is the snapshot we were already prepared to drop.
+        //
+        // A marker runs past two hundred bytes, not a hundred: 176 are fixed — the prefix up to `path=`,
+        // the two field separators, the 64-character digest and the closing bracket — plus the path and
+        // the size's digits. That figure is what makes giving up a body worth it, so it is stated
+        // precisely rather than rounded down.
         if (!fits(stored) && !demoteOptionalBodies(stored, 'smallest')) {
           throw new Error(`Vault context exceeds the supported ${refusedBy()} limit: ${snapshot.path}.`);
         }
@@ -304,7 +309,10 @@ export async function loadVaultContext(
       .filter((key) => !seen.has(key)),
   );
   if (snapshots.length + pendingEvidencePaths.size > MAX_VAULT_ITEMS) {
-    throw new Error('Vault context exceeds the supported item limit.');
+    // Its own sentence: this is the projected evidence count refused before a single download, not an
+    // individual candidate refused inside the loop, and the two used to differ only by a path suffix.
+    // The note this delivery extends asks for exactly that — one message per condition.
+    throw new Error(`Vault context exceeds the supported item limit with ${pendingEvidencePaths.size} evidence items still to load.`);
   }
 
   const evidenceResponses = new Map<string, Record<string, unknown>>();

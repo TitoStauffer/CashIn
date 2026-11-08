@@ -638,6 +638,54 @@ test('demotes the smallest admitted cited body so a late citation still fits as 
   assert.ok(result.reduce((total, { content }) => total + Buffer.byteLength(content, 'utf8'), 0) <= 650_000);
 });
 
+// Where criterion 2 actually lives: the optional candidate is refused by bytes **after** demotion has
+// nothing left to give. The budget is filled by required notes, which are never demotable, so the
+// reclaim returns false and the refusal has to name the byte ceiling and the path.
+test('fails closed naming the byte ceiling when the optional candidate has nothing left to reclaim', async () => {
+  const map = JSON.stringify({ version: 1, routes: [{ paths: ['apps/api/src/**'], documents: ['docs/knowledge/domains/first.md', 'docs/knowledge/domains/second.md', 'docs/knowledge/domains/third.md'] }] });
+  const third = (bytes) => `# Third\n${'t'.repeat(bytes)}\n[Cited](../../../apps/api/src/cited.ts)\n`;
+  // Each note stays under the per-response ceiling, because the contents API answers in base64.
+  const firstBytes = 215_000;
+  const secondBytes = 215_000;
+  const fixedBytes = Buffer.byteLength('# Index\n', 'utf8')
+    + Buffer.byteLength('# Current state\n', 'utf8')
+    + Buffer.byteLength(map, 'utf8')
+    + Buffer.byteLength(`# First\n${'f'.repeat(firstBytes)}\n`, 'utf8')
+    + Buffer.byteLength(`# Second\n${'s'.repeat(secondBytes)}\n`, 'utf8')
+    + Buffer.byteLength(third(0), 'utf8');
+  // Leave less headroom than a marker costs, with every admitted body belonging to a required note.
+  const thirdBytes = 650_000 - fixedBytes - 40;
+
+  const files = baseVault({
+    'docs/knowledge/context-map.json': { value: map },
+    'docs/knowledge/domains/first.md': { value: `# First\n${'f'.repeat(firstBytes)}\n` },
+    'docs/knowledge/domains/second.md': { value: `# Second\n${'s'.repeat(secondBytes)}\n` },
+    'docs/knowledge/domains/third.md': { value: third(thirdBytes) },
+    'apps/api/src/cited.ts': { value: 'c'.repeat(10_000) },
+  });
+
+  await assert.rejects(
+    loadVaultContext(fakeFetch(files), repository, [{ filename: 'apps/api/src/route.ts', status: 'modified' }], headSha, baseSha, 'token'),
+    /^Error: Vault context exceeds the supported byte limit: apps\/api\/src\/cited\.ts\.$/,
+  );
+});
+
+// The remaining cross combination: a required document refused by the item ceiling, which demotion
+// cannot relieve because releasing a body frees bytes and never items.
+test('fails closed naming the item ceiling when a required document is the one that does not fit', async () => {
+  const notes = Array.from({ length: 170 }, (_, index) => `docs/knowledge/domains/note-${index}.md`);
+  const map = JSON.stringify({ version: 1, routes: [{ paths: ['apps/api/src/**'], documents: notes }] });
+  const files = baseVault({
+    'docs/knowledge/context-map.json': { value: map },
+    ...Object.fromEntries(notes.map((note, index) => [note, { value: `# Note ${index}\n` }])),
+  });
+
+  await assert.rejects(
+    loadVaultContext(fakeFetch(files), repository, [{ filename: 'apps/api/src/route.ts', status: 'modified' }], headSha, baseSha, 'token'),
+    /^Error: Vault context documents and evidence exceed the supported item limit: docs\/knowledge\/domains\/note-\d+\.md\.$/,
+  );
+});
+
 // Smallest-first is what exposes bodies smaller than their own marker: releasing one would add bytes
 // instead of freeing them, because the marker spells out path, size and digest. The tiny source must be
 // skipped and a real body taken instead.
