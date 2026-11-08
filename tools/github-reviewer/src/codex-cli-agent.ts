@@ -5,7 +5,7 @@ import { spawn } from 'node:child_process';
 import type { AgentStage, AgentStageResult, OrchestrationContext } from './agent-orchestrator.js';
 import type { AgentCheckEvidence } from './agent-review-inputs.js';
 import type { AgentCiSnapshot } from './agent-ci-evidence.js';
-import { selectPromptVaultContext } from './vault-context.js';
+import { selectPromptVaultContext, type VaultContextSnapshot } from './vault-context.js';
 import {
   extractAcceptanceCriteria,
   failClosedIncompleteResult,
@@ -102,7 +102,9 @@ export interface AgentEvidenceInput {
   ciConfiguration?: AgentCiSnapshot[];
   formalCodeReview?: FormalCodeReviewEvidence;
   repositoryInstructions: string;
-  vaultContext?: Array<{ path: string; revision: 'head' | 'base'; content: string }>;
+  // The dedup filter below depends on `contentOmitted`, so the declared contract carries it: a
+  // consumer that projects the list loses the field and silently restores the suppressed body bug.
+  vaultContext?: VaultContextSnapshot[];
   sourceFiles?: Array<{ path: string; revision: 'head' | 'base'; content: string }>;
 }
 

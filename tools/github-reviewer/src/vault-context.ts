@@ -133,6 +133,30 @@ export async function loadVaultContext(
   const seen = new Set<string>();
   let totalBytes = 0;
 
+  const fits = (candidate: VaultContextSnapshot): boolean => snapshots.length < MAX_VAULT_ITEMS
+    && totalBytes + Buffer.byteLength(candidate.content, 'utf8') <= MAX_VAULT_BYTES;
+
+  // A required item is read after optional bodies have already been admitted — the link traversal
+  // interleaves cited sources with notes reached by link, and the GitHub evidence comes last of all.
+  // Admitting optional bodies greedily and never reconsidering them let the budget fill up before a
+  // required item arrived, so the review still aborted whole and only the message changed. Priority,
+  // not arrival order, decides who keeps a body: the optional bodies already admitted give theirs up,
+  // largest first so the fewest citations lose one, until the required item fits.
+  const demoteOptionalBodies = (required: VaultContextSnapshot): boolean => {
+    const demotable = snapshots
+      .map((snapshot, index) => ({ snapshot, index }))
+      .filter(({ snapshot }) => !snapshot.contentOmitted && isOptionalBody(snapshot.path))
+      .sort((first, second) => Buffer.byteLength(second.snapshot.content, 'utf8') - Buffer.byteLength(first.snapshot.content, 'utf8'));
+    for (const { snapshot, index } of demotable) {
+      if (fits(required)) break;
+      const marker = omittedSourceSnapshot(snapshot);
+      totalBytes -= Buffer.byteLength(snapshot.content, 'utf8') - Buffer.byteLength(marker.content, 'utf8');
+      snapshots[index] = marker;
+      snapshotsByKey.set(`${marker.revision}:${marker.path}`, marker);
+    }
+    return fits(required);
+  };
+
   // The vault's own documents and the GitHub evidence are what makes a note's claim checkable, so a
   // budget they do not fit still aborts the review. A source file a note merely cites is orientation:
   // every changed file reaches the prompt through the changed-source snapshots anyway, and the
@@ -143,15 +167,17 @@ export async function loadVaultContext(
     const key = `${snapshot.revision}:${snapshot.path}`;
     const loaded = snapshotsByKey.get(key);
     if (loaded) return loaded;
-    const fits = (candidate: VaultContextSnapshot): boolean => snapshots.length < MAX_VAULT_ITEMS
-      && totalBytes + Buffer.byteLength(candidate.content, 'utf8') <= MAX_VAULT_BYTES;
     let stored = snapshot;
     if (!fits(stored)) {
       if (bodyRequired) {
-        throw new Error(`Vault context documents and evidence exceed the supported item or byte limit: ${snapshot.path}.`);
+        // Demotion only frees bytes, never items, so the item ceiling still aborts.
+        if (!demoteOptionalBodies(stored)) {
+          throw new Error(`Vault context documents and evidence exceed the supported item or byte limit: ${snapshot.path}.`);
+        }
+      } else {
+        stored = omittedSourceSnapshot(snapshot);
+        if (!fits(stored)) throw new Error('Vault context exceeds the supported item or byte limit.');
       }
-      stored = omittedSourceSnapshot(snapshot);
-      if (!fits(stored)) throw new Error('Vault context exceeds the supported item or byte limit.');
     }
     seen.add(key);
     snapshotsByKey.set(key, stored);
@@ -616,6 +642,12 @@ function assertKnowledgeDocument(path: string): void {
   if (!isKnowledgeDocument(path)) {
     throw new Error(`Vault context document is outside docs/knowledge or is not Markdown: ${path}.`);
   }
+}
+
+// Only a source a note merely cites may lose its body. The vault's own documents, the context map
+// and the GitHub evidence never can, which is what keeps a note's claim checkable.
+function isOptionalBody(path: string): boolean {
+  return !isKnowledgeDocument(path) && path !== VAULT_CONTEXT_MAP && !path.startsWith('github-evidence://');
 }
 
 function isKnowledgeDocument(path: string): boolean {
