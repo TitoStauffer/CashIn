@@ -587,12 +587,12 @@ test('gives up an already admitted cited body so a note reached by link still fi
 // though demotion — which the required path already used — could free hundreds of kilobytes from
 // bodies admitted earlier. Sizes are computed so the budget is left with less headroom than a marker
 // costs, which is the only state that reaches the refusal.
-test('demotes an already admitted cited body so a late citation still fits as a marker', async () => {
+test('demotes the smallest admitted cited body so a late citation still fits as a marker', async () => {
   const map = JSON.stringify({ version: 1, routes: [{ paths: ['apps/api/src/**'], documents: ['docs/knowledge/domains/backend.md'] }] });
   const note = '# Backend\n'
-    + '[Demoted](../../../apps/api/src/demoted.ts)\n'
-    + '[Kept](../../../apps/api/src/kept.ts)\n'
-    + '[Filler](../../../apps/api/src/filler.ts)\n'
+    + '[Big](../../../apps/api/src/big.ts)\n'
+    + '[Medium](../../../apps/api/src/medium.ts)\n'
+    + '[Small](../../../apps/api/src/small.ts)\n'
     + '[Late](../../../apps/api/src/late.ts)\n';
   const fixedBytes = Buffer.byteLength('# Index\n', 'utf8')
     + Buffer.byteLength('# Current state\n', 'utf8')
@@ -600,19 +600,19 @@ test('demotes an already admitted cited body so a late citation still fits as a 
     + Buffer.byteLength(note, 'utf8');
   // Three bodies instead of two, each well under the per-response ceiling: the contents API answers in
   // base64, so a source over ~300 KB would be refused by the response limit before the budget is even
-  // consulted. Distinct sizes keep "largest first" deterministic.
-  const demotedBytes = 260_000;
-  const keptBytes = 240_000;
+  // consulted. Distinct sizes make the chosen order observable.
+  const bigBytes = 260_000;
+  const mediumBytes = 240_000;
   // A marker runs past 200 bytes, so 40 bytes of headroom guarantees the late marker is refused and
   // only demotion can save the review.
-  const fillerBytes = 650_000 - fixedBytes - demotedBytes - keptBytes - 40;
+  const smallBytes = 650_000 - fixedBytes - bigBytes - mediumBytes - 40;
 
   const files = baseVault({
     'docs/knowledge/context-map.json': { value: map },
     'docs/knowledge/domains/backend.md': { value: note },
-    'apps/api/src/demoted.ts': { value: 'd'.repeat(demotedBytes) },
-    'apps/api/src/kept.ts': { value: 'k'.repeat(keptBytes) },
-    'apps/api/src/filler.ts': { value: 'f'.repeat(fillerBytes) },
+    'apps/api/src/big.ts': { value: 'b'.repeat(bigBytes) },
+    'apps/api/src/medium.ts': { value: 'm'.repeat(mediumBytes) },
+    'apps/api/src/small.ts': { value: 's'.repeat(smallBytes) },
     'apps/api/src/late.ts': { value: 'l'.repeat(10_000) },
   });
 
@@ -628,11 +628,63 @@ test('demotes an already admitted cited body so a late citation still fits as a 
   const byPath = (path) => result.find((snapshot) => snapshot.path === path);
   // The citation that arrived last survives as a marker instead of killing the review.
   assert.equal(byPath('apps/api/src/late.ts')?.contentOmitted, true);
-  // The largest admitted body gave up its own, and the smaller one kept it.
-  assert.equal(byPath('apps/api/src/demoted.ts')?.contentOmitted, true);
-  assert.equal(byPath('apps/api/src/kept.ts')?.contentOmitted, undefined);
-  assert.equal(Buffer.byteLength(byPath('apps/api/src/kept.ts').content, 'utf8'), keptBytes);
-  assert.equal(byPath('apps/api/src/filler.ts')?.contentOmitted, undefined);
+  // The need is a marker's couple of hundred bytes, so the smallest body that resolves it is the one
+  // given up: sacrificing the biggest would make two citations lose a body where one suffices.
+  assert.equal(byPath('apps/api/src/small.ts')?.contentOmitted, true);
+  assert.equal(byPath('apps/api/src/big.ts')?.contentOmitted, undefined);
+  assert.equal(Buffer.byteLength(byPath('apps/api/src/big.ts').content, 'utf8'), bigBytes);
+  assert.equal(byPath('apps/api/src/medium.ts')?.contentOmitted, undefined);
+  assert.equal(Buffer.byteLength(byPath('apps/api/src/medium.ts').content, 'utf8'), mediumBytes);
+  assert.ok(result.reduce((total, { content }) => total + Buffer.byteLength(content, 'utf8'), 0) <= 650_000);
+});
+
+// Smallest-first is what exposes bodies smaller than their own marker: releasing one would add bytes
+// instead of freeing them, because the marker spells out path, size and digest. The tiny source must be
+// skipped and a real body taken instead.
+test('skips a cited body smaller than its own marker when reclaiming for a marker', async () => {
+  const map = JSON.stringify({ version: 1, routes: [{ paths: ['apps/api/src/**'], documents: ['docs/knowledge/domains/backend.md'] }] });
+  const note = '# Backend\n'
+    + '[Tiny](../../../apps/api/src/tiny.ts)\n'
+    + '[First](../../../apps/api/src/first.ts)\n'
+    + '[Second](../../../apps/api/src/second.ts)\n'
+    + '[Smallest](../../../apps/api/src/smallest.ts)\n'
+    + '[Late](../../../apps/api/src/late.ts)\n';
+  const fixedBytes = Buffer.byteLength('# Index\n', 'utf8')
+    + Buffer.byteLength('# Current state\n', 'utf8')
+    + Buffer.byteLength(map, 'utf8')
+    + Buffer.byteLength(note, 'utf8');
+  const tinyBytes = 40;
+  const firstBytes = 250_000;
+  const secondBytes = 250_000;
+  const smallestBytes = 650_000 - fixedBytes - tinyBytes - firstBytes - secondBytes - 40;
+
+  const files = baseVault({
+    'docs/knowledge/context-map.json': { value: map },
+    'docs/knowledge/domains/backend.md': { value: note },
+    'apps/api/src/tiny.ts': { value: 't'.repeat(tinyBytes) },
+    'apps/api/src/first.ts': { value: 'f'.repeat(firstBytes) },
+    'apps/api/src/second.ts': { value: 's'.repeat(secondBytes) },
+    'apps/api/src/smallest.ts': { value: 'm'.repeat(smallestBytes) },
+    'apps/api/src/late.ts': { value: 'l'.repeat(10_000) },
+  });
+
+  const result = await loadVaultContext(
+    fakeFetch(files),
+    repository,
+    [{ filename: 'apps/api/src/route.ts', status: 'modified' }],
+    headSha,
+    baseSha,
+    'token',
+  );
+
+  const byPath = (path) => result.find((snapshot) => snapshot.path === path);
+  assert.equal(byPath('apps/api/src/late.ts')?.contentOmitted, true);
+  // The 40-byte source keeps its body: a marker for it would cost more than the body itself.
+  assert.equal(byPath('apps/api/src/tiny.ts')?.contentOmitted, undefined);
+  // So the smallest body that actually frees bytes is the one given up, and the big ones are untouched.
+  assert.equal(byPath('apps/api/src/smallest.ts')?.contentOmitted, true);
+  assert.equal(byPath('apps/api/src/first.ts')?.contentOmitted, undefined);
+  assert.equal(byPath('apps/api/src/second.ts')?.contentOmitted, undefined);
   assert.ok(result.reduce((total, { content }) => total + Buffer.byteLength(content, 'utf8'), 0) <= 650_000);
 });
 

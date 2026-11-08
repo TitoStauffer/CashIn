@@ -147,11 +147,24 @@ export async function loadVaultContext(
   // required item arrived, so the review still aborted whole and only the message changed. Priority,
   // not arrival order, decides who keeps a body: the optional bodies already admitted give theirs up,
   // largest first so the fewest citations lose one, until the required item fits.
-  const demoteOptionalBodies = (required: VaultContextSnapshot): boolean => {
+  //
+  // That ordering serves a large need. When the need is a marker's couple of hundred bytes it does the
+  // opposite: it sacrifices the biggest body in the context so a marker can be recorded, and two
+  // citations lose a body where one would have done — against the very principle the ordering exists
+  // for. So the caller states the shape of the need.
+  //
+  // A body smaller than its own marker is never demotable either way: releasing it would add bytes
+  // instead of freeing them, because the marker spells out path, size and digest. That only surfaces
+  // once the smallest bodies are the ones picked first.
+  const demoteOptionalBodies = (required: VaultContextSnapshot, prefer: 'largest' | 'smallest' = 'largest'): boolean => {
+    const bytesOf = (candidate: VaultContextSnapshot) => Buffer.byteLength(candidate.content, 'utf8');
     const demotable = snapshots
       .map((snapshot, index) => ({ snapshot, index }))
       .filter(({ snapshot }) => !snapshot.contentOmitted && isOptionalBody(snapshot.path))
-      .sort((first, second) => Buffer.byteLength(second.snapshot.content, 'utf8') - Buffer.byteLength(first.snapshot.content, 'utf8'));
+      .filter(({ snapshot }) => bytesOf(snapshot) > bytesOf(omittedSourceSnapshot(snapshot)))
+      .sort((first, second) => (prefer === 'largest'
+        ? bytesOf(second.snapshot) - bytesOf(first.snapshot)
+        : bytesOf(first.snapshot) - bytesOf(second.snapshot)));
     for (const { snapshot, index } of demotable) {
       if (fits(required)) break;
       const marker = omittedSourceSnapshot(snapshot);
@@ -186,7 +199,10 @@ export async function loadVaultContext(
         // uses — instead of aborting the whole review over a citation we were already dropping. Without
         // this, optional bodies admitted in arrival order filled the budget and a citation arriving late
         // killed the review, with the fix sitting thirty lines above in this same file.
-        if (!fits(stored) && !demoteOptionalBodies(stored)) {
+        // The need is the marker, so the smallest body that resolves it is the one to give up. Keeping
+        // the candidate's own body instead was considered and rejected: it would cost demoting at least
+        // as many bytes as it saves, and the candidate is the snapshot we were already prepared to drop.
+        if (!fits(stored) && !demoteOptionalBodies(stored, 'smallest')) {
           throw new Error(`Vault context exceeds the supported ${refusedBy()} limit: ${snapshot.path}.`);
         }
       }
