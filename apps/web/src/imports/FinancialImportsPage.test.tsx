@@ -1257,7 +1257,7 @@ describe('FinancialImportsPage', () => {
       const user = userEvent.setup()
       const list = vi.spyOn(creditCardsApi, 'list')
         .mockRejectedValueOnce(new Error('offline'))
-        .mockResolvedValueOnce({ items: [{ id: 'card-1', nickname: 'Principal', isActive: true }] } as never)
+        .mockResolvedValueOnce({ items: [{ id: 'card-1', nickname: 'Principal', closingDay: 10, dueDay: 20, isActive: true }] })
       await renderPage()
       await user.click(screen.getByRole('radio', { name: 'Fatura de cartão' }))
       expect(await screen.findByText('Não foi possível carregar os cartões desta carteira. Tente novamente.')).toBeVisible()
@@ -1267,6 +1267,28 @@ describe('FinancialImportsPage', () => {
       expect(await screen.findByRole('option', { name: 'Principal' })).toBeInTheDocument()
       expect(list).toHaveBeenCalledTimes(2)
       expect(screen.queryByRole('button', { name: 'Tentar carregar os cartões de novo' })).not.toBeInTheDocument()
+      // Following the instruction has to finish the job: the alert used to keep claiming the load had
+      // failed while the select already offered the cards it had just loaded.
+      expect(screen.queryByText('Não foi possível carregar os cartões desta carteira. Tente novamente.')).not.toBeInTheDocument()
+    })
+
+    // The alert is shared by seventeen flows, so the retry may only clear its own claim. Clearing it
+    // outright would erase a message the user still needs in order to proceed.
+    it('keeps an unrelated alert while retrying the card list', async () => {
+      const user = userEvent.setup()
+      vi.spyOn(creditCardsApi, 'list')
+        .mockRejectedValueOnce(new Error('offline'))
+        .mockResolvedValueOnce({ items: [{ id: 'card-1', nickname: 'Principal', closingDay: 10, dueDay: 20, isActive: true }] })
+      await renderPage()
+      await user.click(screen.getByRole('radio', { name: 'Fatura de cartão' }))
+      expect(await screen.findByText('Não foi possível carregar os cartões desta carteira. Tente novamente.')).toBeVisible()
+      fireEvent.change(screen.getByLabelText('Arquivo OFX ou CSV'), { target: { files: [new File(['texto'], 'extrato.txt', { type: 'text/plain' })] } })
+      expect(await screen.findByText('Selecione um arquivo com extensão .ofx ou .csv.')).toBeVisible()
+
+      await user.click(screen.getByRole('button', { name: 'Tentar carregar os cartões de novo' }))
+
+      expect(await screen.findByRole('option', { name: 'Principal' })).toBeInTheDocument()
+      expect(screen.getByText('Selecione um arquivo com extensão .ofx ou .csv.')).toBeVisible()
     })
 
     it('drops the chosen statement when the item becomes a statement payment', async () => {

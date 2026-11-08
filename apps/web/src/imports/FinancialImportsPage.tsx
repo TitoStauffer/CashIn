@@ -59,6 +59,11 @@ type CsvInspectionOptions = {
 
 const maxFileSize = 10 * 1024 * 1024
 
+// Named because two pieces of state carry it: the inline retry button reads `creditCardsError` and the
+// page's single alert reads `formError`. Comparing against the constant is what lets the retry clear
+// only its own stale claim and leave an unrelated alert alone.
+const CARD_LOAD_ERROR = 'Não foi possível carregar os cartões desta carteira. Tente novamente.'
+
 function createDefaultCsvConfiguration(): CsvImportConfiguration {
   return {
     delimiter: ',',
@@ -452,14 +457,20 @@ function FinancialImportsWalletPage({ userEmail, isLoggingOut, onLogout }: Finan
     const operation = captureWalletOperation()
     setAreCreditCardsLoading(true)
     setCreditCardsError('')
+    // `formError` is the page's single alert, written by seventeen different flows, so clearing it
+    // outright here would erase an unrelated message the user still needs. It is cleared only while it
+    // still carries this load's own claim: the previous entry point cleared it on the way in, and the
+    // retry button calls this function directly, which left the alert saying the load had failed while
+    // the select already offered the cards it loaded.
+    setFormError((current) => (current === CARD_LOAD_ERROR ? '' : current))
     try {
       const result = await creditCardsApi.list()
       if (!isCurrentWalletOperation(operation)) return
       setCreditCards(result.items.filter((card) => card.isActive))
     } catch {
       if (!isCurrentWalletOperation(operation)) return
-      setCreditCardsError('Não foi possível carregar os cartões desta carteira. Tente novamente.')
-      setFormError('Não foi possível carregar os cartões desta carteira. Tente novamente.')
+      setCreditCardsError(CARD_LOAD_ERROR)
+      setFormError(CARD_LOAD_ERROR)
     } finally {
       if (isCurrentWalletOperation(operation)) setAreCreditCardsLoading(false)
     }

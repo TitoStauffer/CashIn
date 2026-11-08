@@ -183,11 +183,16 @@ export function formatIsoDate(value: string) {
   return `${day}/${month}/${year}`
 }
 
-export function canLearnRuleFromItem(item: FinancialImportItem, draft: FinancialImportItemInput | undefined) {
+// Takes the same closing day as the confirmation's own check. Without it the screen held two
+// definitions of "draft changed": going back to the original date released the confirmation while
+// still hiding the rule button, with no reason the user could see.
+export function canLearnRuleFromItem(
+  item: FinancialImportItem, draft: FinancialImportItemInput | undefined, closingDay: number | null = null,
+) {
   return item.categorizationSource === 'manual'
     && hasCategory(item.type)
     && Boolean(item.categoryId)
-    && !hasDraftChanged(item, draft)
+    && !hasDraftChanged(item, draft, closingDay)
 }
 
 export function formatFileSize(bytes: number) {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { hasDraftChanged } from './importsModel'
+import { canLearnRuleFromItem, hasDraftChanged } from './importsModel'
 import type { FinancialImportItem, FinancialImportItemInput } from './importsApi'
 
 // A closing day of 10 puts a purchase on 2026-10-05 in the statement that closes on 2026-10-10.
@@ -8,17 +8,22 @@ const closingDay = 10
 function cardItem(overrides: Partial<FinancialImportItem> = {}): FinancialImportItem {
   return {
     id: 'item-1',
+    sequence: 1,
     date: '2026-10-05',
     description: 'MERCADO',
+    amount: '100.00',
     type: 'expense',
     categoryId: 'category-1',
     subcategoryId: null,
+    validationStatus: 'valid',
+    errorMessage: null,
+    canEdit: true,
     statementClosingDate: '2026-10-10',
     creditCardStatementId: null,
     transferCounterpartWalletId: null,
     walletTransferId: null,
     ...overrides,
-  } as FinancialImportItem
+  }
 }
 
 function draftOf(item: FinancialImportItem, overrides: Partial<FinancialImportItemInput> = {}): FinancialImportItemInput {
@@ -75,5 +80,30 @@ describe('hasDraftChanged in a card statement session', () => {
     expect(hasDraftChanged(item, draftOf(item, { description: 'MERCADO CENTRAL' }), closingDay)).toBe(true)
     expect(hasDraftChanged(item, draftOf(item), closingDay)).toBe(false)
     expect(hasDraftChanged(item, undefined, closingDay)).toBe(false)
+  })
+})
+
+describe('canLearnRuleFromItem', () => {
+  // The rule button and the confirmation have to agree on what "changed" means. While this consumer
+  // compared the raw field, going back to the original date released the confirmation and still hid
+  // the button, with no reason the user could see.
+  it('offers the rule again once the date is back to the one the statement was derived from', () => {
+    const item = cardItem({ categorizationSource: 'manual' })
+    const draft = draftOf(item, { date: '2026-10-05', statementClosingDate: null })
+
+    expect(canLearnRuleFromItem(item, draft, closingDay)).toBe(true)
+  })
+
+  it('keeps the rule hidden while a real change is pending', () => {
+    const item = cardItem({ categorizationSource: 'manual' })
+    const draft = draftOf(item, { description: 'MERCADO CENTRAL' })
+
+    expect(canLearnRuleFromItem(item, draft, closingDay)).toBe(false)
+  })
+
+  it('does not offer the rule for an item the user never categorized by hand', () => {
+    const item = cardItem({ categorizationSource: 'rule' })
+
+    expect(canLearnRuleFromItem(item, draftOf(item), closingDay)).toBe(false)
   })
 })
