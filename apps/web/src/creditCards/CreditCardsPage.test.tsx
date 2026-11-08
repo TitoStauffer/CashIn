@@ -326,13 +326,37 @@ describe('CreditCardsPage', () => {
     await waitFor(() => expect(paySpy).toHaveBeenCalledWith('card-1', 'statement-1', expect.any(String), '1234.56'))
   })
 
-  // `aria-invalid` without a description announces "invalid" and nothing else, and the flag used to
-  // survive a payment that worked — so the field stayed marked invalid with no reason given.
-  it('describes why the amount is invalid and stops saying so after a successful payment', async () => {
+  // `aria-invalid` without a description announces "invalid" and nothing else; and the flag has to take
+  // part in the submission, the way `ExpensesPage` does it, or the screen calls the field invalid and
+  // pays the masked amount anyway. Both halves of that pattern are asserted here.
+  it('describes why the amount is invalid and refuses to pay while it is', async () => {
     vi.spyOn(creditCardsApi, 'list').mockResolvedValue({ items: [card] })
     vi.spyOn(creditCardsApi, 'statements').mockResolvedValue({ items: [statement] })
-    // A partial payment keeps the form on screen, which is the only case where a leftover invalid flag
-    // is observable — and the case where it actually hurts, because the field stays usable.
+    const paySpy = vi.spyOn(creditCardsApi, 'payStatement')
+    render(<CreditCardsPage userEmail="user@example.com" isLoggingOut={false} onLogout={vi.fn()} />)
+
+    expect(await screen.findByText('Mercado')).toBeVisible()
+    const field = screen.getByLabelText('Valor do pagamento')
+    const user = userEvent.setup()
+    // The mask keeps `1,23` and drops the third decimal, so the value would parse and be charged.
+    await user.type(field, '1,234')
+
+    expect(field).toHaveAttribute('aria-invalid', 'true')
+    const error = screen.getByRole('alert')
+    expect(field).toHaveAttribute('aria-describedby', error.id)
+    expect(error).toBeVisible()
+
+    await user.click(screen.getByRole('button', { name: 'Pagar valor informado' }))
+
+    expect(paySpy).not.toHaveBeenCalled()
+  })
+
+  // And once the value is acceptable the payment goes through and the field stops claiming to be
+  // invalid: a partial payment keeps the form on screen, which is the only state where a leftover flag
+  // is observable — and the one where it hurts, because the field stays usable.
+  it('stops saying the amount is invalid after a successful payment', async () => {
+    vi.spyOn(creditCardsApi, 'list').mockResolvedValue({ items: [card] })
+    vi.spyOn(creditCardsApi, 'statements').mockResolvedValue({ items: [statement] })
     vi.spyOn(creditCardsApi, 'payStatement').mockResolvedValue({ ...statement, paidDate: null, paidAmount: null, outstandingAmount: '23.45' })
     render(<CreditCardsPage userEmail="user@example.com" isLoggingOut={false} onLogout={vi.fn()} />)
 
@@ -340,11 +364,12 @@ describe('CreditCardsPage', () => {
     const field = screen.getByLabelText('Valor do pagamento')
     const user = userEvent.setup()
     await user.type(field, '1,234')
-
     expect(field).toHaveAttribute('aria-invalid', 'true')
-    const error = screen.getByRole('alert')
-    expect(field).toHaveAttribute('aria-describedby', error.id)
-    expect(error).toBeVisible()
+
+    // Correcting the value clears the flag, and only then can the payment be sent.
+    await user.clear(field)
+    await user.type(field, '100,00')
+    expect(screen.getByLabelText('Valor do pagamento')).toHaveAttribute('aria-invalid', 'false')
 
     await user.click(screen.getByRole('button', { name: 'Pagar valor informado' }))
 

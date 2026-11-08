@@ -52,10 +52,10 @@ const paymentSourceLabels: Record<CreditCardStatementPaymentSource, string> = {
   bank_statement: 'conciliado do extrato',
 }
 
-// O valor digitado segue os mesmos utilitários monetários das outras telas, em vez de um regex
-// próprio: o campo recusava justamente o formato que o seu placeholder sugere, com separador de
-// milhar. Uma mensagem só, porque `parseBrazilianCurrencyInput` recusa formato inválido e zero pelo
-// mesmo motivo — não é um valor que dá para cobrar.
+// The typed amount goes through the same money helpers as the other screens instead of a regex of
+// its own: the field used to reject exactly the format its placeholder suggests, with a thousands
+// separator. A single message, because `parseBrazilianCurrencyInput` rejects an invalid format and
+// zero for the same reason — neither is an amount that can be charged.
 function normalizePaymentAmount(value: string) {
   const trimmed = value.trim()
   if (!trimmed) return { amount: undefined as string | undefined, error: '' }
@@ -208,6 +208,16 @@ export function CreditCardsPage({ userEmail, isLoggingOut, onLogout }: { userEma
 
   async function payStatement(statement: CreditCardStatement) {
     const date = paymentDates[statement.id] || today()
+    // The mask drops what it cannot accept, so `1,234` becomes `1,23` and parses fine: without this
+    // guard the screen flagged the field invalid and still paid the masked amount. `ExpensesPage` stops
+    // the submission in that state, and following half of its pattern — describing the error but not
+    // refusing the save — is what left the two screens disagreeing about the same signal. The inline
+    // error already says what to fix, so nothing else is set here.
+    if (invalidPaymentAmounts[statement.id]) {
+      setMessage('')
+      setError('')
+      return
+    }
     const { amount, error: amountError } = normalizePaymentAmount(paymentAmounts[statement.id] ?? '')
     if (amountError) {
       setMessage('')
