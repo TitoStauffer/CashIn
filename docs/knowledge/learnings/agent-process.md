@@ -134,7 +134,8 @@
 
 ## Critério de aceitação só vale o que o QA pode auditar
 
-- **Evidência:** QA do [PR #81](https://github.com/TitoStauffer/CashIn/pull/81), SHA `28a164c`, decisão `INCONCLUSIVE` com 3 critérios `PASSED` e 1 `INCONCLUSIVE`.
+- **Padrão:** `acceptance-criterion-must-be-auditable`.
+- **Evidência:** [relatório de QA do PR #81](https://github.com/TitoStauffer/CashIn/pull/81#issuecomment-6719965814), SHA `28a164c913b764db7d01442e2c2fb96e8e9b1a44`, decisão `INCONCLUSIVE` com 3 critérios `PASSED`, 1 `INCONCLUSIVE` e 0 `FAILED`.
 - **Problema confirmado:** a verificação por mutação vinha sendo declarada como critério de aceitação nos PRs da frente de débitos. O QA não executa comandos, não há ferramenta de mutação configurada no repositório e a mutação não deixa rastro no CI do SHA avaliado — então o critério é, por construção, não avaliável. A regra do `AGENTS.md` manda produzir `INCONCLUSIVE` para critério não avaliado, e foi o que aconteceu: uma entrega sem defeito nenhum fechou a rodada bloqueada.
 - **Causa-raiz:** confundir **padrão de evidência de desenvolvimento** com **critério de aceitação**. A mutação é excelente como o primeiro e imprestável como o segundo, porque o segundo precisa ser verificável por quem não é o autor.
 - **Impacto:** cada PR da frente tendia a fechar `INCONCLUSIVE` por um motivo que não é defeito, consumindo uma rodada de agentes e uma rodada de correção. Pior, acostuma a tratar `INCONCLUSIVE` como ruído, que é justamente o oposto do que o estado existe para fazer.

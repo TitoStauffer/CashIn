@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import Fastify from "fastify";
 import { createApp, requestLoggerOptions } from "./app.js";
 import type { Database, QueryExecutor } from "./database.js";
 
@@ -67,6 +68,33 @@ test("request logging keeps credentials and payloads out of every log line", () 
 
 // A configuração certa não é o mesmo que a linha certa: entre as duas está a premissa de que o
 // Fastify aplica os serializers e a redação. Esta é a linha realmente emitida pelo pino.
+// A redação é a segunda trava, e esta é a regressão que prova isso em vez de deixar a afirmação
+// apoiada numa mutação que roda só na máquina de quem desenvolve. A configuração é montada aqui com
+// um serializer que **vaza** os cabeçalhos de propósito, mantendo `redact` como está em produção: a
+// linha continua sem o cookie. Nenhuma configuração de produção precisou virar injetável para isso.
+test("the pino redaction keeps the cookie out even when the serializer leaks the headers", async () => {
+  const lines: string[] = [];
+  const app = Fastify({
+    logger: {
+      ...requestLoggerOptions,
+      serializers: {
+        ...requestLoggerOptions.serializers,
+        req: (request: { method: string; headers: unknown }) => ({ method: request.method, headers: request.headers }),
+      },
+      stream: { write: (line: string) => { lines.push(line); } },
+    },
+  });
+  app.post("/eco", async () => ({ ok: true }));
+
+  await app.inject({ method: "POST", url: "/eco", headers: { cookie: "cashin_session=segredo-vazado" }, payload: {} });
+  await app.close();
+
+  const emitted = lines.join("");
+  assert.ok(lines.length > 0, "the logger must emit at least one line");
+  assert.doesNotMatch(emitted, /segredo-vazado/);
+  assert.match(emitted, /\[redacted\]/);
+});
+
 test("the emitted request log line carries no cookie and no payload", async () => {
   const lines: string[] = [];
   const app = createApp(createHealthDatabase(async () => ({ rows: [{ "?column?": 1 }] })), {
@@ -88,10 +116,15 @@ test("the emitted request log line carries no cookie and no payload", async () =
   assert.doesNotMatch(emitted, /cashin_session/);
 
   // Além do que não pode sair, o que tem de sair: sem isto o teste passaria com um log vazio.
-  const request = lines.map((line) => JSON.parse(line) as { req?: { method: string; url: string } })
-    .find((entry) => entry.req);
-  assert.deepEqual({ method: request?.req?.method, url: request?.req?.url }, { method: "POST", url: "/auth/login" });
-  const response = lines.map((line) => JSON.parse(line) as { res?: { statusCode: number } })
-    .find((entry) => entry.res);
+  // E as chaves **exatas**, não só as presentes: o serializer padrão do Fastify também não vaza
+  // cabeçalho nem corpo, então afirmar apenas a limpeza da linha passaria com a configuração deste
+  // projeto inteiramente ignorada. O padrão acrescenta `host`, `remotePort` e `version`, e é a
+  // ausência deles que distingue um serializer do outro.
+  const request = lines.map((line) => JSON.parse(line) as { req?: Record<string, unknown> }).find((entry) => entry.req);
+  assert.deepEqual(Object.keys(request?.req ?? {}).sort(), ["method", "remoteAddress", "url"]);
+  assert.equal(request?.req?.method, "POST");
+  assert.equal(request?.req?.url, "/auth/login");
+  const response = lines.map((line) => JSON.parse(line) as { res?: Record<string, unknown> }).find((entry) => entry.res);
+  assert.deepEqual(Object.keys(response?.res ?? {}), ["statusCode"]);
   assert.equal(typeof response?.res?.statusCode, "number");
 });
