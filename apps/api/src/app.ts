@@ -76,8 +76,13 @@ export const requestLoggerOptions = {
   },
 };
 
+// Where a log line goes. `true` keeps the process default; a destination lets a test read the line
+// the logger really emitted, instead of trusting that Fastify applies the serializers and the
+// redaction configured above — which is a promise about a dependency, not a fact about this code.
+export type RequestLogDestination = { write(line: string): void };
+
 export interface AppOptions {
-  logger?: boolean;
+  logger?: boolean | RequestLogDestination;
   emailSender?: EmailSender;
   authRepository?: AuthRepository;
   categoryRepository?: CategoryRepository;
@@ -99,11 +104,16 @@ export interface AppOptions {
   secureCookies?: boolean;
 }
 
+function requestLoggerConfiguration(logger: AppOptions["logger"]) {
+  if (!logger) return false;
+  return logger === true ? requestLoggerOptions : { ...requestLoggerOptions, stream: logger };
+}
+
 export function createApp(
   database: Database,
   options: AppOptions = {},
 ): FastifyInstance {
-  const app = Fastify({ logger: options.logger ? requestLoggerOptions : false });
+  const app = Fastify({ logger: requestLoggerConfiguration(options.logger) });
   const walletsService = new WalletsService(
     options.walletRepository ?? new PostgresWalletsRepository(database),
   );

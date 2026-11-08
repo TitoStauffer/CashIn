@@ -1,7 +1,7 @@
 # Aprendizados do processo dos Agents
 
 **Status:** ativo
-**Última revisão:** 28/10/2026
+**Última revisão:** 08/11/2026
 
 ## Consolidar a rodada antes de publicar
 
@@ -131,3 +131,14 @@
 - **Prevenção:** hooks e atalhos executam apenas a cópia que o instalador grava em `%LOCALAPPDATA%\CashInGithubRunner\scripts`. O instalador é rodado explicitamente, a partir de um checkout atualizado da `master`. Sem cópia instalada, o hook só orienta; sem `powershell`, termina em silêncio.
 - **Detecção:** `tools/github-runner/test-runner-scripts.ps1` recusa um hook que referencie `$CLAUDE_PROJECT_DIR`. Ele também executa o comando real do hook com um `powershell` falso e confirma que só o caminho instalado é chamado.
 - **Evidência:** PR #59, revisões [`5794488063`](https://github.com/TitoStauffer/CashIn/pull/59#pullrequestreview-5794488063) (SHA `b630254cb23ff73aa05d0479ce09bd8b3a86e911`) e [`5794654024`](https://github.com/TitoStauffer/CashIn/pull/59#pullrequestreview-5794654024) (SHA `1240b5b2650d700eb196805fe972eb8c62fdac75`). Corrigido na DEV-77.
+
+## Critério de aceitação só vale o que o QA pode auditar
+
+- **Padrão:** `acceptance-criterion-must-be-auditable`.
+- **Evidência:** [relatório de QA do PR #81](https://github.com/TitoStauffer/CashIn/pull/81#issuecomment-6719965814), SHA `28a164c913b764db7d01442e2c2fb96e8e9b1a44`, decisão `INCONCLUSIVE` com 3 critérios `PASSED`, 1 `INCONCLUSIVE` e 0 `FAILED`.
+- **Problema confirmado:** a verificação por mutação vinha sendo declarada como critério de aceitação nos PRs da frente de débitos. O QA não executa comandos, não há ferramenta de mutação configurada no repositório e a mutação não deixa rastro no CI do SHA avaliado — então o critério é, por construção, não avaliável. A regra do `AGENTS.md` manda produzir `INCONCLUSIVE` para critério não avaliado, e foi o que aconteceu: uma entrega sem defeito nenhum fechou a rodada bloqueada.
+- **Causa-raiz:** confundir **padrão de evidência de desenvolvimento** com **critério de aceitação**. A mutação é excelente como o primeiro e imprestável como o segundo, porque o segundo precisa ser verificável por quem não é o autor.
+- **Impacto:** cada PR da frente tendia a fechar `INCONCLUSIVE` por um motivo que não é defeito, consumindo uma rodada de agentes e uma rodada de correção. Pior, acostuma a tratar `INCONCLUSIVE` como ruído, que é justamente o oposto do que o estado existe para fazer.
+- **Correção aplicada:** o critério foi reclassificado formalmente no ticket pelo papel de Product Manager; a mutação passou a ser declarada na seção de testes executados, como evidência de desenvolvimento, e os critérios de aceitação ficaram só com comportamento verificável pelo diff e pelas execuções de CI. A automação do passo de mutação no CI ficou na [DEV-112](https://titostauffer.atlassian.net/browse/DEV-112).
+- **Regra preventiva:** antes de escrever um critério de aceitação, pergunte com que evidência **o QA** o fecharia: diff, metadados de check, snapshot de configuração ou contrato versionado. Se a resposta for "confiando no que o autor diz ter rodado", não é critério de aceitação — é evidência de desenvolvimento, e o lugar dela é a seção de testes executados. Vale para mutação, medição de desempenho local, inspeção manual de tela e qualquer verificação que não deixe rastro no SHA avaliado.
+- **Detecção:** ler a própria lista de critérios de aceitação pela perspectiva do QA, item por item, antes de abrir o PR. O sinal é o critério cuja comprovação exigiria rodar algo.
