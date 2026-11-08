@@ -315,7 +315,7 @@ describe('CreditCardsPage', () => {
 
     expect(await screen.findByText('Mercado')).toBeVisible()
     const field = screen.getByLabelText('Valor do pagamento')
-    // O placeholder sugere exatamente este formato, com separador de milhar.
+    // The placeholder suggests exactly this format, with a thousands separator.
     expect(field).toHaveAttribute('placeholder', 'Integral (R$ 1.234,56)')
     const user = userEvent.setup()
     await user.type(field, '1.234,56')
@@ -372,6 +372,56 @@ describe('CreditCardsPage', () => {
     expect(screen.getByLabelText('Valor do pagamento')).toHaveAttribute('aria-invalid', 'false')
 
     await user.click(screen.getByRole('button', { name: 'Pagar valor informado' }))
+
+    await waitFor(() => expect(screen.getByLabelText('Valor do pagamento')).toHaveAttribute('aria-invalid', 'false'))
+    expect(screen.getByLabelText('Valor do pagamento')).not.toHaveAttribute('aria-describedby')
+  })
+
+  // The guard that refuses an invalid amount has to agree with what the field shows: `abc` is wholly
+  // discarded, so the field goes back to empty, which is how this screen asks to pay in full. Marking
+  // that invalid turned the only button on screen into a no-op.
+  it('still pays the statement in full after typing an amount the mask discards entirely', async () => {
+    vi.spyOn(creditCardsApi, 'list').mockResolvedValue({ items: [card] })
+    vi.spyOn(creditCardsApi, 'statements').mockResolvedValue({ items: [statement] })
+    const paySpy = vi.spyOn(creditCardsApi, 'payStatement').mockResolvedValue({ ...statement, paidDate: '2026-10-18', paidAmount: '123.45' })
+    render(<CreditCardsPage userEmail="user@example.com" isLoggingOut={false} onLogout={vi.fn()} />)
+
+    expect(await screen.findByText('Mercado')).toBeVisible()
+    const field = screen.getByLabelText('Valor do pagamento')
+    const user = userEvent.setup()
+    await user.type(field, 'abc')
+
+    expect(field).toHaveValue('')
+    expect(field).toHaveAttribute('aria-invalid', 'false')
+    expect(field).not.toHaveAttribute('aria-describedby')
+    expect(screen.queryByRole('alert')).toBeNull()
+
+    await user.click(screen.getByRole('button', { name: 'Pagar fatura integral' }))
+
+    await waitFor(() => expect(paySpy).toHaveBeenCalledWith('card-1', 'statement-1', expect.any(String), undefined))
+  })
+
+  // Reaching the success path with the flag still on is the only state where the cleanup line is what
+  // turns it off: the field stays editable while the request is in flight, so typing an invalid amount
+  // there is how a real user gets into it.
+  it('clears the invalid flag when a payment started earlier succeeds', async () => {
+    vi.spyOn(creditCardsApi, 'list').mockResolvedValue({ items: [card] })
+    vi.spyOn(creditCardsApi, 'statements').mockResolvedValue({ items: [statement] })
+    const pending = deferred<CreditCardStatement>()
+    vi.spyOn(creditCardsApi, 'payStatement').mockReturnValue(pending.promise)
+    render(<CreditCardsPage userEmail="user@example.com" isLoggingOut={false} onLogout={vi.fn()} />)
+
+    expect(await screen.findByText('Mercado')).toBeVisible()
+    const field = screen.getByLabelText('Valor do pagamento')
+    const user = userEvent.setup()
+    await user.type(field, '100,00')
+    await user.click(screen.getByRole('button', { name: 'Pagar valor informado' }))
+
+    await user.type(screen.getByLabelText('Valor do pagamento'), '4')
+    expect(screen.getByLabelText('Valor do pagamento')).toHaveAttribute('aria-invalid', 'true')
+
+    // A partial payment keeps the form on screen, which is where a leftover flag is observable.
+    pending.resolve({ ...statement, paidDate: null, paidAmount: null, outstandingAmount: '23.45' })
 
     await waitFor(() => expect(screen.getByLabelText('Valor do pagamento')).toHaveAttribute('aria-invalid', 'false'))
     expect(screen.getByLabelText('Valor do pagamento')).not.toHaveAttribute('aria-describedby')

@@ -367,8 +367,13 @@ export function CreditCardsPage({ userEmail, isLoggingOut, onLogout }: { userEma
                   {statement.paidDate ? <p className="statement-paid">Paga em {formatDate(statement.paidDate)} · {displayMoney(statement.paidAmount)}</p> : <>
                     <label>Data do pagamento <input type="date" value={paymentDates[statement.id] ?? today()} onChange={(event) => setPaymentDates((current) => ({ ...current, [statement.id]: event.target.value }))} /></label>
                     <label>Valor do pagamento <input type="text" inputMode="decimal" placeholder={`Integral (${formatBrazilianCurrency(amountDue(statement))})`} value={paymentAmounts[statement.id] ?? ''} aria-invalid={invalidPaymentAmounts[statement.id] ?? false} aria-describedby={invalidPaymentAmounts[statement.id] ? `statement-amount-error-${statement.id}` : undefined} onChange={(event) => {
-                      setInvalidPaymentAmounts((current) => ({ ...current, [statement.id]: hasInvalidBrazilianCurrencyInput(event.target.value) }))
-                      setPaymentAmounts((current) => ({ ...current, [statement.id]: maskBrazilianCurrencyInput(event.target.value) }))
+                      const masked = maskBrazilianCurrencyInput(event.target.value)
+                      // An empty field is how this screen asks to pay the statement in full, so the flag
+                      // only describes text the field actually kept. Typing `abc` leaves nothing behind:
+                      // marking that invalid blocked the full payment the button was offering, and said
+                      // so through an error about a value no longer on screen.
+                      setInvalidPaymentAmounts((current) => ({ ...current, [statement.id]: masked.trim() !== '' && hasInvalidBrazilianCurrencyInput(event.target.value) }))
+                      setPaymentAmounts((current) => ({ ...current, [statement.id]: masked }))
                     }} /></label>
                     {/* `aria-invalid` alone announces "invalid" and nothing else. The reason is described
                         the way `ExpensesPage` and `IncomesPage` already do it, keyed per statement because
