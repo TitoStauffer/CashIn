@@ -59,6 +59,11 @@ type CsvInspectionOptions = {
 
 const maxFileSize = 10 * 1024 * 1024
 
+// Named because two pieces of state carry it: the inline retry button reads `creditCardsError` and the
+// page's single alert reads `formError`. Comparing against the constant is what lets the retry clear
+// only its own stale claim and leave an unrelated alert alone.
+const CARD_LOAD_ERROR = 'Não foi possível carregar os cartões desta carteira. Tente novamente.'
+
 function createDefaultCsvConfiguration(): CsvImportConfiguration {
   return {
     delimiter: ',',
@@ -264,8 +269,8 @@ function FinancialImportsWalletPage({ userEmail, isLoggingOut, onLogout }: Finan
     [selectedImport?.items],
   )
   const hasPendingDraftChanges = useMemo(
-    () => (selectedImport?.items ?? []).some((item) => hasDraftChanged(item, drafts[item.id])),
-    [drafts, selectedImport?.items],
+    () => (selectedImport?.items ?? []).some((item) => hasDraftChanged(item, drafts[item.id], selectedImport?.creditCardClosingDay ?? null)),
+    [drafts, selectedImport?.creditCardClosingDay, selectedImport?.items],
   )
   const isLoading = loadedWalletId !== activeWalletId
   const isSelectedImportBusy = selectedImport ? isImportBusy(selectedImport.status) : false
@@ -442,17 +447,30 @@ function FinancialImportsWalletPage({ userEmail, isLoggingOut, onLogout }: Finan
     setImportKind(kind)
     setFormError('')
     if (kind !== 'credit_card_statement' || creditCards.length > 0) return
+    await loadCreditCards()
+  }
+
+  // Its own function because the failure message says "try again" and, until now, the only way to
+  // try again was to switch the import kind away and back: the load runs on a change of the radio,
+  // which is already on the card statement when it fails.
+  async function loadCreditCards() {
     const operation = captureWalletOperation()
     setAreCreditCardsLoading(true)
     setCreditCardsError('')
+    // `formError` is the page's single alert, written by seventeen different flows, so clearing it
+    // outright here would erase an unrelated message the user still needs. It is cleared only while it
+    // still carries this load's own claim: the previous entry point cleared it on the way in, and the
+    // retry button calls this function directly, which left the alert saying the load had failed while
+    // the select already offered the cards it loaded.
+    setFormError((current) => (current === CARD_LOAD_ERROR ? '' : current))
     try {
       const result = await creditCardsApi.list()
       if (!isCurrentWalletOperation(operation)) return
       setCreditCards(result.items.filter((card) => card.isActive))
     } catch {
       if (!isCurrentWalletOperation(operation)) return
-      setCreditCardsError('Não foi possível carregar os cartões desta carteira. Tente novamente.')
-      setFormError('Não foi possível carregar os cartões desta carteira. Tente novamente.')
+      setCreditCardsError(CARD_LOAD_ERROR)
+      setFormError(CARD_LOAD_ERROR)
     } finally {
       if (isCurrentWalletOperation(operation)) setAreCreditCardsLoading(false)
     }
@@ -881,6 +899,11 @@ function FinancialImportsWalletPage({ userEmail, isLoggingOut, onLogout }: Finan
                     </select>
                   </label>
                   {!areCreditCardsLoading && creditCards.length === 0 && !creditCardsError && <small>Cadastre um cartão ativo nesta carteira para importar a fatura.</small>}
+                  {!areCreditCardsLoading && creditCardsError && (
+                    <button type="button" onClick={() => { void loadCreditCards() }} disabled={pendingAction !== null}>
+                      Tentar carregar os cartões de novo
+                    </button>
+                  )}
                   {selectedFile && getFileFormat(selectedFile.name) === 'csv' && (
                     <label>
                       <span>Como o CSV mostra as compras</span>

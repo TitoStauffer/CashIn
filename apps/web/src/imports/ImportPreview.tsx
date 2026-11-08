@@ -313,7 +313,7 @@ export function ImportPreview({
                     {isSavingItem ? 'Salvando…' : 'Salvar ajuste'}
                   </button>
                 )}
-                {session.status === 'preview' && canLearnRuleFromItem(item, drafts[item.id]) && (
+                {session.status === 'preview' && canLearnRuleFromItem(item, drafts[item.id], closingDay) && (
                   <button className="imports-text-button" type="button" onClick={() => onCreateRule(item)} disabled={pendingAction !== null}>
                     {pendingAction === `rule-from-item:${item.id}` ? 'Criando regra…' : 'Criar regra para esta descrição'}
                   </button>

@@ -1,3 +1,4 @@
+import { calculateClosingDate, isValidIsoDate } from './cardStatementCycles'
 import { formatBrazilianCurrency } from '../money/currency'
 import type {
   BankPaymentCandidate,
@@ -182,11 +183,16 @@ export function formatIsoDate(value: string) {
   return `${day}/${month}/${year}`
 }
 
-export function canLearnRuleFromItem(item: FinancialImportItem, draft: FinancialImportItemInput | undefined) {
+// Takes the same closing day as the confirmation's own check. Without it the screen held two
+// definitions of "draft changed": going back to the original date released the confirmation while
+// still hiding the rule button, with no reason the user could see.
+export function canLearnRuleFromItem(
+  item: FinancialImportItem, draft: FinancialImportItemInput | undefined, closingDay: number | null = null,
+) {
   return item.categorizationSource === 'manual'
     && hasCategory(item.type)
     && Boolean(item.categoryId)
-    && !hasDraftChanged(item, draft)
+    && !hasDraftChanged(item, draft, closingDay)
 }
 
 export function formatFileSize(bytes: number) {
@@ -209,7 +215,26 @@ export function createDraft(item: FinancialImportItem): FinancialImportItemInput
   }
 }
 
-export function hasDraftChanged(item: FinancialImportItem, draft: FinancialImportItemInput | undefined) {
+// The statement a line will land on, which is what the preview shows and what the API stores. A null
+// `statementClosingDate` is not "no statement": it means "the one this date calculates". Changing the
+// date clears the field, so comparing the raw value reported a change even after the user returned
+// the date to its original value — and a draft reported as changed blocks the confirmation.
+export function effectiveClosingDate(
+  value: { date: string; statementClosingDate?: string | null },
+  closingDay: number | null,
+): string | null {
+  if (value.statementClosingDate) return value.statementClosingDate
+  if (closingDay === null || !isValidIsoDate(value.date)) return null
+  return calculateClosingDate(value.date, closingDay)
+}
+
+// `closingDay` comes from the session and is null outside a card statement import, where the field is
+// never offered and the comparison stays exactly as it was.
+export function hasDraftChanged(
+  item: FinancialImportItem,
+  draft: FinancialImportItemInput | undefined,
+  closingDay: number | null = null,
+) {
   if (!draft) return false
   const original = createDraft(item)
   return original.date !== draft.date
@@ -217,7 +242,7 @@ export function hasDraftChanged(item: FinancialImportItem, draft: FinancialImpor
     || original.type !== draft.type
     || original.categoryId !== draft.categoryId
     || original.subcategoryId !== draft.subcategoryId
-    || (original.statementClosingDate ?? null) !== (draft.statementClosingDate ?? null)
+    || effectiveClosingDate(original, closingDay) !== effectiveClosingDate(draft, closingDay)
     || (original.creditCardStatementId ?? null) !== (draft.creditCardStatementId ?? null)
     || (original.transferCounterpartWalletId ?? null) !== (draft.transferCounterpartWalletId ?? null)
     || (original.walletTransferId ?? null) !== (draft.walletTransferId ?? null)
