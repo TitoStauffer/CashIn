@@ -501,6 +501,36 @@ describe('FinancialImportsPage', () => {
     expect(await screen.findByText(/2 movimentações foram importadas/)).toBeVisible()
   })
 
+  // The 409 of an import has several causes and the API writes each of them for the user. A fixed
+  // override told the person to "update and try again" while the API was naming the line to correct.
+  it('shows the message the API sent with a 409 instead of the generic one', async () => {
+    vi.mocked(importsApi.list).mockResolvedValueOnce({ items: [{ ...previewSession, items: undefined }] })
+    vi.mocked(importsApi.confirm).mockRejectedValueOnce(
+      new FinancialImportApiError('Movimentação 3: esta fatura já foi escolhida por outra movimentação desta importação.', 409),
+    )
+    const user = userEvent.setup()
+    await renderPage()
+    await user.click(await screen.findByRole('button', { name: 'Ver detalhes' }))
+
+    await user.click(await screen.findByRole('button', { name: 'Confirmar 1 movimentação' }))
+
+    expect(await screen.findByText('Movimentação 3: esta fatura já foi escolhida por outra movimentação desta importação.')).toBeVisible()
+    expect(screen.queryByText(/A importação mudou enquanto esta ação era executada/)).not.toBeInTheDocument()
+  })
+
+  // A 409 without a body keeps the generic sentence: there is nothing more specific to say.
+  it('keeps the generic message when the API sends a 409 with no message', async () => {
+    vi.mocked(importsApi.list).mockResolvedValueOnce({ items: [{ ...previewSession, items: undefined }] })
+    vi.mocked(importsApi.confirm).mockRejectedValueOnce(new FinancialImportApiError('', 409))
+    const user = userEvent.setup()
+    await renderPage()
+    await user.click(await screen.findByRole('button', { name: 'Ver detalhes' }))
+
+    await user.click(await screen.findByRole('button', { name: 'Confirmar 1 movimentação' }))
+
+    expect(await screen.findByText(/A importação mudou enquanto esta ação era executada/)).toBeVisible()
+  })
+
   it('does not confirm a preview when all items are uncategorized', async () => {
     vi.mocked(importsApi.list).mockResolvedValueOnce({ items: [{ ...uncategorizedOnlySession, items: undefined }] })
     vi.mocked(importsApi.get).mockResolvedValueOnce(uncategorizedOnlySession)

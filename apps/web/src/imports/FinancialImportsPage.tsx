@@ -90,9 +90,18 @@ function formatDateTime(value: string | null | undefined) {
   return new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(value))
 }
 
+// A fixed message per status is right while the status has a single cause, which is why
+// `getRuleError` below keeps one: a rule conflicts for exactly one reason. The `409` of an import
+// has several — which movimentação to fix, a card that was deactivated, a statement settled in the
+// meantime, a missing payment method — and the API writes each of them for the user. Overriding all
+// of that with one sentence told the person to "update and try again" when what they needed was the
+// line to correct. The generic text stays as the fallback for a `409` that arrives without a body.
 function getImportError(error: unknown, fallback: string) {
+  const serverMessage = error instanceof Error && 'status' in error && Number(error.status) === 409
+    ? error.message.trim()
+    : ''
   return getApiErrorFeedback(error, fallback, {
-    409: 'A importação mudou enquanto esta ação era executada. Atualize os dados e tente novamente.',
+    409: serverMessage || 'A importação mudou enquanto esta ação era executada. Atualize os dados e tente novamente.',
     413: 'O arquivo ultrapassa o limite de 10 MB.',
     415: 'Use um arquivo OFX ou CSV válido.',
     422: 'O arquivo não pôde ser processado. Confira o formato e tente novamente.',
