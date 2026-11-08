@@ -17,6 +17,8 @@ Valores monetários continuam sendo strings decimais, com precisão de centavos 
 | `cashIncomeTotal` | Receitas com `balance_type = cash`; exclui benefícios. | Data da receita |
 | `cashExpenseTotal` | Despesas com natureza registrada `immediate` ou sem natureza nos registros legados. | Data da despesa |
 | `creditPurchaseTotal` | Despesas com natureza registrada `credit_card`, inclusive registros legados sem fatura vinculada. | Data da compra/despesa |
+| `cardCreditTotal` | Estornos e reembolsos registrados nas faturas (`credit_card_statement_credits`). | Data do crédito |
+| `unlinkedCardCreditTotal` | A parte de `cardCreditTotal` sem compra original conhecida. | Data do crédito |
 | `cardPaymentTotal` | Pagamentos registrados nas faturas, incluindo pagamentos parciais de faturas ainda em aberto. | Data de cada pagamento |
 | `transferOutTotal` | Transferências entre carteiras que saíram desta carteira. | Data da transferência |
 | `transferInTotal` | Transferências entre carteiras que entraram nesta carteira. | Data da transferência |
@@ -33,7 +35,7 @@ O cliente combina os itens pelo identificador com `GET /investment-goals`, que f
 
 ## Semântica preservada
 
-`incomeTotal` agrega todas as receitas, incluindo benefícios. `expenseTotal` agrega todas as despesas, incluindo compras no crédito e uso de benefícios. Pagamentos de fatura não geram uma nova despesa nesses totais nem em `expenseByCategory`.
+`incomeTotal` agrega todas as receitas, incluindo benefícios. `expenseTotal` agrega todas as despesas, incluindo compras no crédito e uso de benefícios, **menos os estornos de fatura do período**. Pagamentos de fatura não geram uma nova despesa nesses totais nem em `expenseByCategory`.
 
 `contributionTotal` agrega os aportes pela data do aporte e continua separado das despesas. `incomeByCategory` e `expenseByCategory` mantêm o agrupamento de todas as receitas e despesas pelas categorias da carteira.
 
@@ -53,26 +55,38 @@ Uma transferência entre carteiras não é receita nem despesa: ela não entra e
 
 `benefitBalances` continua separando VA/VR unificado (`food_meal_benefit`, somando os tipos legados `food_benefit` e `meal_benefit`) e auxílio home office (`home_office_benefit`). Esses benefícios não compõem os totais de caixa.
 
+## Estornos de fatura
+
+Um estorno ou reembolso devolve o dinheiro, então a compra que ele reverte deixa de ser um gasto. O crédito é subtraído de `expenseTotal` e de `creditPurchaseTotal`, e do item de `expenseByCategory` da **categoria da compra original**. Um estorno integral zera o efeito da compra; um estorno parcial reduz exatamente o valor estornado, em centavos.
+
+O crédito pertence ao período da **sua própria data**, mesmo quando a compra revertida é de outro período — aquele período realmente gastou o dinheiro. Em consequência, `expenseTotal`, `creditPurchaseTotal` e o valor de uma categoria **podem ser negativos**: é o retrato de um período que devolveu mais do que gastou. Uma categoria cujo saldo líquido é zero continua na lista, porque teve movimento.
+
+Um crédito sem compra original conhecida — não casado na importação, ou cuja compra foi excluída depois — reduz os totais, mas nenhuma categoria: não há compra que diga qual. Esse valor é informado em `unlinkedCardCreditTotal`, em vez de ser escondido ou atribuído por suposição. `cardCreditTotal` existe para que o cliente possa explicar a despesa menor.
+
+Créditos não são receita: não entram em `incomeTotal` nem em `incomeByCategory`. Eles também não alteram o caixa, porque `cardPaymentTotal` já é o valor efetivamente pago, líquido dos créditos, e `cashExpenseTotal` só considera despesas imediatas. A fórmula de `cashBalance` permanece inalterada.
+
 ## Exemplo
 
-Com receita em dinheiro de `100.00`, despesa imediata de `5.00`, compra no crédito de `10.00`, aporte de `20.00` e pagamento de fatura de `10.00` no período, os campos são:
+Com receita em dinheiro de `100.00`, despesa imediata de `5.00`, compra no crédito de `10.00`, estorno de `4.00` sobre essa compra, aporte de `20.00` e pagamento de fatura de `6.00` no período, os campos são:
 
 ```json
 {
   "incomeTotal": "100.00",
-  "expenseTotal": "15.00",
+  "expenseTotal": "11.00",
   "cashIncomeTotal": "100.00",
   "cashExpenseTotal": "5.00",
-  "creditPurchaseTotal": "10.00",
-  "cardPaymentTotal": "10.00",
+  "creditPurchaseTotal": "6.00",
+  "cardCreditTotal": "4.00",
+  "unlinkedCardCreditTotal": "0.00",
+  "cardPaymentTotal": "6.00",
   "transferOutTotal": "0.00",
   "transferInTotal": "0.00",
   "contributionTotal": "20.00",
   "contributionsByGoal": [
     { "goalId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", "amount": "20.00" }
   ],
-  "cashBalance": "65.00",
-  "availableBalance": "65.00"
+  "cashBalance": "69.00",
+  "availableBalance": "69.00"
 }
 ```
 

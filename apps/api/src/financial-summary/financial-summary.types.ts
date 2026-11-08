@@ -6,6 +6,12 @@ export interface FinancialSummary {
   cashIncomeTotal: string;
   cashExpenseTotal: string;
   creditPurchaseTotal: string;
+  // Refunds and chargebacks on a statement, in the period of their own date. They are already
+  // subtracted from `expenseTotal`, `creditPurchaseTotal` and the category of the purchase each one
+  // reverses; `cardCreditTotal` is here so a client can say why the expense fell. The unlinked part
+  // is the share with no known purchase, which lowers the totals but no category.
+  cardCreditTotal: string;
+  unlinkedCardCreditTotal: string;
   cardPaymentTotal: string;
   // Transfers between wallets are not income nor expense, so they only move the cash balance: what
   // left this wallet and what arrived in it, each as its own total.

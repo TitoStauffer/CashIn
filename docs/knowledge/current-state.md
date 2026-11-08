@@ -1,6 +1,6 @@
 # Estado atual do projeto
 
-**Status:** atualizado pela DEV-59
+**Status:** atualizado pela DEV-81
 **Última revisão:** 07/11/2026
 **Ticket de criação:** [DEV-64](https://titostauffer.atlassian.net/browse/DEV-64)
 
@@ -12,7 +12,7 @@
 - Categorias e subcategorias por carteira e natureza.
 - Entradas separadas por saldo em dinheiro, VA/VR e AHO.
 - Despesas com forma de pagamento, incluindo cartão de crédito e benefícios.
-- Cartões de crédito, ciclos de fatura, pagamento integral ou parcial e conciliação do pagamento com o extrato bancário.
+- Cartões de crédito, ciclos de fatura, pagamento integral ou parcial e conciliação do pagamento com o extrato bancário. Estornos abatem a fatura e também os totais de despesa e o gasto por categoria do dashboard.
 - Metas de investimento, aportes, encerramento e progresso calculado.
 - Dashboard financeiro com resumo, comparação, metas e categorias de maior gasto.
 - Fundação de importação financeira com upload, prévia, edição, confirmação atômica, histórico e desfazer.
@@ -36,7 +36,6 @@ O fluxo ativo executa validação de título, API, Web, ferramentas de automaç�
 - Múltiplos extratos ou faturas no mesmo arquivo continuam recusados.
 - Transferências entre carteiras do mesmo usuário estão disponíveis de ponta a ponta: a prévia da importação concilia a linha com a carteira do outro lado ou com uma transferência já registrada, e o dashboard mostra o enviado e o recebido no fluxo de caixa, sem virar receita ou despesa.
 - A conciliação do pagamento da fatura está disponível de ponta a ponta: a prévia da importação deixa escolher a fatura que o pagamento liquida, e a tela do cartão mostra os pagamentos, o que falta pagar e aceita pagamento parcial.
-- Estornos de cartão abatem a fatura, mas ainda não reduzem os totais de despesa e de gasto por categoria do dashboard.
 - Não existe papel somente-leitura em carteira compartilhada: todo membro pode importar. O e-mail de outro membro continua visível apenas ao proprietário.
 - Mobile e deploy em nuvem estão fora do estado atual.
 

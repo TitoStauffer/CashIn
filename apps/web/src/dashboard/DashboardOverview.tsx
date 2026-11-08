@@ -1,5 +1,5 @@
 import type { BenefitBalanceSummary, FinancialSummary } from './dashboardApi'
-import { amountToCents, barPercentage, cashInflow, cashOutflow, centsToAmount, hasActivity, transferInflow } from './dashboardMetrics'
+import { amountToCents, barPercentage, cardCredits, cashInflow, cashOutflow, centsToAmount, hasActivity, transferInflow, unlinkedCardCredits } from './dashboardMetrics'
 import { formatBrazilianCurrency as money } from '../money/currency'
 import { formatMonth } from '../period/month'
 import { recordLink } from '../period/recordLinks'
@@ -18,10 +18,15 @@ export function DashboardOverview({ summary, month }: { summary: FinancialSummar
   const hasTransfers = transfersIn !== 0n || transfersOut !== 0n
   const outflow = cashOutflow(summary)
   const scale = income > outflow ? income : outflow
+  // The expense totals already arrive net of refunds. Showing the refunded amount is what makes a
+  // smaller expense readable instead of surprising.
+  const credits = cardCredits(summary)
+  const unlinkedCredits = unlinkedCardCredits(summary)
+  const hasCredits = credits !== 0n
   return <>
     <div className="dashboard-summary-grid" aria-label={`Resumo financeiro de ${formatMonth(month)}`}>
       <article className="dashboard-summary-card dashboard-summary-card--income"><span>Entradas totais</span><strong>{money(summary.incomeTotal)}</strong><small>dinheiro e benefícios no mês</small><a href={recordLink('/incomes', month)}>Ver entradas</a></article>
-      <article className="dashboard-summary-card dashboard-summary-card--expense"><span>Despesas registradas</span><strong>{money(summary.expenseTotal)}</strong><small>inclui benefícios e compras no crédito; exclui pagamentos de faturas</small><a href={recordLink('/expenses', month)}>Ver despesas</a></article>
+      <article className="dashboard-summary-card dashboard-summary-card--expense"><span>Despesas registradas</span><strong>{money(summary.expenseTotal)}</strong><small>inclui benefícios e compras no crédito, já descontados os estornos; exclui pagamentos de faturas</small><a href={recordLink('/expenses', month)}>Ver despesas</a></article>
       <article className="dashboard-summary-card dashboard-summary-card--contribution"><span>Aportes</span><strong>{money(summary.contributionTotal)}</strong><small>destinados às metas no mês</small><a href={recordLink('/goals', month)}>Ver aportes</a></article>
       <article className={`dashboard-summary-card dashboard-summary-card--balance${summary.cashBalance.startsWith('-') ? ' dashboard-summary-card--negative' : ''}`}><span>Fluxo restante em dinheiro</span><strong>{money(summary.cashBalance)}</strong><small>resultado dos movimentos do mês; não é saldo bancário acumulado</small><a href="#cash-flow-title">Ver composição</a></article>
     </div>
@@ -34,10 +39,11 @@ export function DashboardOverview({ summary, month }: { summary: FinancialSummar
         <div className="dashboard-flow__row"><div><span>Entradas em dinheiro</span><strong>{money(centsToAmount(income))}</strong></div><div className="dashboard-flow__track" aria-hidden="true"><span className="dashboard-flow__bar dashboard-flow__bar--income" style={{ width: `${barPercentage(income, scale)}%` }} /></div></div>
         <div className="dashboard-flow__row"><div><span>Saídas em dinheiro</span><strong>{money(centsToAmount(outflow))}</strong></div><div className="dashboard-flow__track" aria-hidden="true"><span className="dashboard-flow__bar dashboard-flow__bar--outflow" style={{ width: `${barPercentage(outflow, scale)}%` }} /></div></div>
       </div>
-      <dl className="dashboard-cash-details"><div><dt>Despesas em dinheiro</dt><dd>{money(summary.cashExpenseTotal)}</dd></div><div><dt>Faturas pagas no mês</dt><dd>{money(summary.cardPaymentTotal)}</dd></div><div><dt>Aportes do mês</dt><dd>{money(summary.contributionTotal)}</dd></div><div><dt>Compras no crédito no mês</dt><dd>{money(summary.creditPurchaseTotal)}</dd></div>{hasTransfers && <><div><dt>Transferências enviadas</dt><dd>{money(centsToAmount(transfersOut))}</dd></div><div><dt>Transferências recebidas</dt><dd>{money(centsToAmount(transfersIn))}</dd></div></>}</dl>
+      <dl className="dashboard-cash-details"><div><dt>Despesas em dinheiro</dt><dd>{money(summary.cashExpenseTotal)}</dd></div><div><dt>Faturas pagas no mês</dt><dd>{money(summary.cardPaymentTotal)}</dd></div><div><dt>Aportes do mês</dt><dd>{money(summary.contributionTotal)}</dd></div><div><dt>Compras no crédito no mês</dt><dd>{money(summary.creditPurchaseTotal)}</dd></div>{hasCredits && <div><dt>Estornos de cartão no mês</dt><dd>{money(centsToAmount(credits))}</dd></div>}{hasTransfers && <><div><dt>Transferências enviadas</dt><dd>{money(centsToAmount(transfersOut))}</dd></div><div><dt>Transferências recebidas</dt><dd>{money(centsToAmount(transfersIn))}</dd></div></>}</dl>
       <p className="dashboard-section-note">Fluxo restante = entradas em dinheiro − despesas em dinheiro − faturas pagas − aportes{hasTransfers ? ' − transferências enviadas' : ''}.</p>
       <p className="dashboard-section-note">{money(centsToAmount(income))} − {money(summary.cashExpenseTotal)} − {money(summary.cardPaymentTotal)} − {money(summary.contributionTotal)}{hasTransfers ? ` − ${money(centsToAmount(transfersOut))}` : ''} = {money(summary.cashBalance)}.</p>
       {hasTransfers && <p className="dashboard-section-note">As entradas em dinheiro incluem {money(centsToAmount(transfersIn))} recebidos de outra carteira. Transferências entre carteiras mudam o dinheiro de lugar: elas não entram em receitas nem em despesas, apenas saem de uma carteira e entram na outra.</p>}
+      {hasCredits && <p className="dashboard-section-note">Os {money(centsToAmount(credits))} de estorno já estão descontados das despesas registradas e das compras no crédito, pela data do estorno — mesmo quando a compra estornada é de outro mês, o que pode deixar o mês com despesa negativa. Eles não são receita e não alteram o fluxo em dinheiro, porque a fatura já é paga pelo valor líquido.{unlinkedCredits !== 0n ? ` Desse total, ${money(centsToAmount(unlinkedCredits))} não têm compra identificada: abatem os totais, mas nenhuma categoria.` : ''}</p>}
       <p className="dashboard-section-note">Compras no crédito entram nas despesas pela data da compra, mas afetam o dinheiro somente pelo pagamento da fatura. Faturas pagas são consideradas pela data do pagamento, uma única vez.</p>
       <nav className="dashboard-record-links" aria-label="Conferir composição"><a href={recordLink('/incomes', month)}>Consultar entradas do mês</a><a href={recordLink('/expenses', month)}>Consultar despesas do mês</a><a href={recordLink('/goals', month)}>Consultar aportes do mês</a><a href="/credit-cards">Consultar cartões e faturas</a></nav>
     </section>

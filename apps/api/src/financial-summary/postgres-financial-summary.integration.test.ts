@@ -352,3 +352,157 @@ test("PostgreSQL summary groups contributions by goal with exact cents and inclu
     await adminPool.end();
   }
 });
+
+
+// A refund gives the money back, so the purchase it reverses stops being a cost — in the totals and
+// in the category of that purchase. The credit belongs to the period of its own date, which is what
+// makes a refund of an older purchase able to push a period below zero.
+test("PostgreSQL summary subtracts statement credits from expense totals and from the reversed purchase's category", {
+  skip: !testDatabaseUrl,
+}, async () => {
+  const schemaName = `summary_credits_${randomBytes(8).toString("hex")}`;
+  const adminPool = new Pool({ connectionString: testDatabaseUrl });
+  let scopedPool: Pool | undefined;
+  try {
+    await adminPool.query(`CREATE SCHEMA ${schemaName}`);
+    scopedPool = new Pool({ connectionString: testDatabaseUrl, options: `-c search_path=${schemaName}` });
+    const database = createDatabase(scopedPool);
+    await runMigrations(database);
+    const users = await database.query<{ id: string; email: string }>(
+      `INSERT INTO users (email, password_hash, email_verified_at)
+       VALUES ($1, 'test-hash', now()), ($2, 'test-hash', now()) RETURNING id, email`,
+      [`credits-${schemaName}@example.com`, `other-${schemaName}@example.com`],
+    );
+    const userId = users.rows.find((row) => row.email.startsWith("credits-"))!.id;
+    const otherUserId = users.rows.find((row) => row.email.startsWith("other-"))!.id;
+    const wallets = await database.query<{ owner_user_id: string; id: string }>(
+      "SELECT owner_user_id, id FROM wallets WHERE owner_user_id = ANY($1::uuid[])",
+      [[userId, otherUserId]],
+    );
+    const walletId = wallets.rows.find((row) => row.owner_user_id === userId)!.id;
+    const otherWalletId = wallets.rows.find((row) => row.owner_user_id === otherUserId)!.id;
+    const repository = new PostgresFinancialSummaryRepository(database);
+
+    const categories = await database.query<{ id: string; name: string; wallet_id: string }>(
+      `INSERT INTO categories (user_id, wallet_id, name, nature)
+       VALUES ($1, $3, 'Eletrônicos', 'expense'), ($1, $3, 'Mercado', 'expense'), ($1, $3, 'Viagem', 'expense'),
+              ($2, $4, 'Outra carteira', 'expense')
+       RETURNING id, name, wallet_id`,
+      [userId, otherUserId, walletId, otherWalletId],
+    );
+    const categoryId = (name: string) => categories.rows.find((row) => row.name === name)!.id;
+
+    const cards = await database.query<{ id: string; wallet_id: string }>(
+      `INSERT INTO credit_cards (wallet_id, alias, closing_day, due_day)
+       VALUES ($1, 'Cartão', 10, 20), ($2, 'Cartão da outra', 10, 20)
+       RETURNING id, wallet_id`,
+      [walletId, otherWalletId],
+    );
+    const cardId = cards.rows.find((row) => row.wallet_id === walletId)!.id;
+    const otherCardId = cards.rows.find((row) => row.wallet_id === otherWalletId)!.id;
+    const statements = await database.query<{ id: string; wallet_id: string }>(
+      `INSERT INTO credit_card_statements (wallet_id, credit_card_id, closing_date, due_date)
+       VALUES ($1, $3, '2026-10-10', '2026-10-20'), ($2, $4, '2026-10-10', '2026-10-20')
+       RETURNING id, wallet_id`,
+      [walletId, otherWalletId, cardId, otherCardId],
+    );
+    const statementId = statements.rows.find((row) => row.wallet_id === walletId)!.id;
+    const otherStatementId = statements.rows.find((row) => row.wallet_id === otherWalletId)!.id;
+
+    // Three purchases in October and one in September, which is the one a later refund reverses.
+    const purchases = await database.query<{ id: string; description: string }>(
+      `INSERT INTO expenses (user_id, wallet_id, category_id, amount, date, payment_method_nature, description)
+       VALUES ($1, $2, $3, '30.00', '2026-10-05', 'credit_card', 'fone'),
+              ($1, $2, $4, '80.00', '2026-10-06', 'credit_card', 'compra do mes'),
+              ($1, $2, $5, '500.00', '2026-09-20', 'credit_card', 'passagem'),
+              ($1, $2, $4, '12.34', '2026-10-07', 'immediate', 'pao')
+       RETURNING id, description`,
+      [userId, walletId, categoryId("Eletrônicos"), categoryId("Mercado"), categoryId("Viagem")],
+    );
+    const purchaseId = (description: string) => purchases.rows.find((row) => row.description === description)!.id;
+    const otherPurchase = await database.query<{ id: string }>(
+      `INSERT INTO expenses (user_id, wallet_id, category_id, amount, date, payment_method_nature)
+       VALUES ($1, $2, $3, '70.00', '2026-10-05', 'credit_card') RETURNING id`,
+      [otherUserId, otherWalletId, categoryId("Outra carteira")],
+    );
+
+    await database.query(
+      `INSERT INTO credit_card_statement_credits (wallet_id, user_id, credit_card_statement_id, original_expense_id, amount, date, description)
+       VALUES ($1, $2, $3, $4, '30.00', '2026-10-15', 'estorno integral'),
+              ($1, $2, $3, $5, '20.00', '2026-10-16', 'estorno parcial'),
+              ($1, $2, $3, NULL, '7.77', '2026-10-17', 'credito sem compra')`,
+      [walletId, userId, statementId, purchaseId("fone"), purchaseId("compra do mes")],
+    );
+    // The September purchase is refunded in October: the credit belongs to October even though the
+    // money was spent in September.
+    await database.query(
+      `INSERT INTO credit_card_statement_credits (wallet_id, user_id, credit_card_statement_id, original_expense_id, amount, date, description)
+       VALUES ($1, $2, $3, $4, '500.00', '2026-10-18', 'estorno de compra anterior')`,
+      [walletId, userId, statementId, purchaseId("passagem")],
+    );
+    await database.query(
+      `INSERT INTO credit_card_statement_credits (wallet_id, user_id, credit_card_statement_id, original_expense_id, amount, date)
+       VALUES ($1, $2, $3, $4, '70.00', '2026-10-19')`,
+      [otherWalletId, otherUserId, otherStatementId, otherPurchase.rows[0]!.id],
+    );
+
+    const october = await repository.getSummary(walletId, "2026-10-01", "2026-10-31");
+
+    // Purchases in October: 30 + 80 + 12.34 immediate = 122.34. Credits in October: 30 + 20 + 7.77 + 500 = 557.77.
+    assert.equal(october.cardCreditTotal, "557.77");
+    assert.equal(october.unlinkedCardCreditTotal, "7.77");
+    assert.equal(october.expenseTotal, "-435.43");
+    // Credit purchases in October are 110.00, and every credit of the period is subtracted from them.
+    assert.equal(october.creditPurchaseTotal, "-447.77");
+    // The immediate expense and the cash balance are untouched: a statement credit is neither.
+    assert.equal(october.cashExpenseTotal, "12.34");
+    assert.equal(october.cashBalance, "-12.34");
+    // A credit is never income.
+    assert.equal(october.incomeTotal, "0.00");
+    assert.deepEqual(october.incomeByCategory, []);
+
+    const byName = (name: string) => october.expenseByCategory.find((item) => item.categoryName === name);
+    // Fully refunded: the category stays in the list at zero, because it did have movement.
+    assert.deepEqual(byName("Eletrônicos"), { categoryId: categoryId("Eletrônicos"), categoryName: "Eletrônicos", amount: "0.00" });
+    // Partially refunded, plus the immediate purchase in the same category: 80 + 12.34 - 20.
+    assert.deepEqual(byName("Mercado"), { categoryId: categoryId("Mercado"), categoryName: "Mercado", amount: "72.34" });
+    // The refund of a September purchase lands in October, so October's category is negative.
+    assert.deepEqual(byName("Viagem"), { categoryId: categoryId("Viagem"), categoryName: "Viagem", amount: "-500.00" });
+    // The credit with no known purchase lowers no category at all.
+    assert.equal(october.expenseByCategory.length, 3);
+
+    // September keeps the purchase at its full value: the refund is not retroactive.
+    const september = await repository.getSummary(walletId, "2026-09-01", "2026-09-30");
+    assert.equal(september.expenseTotal, "500.00");
+    assert.equal(september.creditPurchaseTotal, "500.00");
+    assert.equal(september.cardCreditTotal, "0.00");
+    assert.deepEqual(september.expenseByCategory, [
+      { categoryId: categoryId("Viagem"), categoryName: "Viagem", amount: "500.00" },
+    ]);
+
+    // Over the whole history the refunded purchases net out and only what was kept remains.
+    const allTime = await repository.getSummary(walletId);
+    assert.equal(allTime.expenseTotal, "64.57");
+    assert.equal(allTime.creditPurchaseTotal, "52.23");
+    assert.equal(allTime.unlinkedCardCreditTotal, "7.77");
+
+    // Another wallet's credits never reach this one, and the reverse holds too.
+    const other = await repository.getSummary(otherWalletId, "2026-10-01", "2026-10-31");
+    assert.equal(other.cardCreditTotal, "70.00");
+    assert.equal(other.expenseTotal, "0.00");
+    assert.deepEqual(other.expenseByCategory, [
+      { categoryId: categoryId("Outra carteira"), categoryName: "Outra carteira", amount: "0.00" },
+    ]);
+
+    // A period with no movement at all answers in zeros, not in the credits of other periods.
+    const empty = await repository.getSummary(walletId, "2026-12-01", "2026-12-31");
+    assert.equal(empty.expenseTotal, "0.00");
+    assert.equal(empty.cardCreditTotal, "0.00");
+    assert.equal(empty.unlinkedCardCreditTotal, "0.00");
+    assert.deepEqual(empty.expenseByCategory, []);
+  } finally {
+    await scopedPool?.end();
+    await adminPool.query(`DROP SCHEMA IF EXISTS ${schemaName} CASCADE`);
+    await adminPool.end();
+  }
+});

@@ -65,3 +65,14 @@ export function categoryChanges(current: CategorySummary[], previous: CategorySu
       return absoluteB > absoluteA ? 1 : -1
     }).slice(0, 5)
 }
+
+// Refunds on a statement, already subtracted by the API from the expense totals and from the
+// category of the purchase each one reverses. The dashboard reports them so a smaller expense has a
+// reason; the unlinked share is the part with no known purchase, which lowered no category.
+export function cardCredits(summary: FinancialSummary) {
+  return amountToCents(summary.cardCreditTotal ?? '0.00')
+}
+
+export function unlinkedCardCredits(summary: FinancialSummary) {
+  return amountToCents(summary.unlinkedCardCreditTotal ?? '0.00')
+}

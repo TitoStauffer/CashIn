@@ -15,6 +15,8 @@ const expected: FinancialSummary = {
   cashIncomeTotal: "100.00",
   cashExpenseTotal: "20.00",
   creditPurchaseTotal: "5.00",
+  cardCreditTotal: "0.00",
+  unlinkedCardCreditTotal: "0.00",
   cardPaymentTotal: "5.00",
   transferOutTotal: "0.00",
   transferInTotal: "0.00",
