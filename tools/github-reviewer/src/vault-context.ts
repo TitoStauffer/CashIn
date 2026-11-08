@@ -136,17 +136,35 @@ export async function loadVaultContext(
   const fits = (candidate: VaultContextSnapshot): boolean => snapshots.length < MAX_VAULT_ITEMS
     && totalBytes + Buffer.byteLength(candidate.content, 'utf8') <= MAX_VAULT_BYTES;
 
+  // Which ceiling refused the candidate. One message for both conditions cost a whole measurement
+  // round to find out it was bytes and not items, the same way a single message for three step
+  // conditions did in the Actions evidence loader.
+  const refusedBy = (): 'item' | 'byte' => (snapshots.length < MAX_VAULT_ITEMS ? 'byte' : 'item');
+
   // A required item is read after optional bodies have already been admitted — the link traversal
   // interleaves cited sources with notes reached by link, and the GitHub evidence comes last of all.
   // Admitting optional bodies greedily and never reconsidering them let the budget fill up before a
   // required item arrived, so the review still aborted whole and only the message changed. Priority,
   // not arrival order, decides who keeps a body: the optional bodies already admitted give theirs up,
   // largest first so the fewest citations lose one, until the required item fits.
-  const demoteOptionalBodies = (required: VaultContextSnapshot): boolean => {
+  //
+  // That ordering serves a large need. When the need is a marker's couple of hundred bytes it does the
+  // opposite: it sacrifices the biggest body in the context so a marker can be recorded, and two
+  // citations lose a body where one would have done — against the very principle the ordering exists
+  // for. So the caller states the shape of the need.
+  //
+  // A body smaller than its own marker is never demotable either way: releasing it would add bytes
+  // instead of freeing them, because the marker spells out path, size and digest. That only surfaces
+  // once the smallest bodies are the ones picked first.
+  const demoteOptionalBodies = (required: VaultContextSnapshot, prefer: 'largest' | 'smallest' = 'largest'): boolean => {
+    const bytesOf = (candidate: VaultContextSnapshot) => Buffer.byteLength(candidate.content, 'utf8');
     const demotable = snapshots
       .map((snapshot, index) => ({ snapshot, index }))
       .filter(({ snapshot }) => !snapshot.contentOmitted && isOptionalBody(snapshot.path))
-      .sort((first, second) => Buffer.byteLength(second.snapshot.content, 'utf8') - Buffer.byteLength(first.snapshot.content, 'utf8'));
+      .filter(({ snapshot }) => bytesOf(snapshot) > bytesOf(omittedSourceSnapshot(snapshot)))
+      .sort((first, second) => (prefer === 'largest'
+        ? bytesOf(second.snapshot) - bytesOf(first.snapshot)
+        : bytesOf(first.snapshot) - bytesOf(second.snapshot)));
     for (const { snapshot, index } of demotable) {
       if (fits(required)) break;
       const marker = omittedSourceSnapshot(snapshot);
@@ -172,11 +190,26 @@ export async function loadVaultContext(
       if (bodyRequired) {
         // Demotion only frees bytes, never items, so the item ceiling still aborts.
         if (!demoteOptionalBodies(stored)) {
-          throw new Error(`Vault context documents and evidence exceed the supported item or byte limit: ${snapshot.path}.`);
+          throw new Error(`Vault context documents and evidence exceed the supported ${refusedBy()} limit: ${snapshot.path}.`);
         }
       } else {
         stored = omittedSourceSnapshot(snapshot);
-        if (!fits(stored)) throw new Error('Vault context exceeds the supported item or byte limit.');
+        // A marker costs about a hundred bytes, so what refuses it is a budget already filled by other
+        // optional bodies admitted before it. Reclaim from those — the same demotion the required path
+        // uses — instead of aborting the whole review over a citation we were already dropping. Without
+        // this, optional bodies admitted in arrival order filled the budget and a citation arriving late
+        // killed the review, with the fix sitting thirty lines above in this same file.
+        // The need is the marker, so the smallest body that resolves it is the one to give up. Keeping
+        // the candidate's own body instead was considered and rejected: it would cost demoting at least
+        // as many bytes as it saves, and the candidate is the snapshot we were already prepared to drop.
+        //
+        // A marker runs past two hundred bytes, not a hundred: 176 are fixed — the prefix up to `path=`,
+        // the two field separators, the 64-character digest and the closing bracket — plus the path and
+        // the size's digits. That figure is what makes giving up a body worth it, so it is stated
+        // precisely rather than rounded down.
+        if (!fits(stored) && !demoteOptionalBodies(stored, 'smallest')) {
+          throw new Error(`Vault context exceeds the supported ${refusedBy()} limit: ${snapshot.path}.`);
+        }
       }
     }
     seen.add(key);
@@ -276,7 +309,10 @@ export async function loadVaultContext(
       .filter((key) => !seen.has(key)),
   );
   if (snapshots.length + pendingEvidencePaths.size > MAX_VAULT_ITEMS) {
-    throw new Error('Vault context exceeds the supported item limit.');
+    // Its own sentence: this is the projected evidence count refused before a single download, not an
+    // individual candidate refused inside the loop, and the two used to differ only by a path suffix.
+    // The note this delivery extends asks for exactly that — one message per condition.
+    throw new Error(`Vault context exceeds the supported item limit with ${pendingEvidencePaths.size} evidence items still to load.`);
   }
 
   const evidenceResponses = new Map<string, Record<string, unknown>>();
