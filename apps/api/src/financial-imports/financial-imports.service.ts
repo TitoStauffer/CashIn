@@ -490,11 +490,29 @@ export class FinancialImportsService {
     return mapping;
   }
 
+  // The detail screen polls this while the import is busy, so it is also where an interrupted import
+  // has to stop answering "processing": until now only the history read and the next upload expired
+  // it, and whoever stayed on the detail waited for a reload to learn the truth.
   async getImport(userId: string, walletId: string, importId: string): Promise<FinancialImportSession> {
     this.validateImportId(importId);
     const session = await this.repository.getImport(userId, walletId, importId);
     if (!session) throw new FinancialImportError("A importação não foi encontrada.", 404);
-    return session;
+    if (!this.looksStale(session)) return session;
+    await this.expireStaleImports(walletId);
+    return (await this.repository.getImport(userId, walletId, importId)) ?? session;
+  }
+
+  // The expiry cannot run on every read of this path: the screen polls it every 1.5 s, so a single
+  // stuck import would answer with hundreds of writes that match nothing. This gate repeats the
+  // condition the SQL already uses, read from the session in hand, and the database clock stays the
+  // authority — the UPDATE re-checks it. A clock skew only moves *when* the write is attempted: too
+  // early and it matches no row, so the screen keeps polling exactly as it does today; too late and
+  // the history read expires it first, as it already does. Neither case writes anything wrong.
+  private looksStale(session: FinancialImportSession): boolean {
+    if (session.status !== "processing") return false;
+    const startedAt = Date.parse(session.createdAt);
+    if (Number.isNaN(startedAt)) return false;
+    return Date.now() - startedAt >= FINANCIAL_IMPORT_PROCESSING_TIMEOUT_MINUTES * 60_000;
   }
 
   async updateItem(
