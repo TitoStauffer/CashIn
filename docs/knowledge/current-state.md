@@ -26,7 +26,7 @@ A infraestrutura e a tela existem. O parser padrão da API interpreta extratos b
 
 ## Automação de entrega
 
-O fluxo ativo executa validação de título, API, Web, ferramentas de automação, SonarQube, Code Review, QA, Quality Gate Coordinator e Merge Readiness. Desde a DEV-116 cada rodada tem um trilho: o trilho leve dispensa o QA quando nenhum arquivo alterado toca o runtime do produto nem a automação privilegiada, e todas as outras etapas continuam obrigatórias. Consulte [`automation/delivery-flow.md`](automation/delivery-flow.md). O merge permanece sob responsabilidade do Product Manager quando todas as evidências estão aprovadas. O pós-merge atualiza a issue Jira associada de forma idempotente.
+O fluxo ativo executa validação de título, API, Web, ferramentas de automação, SonarQube, Code Review, QA, Quality Gate Coordinator e Merge Readiness. Desde a DEV-116 cada rodada tem um trilho: o trilho leve dispensa o QA somente quando **todo** arquivo alterado é `*.md`, `*.test.*` ou `docs/knowledge/context-map.json`, e qualquer outro caminho exige o trilho completo. Todas as outras etapas continuam obrigatórias nos dois trilhos. Consulte [`automation/delivery-flow.md`](automation/delivery-flow.md). O merge permanece sob responsabilidade do Product Manager quando todas as evidências estão aprovadas. O pós-merge atualiza a issue Jira associada de forma idempotente.
 
 ## Limitações conhecidas
 

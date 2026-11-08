@@ -66,5 +66,14 @@ export function runtimeAffectingPaths(changedFiles: readonly string[] | undefine
   return changedFiles.filter((path) => typeof path === 'string' && isRuntimeAffectingPath(path));
 }
 
+/**
+ * The job-output key that carries the track from the privileged stage to the workflow conditions.
+ * It lives here, beside the rule, because the producer (`agent-stage-cli.ts`) and the consumer
+ * (`agent-orchestration.yml`) are in different languages and nothing else ties the two spellings
+ * together: renaming it on one side alone leaves the output empty, which fails closed but strands
+ * every Pull Request until someone diagnoses it.
+ */
+export const REVIEW_TRACK_OUTPUT = 'review_track';
+
 /** How the light track is defined, for the reports that have to state the rule they applied. */
 export const LIGHT_TRACK_RULE = 'arquivos `*.md`, arquivos `*.test.*` e `docs/knowledge/context-map.json`';

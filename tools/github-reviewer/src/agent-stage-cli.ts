@@ -12,7 +12,7 @@ import { evaluateDeterministicQualityGate, mayRetryInconclusive, selectReusableS
 import { resolveWorkflowEvent } from './workflow-event.js';
 import { createInjectionBlockedResult, detectPullRequestPromptInjection } from './prompt-injection-guard.js';
 import { assertPullRequestContainsBase } from './branch-freshness.js';
-import { classifyReviewTrack, type ReviewTrack } from './review-track.js';
+import { REVIEW_TRACK_OUTPUT, classifyReviewTrack, type ReviewTrack } from './review-track.js';
 
 try {
   await main();
@@ -59,7 +59,7 @@ async function main(): Promise<void> {
   // Classified from the API's changed-file list inside the privileged job. The light track skips QA,
   // the only model stage on the serialized runner; every other stage still runs.
   const reviewTrack = classifyReviewTrack(changedFiles);
-  await writeWorkflowOutput('review_track', reviewTrack);
+  await writeWorkflowOutput(REVIEW_TRACK_OUTPUT, reviewTrack);
   if (diff.length > 350_000) throw new Error('Pull Request diff exceeds the supported review size.');
   // A title-triggered evaluation may precede CI completion; no model runs until every required check passes.
   assertRequiredChecksPassed(checks);

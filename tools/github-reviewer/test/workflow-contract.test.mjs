@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
+import { REVIEW_TRACK_OUTPUT } from '../dist/review-track.js';
 
 const mergeReadinessWorkflow = await readFile(new URL('../../../.github/workflows/merge-readiness.yml', import.meta.url), 'utf8');
 const reviewSignalWorkflow = await readFile(new URL('../../../.github/workflows/pr-review-signal.yml', import.meta.url), 'utf8');
@@ -89,6 +90,14 @@ test('skips QA only on a confirmed light track and keeps the Coordinator on both
   for (const [name, value] of [['qa', qaCondition], ['quality-gate', gateCondition], ['final-status', finalCondition]]) {
     assert.ok(value.trim().length > 0, `condição do job ${name} não foi localizada no workflow`);
   }
+
+  // The producer and the consumer are in different languages, so the key is asserted from the shared
+  // constant the CLI writes with. Renaming it on one side alone used to keep this suite green while
+  // production got an empty output: QA would run, the Coordinator would be skipped for an unknown
+  // track and the final confirmation would fail — closed, but stranding every Pull Request.
+  assert.equal(REVIEW_TRACK_OUTPUT, 'review_track');
+  assert.ok(orchestrationWorkflow.includes(`steps.stage.outputs.${REVIEW_TRACK_OUTPUT}`), REVIEW_TRACK_OUTPUT);
+  assert.ok(orchestrationWorkflow.includes(`needs.code-review.outputs.${REVIEW_TRACK_OUTPUT}`), REVIEW_TRACK_OUTPUT);
 
   // The track is produced by the trusted CLI as a job output, never read from the PR body.
   assert.match(orchestrationWorkflow, /^\s+review_track: \$\{\{ steps\.stage\.outputs\.review_track \}\}\s*$/m);
