@@ -1251,6 +1251,24 @@ describe('FinancialImportsPage', () => {
       expect(screen.queryByText(/Cadastre um cartão ativo/)).not.toBeInTheDocument()
     })
 
+    // The failure message says "try again", and until now the only way to try again was to switch the
+    // import kind away and back, because the load runs on a change of the radio that already holds it.
+    it('retries the card list from the failure itself', async () => {
+      const user = userEvent.setup()
+      const list = vi.spyOn(creditCardsApi, 'list')
+        .mockRejectedValueOnce(new Error('offline'))
+        .mockResolvedValueOnce({ items: [{ id: 'card-1', nickname: 'Principal', isActive: true }] } as never)
+      await renderPage()
+      await user.click(screen.getByRole('radio', { name: 'Fatura de cartão' }))
+      expect(await screen.findByText('Não foi possível carregar os cartões desta carteira. Tente novamente.')).toBeVisible()
+
+      await user.click(screen.getByRole('button', { name: 'Tentar carregar os cartões de novo' }))
+
+      expect(await screen.findByRole('option', { name: 'Principal' })).toBeInTheDocument()
+      expect(list).toHaveBeenCalledTimes(2)
+      expect(screen.queryByRole('button', { name: 'Tentar carregar os cartões de novo' })).not.toBeInTheDocument()
+    })
+
     it('drops the chosen statement when the item becomes a statement payment', async () => {
       const user = userEvent.setup()
       vi.spyOn(importsApi, 'upload').mockResolvedValue(cardPreview)

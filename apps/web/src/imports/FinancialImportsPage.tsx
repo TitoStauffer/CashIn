@@ -264,8 +264,8 @@ function FinancialImportsWalletPage({ userEmail, isLoggingOut, onLogout }: Finan
     [selectedImport?.items],
   )
   const hasPendingDraftChanges = useMemo(
-    () => (selectedImport?.items ?? []).some((item) => hasDraftChanged(item, drafts[item.id])),
-    [drafts, selectedImport?.items],
+    () => (selectedImport?.items ?? []).some((item) => hasDraftChanged(item, drafts[item.id], selectedImport?.creditCardClosingDay ?? null)),
+    [drafts, selectedImport?.creditCardClosingDay, selectedImport?.items],
   )
   const isLoading = loadedWalletId !== activeWalletId
   const isSelectedImportBusy = selectedImport ? isImportBusy(selectedImport.status) : false
@@ -442,6 +442,13 @@ function FinancialImportsWalletPage({ userEmail, isLoggingOut, onLogout }: Finan
     setImportKind(kind)
     setFormError('')
     if (kind !== 'credit_card_statement' || creditCards.length > 0) return
+    await loadCreditCards()
+  }
+
+  // Its own function because the failure message says "try again" and, until now, the only way to
+  // try again was to switch the import kind away and back: the load runs on a change of the radio,
+  // which is already on the card statement when it fails.
+  async function loadCreditCards() {
     const operation = captureWalletOperation()
     setAreCreditCardsLoading(true)
     setCreditCardsError('')
@@ -881,6 +888,11 @@ function FinancialImportsWalletPage({ userEmail, isLoggingOut, onLogout }: Finan
                     </select>
                   </label>
                   {!areCreditCardsLoading && creditCards.length === 0 && !creditCardsError && <small>Cadastre um cartão ativo nesta carteira para importar a fatura.</small>}
+                  {!areCreditCardsLoading && creditCardsError && (
+                    <button type="button" onClick={() => { void loadCreditCards() }} disabled={pendingAction !== null}>
+                      Tentar carregar os cartões de novo
+                    </button>
+                  )}
                   {selectedFile && getFileFormat(selectedFile.name) === 'csv' && (
                     <label>
                       <span>Como o CSV mostra as compras</span>
