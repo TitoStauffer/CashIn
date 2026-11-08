@@ -4,6 +4,9 @@ import { requestGitHubApi } from './github-api-client.js';
 export const ACTIONS_APP_ID = 15368;
 const WORKFLOW_PATH = '.github/workflows/ci.yml';
 const MAX_RESPONSE_BYTES = 100_000;
+const MAX_JOB_STEPS = 40;
+const EMPTY_STEPS_ATTEMPTS = 4;
+const EMPTY_STEPS_DELAY_MS = 3_000;
 const MAX_SNAPSHOT_BYTES = 32_000;
 const STATES = new Set(['queued', 'in_progress', 'completed', 'waiting', 'pending', 'requested']);
 const CONCLUSIONS = new Set(['success', 'failure', 'neutral', 'cancelled', 'skipped', 'timed_out', 'action_required', 'stale', 'startup_failure']);
@@ -21,6 +24,13 @@ export type AgentActionsEvidence = { availability: 'unavailable'; reason: string
   steps: Array<{ number: number; name: string; status: string; conclusion: string | null }>;
 };
 
+/** Injection point for tests: real waiting would make the empty-step cases slow instead of fast. */
+export interface EmptyStepsRetry {
+  attempts?: number;
+  delayMs?: number;
+  wait?: (ms: number) => Promise<void>;
+}
+
 export interface AgentCiSnapshot {
   path: string;
   headSha: string;
@@ -34,7 +44,7 @@ export function unavailableActionsEvidence(): AgentActionsEvidence {
 
 export async function loadActionsEvidence(
   fetchImpl: typeof fetch, repository: string, pullRequestNumber: number, headSha: string,
-  check: Record<string, unknown>, token: string,
+  check: Record<string, unknown>, token: string, retry: EmptyStepsRetry = {},
 ): Promise<AgentActionsEvidence> {
   // Never follow the check's URL: validate it, then construct API paths ourselves.
   const details = typeof check.details_url === 'string' ? new URL(check.details_url, 'https://invalid.test') : undefined;
@@ -47,7 +57,7 @@ export async function loadActionsEvidence(
   const runId = Number(suffix[1]);
   const jobId = Number(suffix[2]);
   const read = (path: string) => requestGitHubApi<Record<string, unknown>>(fetchImpl, `/repos/${repository}${path}`, token, { maxResponseBytes: MAX_RESPONSE_BYTES });
-  const [job, run] = await Promise.all([read(`/actions/jobs/${jobId}`), read(`/actions/runs/${runId}`)]);
+  const [job, run] = await Promise.all([readJobUntilStepsPublished(read, jobId, retry), read(`/actions/runs/${runId}`)]);
   const associatedPr = Array.isArray(run.pull_requests) ? run.pull_requests.map(record).find((pr) => pr?.number === pullRequestNumber) : undefined;
   if (job.id !== jobId || job.run_id !== runId || job.id !== check.id
     || job.head_sha !== headSha || run.head_sha !== headSha || check.head_sha !== headSha
@@ -59,7 +69,11 @@ export async function loadActionsEvidence(
     || record(associatedPr?.head)?.sha !== headSha) {
     throw new Error('GitHub Actions evidence does not match the current repository, PR, workflow, check, and HEAD SHA.');
   }
-  if (!Array.isArray(job.steps) || job.steps.length === 0 || job.steps.length > 40) throw new Error('GitHub Actions job steps are missing or exceed the supported limit.');
+  // One message for three conditions cost a whole investigation: the log said "missing or exceed the
+  // supported limit" and sent me looking at the 40-step limit while the real cause was an empty list.
+  if (!Array.isArray(job.steps)) throw new Error('GitHub Actions job evidence carries no step list.');
+  if (job.steps.length === 0) throw new Error('GitHub Actions job evidence still carries an empty step list after every retry.');
+  if (job.steps.length > MAX_JOB_STEPS) throw new Error(`GitHub Actions job evidence carries more steps than the supported limit of ${MAX_JOB_STEPS}.`);
   const steps = job.steps.map((value) => {
     const step = record(value);
     if (!step || !positiveId(step.number) || typeof step.name !== 'string' || step.name.length === 0 || step.name.length > 160) {
@@ -72,6 +86,30 @@ export async function loadActionsEvidence(
     availability: 'available', repository, headSha, workflowPath: WORKFLOW_PATH, runId, jobId, detailsUrl: details.href,
     runStatus: state(run.status), runConclusion: conclusion(run.conclusion), steps,
   };
+}
+
+// An empty step list is not the same as absent evidence. The orchestration starts from the CI
+// workflow's `workflow_run` event, so GitHub has already published the job's conclusion while
+// `/actions/jobs/{id}` can still answer `steps: []` for a few seconds. Failing on the first read
+// turned that race into a review aborted before any analysis and a gate left INCONCLUSIVE waiting for
+// a report that would never come, recoverable only by dispatching the orchestration by hand.
+//
+// So re-read before deciding — and keep failing closed afterwards: a list that is still empty once the
+// attempts run out stays a refusal, because evidence that never arrives must never become an approval.
+// Only an empty array is retried. An absent or non-array `steps` is a malformed payload rather than a
+// publication delay, and retrying it would only postpone the same refusal.
+async function readJobUntilStepsPublished(
+  read: (path: string) => Promise<Record<string, unknown>>, jobId: number, retry: EmptyStepsRetry,
+): Promise<Record<string, unknown>> {
+  const attempts = retry.attempts ?? EMPTY_STEPS_ATTEMPTS;
+  const delayMs = retry.delayMs ?? EMPTY_STEPS_DELAY_MS;
+  const wait = retry.wait ?? ((ms: number) => new Promise<void>((resolve) => { setTimeout(resolve, ms); }));
+  let job = await read(`/actions/jobs/${jobId}`);
+  for (let attempt = 1; attempt < attempts && Array.isArray(job.steps) && job.steps.length === 0; attempt += 1) {
+    await wait(delayMs);
+    job = await read(`/actions/jobs/${jobId}`);
+  }
+  return job;
 }
 
 export async function loadCiSnapshots(fetchImpl: typeof fetch, repository: string, headSha: string, token: string): Promise<AgentCiSnapshot[]> {
