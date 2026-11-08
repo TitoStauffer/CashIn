@@ -86,6 +86,10 @@ export type FinancialImportItem = {
   transferCounterpartWalletId?: string | null
   transferCandidates?: WalletTransferCandidate[]
   transferCounterpartWallets?: TransferCounterpartWallet[]
+  // Why a line of a bank statement preview has nothing to reconcile with. The lists above always
+  // come with such a preview, so an empty list means evaluated and empty; this says what the API
+  // left out of the evaluation. An older API omits it, and then the preview can only be generic.
+  reconciliationUnavailableReason?: 'not_a_transfer' | 'card_payment' | null
 }
 
 // An open statement a bank payment may be reconciled with.

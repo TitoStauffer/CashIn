@@ -81,6 +81,13 @@ Sessões desfeitas não bloqueiam uma importação futura, pois somente itens ai
 - **Logs:** o logger serializa de cada requisição apenas método, rota e endereço de origem, e de cada resposta apenas o código; `req.headers`, `res.headers` e `req.body` estão na redação do pino. Nenhum log carrega cookie de sessão, conteúdo de arquivo ou valor financeiro.
 - **Fórmulas de CSV:** avaliado e não aplicável hoje. O projeto não gera nem exporta CSV em nenhum ponto, então não existe o destino onde uma descrição iniciada por `=`, `+`, `-` ou `@` se tornaria fórmula. A sanitização existente trata o que tem destino real: remoção de `\u0000`, limites em bytes UTF-8 e nome de arquivo sem caminho nem caractere de controle. Quem introduzir exportação precisa neutralizar o prefixo na geração.
 
+## Conciliação sem opção e conciliação não avaliada (DEV-93)
+
+- **O problema:** a prévia omitia as três listas de conciliação em situações diferentes — linha reservada à fatura, linha ainda não gravada como `transfer`, linha elegível e sem nenhuma opção — e o cliente não tinha como distingui-las. A tela só conseguia afirmar o terceiro caso e, nos outros, exibia uma frase genérica.
+- **A regra:** toda linha editável de uma prévia de extrato bancário recebe as três listas, vazias quando não há opção, mais `reconciliationUnavailableReason` dizendo o que ficou fora da avaliação: `not_a_transfer`, `card_payment` ou `null`. Lista vazia passou a significar avaliada e vazia, e a tela deixou de inferir sentido da ausência de campo.
+- **Por que importa além desta tela:** o padrão "ausente não é vazio" já tinha produzido um defeito na DEV-58. A correção é tornar a ausência impossível no contrato, em vez de pedir a cada cliente que a interprete.
+- **Na tela:** cada razão tem a sua frase, com a ação que desbloqueia a linha — salvar o tipo Transferência, ajustar a descrição que aponta pagamento de fatura, ou escolher outro tipo quando não há mesmo opção.
+
 ## Fontes verificáveis
 
 - [`docs/financial-imports-contract.md`](../../financial-imports-contract.md)

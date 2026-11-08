@@ -15,6 +15,7 @@ import {
   describeCounterpartWallet,
   describeStatementCandidate,
   describeTransferCandidate,
+  describeMissingReconciliation,
   reconciliationChoiceDraft,
   reconciliationChoiceValue,
   transferDirection,
@@ -165,7 +166,6 @@ export function ImportPreview({
             // The API omits these lists for a line it left to the statement reconciliation, and for a
             // type the user just changed by hand. Absent is not the same as empty: only an empty list
             // the API actually sent means there is nothing to reconcile.
-            const knowsTransferOptions = item.transferCounterpartWallets !== undefined
             // The candidate lists only hold what is still open — a statement with an outstanding
             // balance, a transfer whose side here is free — so what was already chosen drops out of
             // them. It stays selectable, otherwise saving the item again would silently undo the
@@ -282,9 +282,7 @@ export function ImportPreview({
                     </label>
                   ) : (
                     <p className="imports-item-hint" role="note">
-                      {knowsTransferOptions
-                        ? 'Nenhuma fatura em aberto e nenhuma outra carteira para conciliar esta movimentação. Escolha outro tipo ou deixe-a fora da importação.'
-                        : 'Esta movimentação não tem conciliação disponível nesta prévia. Salve o ajuste e revise, escolha outro tipo ou deixe-a fora da importação.'}
+                      {describeMissingReconciliation(item)}
                     </p>
                   ))}
                   <label className="imports-item-description">

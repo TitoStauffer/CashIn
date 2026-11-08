@@ -425,3 +425,102 @@ test("PostgreSQL transfer candidates hide the other wallet's name once access to
     await adminPool.end();
   }
 });
+
+// The preview of a bank statement always sends the three reconciliation lists, so an empty list
+// means evaluated and empty. What the API still has to say is what it left OUT of the evaluation,
+// because that is what tells the person which action unblocks the line.
+test("PostgreSQL preview distinguishes a line with no reconciliation option from one it did not evaluate", {
+  skip: !testDatabaseUrl,
+}, async () => {
+  const schemaName = `reconciliation_reason_${randomBytes(8).toString("hex")}`;
+  const adminPool = new Pool({ connectionString: testDatabaseUrl });
+  let scopedPool: Pool | undefined;
+  let app: ReturnType<typeof createApp> | undefined;
+
+  try {
+    await adminPool.query(`CREATE SCHEMA ${schemaName}`);
+    scopedPool = new Pool({ connectionString: testDatabaseUrl, options: `-c search_path=${schemaName}` });
+    const database = createDatabase(scopedPool);
+    await runMigrations(database);
+
+    // A single wallet and no credit card: there is genuinely nothing to reconcile with, which is the
+    // only way to tell "no option" apart from "not evaluated".
+    const users = await database.query<{ id: string }>(
+      `INSERT INTO users (email, password_hash, email_verified_at)
+       VALUES ($1, 'test-hash', now()) RETURNING id`,
+      [`alone-${schemaName}@example.com`],
+    );
+    const userId = users.rows[0]!.id;
+    const wallet = await database.query<{ id: string }>(
+      "SELECT id FROM wallets WHERE owner_user_id = $1 AND is_personal",
+      [userId],
+    );
+    const walletId = wallet.rows[0]!.id;
+
+    const authRepository = new PostgresAuthRepository(database);
+    const sessionToken = createOpaqueToken();
+    await authRepository.createSession(userId, hashToken(sessionToken), new Date(Date.now() + 120_000));
+    app = createApp(database);
+    await app.ready();
+    const headers = { cookie: `cashin_session=${sessionToken}`, "x-wallet-id": walletId };
+    const read = async (importId: string) => (await app!.inject({
+      method: "GET", url: `/financial-imports/${importId}`, headers,
+    })).json() as FinancialImportSession;
+    const setType = (importId: string, itemId: string, item: { date: string; description: string | null }) => app!.inject({
+      method: "PATCH",
+      url: `/financial-imports/${importId}/items/${itemId}`,
+      headers,
+      payload: { date: item.date, description: item.description, type: "transfer" },
+    });
+
+    const created = (await app.inject({
+      method: "POST",
+      url: "/financial-imports",
+      headers: { ...headers, "content-type": "application/octet-stream", "x-file-name": "extrato.ofx", "x-file-format": "ofx" },
+      payload: bankOfx([
+        { id: "r-market", date: "2026-10-05", amount: "-50.00", name: "MERCADO" },
+        { id: "r-card", date: "2026-10-06", amount: "-400.00", name: "PAGAMENTO FATURA CARTAO" },
+      ]),
+    })).json() as FinancialImportSession;
+
+    // Neither line is stored as a transfer: an ordinary debit stays an expense, and so does a card
+    // payment with no open statement to pay. Nothing was evaluated for either.
+    const initial = await read(created.id);
+    for (const item of initial.items!) {
+      assert.equal(item.type, "expense");
+      assert.deepEqual(item.statementCandidates, []);
+      assert.deepEqual(item.transferCandidates, []);
+      assert.deepEqual(item.transferCounterpartWallets, []);
+      assert.equal(item.reconciliationUnavailableReason, "not_a_transfer");
+    }
+
+    const cardLine = initial.items!.find((item) => item.description === "PAGAMENTO FATURA CARTAO")!;
+    const marketLine = initial.items!.find((item) => item.description === "MERCADO")!;
+
+    // Saved as a transfer, the card payment line is reserved to the statement reconciliation: the
+    // transfer options are deliberately not evaluated for it, and the API says so.
+    assert.equal((await setType(created.id, cardLine.id, cardLine)).statusCode, 200);
+    const withCardTransfer = await read(created.id);
+    const reservedLine = withCardTransfer.items!.find((item) => item.id === cardLine.id)!;
+    assert.equal(reservedLine.type, "transfer");
+    assert.deepEqual(reservedLine.statementCandidates, []);
+    assert.deepEqual(reservedLine.transferCandidates, []);
+    assert.deepEqual(reservedLine.transferCounterpartWallets, []);
+    assert.equal(reservedLine.reconciliationUnavailableReason, "card_payment");
+
+    // Saved as a transfer and not a card payment, the ordinary line IS evaluated — and there is
+    // nothing: no open statement, no pending transfer, no other wallet. That is a null reason.
+    assert.equal((await setType(created.id, marketLine.id, marketLine)).statusCode, 200);
+    const evaluated = (await read(created.id)).items!.find((item) => item.id === marketLine.id)!;
+    assert.equal(evaluated.type, "transfer");
+    assert.deepEqual(evaluated.statementCandidates, []);
+    assert.deepEqual(evaluated.transferCandidates, []);
+    assert.deepEqual(evaluated.transferCounterpartWallets, []);
+    assert.equal(evaluated.reconciliationUnavailableReason, null);
+  } finally {
+    if (app) await app.close();
+    await scopedPool?.end();
+    await adminPool.query(`DROP SCHEMA IF EXISTS ${schemaName} CASCADE`);
+    await adminPool.end();
+  }
+});
