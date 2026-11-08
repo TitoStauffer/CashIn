@@ -140,6 +140,22 @@
 - Se comentários inline ou revisão formal não forem suportados pela integração disponível, use apenas as operações confirmadas, publique o resultado possível e informe explicitamente a limitação. Nunca afirme que uma operação foi realizada sem confirmação da ferramenta.
 - Em `CHANGES_REQUESTED`, o Agent técnico principal move o ticket de `In Review` para `In Progress`, registra o motivo no Jira conforme as regras de transição deste arquivo, coordena as correções e registra no vault o aprendizado confirmado conforme a seção **Uso do vault de conhecimento**. Após nova rodada, o Code Review reavalia o diff atualizado e confirma que o aprendizado aplicável foi registrado. A aprovação do Code Review não aprova QA nem autoriza o merge; o fluxo de QA e merge existente continua obrigatório.
 
+### Encaminhamento de achado não bloqueante
+
+Decisão do usuário em 08/11/2026. Esta seção define o que acontece com o achado que **não** segura o merge, e existe porque a ausência de regra escrita deixava a decisão por conta do Agent técnico principal a cada rodada.
+
+- Achado não bloqueante continua não segurando o merge. Isso não muda.
+- Um achado não bloqueante **só vira Tarefa no Jira** quando se encaixa em uma destas quatro classes:
+  - **Usuário:** altera o que a pessoa vê, lê ou consegue fazer, incluindo dado exibido errado, orientação enganosa e ação travada sem motivo visível.
+  - **Contrato público:** altera contrato consumido pelo cliente Web. Contrato interno entre módulos da API **não** conta, nem assinatura de função, nem formato de evidência interna da automação.
+  - **Segurança:** afeta autenticação, autorização, exposição de dado sensível, validação de entrada não confiável ou a superfície de um workflow privilegiado.
+  - **Destrava entrega:** defeito que trava o pipeline para qualquer PR, mesmo sem tocar usuário, contrato público ou segurança.
+- Todo o resto **não entra na fila**: precisão de teste, forma de cobertura, redação, metadado de nota, limpeza, renomeação, preferência de estilo e tipagem interna.
+- Subir a barra não é esconder achado. O achado que não passa fica registrado em dois lugares duráveis: o relatório da própria revisão no Pull Request e o comentário do Jira do ticket da entrega, que deve nomear o achado, por que ele não passou na barra e o que o faria passar. Não registrar é descumprir esta seção tanto quanto abrir Tarefa para tudo.
+- **Exceção da pegada:** achado dentro da pegada do Pull Request aberto se fecha na própria rodada, e não vira Tarefa. A exceção existe para não terceirizar desleixo recém-criado, não para perseguir ajuste de redação indefinidamente — quando as rodadas restantes só trocariam prosa sem mudar comportamento, declare o critério de parada no PR e encerre.
+- Fechar um achado **sem implementar** não é resolvê-lo. Declare o fechamento sem implementação no comentário do Jira, com o motivo específico daquele achado e o que o reabriria. Não use a resolução padrão de conclusão, que afirmaria que o trabalho foi feito.
+- Esta seção governa a triagem do Agent técnico principal. Ela não autoriza o Agent de Code Review a omitir achado comprovado do relatório, nem altera as regras de severidade e de decisão da seção **Processo de Code Review no GitHub**.
+
 ### Merge Readiness Gate
 - O workflow `.github/workflows/merge-readiness.yml` executa o avaliador da DEV-41 para Pull Requests abertos destinados à `master`; o avaliador existente é a fonte única das regras de prontidão.
 - O workflow reavalia em abertura/atualização do PR, conclusão do CI, comentários estruturados dos Agents publicados pelo GitHub App, eventos de revisão formal e execução manual pelo GitHub Actions. O workflow `.github/workflows/pr-review-signal.yml` recebe eventos de revisão sem secrets ou permissões de escrita e sinaliza o workflow confiável do gate.
