@@ -9,6 +9,11 @@ export type FinancialSummary = {
   cashIncomeTotal: string
   cashExpenseTotal: string
   creditPurchaseTotal: string
+  // Refunds on a statement, already subtracted from the expense totals and from the category of the
+  // purchase each one reverses. They are reported so the dashboard can say why the expense fell; the
+  // unlinked share has no known purchase, so it lowered no category. An older API omits both.
+  cardCreditTotal?: string
+  unlinkedCardCreditTotal?: string
   cardPaymentTotal: string
   // Transfers between wallets are not income nor expense: they only move cash out of one wallet and
   // into another. An older API omits them, so the dashboard treats the absence as zero.

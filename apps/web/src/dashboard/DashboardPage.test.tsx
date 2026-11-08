@@ -70,6 +70,58 @@ describe('DashboardPage', () => {
     expect(dashboardApi.goals).toHaveBeenCalledTimes(1)
   })
 
+  // A refund lowers the expense, and a dashboard that only shows the smaller number leaves the person
+  // wondering where the money went. The refunded amount is named, and so is the part of it that no
+  // category could absorb.
+  it('names the refunds already subtracted from the expense totals', async () => {
+    vi.mocked(dashboardApi.summary).mockResolvedValue({
+      ...populated,
+      expenseTotal: '1750.00',
+      creditPurchaseTotal: '550.00',
+      cardCreditTotal: '50.00',
+      unlinkedCardCreditTotal: '20.00',
+    })
+    await renderPage()
+    await screen.findByRole('heading', { name: 'Composição do fluxo em dinheiro' })
+
+    expect(screen.getByText('Estornos de cartão no mês').nextElementSibling).toHaveTextContent('R$ 50,00')
+    expect(screen.getByText(/Os R\$ 50,00 de estorno já estão descontados/)).toBeVisible()
+    expect(screen.getByText(/R\$ 20,00 não têm compra identificada/)).toBeVisible()
+    // The cash flow is untouched: the invoice is already paid at its net value.
+    expect(screen.getByText('R$ 4.000,00 − R$ 1.000,00 − R$ 300,00 − R$ 500,00 = R$ 2.200,00.')).toBeVisible()
+  })
+
+  it('omits the refund line when the month has none', async () => {
+    await renderPage()
+    await screen.findByRole('heading', { name: 'Composição do fluxo em dinheiro' })
+    expect(screen.queryByText('Estornos de cartão no mês')).toBeNull()
+    expect(screen.queryByText(/de estorno já estão descontados/)).toBeNull()
+  })
+
+  // A purchase refunded in a later month leaves that month negative, in the total and in the category.
+  it('shows a negative expense and a negative category without breaking the bars', async () => {
+    vi.mocked(dashboardApi.summary).mockResolvedValue({
+      ...populated,
+      expenseTotal: '-200.00',
+      creditPurchaseTotal: '-500.00',
+      cardCreditTotal: '2000.00',
+      unlinkedCardCreditTotal: '0.00',
+      expenseByCategory: [
+        { categoryId: 'travel', categoryName: 'Viagem', amount: '-500.00' },
+        { categoryId: 'housing', categoryName: 'Moradia', amount: '300.00' },
+      ],
+    })
+    await renderPage()
+    await screen.findByRole('heading', { name: 'Composição do fluxo em dinheiro' })
+
+    expect(summaryCard('Despesas registradas').getByText('-R$ 200,00')).toBeVisible()
+    expect(screen.getByText(/pode deixar o mês com despesa negativa/)).toBeVisible()
+    const travel = screen.getByText('Viagem').closest('li')!
+    expect(travel).toHaveTextContent('-R$ 500,00')
+    // A negative category gets an empty bar instead of a reversed or overflowing one.
+    expect(travel.querySelector('.dashboard-category__track span')).toHaveStyle({ width: '0%' })
+  })
+
   it('shows the sign of a negative cash result without mixing in benefits', async () => {
     vi.mocked(dashboardApi.summary).mockResolvedValue({ ...populated, cashBalance: '-1234.56', benefitBalances: [
       { balanceType: 'food_benefit', amount: '20.00' }, { balanceType: 'meal_benefit', amount: '-10.00' }, { balanceType: 'home_office_benefit', amount: '200.00' },

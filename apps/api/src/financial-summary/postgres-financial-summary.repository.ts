@@ -13,6 +13,8 @@ interface SummaryRow {
   cash_income_total: string;
   cash_expense_total: string;
   credit_purchase_total: string;
+  card_credit_total: string;
+  unlinked_card_credit_total: string;
   contribution_total: string;
   contributions_by_goal: FinancialSummaryGoalContribution[];
   available_balance: string;
@@ -37,6 +39,16 @@ export class PostgresFinancialSummaryRepository implements FinancialSummaryRepos
            AND ($2::date IS NULL OR date >= $2::date)
            AND ($3::date IS NULL OR date <= $3::date)
        ),
+       -- A refund or chargeback on a statement gives money back, so the purchase it reverses stops
+       -- being a cost. The credit belongs to the period of its own date: the purchase it reverses may
+       -- be months older, and that older period really did spend the money.
+       filtered_card_credits AS (
+         SELECT credit.amount, credit.original_expense_id
+         FROM credit_card_statement_credits AS credit
+         WHERE credit.wallet_id = $1
+           AND ($2::date IS NULL OR credit.date >= $2::date)
+           AND ($3::date IS NULL OR credit.date <= $3::date)
+       ),
        totals AS (
          SELECT
            COALESCE((
@@ -52,7 +64,18 @@ export class PostgresFinancialSummaryRepository implements FinancialSummaryRepos
              WHERE expense.wallet_id = $1
                AND ($2::date IS NULL OR expense.date >= $2::date)
                AND ($3::date IS NULL OR expense.date <= $3::date)
-           ), 0.00) AS expense_total,
+           ), 0.00)
+           - COALESCE((SELECT SUM(credit.amount) FROM filtered_card_credits AS credit), 0.00) AS expense_total,
+           COALESCE((SELECT SUM(credit.amount) FROM filtered_card_credits AS credit), 0.00) AS card_credit_total,
+           -- A credit whose purchase is unknown — not matched on import, or whose purchase was
+           -- deleted — still gives money back, so it lowers the totals. What it cannot do is lower a
+           -- category, because there is no purchase to say which one. It is reported on its own
+           -- instead of being hidden or guessed.
+           COALESCE((
+             SELECT SUM(credit.amount)
+             FROM filtered_card_credits AS credit
+             WHERE credit.original_expense_id IS NULL
+           ), 0.00) AS unlinked_card_credit_total,
            COALESCE((
              SELECT SUM(contribution.amount)
              FROM filtered_contributions AS contribution
@@ -80,7 +103,8 @@ export class PostgresFinancialSummaryRepository implements FinancialSummaryRepos
                AND expense.payment_method_nature = 'credit_card'
                AND ($2::date IS NULL OR expense.date >= $2::date)
                AND ($3::date IS NULL OR expense.date <= $3::date)
-           ), 0.00) AS credit_purchase_total,
+           ), 0.00)
+           - COALESCE((SELECT SUM(credit.amount) FROM filtered_card_credits AS credit), 0.00) AS credit_purchase_total,
            COALESCE((
              SELECT SUM(payment.amount)
              FROM credit_card_statement_payments AS payment
@@ -179,12 +203,24 @@ export class PostgresFinancialSummaryRepository implements FinancialSummaryRepos
            ), '[]'::json
          ) AS items
          FROM (
-           SELECT expense.category_id, SUM(expense.amount) AS amount
-           FROM expenses AS expense
-           WHERE expense.wallet_id = $1
-             AND ($2::date IS NULL OR expense.date >= $2::date)
-             AND ($3::date IS NULL OR expense.date <= $3::date)
-           GROUP BY expense.category_id
+           SELECT movement.category_id, SUM(movement.amount) AS amount
+           FROM (
+             SELECT expense.category_id, expense.amount
+             FROM expenses AS expense
+             WHERE expense.wallet_id = $1
+               AND ($2::date IS NULL OR expense.date >= $2::date)
+               AND ($3::date IS NULL OR expense.date <= $3::date)
+             UNION ALL
+             -- The credit lands in its own period, but the category is the reversed purchase's, which
+             -- is why this join carries no date filter. A category can end the period at zero, or
+             -- below it when the purchase belongs to an earlier one; both are the truth about it.
+             SELECT original.category_id, -credit.amount
+             FROM filtered_card_credits AS credit
+             JOIN expenses AS original
+               ON original.id = credit.original_expense_id
+              AND original.wallet_id = $1
+           ) AS movement
+           GROUP BY movement.category_id
          ) AS grouped
          JOIN categories AS category
            ON category.id = grouped.category_id
@@ -197,6 +233,8 @@ export class PostgresFinancialSummaryRepository implements FinancialSummaryRepos
          trunc(cash_income_total, 2)::text AS cash_income_total,
          trunc(cash_expense_total, 2)::text AS cash_expense_total,
          trunc(credit_purchase_total, 2)::text AS credit_purchase_total,
+         trunc(card_credit_total, 2)::text AS card_credit_total,
+         trunc(unlinked_card_credit_total, 2)::text AS unlinked_card_credit_total,
          trunc(card_payment_total, 2)::text AS card_payment_total,
          trunc(transfer_out_total, 2)::text AS transfer_out_total,
          trunc(transfer_in_total, 2)::text AS transfer_in_total,
@@ -222,6 +260,8 @@ export class PostgresFinancialSummaryRepository implements FinancialSummaryRepos
       cashIncomeTotal: row.cash_income_total,
       cashExpenseTotal: row.cash_expense_total,
       creditPurchaseTotal: row.credit_purchase_total,
+      cardCreditTotal: row.card_credit_total,
+      unlinkedCardCreditTotal: row.unlinked_card_credit_total,
       cardPaymentTotal: row.card_payment_total,
       transferOutTotal: row.transfer_out_total,
       transferInTotal: row.transfer_in_total,

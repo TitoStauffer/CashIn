@@ -20,6 +20,10 @@
       "documents": ["docs/knowledge/domain/credit-cards.md", "docs/knowledge/domain/transactions.md"]
     },
     {
+      "paths": ["apps/api/src/financial-summary/**", "apps/web/src/dashboard/**", "docs/dashboard-summary-contract.md"],
+      "documents": ["docs/knowledge/domain/transactions.md", "docs/knowledge/domain/credit-cards.md"]
+    },
+    {
       "paths": ["apps/api/src/financial-imports/**", "apps/web/src/imports/**", "docs/financial-imports-contract.md"],
       "documents": ["docs/knowledge/domain/imports.md"]
     },
