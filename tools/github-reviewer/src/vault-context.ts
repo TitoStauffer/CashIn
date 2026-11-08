@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { posix } from 'node:path';
 import { GitHubApiError, requestGitHubApi } from './github-api-client.js';
 
@@ -5,6 +6,9 @@ export interface VaultContextSnapshot {
   path: string;
   revision: 'head' | 'base';
   content: string;
+  // Set when the citation was kept but its body was left out for the context budget: `content` is
+  // then the marker, not the file. Only a source a note merely cites can carry it.
+  contentOmitted?: true;
 }
 
 export function selectPromptVaultContext(
@@ -129,32 +133,43 @@ export async function loadVaultContext(
   const seen = new Set<string>();
   let totalBytes = 0;
 
-  const addSnapshot = (snapshot: VaultContextSnapshot): boolean => {
+  // The vault's own documents and the GitHub evidence are what makes a note's claim checkable, so a
+  // budget they do not fit still aborts the review. A source file a note merely cites is orientation:
+  // every changed file reaches the prompt through the changed-source snapshots anyway, and the
+  // closure of cited sources grows with the codebase instead of with the vault, which is what made
+  // the abort inevitable here. Such a body is dropped for a marker, the shape the changed-source
+  // loader already uses, so the citation stays verified at the PR SHA and the review survives.
+  const addSnapshot = (snapshot: VaultContextSnapshot, bodyRequired: boolean): VaultContextSnapshot => {
     const key = `${snapshot.revision}:${snapshot.path}`;
-    if (seen.has(key)) return false;
-    const bytes = Buffer.byteLength(snapshot.content, 'utf8');
-    if (snapshots.length >= MAX_VAULT_ITEMS || totalBytes + bytes > MAX_VAULT_BYTES) {
-      throw new Error('Vault context exceeds the supported item or byte limit.');
+    const loaded = snapshotsByKey.get(key);
+    if (loaded) return loaded;
+    const fits = (candidate: VaultContextSnapshot): boolean => snapshots.length < MAX_VAULT_ITEMS
+      && totalBytes + Buffer.byteLength(candidate.content, 'utf8') <= MAX_VAULT_BYTES;
+    let stored = snapshot;
+    if (!fits(stored)) {
+      if (bodyRequired) {
+        throw new Error(`Vault context documents and evidence exceed the supported item or byte limit: ${snapshot.path}.`);
+      }
+      stored = omittedSourceSnapshot(snapshot);
+      if (!fits(stored)) throw new Error('Vault context exceeds the supported item or byte limit.');
     }
     seen.add(key);
-    snapshotsByKey.set(key, snapshot);
-    snapshots.push(snapshot);
-    totalBytes += bytes;
-    return true;
+    snapshotsByKey.set(key, stored);
+    snapshots.push(stored);
+    totalBytes += Buffer.byteLength(stored.content, 'utf8');
+    return stored;
   };
 
   const loadLocal = async (path: string, optional = false): Promise<VaultContextSnapshot | undefined> => {
     assertSafeRepositoryPath(path);
+    const bodyRequired = isKnowledgeDocument(path) || path === VAULT_CONTEXT_MAP;
     const status = changed.get(path);
     const revision: 'head' | 'base' = status === 'removed' ? 'base' : 'head';
     const key = `${revision}:${path}`;
     const loadedSource = snapshotsByKey.get(key);
     if (loadedSource) return loadedSource;
     const knownSource = known.get(key);
-    if (knownSource) {
-      addSnapshot(knownSource);
-      return knownSource;
-    }
+    if (knownSource) return addSnapshot(knownSource, bodyRequired);
 
     const ref = revision === 'head' ? headSha : baseSha;
     try {
@@ -172,9 +187,7 @@ export async function loadVaultContext(
       }
       const content = Buffer.from(payload.content.replace(/\s/g, ''), 'base64').toString('utf8');
       if (content.includes('\0')) throw new Error(`Vault context source is binary: ${path}.`);
-      const snapshot = { path, revision, content } satisfies VaultContextSnapshot;
-      addSnapshot(snapshot);
-      return snapshot;
+      return addSnapshot({ path, revision, content } satisfies VaultContextSnapshot, bodyRequired);
     } catch (error) {
       if (optional && error instanceof GitHubApiError && error.status === 404) return undefined;
       throw error;
@@ -256,10 +269,24 @@ export async function loadVaultContext(
       path: `github-evidence://${apiPath.replace(/^\//, '')}`,
       revision: 'head',
       content: `${JSON.stringify(evidence, null, 2)}\n`,
-    });
+    }, true);
   }
 
   return snapshots;
+}
+
+// Mirrors the changed-source loader's fixture marker: the citation keeps its path and revision, and
+// the body is replaced by a statement naming its size and hash, so the reviewer can tell an omitted
+// source from an empty one.
+function omittedSourceSnapshot(snapshot: VaultContextSnapshot): VaultContextSnapshot {
+  const bytes = Buffer.byteLength(snapshot.content, 'utf8');
+  const sha256 = createHash('sha256').update(snapshot.content).digest('hex');
+  return {
+    path: snapshot.path,
+    revision: snapshot.revision,
+    content: `[vault-cited source omitted from model context for the vault context budget; path=${snapshot.path}; sourceBytes=${bytes}; sourceSha256=${sha256}]`,
+    contentOmitted: true,
+  };
 }
 
 function parseContextMap(content: string): ContextMap {
