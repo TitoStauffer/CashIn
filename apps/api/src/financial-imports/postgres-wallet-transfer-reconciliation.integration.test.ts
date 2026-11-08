@@ -322,3 +322,106 @@ test("PostgreSQL wallet transfer reconciliation moves cash between wallets witho
     await adminPool.end();
   }
 });
+
+
+// Access to a shared wallet can be revoked after a transfer exists — the owner removes the member.
+// The transfer stays, because the money did move; what stops being readable is the wallet's name.
+test("PostgreSQL transfer candidates hide the other wallet's name once access to it is revoked", {
+  skip: !testDatabaseUrl,
+}, async () => {
+  const schemaName = `transfer_access_${randomBytes(8).toString("hex")}`;
+  const adminPool = new Pool({ connectionString: testDatabaseUrl });
+  let scopedPool: Pool | undefined;
+  let app: ReturnType<typeof createApp> | undefined;
+
+  try {
+    await adminPool.query(`CREATE SCHEMA ${schemaName}`);
+    scopedPool = new Pool({ connectionString: testDatabaseUrl, options: `-c search_path=${schemaName}` });
+    const database = createDatabase(scopedPool);
+    await runMigrations(database);
+
+    const users = await database.query<{ id: string; email: string }>(
+      `INSERT INTO users (email, password_hash, email_verified_at)
+       VALUES ($1, 'test-hash', now()), ($2, 'test-hash', now())
+       RETURNING id, email`,
+      [`owner-${schemaName}@example.com`, `member-${schemaName}@example.com`],
+    );
+    const ownerId = users.rows.find((row) => row.email.startsWith("owner-"))!.id;
+    const memberId = users.rows.find((row) => row.email.startsWith("member-"))!.id;
+    const personal = await database.query<{ id: string; owner_user_id: string }>(
+      "SELECT id, owner_user_id FROM wallets WHERE owner_user_id = $1 AND is_personal",
+      [memberId],
+    );
+    const checkingWalletId = personal.rows[0]!.id;
+    // The shared wallet belongs to someone else, and the member can be removed from it — the owner's
+    // own membership is protected by a trigger, which is why the scenario needs two users.
+    const shared = await database.query<{ id: string }>(
+      "INSERT INTO wallets (owner_user_id, name, is_personal) VALUES ($1, 'Conta Conjunta', false) RETURNING id",
+      [ownerId],
+    );
+    const sharedWalletId = shared.rows[0]!.id;
+    await database.query(
+      "INSERT INTO wallet_members (wallet_id, user_id, role) VALUES ($1, $2, 'member')",
+      [sharedWalletId, memberId],
+    );
+
+    await database.query(
+      `INSERT INTO wallet_transfers (from_wallet_id, to_wallet_id, user_id, amount, date, description)
+       VALUES ($1, $2, $3, 410.00, '2026-10-09', 'TRANSFERENCIA ENTRE CONTAS')`,
+      [checkingWalletId, sharedWalletId, memberId],
+    );
+
+    const authRepository = new PostgresAuthRepository(database);
+    const sessionToken = createOpaqueToken();
+    await authRepository.createSession(memberId, hashToken(sessionToken), new Date(Date.now() + 120_000));
+    app = createApp(database);
+    await app.ready();
+    const headers = { cookie: `cashin_session=${sessionToken}`, "x-wallet-id": checkingWalletId };
+    const uploadSide = (fileName: string, id: string) => app!.inject({
+      method: "POST",
+      url: "/financial-imports",
+      headers: { ...headers, "content-type": "application/octet-stream", "x-file-name": fileName, "x-file-format": "ofx" },
+      payload: bankOfx([{ id, date: "2026-10-09", amount: "-410.00", name: "TRANSFERENCIA", type: "XFER" }]),
+    });
+
+    // While the membership exists, the candidate carries the wallet's name.
+    const withAccess = (await uploadSide("com-acesso.ofx", "t-access-1")).json() as FinancialImportSession;
+    const namedCandidate = withAccess.items![0]!.transferCandidates![0]!;
+    assert.equal(namedCandidate.counterpartWalletName, "Conta Conjunta");
+    assert.equal(namedCandidate.counterpartWalletId, sharedWalletId);
+    await app.inject({ method: "DELETE", url: `/financial-imports/${withAccess.id}`, headers });
+
+    // The membership is revoked after the transfer already exists.
+    await database.query(
+      "DELETE FROM wallet_members WHERE wallet_id = $1 AND user_id = $2",
+      [sharedWalletId, memberId],
+    );
+
+    const withoutAccess = (await uploadSide("sem-acesso.ofx", "t-access-2")).json() as FinancialImportSession;
+    const item = withoutAccess.items![0]!;
+    const candidate = item.transferCandidates![0]!;
+    // The name is gone, the candidate is not: the transfer has this wallet on one end.
+    assert.equal(candidate.counterpartWalletName, null);
+    assert.equal(candidate.counterpartWalletId, sharedWalletId);
+    assert.equal(candidate.amount, "410.00");
+    // The wallet is also no longer offered as a destination to choose from scratch.
+    assert.deepEqual(item.transferCounterpartWallets, []);
+
+    // Reconciling the pending side still works, which is the point of keeping the candidate.
+    const reconciled = await app.inject({
+      method: "PATCH",
+      url: `/financial-imports/${withoutAccess.id}/items/${item.id}`,
+      headers,
+      payload: { date: item.date, description: item.description, type: "transfer", walletTransferId: candidate.walletTransferId },
+    });
+    assert.equal(reconciled.statusCode, 200, reconciled.body);
+    const confirmed = await app.inject({ method: "POST", url: `/financial-imports/${withoutAccess.id}/confirm`, headers });
+    assert.equal(confirmed.statusCode, 200, confirmed.body);
+    assert.equal((confirmed.json() as FinancialImportSession).summary.imported, 1);
+  } finally {
+    if (app) await app.close();
+    await scopedPool?.end();
+    await adminPool.query(`DROP SCHEMA IF EXISTS ${schemaName} CASCADE`);
+    await adminPool.end();
+  }
+});

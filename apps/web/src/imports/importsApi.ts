@@ -102,7 +102,9 @@ export type BankPaymentCandidate = {
 export type WalletTransferCandidate = {
   walletTransferId: string
   counterpartWalletId: string
-  counterpartWalletName: string
+  // Null when the user is no longer a member of the wallet on the other end. The candidate is still
+  // offered: this wallet is one end of the transfer and the line deserves to be reconciled.
+  counterpartWalletName: string | null
   amount: string
   date: string
   description: string | null

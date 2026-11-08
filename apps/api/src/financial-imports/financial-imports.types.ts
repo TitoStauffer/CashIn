@@ -66,7 +66,10 @@ export interface BankPaymentCandidate {
 export interface WalletTransferCandidate {
   walletTransferId: string;
   counterpartWalletId: string;
-  counterpartWalletName: string;
+  // Null when the reader is no longer a member of the wallet on the other end: access can be
+  // revoked after the transfer exists, and the name stops being theirs to read. The candidate itself
+  // remains, because this wallet is one end of the transfer.
+  counterpartWalletName: string | null;
   amount: string;
   date: string;
   description: string | null;
