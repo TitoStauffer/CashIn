@@ -64,3 +64,34 @@ test("request logging keeps credentials and payloads out of every log line", () 
     assert.ok(requestLoggerOptions.redact.paths.includes(path), `${path} must be redacted`);
   }
 });
+
+// A configuração certa não é o mesmo que a linha certa: entre as duas está a premissa de que o
+// Fastify aplica os serializers e a redação. Esta é a linha realmente emitida pelo pino.
+test("the emitted request log line carries no cookie and no payload", async () => {
+  const lines: string[] = [];
+  const app = createApp(createHealthDatabase(async () => ({ rows: [{ "?column?": 1 }] })), {
+    logger: { write: (line) => { lines.push(line); } },
+  });
+
+  await app.inject({
+    method: "POST",
+    url: "/auth/login",
+    headers: { cookie: "cashin_session=segredo-de-sessao" },
+    payload: { email: "pessoa@example.test", password: "senha-no-corpo" },
+  });
+  await app.close();
+
+  const emitted = lines.join("");
+  assert.ok(lines.length > 0, "the logger must emit at least one line");
+  assert.doesNotMatch(emitted, /segredo-de-sessao/);
+  assert.doesNotMatch(emitted, /senha-no-corpo/);
+  assert.doesNotMatch(emitted, /cashin_session/);
+
+  // Além do que não pode sair, o que tem de sair: sem isto o teste passaria com um log vazio.
+  const request = lines.map((line) => JSON.parse(line) as { req?: { method: string; url: string } })
+    .find((entry) => entry.req);
+  assert.deepEqual({ method: request?.req?.method, url: request?.req?.url }, { method: "POST", url: "/auth/login" });
+  const response = lines.map((line) => JSON.parse(line) as { res?: { statusCode: number } })
+    .find((entry) => entry.res);
+  assert.equal(typeof response?.res?.statusCode, "number");
+});
