@@ -66,35 +66,78 @@ test("request logging keeps credentials and payloads out of every log line", () 
   }
 });
 
-// A configuração certa não é o mesmo que a linha certa: entre as duas está a premissa de que o
-// Fastify aplica os serializers e a redação. Esta é a linha realmente emitida pelo pino.
-// A redação é a segunda trava, e esta é a regressão que prova isso em vez de deixar a afirmação
-// apoiada numa mutação que roda só na máquina de quem desenvolve. A configuração é montada aqui com
-// um serializer que **vaza** os cabeçalhos de propósito, mantendo `redact` como está em produção: a
-// linha continua sem o cookie. Nenhuma configuração de produção precisou virar injetável para isso.
-test("the pino redaction keeps the cookie out even when the serializer leaks the headers", async () => {
-  const lines: string[] = [];
-  const app = Fastify({
-    logger: {
-      ...requestLoggerOptions,
-      serializers: {
-        ...requestLoggerOptions.serializers,
-        req: (request: { method: string; headers: unknown }) => ({ method: request.method, headers: request.headers }),
-      },
-      stream: { write: (line: string) => { lines.push(line); } },
+// Redaction is the second lock, and this is the regression that proves it instead of leaving the
+// claim resting on a mutation that only ever runs on the author's machine. Each case builds the
+// logger with a serializer that leaks one of the redacted paths on purpose, keeping `redact` exactly
+// as production has it. One case per path: proving it for the headers alone would leave the other
+// two resting on the configuration assertion. No production configuration had to become injectable.
+const leakingSerializerCases = [
+  {
+    path: "req.headers",
+    secret: "leaked-session-cookie",
+    serializers: {
+      req: (request: { method: string; headers: unknown }) => ({ method: request.method, headers: request.headers }),
     },
+    read: (entry: { req?: Record<string, unknown>; res?: Record<string, unknown> }) => entry.req?.headers,
+  },
+  {
+    path: "req.body",
+    secret: "leaked-request-body",
+    serializers: {
+      req: (request: { method: string; body: unknown }) => ({ method: request.method, body: request.body }),
+    },
+    read: (entry: { req?: Record<string, unknown>; res?: Record<string, unknown> }) => entry.req?.body,
+  },
+  {
+    path: "res.headers",
+    secret: "leaked-response-cookie",
+    serializers: {
+      res: (reply: { statusCode: number; getHeaders(): unknown }) => ({ statusCode: reply.statusCode, headers: reply.getHeaders() }),
+    },
+    read: (entry: { req?: Record<string, unknown>; res?: Record<string, unknown> }) => entry.res?.headers,
+  },
+];
+
+for (const { path, secret, serializers, read } of leakingSerializerCases) {
+  test(`the pino redaction censors ${path} even when the serializer leaks it`, async () => {
+    const lines: string[] = [];
+    const app = Fastify({
+      logger: {
+        ...requestLoggerOptions,
+        // Each case installs a serializer whose return shape production deliberately forbids —
+        // that is the point of the case — so the assembled object is asserted back to the
+        // production shape at this single spot instead of loosening the exported type.
+        serializers: { ...requestLoggerOptions.serializers, ...serializers } as unknown as typeof requestLoggerOptions.serializers,
+        stream: { write: (line: string) => { lines.push(line); } },
+      },
+    });
+    app.post("/echo", async (_request, reply) => {
+      reply.header("set-cookie", `cashin_session=${secret}`);
+      return { ok: true };
+    });
+
+    await app.inject({
+      method: "POST",
+      url: "/echo",
+      headers: { cookie: `cashin_session=${secret}` },
+      payload: { password: secret },
+    });
+    await app.close();
+
+    assert.ok(lines.length > 0, "the logger must emit at least one line");
+    assert.doesNotMatch(lines.join(""), new RegExp(secret));
+    // Asserted on the parsed line and on the field itself, so the proof does not depend on where
+    // the censor happens to land in the text.
+    const censored = lines
+      .map((line) => JSON.parse(line) as { req?: Record<string, unknown>; res?: Record<string, unknown> })
+      .map(read)
+      .find((value) => value !== undefined);
+    assert.equal(censored, "[redacted]");
   });
-  app.post("/eco", async () => ({ ok: true }));
+}
 
-  await app.inject({ method: "POST", url: "/eco", headers: { cookie: "cashin_session=segredo-vazado" }, payload: {} });
-  await app.close();
-
-  const emitted = lines.join("");
-  assert.ok(lines.length > 0, "the logger must emit at least one line");
-  assert.doesNotMatch(emitted, /segredo-vazado/);
-  assert.match(emitted, /\[redacted\]/);
-});
-
+// The right configuration is not the same as the right line: between them sits the premise that
+// Fastify applies these serializers and this redaction. This is the line pino really emitted.
 test("the emitted request log line carries no cookie and no payload", async () => {
   const lines: string[] = [];
   const app = createApp(createHealthDatabase(async () => ({ rows: [{ "?column?": 1 }] })), {
@@ -115,11 +158,11 @@ test("the emitted request log line carries no cookie and no payload", async () =
   assert.doesNotMatch(emitted, /senha-no-corpo/);
   assert.doesNotMatch(emitted, /cashin_session/);
 
-  // Além do que não pode sair, o que tem de sair: sem isto o teste passaria com um log vazio.
-  // E as chaves **exatas**, não só as presentes: o serializer padrão do Fastify também não vaza
-  // cabeçalho nem corpo, então afirmar apenas a limpeza da linha passaria com a configuração deste
-  // projeto inteiramente ignorada. O padrão acrescenta `host`, `remotePort` e `version`, e é a
-  // ausência deles que distingue um serializer do outro.
+  // Besides what must not be there, what must: without this the test would pass on an empty log.
+  // And the **exact** keys, not merely the present ones: Fastify's default serializer also leaks
+  // neither headers nor body, so asserting only that the line is clean would pass with this
+  // project's configuration entirely ignored. The default adds `host`, `remotePort` and `version`,
+  // and it is their absence that tells one serializer from the other.
   const request = lines.map((line) => JSON.parse(line) as { req?: Record<string, unknown> }).find((entry) => entry.req);
   assert.deepEqual(Object.keys(request?.req ?? {}).sort(), ["method", "remoteAddress", "url"]);
   assert.equal(request?.req?.method, "POST");

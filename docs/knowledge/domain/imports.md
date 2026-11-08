@@ -1,7 +1,7 @@
 # Importação financeira OFX e CSV
 
-**Status:** importação OFX e CSV com regras por carteira (DEV-55), faturas de cartão (DEV-56), conciliação do pagamento da fatura na API (DEV-85) e na tela (DEV-57), transferências entre carteiras na API (DEV-88) e na tela (DEV-58) e segurança, permissões e rastreabilidade (DEV-59)
-**Última revisão:** 07/11/2026
+**Status:** importação OFX e CSV com regras por carteira (DEV-55), faturas de cartão (DEV-56), conciliação do pagamento da fatura na API (DEV-85) e na tela (DEV-57), transferências entre carteiras na API (DEV-88) e na tela (DEV-58) e segurança, permissões e rastreabilidade (DEV-59), com a garantia do log verificada na linha emitida (DEV-97)
+**Última revisão:** 08/11/2026
 
 ## Fluxo definido
 

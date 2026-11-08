@@ -1,7 +1,7 @@
 # Aprendizados do processo dos Agents
 
 **Status:** ativo
-**Última revisão:** 28/10/2026
+**Última revisão:** 08/11/2026
 
 ## Consolidar a rodada antes de publicar
 
