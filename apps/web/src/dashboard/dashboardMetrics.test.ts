@@ -53,6 +53,25 @@ describe('dashboard exact calculations', () => {
     expect(hasActivity({ ...summary, cashIncomeTotal: '0.00', transferInTotal: '0.00' })).toBe(true)
   })
 
+  // A month whose refunds cancel its purchases exactly has a zero expense and still had movement:
+  // a purchase and a refund. Calling it empty would contradict the refund line shown right below.
+  it('counts a month whose refunds cancel its purchases as having movement', () => {
+    const summary = {
+      incomeTotal: '0.00', expenseTotal: '0.00', contributionTotal: '0.00',
+      cashIncomeTotal: '0.00', cashExpenseTotal: '0.00', creditPurchaseTotal: '0.00', cardPaymentTotal: '0.00',
+      transferOutTotal: '0.00', transferInTotal: '0.00',
+      cardCreditTotal: '30.00', unlinkedCardCreditTotal: '0.00',
+      contributionsByGoal: [], availableBalance: '0.00', cashBalance: '0.00',
+      benefitBalances: [], incomeByCategory: [], expenseByCategory: [],
+    }
+
+    expect(hasActivity(summary)).toBe(true)
+    // Without any refund the same all-zero month is empty, which is what the state is for.
+    expect(hasActivity({ ...summary, cardCreditTotal: '0.00' })).toBe(false)
+    // An older API that omits the field is read as zero, like the transfer totals.
+    expect(hasActivity({ ...summary, cardCreditTotal: undefined })).toBe(false)
+  })
+
   it('treats an older API without transfer totals as zero', () => {
     const summary = {
       incomeTotal: '0.00', expenseTotal: '0.00', contributionTotal: '0.00',

@@ -91,6 +91,20 @@ describe('DashboardPage', () => {
     expect(screen.getByText('R$ 4.000,00 − R$ 1.000,00 − R$ 300,00 − R$ 500,00 = R$ 2.200,00.')).toBeVisible()
   })
 
+  // The screen cannot say the month was empty while naming the refund right below it.
+  it('does not call a month empty when refunds cancelled its purchases', async () => {
+    vi.mocked(dashboardApi.summary).mockResolvedValue({
+      ...empty,
+      cardCreditTotal: '30.00',
+      unlinkedCardCreditTotal: '0.00',
+    })
+    await renderPage()
+    await screen.findByRole('heading', { name: 'Composição do fluxo em dinheiro' })
+
+    expect(screen.queryByText(/Nenhuma entrada, despesa, aporte ou fatura paga neste mês/)).toBeNull()
+    expect(screen.getByText('Estornos de cartão no mês').nextElementSibling).toHaveTextContent('R$ 30,00')
+  })
+
   it('omits the refund line when the month has none', async () => {
     await renderPage()
     await screen.findByRole('heading', { name: 'Composição do fluxo em dinheiro' })

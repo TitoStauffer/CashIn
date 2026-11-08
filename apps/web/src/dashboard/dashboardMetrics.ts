@@ -42,6 +42,9 @@ export function cashInflow(summary: FinancialSummary) {
   return amountToCents(summary.cashIncomeTotal) + transferInflow(summary)
 }
 
+// Every total that means the month had movement. The refunds are here because `expenseTotal` arrives
+// net of them: a month whose refunds cancel its purchases exactly has a zero expense and still had a
+// purchase and a refund, so claiming it empty would contradict the refund line shown right below.
 export function hasActivity(summary: FinancialSummary) {
   return [
     summary.incomeTotal,
@@ -50,6 +53,7 @@ export function hasActivity(summary: FinancialSummary) {
     summary.cardPaymentTotal,
     summary.transferOutTotal ?? '0.00',
     summary.transferInTotal ?? '0.00',
+    summary.cardCreditTotal ?? '0.00',
   ].some((amount) => amountToCents(amount) !== 0n)
 }
 
