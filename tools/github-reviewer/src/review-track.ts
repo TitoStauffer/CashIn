@@ -33,7 +33,7 @@ export type ReviewTrack = 'light' | 'full';
  */
 const LIGHT_TRACK_EXACT = ['docs/knowledge/context-map.json'] as const;
 const MARKDOWN_FILE = /\.md$/i;
-const TEST_FILE = /\.test\.[cm]?[jt]sx?$/i;
+const TEST_FILE = /\.test\.(?:ts|tsx|js|jsx|mjs|cjs)$/i;
 
 function normalize(path: string): string | undefined {
   if (typeof path !== 'string') return undefined;

@@ -16,7 +16,7 @@ O gate retorna somente:
 - Estado e HEAD do PR.
 - Checks configurados de CI e SonarQube.
 - Revisão formal de Code Review, considerando revisões posteriores.
-- Relatórios estruturados de QA e Quality Gate Coordinator.
+- Relatório estruturado do Quality Gate Coordinator, nos dois trilhos, e de QA quando o trilho é completo.
 - Conversas de revisão abertas, quando acessíveis.
 - Branch protection e rulesets aplicáveis.
 

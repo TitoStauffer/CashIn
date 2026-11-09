@@ -9,7 +9,7 @@ O processo exige Code Review e consolidação de qualidade vinculados ao SHA cor
 
 ## Decisão
 
-Executar os Agents em runner Windows self-hosted após o CI, na ordem Code Review → QA → Quality Gate Coordinator. Publicar evidências duráveis pelo GitHub App e avaliar a prontidão em um gate determinístico separado. Qualquer ausência, divergência de SHA ou falha de API resulta em bloqueio ou inconclusão.
+Executar os Agents em runner Windows self-hosted após o CI, na ordem Code Review → QA → Quality Gate Coordinator; desde a DEV-116, o QA é pulado no trilho leve e o Coordinator vem direto depois do Code Review. Publicar evidências duráveis pelo GitHub App e avaliar a prontidão em um gate determinístico separado. Qualquer ausência, divergência de SHA ou falha de API resulta em bloqueio ou inconclusão.
 
 ## Consequências
 

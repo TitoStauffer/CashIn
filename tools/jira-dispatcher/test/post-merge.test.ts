@@ -117,6 +117,15 @@ function makeReport(signature: string, heading: string): GitHubIssueComment {
   };
 }
 
+/** Relatório do Coordinator declarando o trilho, como o publicador o escreve desde a DEV-116. */
+function makeCoordinatorReport(track: "leve" | "completo", sha: string = HEAD_SHA, status = "APPROVED"): GitHubIssueComment {
+  return {
+    user: { login: APP_LOGIN },
+    created_at: "2026-10-21T12:01:00Z",
+    body: `### Codex — Quality Gate Coordinator\n\n**Status:** ${status}\n\n**Commit:** \`${sha}\`\n\n**Trilho de revisão:** ${track}.\n\n**Checks verificados:**\n- Evidência validada para o SHA atual.`,
+  };
+}
+
 function makeEvent(overrides: Record<string, unknown> = {}): unknown {
   return {
     action: "closed",
@@ -265,6 +274,41 @@ describe("processPostMergeEvent", () => {
     const unresolved = setup();
     unresolved.github.unresolvedThreads = 1;
     assert.equal((await processPostMergeEvent(makeEvent(), unresolved.dependencies)).status, "BLOCKED");
+  });
+
+  // DEV-116: no trilho leve o QA não roda, então exigir o relatório dele aqui fazia toda entrega de
+  // documentação falhar esta validação e deixar a issue aberta — justamente a classe de entrega que o
+  // trilho leve existe para acelerar. O trilho vem do relatório aprovado do Coordinator, que o declara.
+  it("encerra a issue no trilho leve, sem relatório de QA", async () => {
+    const light = setup();
+    light.github.comments = [makeCoordinatorReport("leve")];
+
+    const result = await processPostMergeEvent(makeEvent(), light.dependencies);
+
+    assert.equal(result.status, "COMPLETED");
+  });
+
+  // Dispensar o QA é decisão do trilho, não do texto de um comentário qualquer: a declaração só vale
+  // vinda de um relatório do Coordinator aprovado e ligado a este SHA, que é o mesmo que o passo acima
+  // já exige. Qualquer outra combinação mantém o QA obrigatório.
+  it("mantém o QA obrigatório quando a declaração de trilho leve não é confiável", async () => {
+    const cases: Array<[string, GitHubIssueComment[]]> = [
+      ["trilho completo declarado", [makeCoordinatorReport("completo")]],
+      ["trilho leve de outro SHA", [makeCoordinatorReport("leve", "c".repeat(40))]],
+      ["trilho leve em relatório não aprovado", [makeCoordinatorReport("leve", HEAD_SHA, "INCONCLUSIVE")]],
+      ["relatório sem declaração de trilho", [makeReport("### Codex — Quality Gate Coordinator", "Checks verificados")]],
+      ["declaração de trilho leve por identidade não confiável", [
+        makeCoordinatorReport("leve"),
+        { ...makeCoordinatorReport("leve"), user: { login: "untrusted" } },
+      ].slice(1)],
+    ];
+
+    for (const [scenario, comments] of cases) {
+      const blocked = setup();
+      blocked.github.comments = comments;
+      const result = await processPostMergeEvent(makeEvent(), blocked.dependencies);
+      assert.equal(result.status, "BLOCKED", scenario);
+    }
   });
 
   it("blocks a later review rejection and a PR whose HEAD changes during evaluation", async () => {

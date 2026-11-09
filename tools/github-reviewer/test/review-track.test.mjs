@@ -156,7 +156,9 @@ test('the published rule names every path the light track allows', () => {
   }
   // An extension the classifier refuses must not appear in the published list. `md` is left out of this
   // loop on purpose: a `.md` file is inert wherever it lives, whether or not its name says "test".
-  for (const extension of ['json', 'sql', 'yaml', 'ofx']) {
+  // `mts` and `cts` are here because the expression used to accept them while the rule never announced
+  // them — the sets have to be equal, not merely overlapping.
+  for (const extension of ['json', 'sql', 'yaml', 'ofx', 'mts', 'cts']) {
     assert.equal(isRuntimeAffectingPath(`apps/api/src/fixture.test.${extension}`), true, extension);
     assert.ok(!published.includes(extension), `${extension} anunciado como inerte e recusado pelo classificador`);
   }

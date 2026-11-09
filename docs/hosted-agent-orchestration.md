@@ -52,7 +52,7 @@ No adapter may receive a credential that is unnecessary for its role. Untrusted 
 
 1. Merge the DEV-44 workflow and runtime implementation to `master`.
 2. Confirm the repository secrets `CASHIN_APP_ID`, `CASHIN_APP_INSTALLATION_ID`, and `CASHIN_APP_PRIVATE_KEY`, plus the `CASHIN_APP_BOT_LOGIN` repository variable, are available to the workflow.
-3. Validate a low-risk internal test PR after successful CI, confirming the real model CLI ran isolated (Claude Code: session reported no tools beyond `StructuredOutput`, no MCP servers and no hooks; Codex: shell tool disabled) on the current SHA and the Code Review formal review, QA report, and Coordinator report were published.
+3. Validate a low-risk internal test PR after successful CI, confirming the real model CLI ran isolated (Claude Code: session reported no tools beyond `StructuredOutput`, no MCP servers and no hooks; Codex: shell tool disabled) on the current SHA and the Code Review formal review, the QA report when the review track is `full`, and Coordinator report were published.
 4. Confirm Merge Readiness re-evaluates after the reports and accepts only evidence for the same current SHA. Test a new commit and ensure old evidence no longer satisfies the gate.
 5. Confirm timeout, duplicate event, and runner-unavailable outcomes fail closed. Do not enable merge automation as part of this work.
 6. Only after these checks, document the workflow as active and close DEV-44. The workflow never performs merge or Jira transitions.

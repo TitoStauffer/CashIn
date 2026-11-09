@@ -126,4 +126,4 @@ O Agent de Product Manager é responsável por conferir e atualizar este checkli
 - [ ] **QA aprovado** — marcado pelo Agent de QA somente após a aprovação.
 - **Observações finais:**
 
-> O merge só deve ocorrer após a aprovação obrigatória do Code Review, do QA e de todas as verificações configuradas, conforme o workflow do projeto.
+> O merge só deve ocorrer após a aprovação obrigatória do Code Review, do QA quando o trilho de revisão for completo, e de todas as verificações configuradas, conforme o workflow do projeto. No trilho leve o QA não roda e o seu checkbox permanece desmarcado por construção.
