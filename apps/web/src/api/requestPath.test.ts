@@ -81,13 +81,16 @@ describe('assertSafeApiPath', () => {
     }
   })
 
-  it('keeps the thrown error free of anything a user should read', () => {
-    // Every caller is internal: reaching this error is a programming mistake, so the message must not
-    // look like guidance for the person using the screen.
+  it('throws a message a person can read, without leaking the path into it', () => {
+    // The first version of this test asserted the opposite — that the message was internal only — and
+    // encoded a premise that was false: `WalletContext` and `FinancialSidebar` show `error.message`
+    // verbatim. So the message has to be readable and actionable, and the path stays in its own field,
+    // for diagnosis, because a path means nothing to whoever is looking at the screen.
     const error = new UnsafeApiPathError('//evil.example.com')
 
     expect(error.name).toBe('UnsafeApiPathError')
-    expect(error.message).toBe('Caminho de API inválido.')
+    expect(error.message).toBe('Não foi possível montar o endereço desta requisição. Atualize a página e tente de novo.')
+    expect(error.message).not.toMatch(/evil\.example\.com/)
     expect(error.path).toBe('//evil.example.com')
   })
 })

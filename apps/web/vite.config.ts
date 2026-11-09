@@ -48,6 +48,7 @@ export default defineConfig({
         'src/paymentMethods/paymentMethodsApi.ts',
         'src/creditCards/CreditCardsPage.tsx',
         'src/creditCards/creditCardsApi.ts',
+        'src/api/activeWallet.ts',
         'src/api/request.ts',
         'src/api/requestPath.ts',
       ],

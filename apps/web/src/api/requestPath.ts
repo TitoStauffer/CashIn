@@ -35,9 +35,11 @@ export class UnsafeApiPathError extends Error {
   readonly path: string;
 
   constructor(path: string) {
-    // The message reaches no end user: every caller is internal, and a failure here is a programming
-    // error, not something a person can act on.
-    super('Caminho de API inválido.');
+    // The message **can** reach the person: `WalletContext` and `FinancialSidebar` show `error.message`
+    // verbatim, without going through `getApiErrorFeedback`. So it is written for them, in Portuguese,
+    // and says what to do — rather than naming a path, which would mean nothing to whoever reads it.
+    // An earlier version of this comment claimed the opposite and was wrong.
+    super('Não foi possível montar o endereço desta requisição. Atualize a página e tente de novo.');
     this.name = 'UnsafeApiPathError';
     this.path = path;
   }
