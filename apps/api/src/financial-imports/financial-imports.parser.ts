@@ -47,11 +47,40 @@ const INVOICE_PAYMENT_PATTERN = /\b(pagamento|pgto)\b/i;
 // place instead of a line the user retypes. "Crédito de pagamento em dobro" therefore stays a
 // payment until `TRNTYPE` says otherwise, and that asymmetry is the point, not an oversight.
 //
-// Anchored at the start of any segment, not of the whole description: `buildDescription` joins NAME
-// and MEMO with " — ", so an issuer that puts the label in NAME and the explanation in MEMO produces
-// "CARTAO — Estorno de pagamento duplicado". Anchoring only at `^` let exactly that line fall back
-// to the old heuristic.
-const REFUND_PREFIX_PATTERN = /(?:^|—)\s*(estorno|reembolso|devolu[çc][ãa]o|cancelamento)\b/i;
+// Anchored at the start of a segment, because `buildDescription` joins NAME and MEMO with " — ": an
+// issuer that puts the label in NAME and the explanation in MEMO produces
+// "CARTAO — Estorno de pagamento duplicado", and anchoring only at `^` let exactly that line fall
+// back to the old heuristic.
+const REFUND_PREFIX_PATTERN = /^\s*(estorno|reembolso|devolu[çc][ãa]o|cancelamento)\b/i;
+
+const DESCRIPTION_SEGMENT_SEPARATOR = "—";
+
+/**
+ * Decides per segment whether the description announces a payment of the statement.
+ *
+ * Recognising the refund prefix at the start of **any** segment, as DEV-83 did, suppressed the payment
+ * heuristic for the **whole** description. That fixed "CARTAO — Estorno de pagamento duplicado" and
+ * broke the mirror case: "PAGAMENTO FATURA — Estorno de encargos" stopped being a transfer and became
+ * a card credit, which abates the statement the payment should settle — the direction of error that
+ * moves money, and the one that justified not making `TRNTYPE` exclusive in the first place.
+ *
+ * So the suppression is per segment, which is the unit the issuer actually writes: a segment that
+ * opens with a refund prefix is the refund's own explanation and does not lend its "pagamento" to the
+ * decision, while the remaining segments still do.
+ *
+ * The cost, accepted deliberately: a dash **inside** the refund's own explanation splits it, so
+ * "Estorno — pagamento em dobro" becomes a transfer where the whole-description rule made it a card
+ * credit. Nothing in the text distinguishes that from "Estorno de encargos — PAGAMENTO FATURA", where
+ * `transfer` is the right answer, so one of the two has to give — and the project's asymmetry decides
+ * which: a false refund abates the statement the payment should settle, while a false transfer only
+ * keeps the line out of the import for the user to correct. The ambiguous shape therefore lands on
+ * `transfer`, which is the side that costs an edit instead of money.
+ */
+function announcesInvoicePayment(description: string): boolean {
+  return description
+    .split(DESCRIPTION_SEGMENT_SEPARATOR)
+    .some((segment) => !REFUND_PREFIX_PATTERN.test(segment) && INVOICE_PAYMENT_PATTERN.test(segment));
+}
 
 // Normalizes a card statement to one sign convention, so the same purchase has the same fingerprint
 // in OFX and CSV: purchases are negative expenses, refunds and chargebacks are positive card credits.
@@ -68,7 +97,7 @@ export function toCreditCardStatementImport(
       const description = item.description ?? "";
       const isInvoicePayment = isCredit && (
         item.sourceTransactionType === "PAYMENT"
-        || (!REFUND_PREFIX_PATTERN.test(description) && INVOICE_PAYMENT_PATTERN.test(description))
+        || announcesInvoicePayment(description)
       );
       const type = isInvoicePayment ? "transfer" : isCredit ? "card_credit" : "expense";
       return {
