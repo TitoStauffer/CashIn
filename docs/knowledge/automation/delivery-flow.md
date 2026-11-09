@@ -66,6 +66,9 @@ flowchart LR
 - O cache de pacotes npm é reutilizado entre jobs compatíveis; cada job continua executando instalação limpa e checkout confiável.
 - A rodada termina antes de uma repetição no mesmo grupo; os checkouts deixam `ref` sem configuração explícita para preservar a ref confiável do evento e o SHA imutável associado. O despacho manual continua restrito à `master`; mudanças no HEAD do PR continuam invalidando resultados antigos.
 - Edições só de checkboxes não recuperam CI; título ou conteúdo substantivo alterado mantém a recuperação.
+- O job `Recover CI after metadata edit` **sempre executa** e decide internamente (DEV-110). Ele não é mais pulado no nível do job para as edições do próprio GitHub App, porque job pulado não publica conclusão: um vermelho de uma execução anterior ficava no rollup do PR sem que nenhuma execução posterior pudesse substituí-lo. O portão do ator virou condição de passo, então a recuperação continua restrita às edições humanas substantivas, e qualquer edição posterior no mesmo head publica conclusão nova sobre a antiga.
+- A execução de CI do head é identificada pela consulta — workflow `ci.yml`, evento `pull_request` e `head_sha` —, não pelo campo `pull_requests` do run. Esse campo vem **vazio** nessas execuções, e exigi-lo fazia o job falhar por tempo esgotado em toda edição substantiva de metadados. Array vazio não significa "de outro PR"; quando vem preenchido, continua sendo conferido.
+- Falha desse job distingue dois casos: não existe execução de CI para o head, ou existe e não concluiu na janela de espera. Os dois continuam falhando fechado.
 - Resumos registram origem do resultado e número de invocações, sem prometer contagem de tokens.
 
 ## Fontes verificáveis

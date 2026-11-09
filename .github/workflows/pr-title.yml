@@ -74,9 +74,14 @@ jobs:
             -f target_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
 
   recover-ci:
+    # The job itself is no longer conditional (DEV-110). It used to be skipped for the GitHub App's own
+    # metadata edits, and a skipped job publishes nothing — so a red conclusion from an earlier run of
+    # this same job stayed in the Pull Request's rollup with no later run able to replace it. Running
+    # always, and deciding inside, means any later metadata edit on the same head publishes a fresh
+    # conclusion over the stale one. The actor check moved to the first step and still governs whether
+    # anything is recovered.
     name: Recover CI after metadata edit
     needs: pr-title
-    if: github.actor != vars.CASHIN_APP_BOT_LOGIN
     runs-on: ubuntu-24.04
     timeout-minutes: 3
     permissions:
@@ -84,7 +89,22 @@ jobs:
       contents: read
 
     steps:
+      - name: Decide whether this metadata edit needs recovery
+        id: scope
+        env:
+          EDIT_ACTOR: ${{ github.actor }}
+          APP_BOT_LOGIN: ${{ vars.CASHIN_APP_BOT_LOGIN }}
+        shell: bash
+        run: |
+          if [[ -n "${APP_BOT_LOGIN}" && "${EDIT_ACTOR}" == "${APP_BOT_LOGIN}" ]]; then
+            echo "recover=false" >> "${GITHUB_OUTPUT}"
+            echo "Metadata edited by the GitHub App itself: nothing to recover for this head."
+          else
+            echo "recover=true" >> "${GITHUB_OUTPUT}"
+          fi
+
       - name: Checkout trusted default branch
+        if: steps.scope.outputs.recover == 'true'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: master
@@ -92,19 +112,23 @@ jobs:
           persist-credentials: false
 
       - name: Setup Node.js
+        if: steps.scope.outputs.recover == 'true'
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: "24.22.0"
 
       - name: Install trusted recovery dependencies
+        if: steps.scope.outputs.recover == 'true'
         working-directory: tools/github-reviewer
         run: npm ci --fetch-timeout=15000 --fetch-retries=1
 
       - name: Build trusted recovery tool
+        if: steps.scope.outputs.recover == 'true'
         working-directory: tools/github-reviewer
         run: npm run build
 
       - name: Recover CI for current PR head
+        if: steps.scope.outputs.recover == 'true'
         working-directory: tools/github-reviewer
         env:
           GITHUB_TOKEN: ${{ github.token }}

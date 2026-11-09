@@ -30,6 +30,7 @@ export async function recoverCiAfterMetadataEdit(options: CiRecoveryOptions): Pr
   const delayMs = options.delayMs ?? 5_000;
   const sleep = options.sleep ?? ((delay: number) => new Promise<void>((resolve) => setTimeout(resolve, delay)));
   let observedActive = false;
+  let observedAnyRun = false;
 
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
     const run = await loadLatestCiRun(options);
@@ -37,6 +38,7 @@ export async function recoverCiAfterMetadataEdit(options: CiRecoveryOptions): Pr
       if (attempt < maxAttempts) await sleep(delayMs);
       continue;
     }
+    observedAnyRun = true;
 
     if (run.status !== 'completed') {
       observedActive = true;
@@ -52,7 +54,12 @@ export async function recoverCiAfterMetadataEdit(options: CiRecoveryOptions): Pr
     return { action: 'rerun_requested', runId: run.id! };
   }
 
-  throw new Error('Timed out waiting for the CI run associated with the current Pull Request head.');
+  // Two different failures used to share one message, and the operator could not tell them apart: a
+  // head with no CI run at all is a missing-evidence problem, while a run that never finished is a
+  // slow-pipeline problem. Both still fail closed — absent evidence keeps blocking the merge.
+  throw new Error(observedAnyRun
+    ? 'The CI run for the current Pull Request head never completed within the wait window.'
+    : 'No CI run exists for the current Pull Request head.');
 }
 
 async function loadLatestCiRun(options: CiRecoveryOptions): Promise<WorkflowRun | undefined> {
@@ -65,10 +72,29 @@ async function loadLatestCiRun(options: CiRecoveryOptions): Promise<WorkflowRun 
   const payload = await response.json() as { workflow_runs?: WorkflowRun[] };
   const runs = Array.isArray(payload.workflow_runs) ? payload.workflow_runs : [];
   return runs
-    .filter((run) => Number.isSafeInteger(run.id)
-      && Array.isArray(run.pull_requests)
-      && run.pull_requests.some((pullRequest) => pullRequest.number === options.pullRequestNumber))
+    .filter((run) => Number.isSafeInteger(run.id) && belongsToPullRequest(run, options.pullRequestNumber))
     .sort((left, right) => String(right.created_at ?? '').localeCompare(String(left.created_at ?? '')))[0];
+}
+
+/**
+ * Whether a run of the CI workflow at this head is the run this recovery is about.
+ *
+ * The first version required `pull_requests` to carry the PR number, which looked like the safe
+ * reading and was in fact the defect (DEV-110): GitHub leaves that array **empty** for these runs, so
+ * no run was ever accepted, the loop burned all its attempts and the job failed with a timeout —
+ * every time a Pull Request body was edited, not occasionally. Three occurrences, all identical. The
+ * five tests missed it because their fixture always populated the array.
+ *
+ * An empty array therefore cannot be read as "belongs to another Pull Request": it carries no
+ * information at all. What identifies the run is the query that produced it — the `ci.yml` workflow,
+ * the `pull_request` event and this exact `head_sha` — so an unassociated run at this head is
+ * accepted. When GitHub does populate the array, it is still checked, because then it does mean
+ * something.
+ */
+function belongsToPullRequest(run: WorkflowRun, pullRequestNumber: number): boolean {
+  const associations = Array.isArray(run.pull_requests) ? run.pull_requests : [];
+  if (associations.length === 0) return true;
+  return associations.some((pullRequest) => pullRequest.number === pullRequestNumber);
 }
 
 async function requestRerun(options: CiRecoveryOptions, runId: number): Promise<void> {
