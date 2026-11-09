@@ -559,6 +559,37 @@ test("a refund that names the payment it reverses stays a card credit", async ()
   ]);
 });
 
+// The mirror case of the test above, and the defect it opened: suppressing the heuristic for the whole
+// description whenever any segment started with a refund prefix turned a real invoice payment whose
+// MEMO happens to explain a refund into a card credit — which abates the statement the payment should
+// settle. Deciding per segment keeps both lines right, because the segment is the unit the issuer
+// writes: the one that opens with the prefix is the refund's own explanation, the other still counts.
+test("a payment announced in one segment survives a refund prefix in the next", async () => {
+  const result = await new DefaultFinancialImportParser().parse({
+    format: "ofx",
+    fileName: "fatura.ofx",
+    statementKind: "credit_card_statement",
+    content: cardStatementOfx([
+      "<STMTTRN><TRNTYPE>CREDIT<DTPOSTED>20261012<TRNAMT>80.00<FITID>m1<NAME>PAGAMENTO FATURA<MEMO>Estorno de encargos</STMTTRN>",
+      // The reverse order of segments decides the same way: neither position is privileged.
+      "<STMTTRN><TRNTYPE>CREDIT<DTPOSTED>20261013<TRNAMT>90.00<FITID>m2<NAME>Estorno de encargos<MEMO>PAGAMENTO FATURA</STMTTRN>",
+      // Every segment opening with a prefix means nothing lends its "pagamento" to the decision.
+      "<STMTTRN><TRNTYPE>CREDIT<DTPOSTED>20261014<TRNAMT>95.00<FITID>m3<NAME>Estorno de pagamento<MEMO>Reembolso do pagamento em dobro</STMTTRN>",
+      // The prefix has to **open** the segment. A payment that merely mentions a refund further along
+      // is still a payment, and dropping the anchor would silently turn it into a card credit — the
+      // direction that abates the statement. Removing `^\s*` from the pattern kills this line alone.
+      "<STMTTRN><TRNTYPE>CREDIT<DTPOSTED>20261015<TRNAMT>97.00<FITID>m4<NAME>Pagamento do estorno anterior</STMTTRN>",
+    ].join("\n")),
+  });
+
+  assert.deepEqual(result.items.map((item) => [item.description, item.type]), [
+    ["PAGAMENTO FATURA — Estorno de encargos", "transfer"],
+    ["Estorno de encargos — PAGAMENTO FATURA", "transfer"],
+    ["Estorno de pagamento — Reembolso do pagamento em dobro", "card_credit"],
+    ["Pagamento do estorno anterior", "transfer"],
+  ]);
+});
+
 test("statement kind and OFX document must match", async () => {
   const parser = new DefaultFinancialImportParser();
   const card = cardStatementOfx("<STMTTRN><TRNTYPE>DEBIT<DTPOSTED>20261010<TRNAMT>-1.00<FITID>p1<NAME>X</STMTTRN>");

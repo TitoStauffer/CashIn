@@ -34,10 +34,14 @@ Para diagnosticar de novo, a API pública responde sem token:
 
 ```bash
 curl -s "https://sonarcloud.io/api/qualitygates/project_status?projectKey=TitoStauffer_CashIn&branch=master"
-curl -s "https://sonarcloud.io/api/issues/search?componentKeys=TitoStauffer_CashIn&branch=master&types=VULNERABILITY&ps=20"
+curl -s "https://sonarcloud.io/api/issues/search?componentKeys=TitoStauffer_CashIn&branch=master&types=VULNERABILITY&resolved=false&ps=20"
 ```
 
+`resolved=false` não é opcional: sem ele a busca devolve também as ocorrências já fechadas, com `total` contando as duas. Ao confirmar o critério 3 da DEV-105 essa consulta sem o filtro devolveu as duas `S8476` com status `CLOSED`, e lida de passagem parecia dizer que o gate ainda tinha vulnerabilidades abertas. Confira o campo `status` de cada item, não só o `total`.
+
 O filtro `inNewCodePeriod=true` devolve lista vazia nesta instância; não o use.
+
+Depois do merge da DEV-105 em `1106dc6`, o gate da `master` voltou a **OK** nas seis condições, e as duas ocorrências ficaram `CLOSED` na análise de branch daquele commit; a contagem de vulnerabilidades abertas é zero.
 
 ## Fontes verificáveis
 
