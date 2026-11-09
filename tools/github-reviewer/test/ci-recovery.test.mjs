@@ -10,10 +10,11 @@ function response(body, status = 200) {
   return new Response(body === undefined ? undefined : JSON.stringify(body), { status });
 }
 
-// The default shape is the one GitHub actually returns for these runs: `pull_requests` **empty**.
-// Every test here used to build the run with the array populated, which is why the DEV-110 defect — a
-// filter that required the association — passed five tests while failing in production every single
-// time a Pull Request body was edited. The populated shape is still exercised, explicitly, below.
+// Two shapes, both real, and the default is the one that is **not** covered elsewhere: `pull_requests`
+// empty, which is what GitHub returns once the Pull Request has closed. While it is open the array is
+// populated — measured on PR #95, length 1 — and that shape is exercised through `associatedRun`
+// below. Neither shape was the DEV-110 defect; the defect was the wait window, and the empty shape is
+// accepted as defence in depth. See the JSDoc of `belongsToPullRequest` for the measurement.
 function run(status, conclusion = null, pullRequests = []) {
   return { id: 99, status, conclusion, created_at: '2026-10-25T10:00:00Z', pull_requests: pullRequests };
 }
@@ -69,10 +70,11 @@ test('reruns an active CI after it completes with failure', async () => {
   assert.equal(writes, 1);
 });
 
-// The defect this ticket exists for: GitHub returns these runs with `pull_requests` empty, and an
-// empty array carries no information — it cannot mean "belongs to another Pull Request". Requiring the
-// association made the job fail on every substantive metadata edit. Verified against the real API for
-// three different heads.
+// Defence in depth, not the fix: an empty array carries no information, so it cannot be read as
+// "belongs to another Pull Request" — and that is the state after the Pull Request closes, which is
+// when a late recovery run would read it. The DEV-110 defect was the wait window; this case exists so
+// the lenient half of the identity stays covered, with `still refuses a run that GitHub associates
+// with another pull request` covering the strict half.
 test('accepts the CI run at this head when GitHub leaves it unassociated', async () => {
   const requests = [];
   const result = await recoverCiAfterMetadataEdit(options(async (url, init = {}) => {
