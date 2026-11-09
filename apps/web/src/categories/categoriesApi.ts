@@ -1,5 +1,4 @@
-import { withActiveWallet } from '../wallets/walletApi'
-import { assertSafeApiPath } from '../api/requestPath'
+import { createApiRequest } from '../api/request'
 
 export type CategoryNature = 'income' | 'expense' | 'investment' | 'investment_goal'
 
@@ -20,10 +19,6 @@ type CategoryListResponse = {
   items: Category[]
 }
 
-type ErrorResponse = {
-  message?: string
-}
-
 export class CategoryApiError extends Error {
   readonly status: number
 
@@ -34,24 +29,7 @@ export class CategoryApiError extends Error {
   }
 }
 
-async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const response = await fetch(`/api${assertSafeApiPath(path)}`, withActiveWallet({
-    ...init,
-    credentials: 'include',
-    headers: {
-      ...(init.body ? { 'Content-Type': 'application/json' } : {}),
-      ...init.headers,
-    },
-  }))
-
-  if (!response.ok) {
-    const body = (await response.json().catch(() => null)) as ErrorResponse | null
-    throw new CategoryApiError(body?.message ?? '', response.status)
-  }
-
-  if (response.status === 204) return undefined as T
-  return (await response.json()) as T
-}
+const request = createApiRequest(CategoryApiError)
 
 function categoryPath(categoryId: string) {
   return `/categories/${encodeURIComponent(categoryId)}`

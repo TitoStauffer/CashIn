@@ -1,5 +1,4 @@
-import { withActiveWallet } from '../wallets/walletApi'
-import { assertSafeApiPath } from '../api/requestPath'
+import { createApiRequest } from '../api/request'
 
 export type FinancialImportFormat = 'ofx' | 'csv'
 export type FinancialImportStatus = 'processing' | 'preview' | 'confirming' | 'completed' | 'failed' | 'undone'
@@ -202,7 +201,6 @@ export type FinancialImportItemInput = {
 type FinancialImportListResponse = { items: FinancialImportSession[] }
 type CsvMappingListResponse = { items: CsvMappingTemplate[] }
 type CategorizationRuleListResponse = { items: FinancialCategorizationRule[] }
-type ErrorResponse = { message?: string }
 
 export class FinancialImportApiError extends Error {
   readonly status: number
@@ -214,24 +212,7 @@ export class FinancialImportApiError extends Error {
   }
 }
 
-async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const response = await fetch(`/api${assertSafeApiPath(path)}`, withActiveWallet({
-    ...init,
-    credentials: 'include',
-    headers: {
-      ...(typeof init.body === 'string' ? { 'Content-Type': 'application/json' } : {}),
-      ...init.headers,
-    },
-  }))
-
-  if (!response.ok) {
-    const body = (await response.json().catch(() => null)) as ErrorResponse | null
-    throw new FinancialImportApiError(body?.message ?? '', response.status)
-  }
-
-  if (response.status === 204) return undefined as T
-  return (await response.json()) as T
-}
+const request = createApiRequest(FinancialImportApiError)
 
 function importPath(importId: string) {
   return `/financial-imports/${encodeURIComponent(importId)}`

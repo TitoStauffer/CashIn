@@ -1,5 +1,4 @@
-import { withActiveWallet } from '../wallets/walletApi'
-import { assertSafeApiPath } from '../api/requestPath'
+import { createApiRequest } from '../api/request'
 
 export type CreditCard = {
   id: string
@@ -64,7 +63,6 @@ export type CreditCardStatement = {
   payments?: CreditCardStatementPayment[]
 }
 
-type ErrorResponse = { message?: string }
 
 export class CreditCardApiError extends Error {
   readonly status: number
@@ -76,24 +74,7 @@ export class CreditCardApiError extends Error {
   }
 }
 
-async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const response = await fetch(`/api${assertSafeApiPath(path)}`, withActiveWallet({
-    ...init,
-    credentials: 'include',
-    headers: {
-      ...(init.body ? { 'Content-Type': 'application/json' } : {}),
-      ...init.headers,
-    },
-  }))
-
-  if (!response.ok) {
-    const body = (await response.json().catch(() => null)) as ErrorResponse | null
-    throw new CreditCardApiError(body?.message ?? '', response.status)
-  }
-
-  if (response.status === 204) return undefined as T
-  return (await response.json()) as T
-}
+const request = createApiRequest(CreditCardApiError)
 
 function cardPath(cardId: string) {
   return `/credit-cards/${encodeURIComponent(cardId)}`
