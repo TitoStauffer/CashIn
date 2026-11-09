@@ -79,6 +79,12 @@ export async function recoverCiAfterMetadataEdit(options: CiRecoveryOptions): Pr
     return { action: 'rerun_requested', runId: run.id! };
   }
 
+  // Precedence, declared because it is not simply "the last thing observed": a run that was seen
+  // running outweighs later reads that saw nothing. `observedActive` accumulates on purpose — "it
+  // existed and did not finish" is the more actionable report, and it is also the safer one, since a
+  // run that vanishes from the listing is more likely a listing lag than a run that never existed.
+  // `refusedByAssociation`, by contrast, is reassigned, because there the latest read is the truth.
+  //
   // Three different failures used to share one message, and the operator could not tell them apart.
   // Each names the condition that actually produced it, rather than deriving a cause from the absence
   // of an observation: a head with no CI run at all is missing evidence, a run that never finished is

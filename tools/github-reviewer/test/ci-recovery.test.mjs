@@ -179,6 +179,20 @@ test('reports the condition it last observed, not the first one it saw', async (
   );
 });
 
+// The declared precedence, which is not simply "the last read": a run seen running outweighs later
+// reads that saw nothing, because "it existed and did not finish" is the more actionable report and a
+// run vanishing from the listing is more likely a lag than a run that never existed.
+test('keeps the running-run report when the listing later goes empty', async () => {
+  let reads = 0;
+  await assert.rejects(
+    recoverCiAfterMetadataEdit(options(async () => {
+      reads += 1;
+      return reads === 1 ? response({ workflow_runs: [run('in_progress')] }) : response({ workflow_runs: [] });
+    }, { maxAttempts: 3 })),
+    /never completed within the wait window\./,
+  );
+});
+
 test('reports only the GitHub status code when the API rejects recovery', async () => {
   await assert.rejects(
     recoverCiAfterMetadataEdit(options(async () => new Response('secret response body', { status: 403 }))),
