@@ -2,7 +2,7 @@
 
 ## Current state
 
-`tools/github-reviewer/src/agent-orchestrator.ts` implements the provider-neutral orchestration policy. It requires current-head CI and Sonar evidence, runs Code Review before QA, requires a formal GitHub Code Review decision before QA, and runs a deterministic Quality Gate Coordinator only after QA approves. The production stage CLI consolidates current authenticated evidence without a model call; Code Review and QA run on the selected model runtime (Claude Code by default, Codex as fallback). Each agent result must identify the same full commit SHA and include a report. Code Review also proves coverage of every changed file and risk area; QA records a result and evidence for every acceptance criterion. The current HEAD is re-read before and after agent execution, stale or incomplete evidence is rejected, and failures return `INCONCLUSIVE` without proceeding to dependent stages.
+`tools/github-reviewer/src/agent-orchestrator.ts` implements the provider-neutral orchestration policy. It requires current-head CI and Sonar evidence, runs Code Review before QA, requires a formal GitHub Code Review decision before QA, and runs a deterministic Quality Gate Coordinator only after QA approves. That module describes the `full` track only: the track is decided by the production stage CLI, as **Review tracks** below sets out, and on the `light` track the Coordinator runs without QA. The production stage CLI consolidates current authenticated evidence without a model call; Code Review and QA run on the selected model runtime (Claude Code by default, Codex as fallback). Each agent result must identify the same full commit SHA and include a report. Code Review also proves coverage of every changed file and risk area; QA records a result and evidence for every acceptance criterion. The current HEAD is re-read before and after agent execution, stale or incomplete evidence is rejected, and failures return `INCONCLUSIVE` without proceeding to dependent stages.
 
 The orchestrator receives infrastructure adapters for GitHub, execution locking, agent execution, and report publication. It does not load a model SDK, contact an AI service, create a GitHub review on its own, or merge a pull request. Tests use adapter fakes and do not represent hosted validation.
 
@@ -17,6 +17,20 @@ Completed evidence is durable in App-authored GitHub reviews and PR comments. Re
 PR title, description, and diff are treated as untrusted. A deterministic guard blocks several direct instruction-override patterns as `INCONCLUSIVE`, and tests verify those cases; this is a heuristic, not proof of model immunity. The model can still misjudge code without an obvious injection string. The orchestration never merges, and PM must perform the separate final Merge Readiness and human workflow checks. If a future policy requires zero model-based approval risk, replace automatic model approvals with an independent human approval gate.
 
 DEV-44 remains open until the workflow is merged, runner labels and secrets are verified remotely, a real low-risk run completes, and the reports and formal review are confirmed by Merge Readiness. No merge should be performed solely to validate this workflow.
+
+## Review tracks
+
+Each round is classified as **full** or **light** by `tools/github-reviewer/src/review-track.ts`, from the changed-file list the privileged job reads from `/pulls/{n}/files`. The Pull Request body never participates.
+
+The rule allowlists what is inert instead of listing what is sensitive. A change is light-track only when **every** changed file is `*.md`, `*.test.*` or `docs/knowledge/context-map.json`. Everything else is full-track: migrations, manifests, lockfiles, build configuration, Dockerfiles, `compose.yaml`, fixtures, shared test helpers, the Vitest setup, the Jira dispatcher, the workflows and the readiness evaluator itself — and a directory that does not exist yet.
+
+The first implementation had the opposite shape, listing the sensitive prefixes, and the Code Review of PR #91 proved it unsafe: `apps/api/migrations/**`, the application manifests and `compose.yaml` all change runtime and all sat outside the list, so a migration or a production dependency bump would have reached merge without QA. With an allowlist, a path nobody classified demands the full track by omission instead of escaping QA by omission.
+
+The light track skips **QA only**, which is the single model stage on the serialized self-hosted runner. Code Review always runs, CI always runs in full, and the deterministic Quality Gate Coordinator runs on both tracks: it makes no model call, and its published report is the App-signed record that states the track and the files that determined it.
+
+Failure modes are closed by construction. An empty or unusable changed-file list classifies as full. The Coordinator throws rather than deciding when the list is absent. In the workflow, QA is skipped only when the track is a confirmed `light`, the Coordinator demands that QA was genuinely skipped rather than failed, and the final confirmation refuses an absent or unknown track instead of reading it as "not full". `Merge Readiness` recomputes the classification itself, at the start and at the end of the evaluation, and blocks when the two disagree; it never takes an agent's word for the track. On the light track a QA report that belongs to the current SHA and context and is not approved still blocks. A report that is missing, stale or unstructured is treated as absent, because it is not evidence about this revision: blocking it stranded a Pull Request that touched runtime, published QA and then reverted the runtime part, since nothing republishes that report once QA no longer runs — and the Coordinator already ignored it, so the two evaluators disagreed.
+
+Because the classification is a pure function of the changed-file list, and that list already feeds the context fingerprint, a Pull Request that receives a runtime commit moves the fingerprint, invalidates prior evidence and demands the full track at the new HEAD. There is no stored verdict that could keep the cheaper track alive.
 
 ## Required adapter contracts
 
@@ -38,7 +52,7 @@ No adapter may receive a credential that is unnecessary for its role. Untrusted 
 
 1. Merge the DEV-44 workflow and runtime implementation to `master`.
 2. Confirm the repository secrets `CASHIN_APP_ID`, `CASHIN_APP_INSTALLATION_ID`, and `CASHIN_APP_PRIVATE_KEY`, plus the `CASHIN_APP_BOT_LOGIN` repository variable, are available to the workflow.
-3. Validate a low-risk internal test PR after successful CI, confirming the real model CLI ran isolated (Claude Code: session reported no tools beyond `StructuredOutput`, no MCP servers and no hooks; Codex: shell tool disabled) on the current SHA and the Code Review formal review, QA report, and Coordinator report were published.
+3. Validate a low-risk internal test PR after successful CI, confirming the real model CLI ran isolated (Claude Code: session reported no tools beyond `StructuredOutput`, no MCP servers and no hooks; Codex: shell tool disabled) on the current SHA and the Code Review formal review, the QA report when the review track is `full`, and Coordinator report were published.
 4. Confirm Merge Readiness re-evaluates after the reports and accepts only evidence for the same current SHA. Test a new commit and ensure old evidence no longer satisfies the gate.
 5. Confirm timeout, duplicate event, and runner-unavailable outcomes fail closed. Do not enable merge automation as part of this work.
 6. Only after these checks, document the workflow as active and close DEV-44. The workflow never performs merge or Jira transitions.

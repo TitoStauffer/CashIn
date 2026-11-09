@@ -16,11 +16,15 @@ O gate retorna somente:
 - Estado e HEAD do PR.
 - Checks configurados de CI e SonarQube.
 - Revisão formal de Code Review, considerando revisões posteriores.
-- Relatórios estruturados de QA e Quality Gate Coordinator.
+- Relatório estruturado do Quality Gate Coordinator, nos dois trilhos, e de QA quando o trilho é completo.
 - Conversas de revisão abertas, quando acessíveis.
 - Branch protection e rulesets aplicáveis.
 
 O gate exclui o próprio status da lista de dependências para evitar ciclo. Ele publica `Merge Readiness` no SHA avaliado, mas não executa merge.
+
+## Trilho de revisão
+
+O gate classifica a rodada a partir da lista de arquivos alterados, com a mesma regra da orquestração, e reclassifica ao final da avaliação. No trilho leve o relatório de QA não é exigido; o relatório do Coordinator continua obrigatório nos dois trilhos, e um relatório de QA presente e não aprovado continua bloqueando. Divergência entre a classificação inicial e a final bloqueia. Ver [fluxo de entrega](delivery-flow.md).
 
 ## Diagnóstico rápido
 

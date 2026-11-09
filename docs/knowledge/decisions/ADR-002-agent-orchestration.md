@@ -5,11 +5,11 @@
 
 ## Contexto
 
-O processo exige Code Review, QA e consolidação de qualidade vinculados ao SHA correto, usando o Codex autenticado pelo plano existente e a identidade do GitHub App para publicar evidências.
+O processo exige Code Review e consolidação de qualidade vinculados ao SHA correto, mais QA quando o trilho de revisão for completo (DEV-116), usando o Codex autenticado pelo plano existente e a identidade do GitHub App para publicar evidências.
 
 ## Decisão
 
-Executar os Agents em runner Windows self-hosted após o CI, na ordem Code Review → QA → Quality Gate Coordinator. Publicar evidências duráveis pelo GitHub App e avaliar a prontidão em um gate determinístico separado. Qualquer ausência, divergência de SHA ou falha de API resulta em bloqueio ou inconclusão.
+Executar os Agents em runner Windows self-hosted após o CI, na ordem Code Review → QA → Quality Gate Coordinator; desde a DEV-116, o QA é pulado no trilho leve e o Coordinator vem direto depois do Code Review. Publicar evidências duráveis pelo GitHub App e avaliar a prontidão em um gate determinístico separado. Qualquer ausência, divergência de SHA ou falha de API resulta em bloqueio ou inconclusão.
 
 ## Consequências
 

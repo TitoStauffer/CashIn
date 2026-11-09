@@ -44,6 +44,9 @@ function fixture(overrides = {}) {
     rulesets: [],
     unresolved: false,
     shaChanges: false,
+    // Empty by default, which classifies as the full track: every pre-existing case keeps requiring QA.
+    files: [],
+    filesAfterFirstRead: undefined,
     ...overrides,
   };
 
@@ -53,7 +56,11 @@ function fixture(overrides = {}) {
     requests.push({ path, method: options.method ?? 'GET' });
     if (parsed.pathname === '/app') return response({ slug: 'cashin-devagents' });
     if (parsed.pathname === '/repos/owner/repo/pulls/7' && options.headers?.Accept === 'application/vnd.github.v3.diff') return new Response(data.diff);
-    if (parsed.pathname === '/repos/owner/repo/pulls/7/files') return response([]);
+    if (parsed.pathname === '/repos/owner/repo/pulls/7/files') {
+      // The second read is the end-of-evaluation confirmation, where a track change has to be caught.
+      const current = data.filesAfterFirstRead !== undefined && pullRequestReadCount > 1 ? data.filesAfterFirstRead : data.files;
+      return response(current.map((filename) => ({ filename, status: 'modified' })));
+    }
     if (parsed.pathname === '/repos/owner/repo/pulls/7') {
       pullRequestReadCount += 1;
       return response({
@@ -71,6 +78,9 @@ function fixture(overrides = {}) {
     }
     if (parsed.pathname === '/repos/owner/repo/contents/AGENTS.md') return response({ encoding: 'base64', content: Buffer.from(data.instructions).toString('base64') });
     if (parsed.pathname === '/repos/owner/repo/contents/docs/knowledge/README.md') return response({}, 404);
+    if (parsed.pathname.startsWith('/repos/owner/repo/contents/')) {
+      return response({ encoding: 'base64', content: Buffer.from(`conteúdo de ${parsed.pathname}`).toString('base64') });
+    }
     if (parsed.pathname.endsWith(`/commits/${sha}/status`)) return response({ statuses: [] });
     if (parsed.pathname === '/repos/owner/repo/pulls/7/reviews') return response(data.reviews);
     if (parsed.pathname.startsWith('/repos/owner/repo/compare/')) return response({ status: data.compareStatus ?? 'ahead', merge_base_commit: { sha: data.compareStatus === 'diverged' ? oldSha : data.baseSha } }, data.compareApiStatus ?? 200);
@@ -311,6 +321,116 @@ test('blocks evidence when the merge base or diff changes without a new PR HEAD'
   const newDiff = await fixture({ diff: 'changed diff from updated master' }).evaluate();
   assert.equal(newDiff.status, 'BLOCKED');
   assert.match(newDiff.reasons.join(' '), /metadados desatualizados/);
+});
+
+// DEV-116: a change that touches no runtime source takes the light track, where QA is not required.
+// The Coordinator's report stays required on both tracks, because it is the App-signed record of which
+// track was taken.
+//
+// The context hash covers the changed-file list and the source snapshots, so a scenario that varies the
+// files cannot reuse the module-level hash. Rather than reimplementing the fingerprint here — a test
+// that would then confirm its own copy of the rule — the evaluator is asked for the hash it computed,
+// and the evidence is rebuilt with it.
+function appReview(reportContextHash) {
+  return [
+    { user: { login: 'cashin-devagents' }, state: 'APPROVED', commit_id: sha, submitted_at: '2026-10-21T12:00:00Z', body: `${agentReportMarker('codeReview', sha, reportContextHash)}\n### Codex — Code Review Agent\n\n**Status:** APPROVED\n**Commit:** \`${sha}\`\n\n### Code Review — APPROVED` },
+    { user: { login: 'human-reviewer', type: 'User' }, state: 'APPROVED', commit_id: sha, submitted_at: '2026-10-21T12:01:00Z' },
+  ];
+}
+
+async function evaluateTrack({ files, filesAfterFirstRead, buildComments }) {
+  const probe = await fixture({ files, filesAfterFirstRead }).evaluate();
+  const reportContextHash = probe.evidence.contextHash;
+  assert.match(reportContextHash ?? '', /^[a-f0-9]{64}$/, 'o avaliador não produziu um hash de contexto utilizável');
+  return fixture({
+    files,
+    filesAfterFirstRead,
+    reviews: appReview(reportContextHash),
+    comments: buildComments(reportContextHash),
+  }).evaluate();
+}
+
+const coordinator = (hash) => report('Codex — Quality Gate Coordinator', 'Checks verificados', sha, hash);
+
+test('returns READY_TO_MERGE on the light track without a QA report', async () => {
+  const outcome = await evaluateTrack({
+    files: ['AGENTS.md', 'docs/hosted-agent-orchestration.md', 'apps/web/src/creditCards/CreditCardsPage.test.tsx'],
+    buildComments: (hash) => [coordinator(hash)],
+  });
+
+  assert.equal(outcome.status, 'READY_TO_MERGE');
+  assert.equal(outcome.evidence.reviewTrack, 'light');
+  assert.equal(outcome.evidence.reports.qa.status, 'MISSING');
+});
+
+test('still blocks a runtime change that has no QA report', async () => {
+  const outcome = await evaluateTrack({
+    files: ['apps/api/src/wallets/wallets-service.ts'],
+    buildComments: (hash) => [coordinator(hash)],
+  });
+
+  assert.equal(outcome.status, 'BLOCKED');
+  assert.equal(outcome.evidence.reviewTrack, 'full');
+  assert.ok(outcome.reasons.some((reason) => /Relatório estruturado do QA ausente/.test(reason)), outcome.reasons.join(' | '));
+});
+
+// The light track drops the QA requirement; it never drops the Coordinator, and it never ignores a QA
+// report that exists for this SHA and context and is not approved.
+test('light track still requires the Coordinator report', async () => {
+  const outcome = await evaluateTrack({ files: ['AGENTS.md'], buildComments: () => [] });
+
+  assert.equal(outcome.status, 'BLOCKED');
+  assert.equal(outcome.evidence.reviewTrack, 'light');
+  assert.ok(outcome.reasons.some((reason) => /Quality Gate/.test(reason)), outcome.reasons.join(' | '));
+});
+
+// A report from another SHA is not evidence about this one. Blocking it stranded a Pull Request that
+// touched runtime, published QA, then reverted the runtime part: the old comment turns stale at the new
+// SHA and nothing republishes it, because QA no longer runs. The first version of this test asserted
+// that block, encoding the defect; the Code Review of PR #91 proved the scenario reachable.
+test('light track treats a QA report from another SHA as absent', async () => {
+  const outcome = await evaluateTrack({
+    files: ['AGENTS.md'],
+    buildComments: (hash) => [report('Codex — QA Agent', 'Verificações de QA', oldSha, hash), coordinator(hash)],
+  });
+
+  assert.equal(outcome.status, 'READY_TO_MERGE');
+  assert.equal(outcome.evidence.reviewTrack, 'light');
+  assert.ok(!outcome.reasons.some((reason) => /QA/.test(reason)), outcome.reasons.join(' | '));
+});
+
+// What the light track must never ignore is a QA that ran against this very SHA and context and did not
+// approve. Skipping the stage is a decision about cost, not permission to drop evidence that exists.
+test('light track still blocks a QA report for the current SHA that is not approved', async () => {
+  const outcome = await evaluateTrack({
+    files: ['AGENTS.md'],
+    buildComments: (hash) => [
+      {
+        ...report('Codex — QA Agent', 'Verificações de QA', sha, hash),
+        body: report('Codex — QA Agent', 'Verificações de QA', sha, hash).body.replace('**Status:** APPROVED', '**Status:** CHANGES_REQUESTED'),
+      },
+      coordinator(hash),
+    ],
+  });
+
+  assert.equal(outcome.status, 'BLOCKED');
+  assert.equal(outcome.evidence.reviewTrack, 'light');
+  assert.ok(outcome.reasons.some((reason) => /Relatório de QA não está aprovado/.test(reason)), outcome.reasons.join(' | '));
+});
+
+// A runtime file arriving mid-evaluation moves the context hash too, so this is defence in depth; it is
+// here because the consequence of missing it is a merge without QA.
+test('blocks when the review track changes while evidence is being collected', async () => {
+  const outcome = await evaluateTrack({
+    files: ['AGENTS.md'],
+    filesAfterFirstRead: ['AGENTS.md', 'apps/api/src/app.ts'],
+    buildComments: (hash) => [coordinator(hash)],
+  });
+
+  assert.equal(outcome.status, 'BLOCKED');
+  assert.equal(outcome.evidence.reviewTrack, 'light');
+  assert.equal(outcome.evidence.finalReviewTrack, 'full');
+  assert.ok(outcome.reasons.some((reason) => /trilho de revisão mudou/i.test(reason)), outcome.reasons.join(' | '));
 });
 
 test('blocks when QA report is missing', async () => {
