@@ -21,6 +21,7 @@ A Web usa React e Vite. `App.tsx` resolve a página pelo caminho atual, restaura
 
 - `WalletContext` carrega carteiras, preserva a seleção e expõe a carteira ativa.
 - Clientes `*Api.ts` concentram chamadas HTTP e enviam a carteira ativa.
+- Todo cliente HTTP de domínio monta o caminho com prefixo literal e identificadores sob `encodeURIComponent`, e passa esse caminho por `assertSafeApiPath` (`api/requestPath.ts`) antes do `fetch`. A guarda recusa caminho que não comece em `/`, caminho protocolo-relativo (`//host`), travessia (`..`) e caracteres que uma rota nunca precisa. A convenção do `encodeURIComponent` já bastava; a guarda existe porque convenção se esquece, e porque a análise estática não consegue provar a convenção lendo os chamadores — ver [DEV-105](https://titostauffer.atlassian.net/browse/DEV-105).
 - Feedbacks de API passam pelas funções em `feedback/` para mensagens acionáveis.
 - Período mensal é compartilhado por utilitários em `period/`.
 - Não há biblioteca externa de roteamento; `App.tsx` usa `window.location` e caminhos conhecidos.

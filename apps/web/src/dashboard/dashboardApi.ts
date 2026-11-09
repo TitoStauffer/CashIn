@@ -1,6 +1,7 @@
 import type { InvestmentGoal } from '../goals/goalsApi'
 import { withActiveWallet } from '../wallets/walletApi'
 import type { IncomeBalanceType } from '../incomes/incomesApi'
+import { assertSafeApiPath } from '../api/requestPath'
 
 export type FinancialSummary = {
   incomeTotal: string
@@ -52,7 +53,7 @@ export class DashboardApiError extends Error {
 }
 
 async function request<T>(path: string, signal?: AbortSignal): Promise<T> {
-  const response = await fetch(`/api${path}`, withActiveWallet({ credentials: 'include', signal }))
+  const response = await fetch(`/api${assertSafeApiPath(path)}`, withActiveWallet({ credentials: 'include', signal }))
   if (!response.ok) {
     const body = (await response.json().catch(() => null)) as ErrorResponse | null
     throw new DashboardApiError(body?.message ?? '', response.status)

@@ -1,4 +1,5 @@
 import { withActiveWallet } from '../wallets/walletApi'
+import { assertSafeApiPath } from '../api/requestPath'
 
 export type IncomeBalanceType = 'cash' | 'food_benefit' | 'meal_benefit' | 'food_meal_benefit' | 'home_office_benefit'
 
@@ -39,7 +40,7 @@ export class IncomeApiError extends Error {
 }
 
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const response = await fetch(`/api${path}`, withActiveWallet({
+  const response = await fetch(`/api${assertSafeApiPath(path)}`, withActiveWallet({
     ...init,
     credentials: 'include',
     headers: {

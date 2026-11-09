@@ -1,4 +1,5 @@
 import { withActiveWallet } from '../wallets/walletApi'
+import { assertSafeApiPath } from '../api/requestPath'
 
 export type InvestmentContribution = {
   id: string
@@ -51,7 +52,7 @@ export class GoalApiError extends Error {
 }
 
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const response = await fetch(`/api${path}`, withActiveWallet({
+  const response = await fetch(`/api${assertSafeApiPath(path)}`, withActiveWallet({
     ...init,
     credentials: 'include',
     headers: {

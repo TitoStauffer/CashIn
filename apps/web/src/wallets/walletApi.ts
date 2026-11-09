@@ -1,3 +1,5 @@
+import { assertSafeApiPath } from '../api/requestPath'
+
 export type Wallet = {
   id: string
   name: string
@@ -54,7 +56,7 @@ export class WalletApiError extends Error {
 }
 
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const response = await fetch(`/api${path}`, {
+  const response = await fetch(`/api${assertSafeApiPath(path)}`, {
     ...init,
     credentials: 'include',
     headers: {
