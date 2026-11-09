@@ -304,8 +304,14 @@ export function IncomesPage({ userEmail, isLoggingOut, onLogout }: IncomesPagePr
                       placeholder="0,00"
                       value={amountInput}
                       onChange={(event) => {
-                        setAmountInputInvalid(hasInvalidBrazilianCurrencyInput(event.target.value))
-                        setAmountInput(maskBrazilianCurrencyInput(event.target.value))
+                        // Same reason as `ExpensesPage`: the flag describes the field, not the raw
+                        // event. The mask drops everything that is not a digit or a comma, so typing
+                        // `abc` emptied the field and still flagged it — a format error about a field
+                        // with no value, and a Salvar that returned silently with nothing left to
+                        // erase. An empty field is a missing required value, reported on save.
+                        const masked = maskBrazilianCurrencyInput(event.target.value)
+                        setAmountInputInvalid(masked.trim() !== '' && hasInvalidBrazilianCurrencyInput(event.target.value))
+                        setAmountInput(masked)
                       }}
                       aria-invalid={amountInputInvalid}
                       aria-describedby={amountInputInvalid ? 'income-amount-hint income-amount-error' : 'income-amount-hint'}

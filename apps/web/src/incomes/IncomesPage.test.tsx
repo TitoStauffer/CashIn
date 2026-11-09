@@ -76,6 +76,45 @@ describe('IncomesPage currency input', () => {
     expect(screen.getByLabelText('Filtrar por categoria')).toHaveValue('')
   })
 
+  // Same defect and same reasoning as `ExpensesPage`: the mask discards `abc` entirely, so the field
+  // goes back to empty, and flagging it put a format error on a field with no value, announced through
+  // `aria-describedby`. The empty required field is answered by constraint validation, before
+  // `handleSave` runs — so no application alert appears here, and none should.
+  it('stops flagging the field as badly formatted when the mask discards the whole input', async () => {
+    const user = userEvent.setup()
+    await renderPage()
+    await user.click(await screen.findByRole('button', { name: /Nova entrada/ }))
+
+    const amount = screen.getByLabelText('Valor *') as HTMLInputElement
+    fireEvent.change(amount, { target: { value: 'abc' } })
+
+    expect(amount).toHaveValue('')
+    expect(amount).toHaveAttribute('aria-invalid', 'false')
+    expect(amount).toHaveAttribute('aria-describedby', 'income-amount-hint')
+    expect(screen.queryByRole('alert')).toBeNull()
+
+    expect(amount.validity.valueMissing).toBe(true)
+    await user.click(screen.getByRole('button', { name: 'Registrar entrada' }))
+    expect(incomesApi.create).not.toHaveBeenCalled()
+  })
+
+  // The screen's own missing-value message, for the value that survives the mask and still does not
+  // parse. This is the path the ticket attributed to the empty field.
+  it('asks for a value greater than zero when the amount survives the mask but parses to nothing', async () => {
+    const user = userEvent.setup()
+    await renderPage()
+    await user.click(await screen.findByRole('button', { name: /Nova entrada/ }))
+
+    const amount = screen.getByLabelText('Valor *')
+    fireEvent.change(amount, { target: { value: '0,00' } })
+
+    expect(amount).toHaveAttribute('aria-invalid', 'false')
+    await user.click(screen.getByRole('button', { name: 'Registrar entrada' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Informe um valor maior que zero')
+    expect(incomesApi.create).not.toHaveBeenCalled()
+  })
+
   it('formats saved values, rejects invalid pasted values, and sends a canonical decimal on create', async () => {
     const user = userEvent.setup()
     await renderPage()

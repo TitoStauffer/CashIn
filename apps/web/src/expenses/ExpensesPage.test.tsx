@@ -93,6 +93,69 @@ describe('ExpensesPage currency input', () => {
     await waitFor(() => expect(expensesApi.create).toHaveBeenCalledWith(expect.objectContaining({ amount: '1234.56' })))
   })
 
+  // The invalid flag has to describe what the field shows. `abc` is wholly discarded by the mask, so
+  // the field goes back to empty — and flagging that put a format error ("use up to two decimals") on
+  // a field with no value at all, announced to screen readers through `aria-describedby`.
+  //
+  // What answers for the empty field is the input's own `required`: constraint validation refuses the
+  // submit before `handleSave` runs, which is why no application alert appears here. The ticket's
+  // impact analysis expected the screen's "Informe um valor maior que zero" message instead, and that
+  // is wrong for a field left empty — that message is reachable only for a value that survives the
+  // mask and still does not parse, such as `0,00`. The flag was never what blocked the save.
+  it('stops flagging the field as badly formatted when the mask discards the whole input', async () => {
+    const user = userEvent.setup()
+    await renderPage()
+    await user.click(await screen.findByRole('button', { name: /Nova despesa/ }))
+
+    const amount = screen.getByLabelText('Valor *') as HTMLInputElement
+    fireEvent.change(amount, { target: { value: 'abc' } })
+
+    expect(amount).toHaveValue('')
+    expect(amount).toHaveAttribute('aria-invalid', 'false')
+    expect(amount).toHaveAttribute('aria-describedby', 'expense-amount-hint')
+    expect(screen.queryByRole('alert')).toBeNull()
+
+    // The missing required value is what the browser reports, and the expense is not created.
+    expect(amount.validity.valueMissing).toBe(true)
+    await user.click(screen.getByRole('button', { name: 'Registrar despesa' }))
+    expect(expensesApi.create).not.toHaveBeenCalled()
+  })
+
+  // The screen's own missing-value message, for the input that does survive the mask and still does
+  // not parse. This is the path the ticket attributed to the empty field.
+  it('asks for a value greater than zero when the amount survives the mask but parses to nothing', async () => {
+    const user = userEvent.setup()
+    await renderPage()
+    await user.click(await screen.findByRole('button', { name: /Nova despesa/ }))
+
+    const amount = screen.getByLabelText('Valor *')
+    fireEvent.change(amount, { target: { value: '0,00' } })
+
+    expect(amount).toHaveAttribute('aria-invalid', 'false')
+    await user.click(screen.getByRole('button', { name: 'Registrar despesa' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Informe um valor maior que zero')
+    expect(expensesApi.create).not.toHaveBeenCalled()
+  })
+
+  // The other half of the same change: an invalid value that **survives** the mask must keep flagging
+  // the field and refusing the save, which is what the flag is for.
+  it('keeps flagging an invalid amount that survives the mask', async () => {
+    const user = userEvent.setup()
+    await renderPage()
+    await user.click(await screen.findByRole('button', { name: /Nova despesa/ }))
+
+    const amount = screen.getByLabelText('Valor *')
+    fireEvent.change(amount, { target: { value: '12,345' } })
+
+    expect(amount).toHaveAttribute('aria-invalid', 'true')
+    expect(amount).toHaveAttribute('aria-describedby', 'expense-amount-hint expense-amount-error')
+    expect(screen.getByRole('alert')).toHaveTextContent('duas casas decimais')
+
+    await user.click(screen.getByRole('button', { name: 'Registrar despesa' }))
+    expect(expensesApi.create).not.toHaveBeenCalled()
+  })
+
   it('loads an existing amount into the edit field and updates it without losing cents', async () => {
     const user = userEvent.setup()
     await renderPage()

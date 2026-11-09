@@ -313,8 +313,15 @@ export function ExpensesPage({ userEmail, isLoggingOut, onLogout }: ExpensesPage
                       placeholder="0,00"
                       value={amountInput}
                       onChange={(event) => {
-                        setAmountInputInvalid(hasInvalidBrazilianCurrencyInput(event.target.value))
-                        setAmountInput(maskBrazilianCurrencyInput(event.target.value))
+                        // The flag has to describe what the field shows, not what was typed. The mask
+                        // drops everything that is not a digit or a comma, so typing `abc` left the
+                        // field empty **and** flagged: the format error spoke about a field with no
+                        // value, and `handleSave` returned without a message, so Salvar did nothing
+                        // and there was no text left to erase. An empty field is a missing required
+                        // value, which the save path already reports.
+                        const masked = maskBrazilianCurrencyInput(event.target.value)
+                        setAmountInputInvalid(masked.trim() !== '' && hasInvalidBrazilianCurrencyInput(event.target.value))
+                        setAmountInput(masked)
                       }}
                       aria-invalid={amountInputInvalid}
                       aria-describedby={amountInputInvalid ? 'expense-amount-hint expense-amount-error' : 'expense-amount-hint'}
