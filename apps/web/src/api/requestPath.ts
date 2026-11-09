@@ -27,21 +27,31 @@
  * thrown at runtime. That was the false negative the first version of this file warned about and did
  * not close.
  */
-const ALLOWED_PATH = /^\/[A-Za-z0-9\-._~%/?&=+:,!*'()]*$/;
+const ALLOWED_PATH = /^\/[A-Za-z0-9\-._~%/?&=+:,!*'()]*$/
+
+/**
+ * The one text this failure shows, wherever it surfaces.
+ *
+ * It has to live in a single place because the same failure reaches people by two routes:
+ * `WalletContext` and `FinancialSidebar` show `error.message` verbatim, while every other screen goes
+ * through `getApiErrorFeedback`. Two literals meant the same condition read differently depending on
+ * the screen, so the feedback module imports this constant instead of repeating it.
+ */
+export const UNSAFE_API_PATH_MESSAGE =
+  'Não foi possível montar o endereço desta requisição. Atualize a página; se continuar, é falha do aplicativo e não da sua conexão.'
 
 export class UnsafeApiPathError extends Error {
   // Declared as a field rather than a constructor parameter property: the Web build runs with
   // `erasableSyntaxOnly`, which rejects the parameter-property shorthand.
-  readonly path: string;
+  readonly path: string
 
   constructor(path: string) {
-    // The message **can** reach the person: `WalletContext` and `FinancialSidebar` show `error.message`
-    // verbatim, without going through `getApiErrorFeedback`. So it is written for them, in Portuguese,
-    // and says what to do — rather than naming a path, which would mean nothing to whoever reads it.
-    // An earlier version of this comment claimed the opposite and was wrong.
-    super('Não foi possível montar o endereço desta requisição. Atualize a página e tente de novo.');
-    this.name = 'UnsafeApiPathError';
-    this.path = path;
+    // The message **can** reach the person, so it is written for them, in Portuguese, and says what to
+    // do — rather than naming a path, which would mean nothing to whoever reads it. An earlier version
+    // of this comment claimed the message was internal only, and was wrong.
+    super(UNSAFE_API_PATH_MESSAGE)
+    this.name = 'UnsafeApiPathError'
+    this.path = path
   }
 }
 
@@ -52,23 +62,30 @@ export class UnsafeApiPathError extends Error {
  * and `%2e%2e` reach the same place, and `%2E` does too because percent-encoding is case-insensitive.
  * Decoding the segment covers all of them, including a spelling nobody enumerated — `decodeURIComponent`
  * is what the browser itself applies before resolving the path.
+ *
+ * The decoded value is then split on `/`, because the caller split the raw path on the separators the
+ * browser's URL parser recognises, and `%2F` is not one of them: `..%2F..` decodes to `../..` and would
+ * otherwise pass whole. The browser does not treat it as a separator either, so this closes no reachable
+ * hole today — it closes the one that opens the moment anything between here and the route decodes
+ * first. The cost is that a legitimate identifier whose decoded form is exactly `..` in one of its
+ * `/`-separated parts is refused, which is a shape no screen produces.
  */
 function climbsOut(segment: string): boolean {
-  let decoded = segment;
+  let decoded = segment
   try {
-    decoded = decodeURIComponent(segment);
+    decoded = decodeURIComponent(segment)
   } catch {
     // A lone `%` or a truncated escape is not something any encoder here produces, so a path carrying
     // one is already a bug: treat it as unsafe instead of guessing what it meant.
-    return true;
+    return true
   }
-  return decoded === '..';
+  return decoded.split('/').some((part) => part === '..')
 }
 
 export function assertSafeApiPath(path: string): string {
-  if (typeof path !== 'string' || !ALLOWED_PATH.test(path)) throw new UnsafeApiPathError(String(path));
+  if (typeof path !== 'string' || !ALLOWED_PATH.test(path)) throw new UnsafeApiPathError(String(path))
   // `//host` is a protocol-relative URL and a climbing segment leaves `/api`; both change the request
   // target even though every character in them is allowed on its own.
-  if (path.startsWith('//') || path.split(/[/?&=]/).some(climbsOut)) throw new UnsafeApiPathError(path);
-  return path;
+  if (path.startsWith('//') || path.split(/[/?&=]/).some(climbsOut)) throw new UnsafeApiPathError(path)
+  return path
 }

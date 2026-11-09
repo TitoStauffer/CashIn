@@ -44,8 +44,10 @@ describe('createApiRequest', () => {
     expect((withoutBody.mock.calls[0]![1] as RequestInit).headers).not.toHaveProperty('Content-Type')
   })
 
-  // `importsApi` posts `FormData` for uploads, and the browser has to set the multipart content type
-  // with its boundary. A truthy check on `init.body` would impose JSON here.
+  // `importsApi` posts a `File` for uploads, with its own `Content-Type: application/octet-stream` —
+  // that is the caller the strict `typeof init.body === 'string'` check exists for. `FormData` stands in
+  // for it here because it is the same class of non-string body and needs no file fixture; a truthy
+  // check on `init.body` would impose JSON on either one.
   it('does not impose the JSON content type on a body that is not a string', async () => {
     const spy = mockFetch(json({}))
     const form = new FormData()

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { UnsafeApiPathError, assertSafeApiPath } from './requestPath'
+import { UNSAFE_API_PATH_MESSAGE, UnsafeApiPathError, assertSafeApiPath } from './requestPath'
 
 describe('assertSafeApiPath', () => {
   it('accepts the paths the feature modules actually build', () => {
@@ -47,6 +47,16 @@ describe('assertSafeApiPath', () => {
     }
   })
 
+  // `%2F` is not a separator for the browser's URL parser, so splitting the raw path on `/` left
+  // `..%2F..` as one segment whose decoded form is `../..`, not `..`, and it passed whole. Nothing
+  // reachable today decodes before routing, so this is defence in depth — and the regression has to
+  // exist for the depth to survive the next refactor.
+  it('refuses a climbing segment hidden behind an encoded slash', () => {
+    for (const path of ['/x/..%2F..', '/x/%2e%2e%2f%2e%2e', '/x/..%2Fadmin', '/x/a%2F..%2Fb']) {
+      expect(() => assertSafeApiPath(path)).toThrow(UnsafeApiPathError)
+    }
+  })
+
   it('refuses a truncated percent escape instead of guessing what it meant', () => {
     // No encoder used here produces a lone `%`, so a path carrying one is already a bug.
     for (const path of ['/categories/%', '/categories/%zz', '/categories/abc%2']) {
@@ -89,7 +99,8 @@ describe('assertSafeApiPath', () => {
     const error = new UnsafeApiPathError('//evil.example.com')
 
     expect(error.name).toBe('UnsafeApiPathError')
-    expect(error.message).toBe('Não foi possível montar o endereço desta requisição. Atualize a página e tente de novo.')
+    expect(error.message).toBe(UNSAFE_API_PATH_MESSAGE)
+    expect(error.message).toMatch(/Atualize a página/)
     expect(error.message).not.toMatch(/evil\.example\.com/)
     expect(error.path).toBe('//evil.example.com')
   })

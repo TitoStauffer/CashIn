@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { UnsafeApiPathError } from '../api/requestPath'
 import { getApiErrorFeedback } from './apiErrorFeedback'
 
 describe('getApiErrorFeedback', () => {
@@ -59,6 +60,15 @@ describe('getApiErrorFeedback', () => {
     // the connection, to rule it out, so asserting the absence of the word would be the wrong check.
     expect(feedback).not.toBe(fallback)
     expect(feedback).toMatch(/falha do aplicativo e não da sua conexão/)
+  })
+
+  // Two routes carry this failure to a person: the screens that go through this module, and
+  // `WalletContext` and `FinancialSidebar`, which show `error.message` verbatim. They used to carry
+  // different texts for the same condition, so what the person read depended on the screen.
+  it('says the same thing the error itself says, since both texts reach the person', () => {
+    const refused = new UnsafeApiPathError('//evil.example.com')
+
+    expect(getApiErrorFeedback(refused, 'Falha.')).toBe(refused.message)
   })
 
   // The status-bearing errors must keep their own messages: the name check cannot shadow them.

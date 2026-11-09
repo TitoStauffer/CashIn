@@ -1,3 +1,5 @@
+import { UNSAFE_API_PATH_MESSAGE } from '../api/requestPath'
+
 export function getApiErrorFeedback(
   error: unknown,
   fallback: string,
@@ -14,10 +16,9 @@ export function getApiErrorFeedback(
   if (status === 429) return 'Muitas tentativas. Aguarde um pouco e tente novamente.'
   // A path refused by `assertSafeApiPath` never reached the server, so it carries no status and would
   // otherwise land on each screen's fallback — usually a connection message, which tells the person to
-  // retry something that cannot succeed. Matched by `name` instead of importing the class, to keep this
-  // module free of a dependency on the HTTP client.
-  if (error instanceof Error && error.name === 'UnsafeApiPathError') {
-    return 'Não foi possível montar o endereço desta requisição. Atualize a página; se continuar, é falha do aplicativo e não da sua conexão.'
-  }
+  // retry something that cannot succeed. Matched by `name` rather than by `instanceof`, so this module
+  // does not depend on the HTTP client; the text comes from the guard, so the two routes by which this
+  // failure reaches a person say the same thing.
+  if (error instanceof Error && error.name === 'UnsafeApiPathError') return UNSAFE_API_PATH_MESSAGE
   return fallback
 }
