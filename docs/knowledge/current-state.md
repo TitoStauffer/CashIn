@@ -1,7 +1,7 @@
 # Estado atual do projeto
 
-**Status:** atualizado pela DEV-81
-**Última revisão:** 07/11/2026
+**Status:** atualizado pela DEV-116
+**Última revisão:** 08/11/2026
 **Ticket de criação:** [DEV-64](https://titostauffer.atlassian.net/browse/DEV-64)
 
 ## Produto disponível
@@ -26,7 +26,7 @@ A infraestrutura e a tela existem. O parser padrão da API interpreta extratos b
 
 ## Automação de entrega
 
-O fluxo ativo executa validação de título, API, Web, ferramentas de automação, SonarQube, Code Review, QA, Quality Gate Coordinator e Merge Readiness. O merge permanece sob responsabilidade do Product Manager quando todas as evidências estão aprovadas. O pós-merge atualiza a issue Jira associada de forma idempotente.
+O fluxo ativo executa validação de título, API, Web, ferramentas de automação, SonarQube, Code Review, QA, Quality Gate Coordinator e Merge Readiness. Desde a DEV-116 cada rodada tem um trilho: o trilho leve dispensa o QA somente quando **todo** arquivo alterado é `*.md`, `*.test.*` ou `docs/knowledge/context-map.json`, e qualquer outro caminho exige o trilho completo. Todas as outras etapas continuam obrigatórias nos dois trilhos. Consulte [`automation/delivery-flow.md`](automation/delivery-flow.md). O merge permanece sob responsabilidade do Product Manager quando todas as evidências estão aprovadas. O pós-merge atualiza a issue Jira associada de forma idempotente.
 
 ## Limitações conhecidas
 

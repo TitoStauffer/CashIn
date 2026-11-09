@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
+import { REVIEW_TRACK_OUTPUT } from '../dist/review-track.js';
 
 const mergeReadinessWorkflow = await readFile(new URL('../../../.github/workflows/merge-readiness.yml', import.meta.url), 'utf8');
 const reviewSignalWorkflow = await readFile(new URL('../../../.github/workflows/pr-review-signal.yml', import.meta.url), 'utf8');
@@ -73,6 +74,54 @@ test('recovers only an existing agent artifact without calling Codex', () => {
   assert.match(recoveryWorkflow, /persist-credentials:\s*false/);
   assert.doesNotMatch(recoveryWorkflow, /agent-stage-cli|codex\s+exec|runs-on:\s*\[self-hosted/);
   assert.doesNotMatch(recoveryWorkflow, /git\s+(?:commit|push)|contents:\s*write/);
+});
+
+// DEV-116: the light track skips QA, the only model stage on the serialized self-hosted runner. Every
+// condition below has to fail closed, because the consequence of a wrong one is a merge without QA.
+test('skips QA only on a confirmed light track and keeps the Coordinator on both', () => {
+  // The repository stores workflows with CRLF, so every line break here has to allow the carriage
+  // return: a bare \n silently matches nothing and the assertions below would never run.
+  const condition = (job, terminator) => orchestrationWorkflow
+    .match(new RegExp(`^  ${job}:[\\s\\S]*?^\\s+if: >-\\r?\\n([\\s\\S]*?)^\\s+${terminator}`, 'm'))?.[1] ?? '';
+  const qaCondition = condition('qa', 'runs-on:');
+  const gateCondition = condition('quality-gate', 'runs-on:');
+  const finalCondition = condition('final-status', 'run: exit 1');
+  // Guards against the silent-empty-match trap above.
+  for (const [name, value] of [['qa', qaCondition], ['quality-gate', gateCondition], ['final-status', finalCondition]]) {
+    assert.ok(value.trim().length > 0, `condição do job ${name} não foi localizada no workflow`);
+  }
+
+  // The producer and the consumer are in different languages, so the key is asserted from the shared
+  // constant the CLI writes with. Renaming it on one side alone used to keep this suite green while
+  // production got an empty output: QA would run, the Coordinator would be skipped for an unknown
+  // track and the final confirmation would fail — closed, but stranding every Pull Request.
+  assert.equal(REVIEW_TRACK_OUTPUT, 'review_track');
+  assert.ok(orchestrationWorkflow.includes(`steps.stage.outputs.${REVIEW_TRACK_OUTPUT}`), REVIEW_TRACK_OUTPUT);
+  assert.ok(orchestrationWorkflow.includes(`needs.code-review.outputs.${REVIEW_TRACK_OUTPUT}`), REVIEW_TRACK_OUTPUT);
+
+  // The track is produced by the trusted CLI as a job output, never read from the PR body.
+  assert.match(orchestrationWorkflow, /^\s+review_track: \$\{\{ steps\.stage\.outputs\.review_track \}\}\s*$/m);
+  assert.doesNotMatch(orchestrationWorkflow, /review_track:\s*\$\{\{\s*github\.event[^}]*body/);
+
+  // QA is skipped only when the track is a confirmed 'light'; anything else runs it.
+  assert.match(qaCondition, /needs\.code-review\.outputs\.review_track != 'light'/);
+  assert.doesNotMatch(qaCondition, /review_track == 'full'/);
+
+  // The Coordinator runs on both tracks, so it needs !cancelled() to survive a skipped need, and on the
+  // light track it demands that QA was genuinely skipped rather than failed.
+  assert.match(gateCondition, /!cancelled\(\)/);
+  assert.match(gateCondition, /review_track == 'light' && needs\.qa\.result == 'skipped'/);
+  assert.match(gateCondition, /review_track == 'full' && needs\.publish-qa\.result == 'success' && needs\.qa\.outputs\.decision == 'APPROVED'/);
+
+  // The QA artifact only exists on the full track.
+  assert.match(orchestrationWorkflow, /^\s+- name: Download QA result\s*\n\s+if: needs\.code-review\.outputs\.review_track == 'full'\s*$/m);
+
+  // Final confirmation: QA required when full, genuinely skipped when light, and an absent or unknown
+  // track fails closed instead of reading as "not full".
+  assert.match(finalCondition, /review_track == 'full' &&\s*\n?\s*\(needs\.qa\.outputs\.decision != 'APPROVED'/);
+  assert.match(finalCondition, /review_track == 'light' &&\s*\n?\s*\(needs\.qa\.result != 'skipped'/);
+  assert.match(finalCondition, /review_track != 'full' &&\s*\n?\s*needs\.code-review\.outputs\.review_track != 'light'/);
+  assert.match(finalCondition, /needs\.quality-gate\.outputs\.decision != 'APPROVED'/);
 });
 
 test('pins orchestration runtime and isolates deterministic consolidation from Codex', () => {

@@ -12,6 +12,7 @@ import { evaluateDeterministicQualityGate, mayRetryInconclusive, selectReusableS
 import { resolveWorkflowEvent } from './workflow-event.js';
 import { createInjectionBlockedResult, detectPullRequestPromptInjection } from './prompt-injection-guard.js';
 import { assertPullRequestContainsBase } from './branch-freshness.js';
+import { REVIEW_TRACK_OUTPUT, classifyReviewTrack, type ReviewTrack } from './review-track.js';
 
 try {
   await main();
@@ -55,6 +56,10 @@ async function main(): Promise<void> {
   const reviewInputs = await loadAgentReviewInputs(fetch, repository, prNumber, pullRequest, token);
   const { diff, changedFiles, checks, checkRuns, repositoryInstructions, sourceFiles, vaultContext, ciConfiguration } = reviewInputs;
   const acceptanceCriteria = extractAcceptanceCriteria(stringValue(pullRequest.body) ?? '');
+  // Classified from the API's changed-file list inside the privileged job. The light track skips QA,
+  // the only model stage on the serialized runner; every other stage still runs.
+  const reviewTrack = classifyReviewTrack(changedFiles);
+  await writeWorkflowOutput(REVIEW_TRACK_OUTPUT, reviewTrack);
   if (diff.length > 350_000) throw new Error('Pull Request diff exceeds the supported review size.');
   // A title-triggered evaluation may precede CI completion; no model runs until every required check passes.
   assertRequiredChecksPassed(checks);
@@ -72,14 +77,15 @@ async function main(): Promise<void> {
     return;
   }
 
-  const priorResults = await readPriorResults(stage, contextHash, resolution.headSha, changedFiles, acceptanceCriteria);
+  const priorResults = await readPriorResults(stage, contextHash, resolution.headSha, changedFiles, acceptanceCriteria, reviewTrack);
   const formalCodeReview = stage !== 'codeReview'
     ? await readFormalReviewEvidence(prNumber, resolution.headSha, repository, token, contextHash, changedFiles, acceptanceCriteria)
     : undefined;
   if (priorResults.some((result) => result.commitSha.toLowerCase() !== resolution.headSha?.toLowerCase())) {
     throw new Error('A previous agent result belongs to a different Pull Request SHA.');
   }
-  if (stage === 'qualityGate' && priorResults.find((result) => result.stage === 'qa')?.decision !== 'APPROVED') {
+  if (stage === 'qualityGate' && reviewTrack === 'full'
+    && priorResults.find((result) => result.stage === 'qa')?.decision !== 'APPROVED') {
     throw new Error('Quality Gate Coordinator requires an approved QA result for the current SHA.');
   }
 
@@ -170,11 +176,16 @@ async function readPriorResults(
   commitSha: string,
   changedFiles: string[],
   acceptanceCriteria: string[],
+  reviewTrack: ReviewTrack,
 ): Promise<AgentStageResult[]> {
+  // On the light track QA never ran, so its artifact does not exist and is not demanded. The track
+  // comes from the changed-file list, so a run cannot drop the artifact by claiming the lighter track.
   const paths = stage === 'qa'
     ? [required('CODE_REVIEW_RESULT_PATH')]
     : stage === 'qualityGate'
-      ? [required('CODE_REVIEW_RESULT_PATH'), required('QA_RESULT_PATH')]
+      ? reviewTrack === 'full'
+        ? [required('CODE_REVIEW_RESULT_PATH'), required('QA_RESULT_PATH')]
+        : [required('CODE_REVIEW_RESULT_PATH')]
       : [];
   const results: AgentStageResult[] = [];
   for (const [index, path] of paths.entries()) {

@@ -110,7 +110,7 @@ Se não houver riscos ou limitações conhecidos, declare isso explicitamente.
 
 ## 12. Checklist de conclusão
 
-O Agent de Product Manager é responsável por conferir e atualizar este checklist com base nas evidências fornecidas pelo Agent técnico principal. Faça a conferência final após Code Review, QA e checks configurados, antes do merge.
+O Agent de Product Manager é responsável por conferir e atualizar este checklist com base nas evidências fornecidas pelo Agent técnico principal. Faça a conferência final após Code Review, QA quando o trilho de revisão for completo, e checks configurados, antes do merge.
 
 - [ ] O PR está vinculado ao ticket correto do Jira.
 - [ ] O escopo implementado corresponde ao ticket.
@@ -126,4 +126,4 @@ O Agent de Product Manager é responsável por conferir e atualizar este checkli
 - [ ] **QA aprovado** — marcado pelo Agent de QA somente após a aprovação.
 - **Observações finais:**
 
-> O merge só deve ocorrer após a aprovação obrigatória do Code Review, do QA e de todas as verificações configuradas, conforme o workflow do projeto.
+> O merge só deve ocorrer após a aprovação obrigatória do Code Review, do QA quando o trilho de revisão for completo, e de todas as verificações configuradas, conforme o workflow do projeto. No trilho leve o QA não roda e o seu checkbox permanece desmarcado por construção.

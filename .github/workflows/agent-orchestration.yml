@@ -45,6 +45,9 @@ jobs:
       decision: ${{ steps.stage.outputs.decision }}
       commit_sha: ${{ steps.stage.outputs.commit_sha }}
       pr_number: ${{ steps.stage.outputs.pr_number }}
+      # Classified by the trusted CLI from the API's changed-file list, never from the PR body. "light"
+      # skips QA, the only model stage on the serialized runner; every other stage still runs.
+      review_track: ${{ steps.stage.outputs.review_track }}
     steps:
       - name: Checkout trusted default branch
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -151,9 +154,13 @@ jobs:
   qa:
     name: Codex QA
     needs: [code-review, publish-code-review]
+    # Skipped on the light track, which is the whole point of DEV-116: this is the stage that holds the
+    # serialized self-hosted runner. An unset or unexpected track value never reaches this condition as
+    # 'full', so the stage runs whenever the classification is anything but a confirmed light track.
     if: >-
       needs.publish-code-review.result == 'success' &&
-      needs.publish-code-review.outputs.decision == 'APPROVED'
+      needs.publish-code-review.outputs.decision == 'APPROVED' &&
+      needs.code-review.outputs.review_track != 'light'
     runs-on: [self-hosted, Windows, X64, codex-plus]
     defaults:
       run:
@@ -276,10 +283,18 @@ jobs:
   quality-gate:
     name: Codex Quality Gate Coordinator
     needs: [code-review, publish-code-review, qa, publish-qa]
+    # Runs on both tracks: it is deterministic, makes no model call, and its published report is the
+    # App-signed record of which track was taken. `!cancelled()` is required because a skipped need
+    # would otherwise skip this job; every prerequisite is therefore re-evaluated here. On the light
+    # track QA must be genuinely skipped — a QA that ran and failed cannot be bypassed as "light".
     if: >-
+      !cancelled() &&
       needs.publish-code-review.result == 'success' &&
       needs.publish-code-review.outputs.decision == 'APPROVED' &&
-      needs.publish-qa.result == 'success' && needs.qa.outputs.decision == 'APPROVED'
+      (
+      (needs.code-review.outputs.review_track == 'light' && needs.qa.result == 'skipped') ||
+      (needs.code-review.outputs.review_track == 'full' && needs.publish-qa.result == 'success' && needs.qa.outputs.decision == 'APPROVED')
+      )
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
@@ -320,6 +335,7 @@ jobs:
           path: tools/github-reviewer/prior-code-review
 
       - name: Download QA result
+        if: needs.code-review.outputs.review_track == 'full'
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: codex-qa-${{ github.run_id }}
@@ -408,13 +424,19 @@ jobs:
     needs: [code-review, publish-code-review, qa, publish-qa, quality-gate, publish-quality-gate]
     runs-on: ubuntu-24.04
     steps:
-      - name: Fail closed unless every stage was published and approved
+      - name: Fail closed unless every stage required by the track was published and approved
+        # The last clause refuses an absent or unknown track: without it, a classification failure would
+        # read as "not full" and silently excuse QA.
         if: >-
           needs.code-review.outputs.decision != 'APPROVED' ||
           needs.publish-code-review.result != 'success' ||
           needs.publish-code-review.outputs.decision != 'APPROVED' ||
-          needs.qa.outputs.decision != 'APPROVED' ||
-          needs.publish-qa.result != 'success' ||
           needs.quality-gate.outputs.decision != 'APPROVED' ||
-          needs.publish-quality-gate.result != 'success'
+          needs.publish-quality-gate.result != 'success' ||
+          (needs.code-review.outputs.review_track == 'full' &&
+          (needs.qa.outputs.decision != 'APPROVED' || needs.publish-qa.result != 'success')) ||
+          (needs.code-review.outputs.review_track == 'light' &&
+          (needs.qa.result != 'skipped' || needs.publish-qa.result != 'skipped')) ||
+          (needs.code-review.outputs.review_track != 'full' &&
+          needs.code-review.outputs.review_track != 'light')
         run: exit 1

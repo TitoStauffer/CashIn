@@ -2,6 +2,7 @@ import { createGitHubInstallationSession, getRepositoryPath, requestGitHubApi, t
 import { agentReportMarker, computeAgentContextHash } from './agent-evidence.js';
 import { loadAgentReviewInputs } from './agent-review-inputs.js';
 import { ACTIONS_APP_ID } from './agent-ci-evidence.js';
+import { classifyReviewTrack } from './review-track.js';
 
 const REQUIRED_QUALITY_CHECKS = ['API', 'Web', 'SonarQube', 'SonarCloud Code Analysis'];
 const AUTOMATION_CHECK_CONTEXTS = ['Automation Tools', 'GitHub Reviewer'] as const;
@@ -106,6 +107,11 @@ export async function evaluateMergeReadiness(options: MergeReadinessOptions): Pr
   }
   const contextHash = computeAgentContextHash(`${options.owner}/${options.repository}`, options.pullRequestNumber, initialPullRequest, initialReviewInputs);
   evidence.contextHash = contextHash;
+  // Recomputed here from the same changed-file list the agents read, so the gate never depends on an
+  // agent's word about the track. The light track drops the QA requirement and nothing else.
+  const reviewTrack = classifyReviewTrack(initialReviewInputs.changedFiles);
+  evidence.reviewTrack = reviewTrack;
+  evidence.changedFileCount = initialReviewInputs.changedFiles.length;
   const mergeableState = stringValue(initialPullRequest.mergeable_state);
   if (initialPullRequest.mergeable === false || mergeableState === 'dirty') {
     reasons.push('O Pull Request possui conflitos com a branch base.');
@@ -240,7 +246,19 @@ export async function evaluateMergeReadiness(options: MergeReadinessOptions): Pr
   const qa = findStructuredReport(reportComments, appLogins, 'qa', headSha, contextHash);
   const qualityGate = findStructuredReport(reportComments, appLogins, 'qualityGate', headSha, contextHash);
   evidence.reports = { qa: qa.evidence, qualityGate: qualityGate.evidence };
-  if (qa.status !== 'APPROVED') reasons.push(qa.reason);
+  // The Coordinator's report is required on both tracks: it is the App-signed record that states which
+  // track was taken. QA is required only when the change touches runtime.
+  //
+  // On the light track a QA report still blocks when it belongs to the current SHA and context and is
+  // not approved — skipping the stage is a decision about cost, not permission to drop evidence that
+  // exists. `MISSING`, `STALE` and `UNSTRUCTURED` are not that evidence: they say the report is absent,
+  // from another SHA/context, or unusable. Blocking those used to strand a Pull Request that touched
+  // runtime, published QA, then reverted the runtime part: the old comment turns `STALE` at the new SHA
+  // and no stage republishes it, because QA no longer runs. The Coordinator already ignores such a
+  // comment, so blocking here also made the two evaluators disagree.
+  const qaEvidenceIsCurrent = !['APPROVED', 'MISSING', 'STALE', 'UNSTRUCTURED'].includes(qa.status);
+  if (reviewTrack === 'full' && qa.status !== 'APPROVED') reasons.push(qa.reason);
+  if (reviewTrack === 'light' && qaEvidenceIsCurrent) reasons.push(qa.reason);
   if (qualityGate.status !== 'APPROVED') reasons.push(qualityGate.reason);
   if (threads.some((resolved) => !resolved)) reasons.push('Há conversas de revisão não resolvidas.');
 
@@ -268,6 +286,13 @@ export async function evaluateMergeReadiness(options: MergeReadinessOptions): Pr
   }
   const finalContextHash = computeAgentContextHash(`${options.owner}/${options.repository}`, options.pullRequestNumber, finalPullRequest, finalReviewInputs);
   evidence.finalContextHash = finalContextHash;
+  const finalReviewTrack = classifyReviewTrack(finalReviewInputs.changedFiles);
+  evidence.finalReviewTrack = finalReviewTrack;
+  // A changed-file list that grew a runtime file already moves the context hash, so this cannot be the
+  // only guard. It is here because the consequence of missing it is a merge without QA.
+  if (finalReviewTrack !== reviewTrack) {
+    reasons.push(`O trilho de revisão mudou durante a avaliação (${reviewTrack} → ${finalReviewTrack}); as evidências coletadas estão desatualizadas.`);
+  }
   if (finalContextHash !== contextHash) reasons.push('Os metadados do Pull Request mudaram durante a avaliação; as evidências coletadas estão desatualizadas.');
 
   if (limitations.length > 0) return result('INCONCLUSIVE');

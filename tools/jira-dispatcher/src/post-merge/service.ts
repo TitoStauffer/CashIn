@@ -143,7 +143,9 @@ export async function processPostMergeEvent(eventValue: unknown, dependencies: P
       `Pull Request: #${number} — ${url}`,
       `Branch: ${headRef} → master.`,
       `Commit de merge: \`${eventMergeSha}\`.`,
-      `Validações: checks obrigatórios, Code Review formal, QA e Quality Gate aprovados para \`${eventHeadSha}\`.`,
+      evidence.reviewTrack === "light"
+        ? `Validações: checks obrigatórios, Code Review formal e Quality Gate aprovados para \`${eventHeadSha}\`. QA dispensado pelo trilho leve.`
+        : `Validações: checks obrigatórios, Code Review formal, QA e Quality Gate aprovados para \`${eventHeadSha}\`.`,
       marker,
     ].join("\n\n");
     try {
@@ -210,7 +212,7 @@ async function readAndValidateEvidence(
   pr: GitHubPullRequest,
   botLogin: string,
   requiredChecks: readonly string[],
-): Promise<{ reason?: string }> {
+): Promise<{ reason?: string; reviewTrack?: "light" | "full" }> {
   const sha = pr.head.sha;
   const [checkRuns, reviews, comments, unresolvedThreads] = await Promise.all([
     github.listCheckRuns(owner, repository, sha),
@@ -261,12 +263,37 @@ async function readAndValidateEvidence(
     && (review.submitted_at ?? "") > (latestAppReview.submitted_at ?? ""));
   if (laterRejection) return { reason: "Há solicitação de mudanças posterior à aprovação formal no HEAD atual." };
 
-  const qa = findLatestStructuredReport(comments, botLogin, "### Codex — QA Agent", sha, ["**Verificações de QA:**", "**Evidências:**", "## Evidências"]);
-  if (!qa) return { reason: "Relatório aprovado de QA com evidências para o HEAD atual não foi encontrado." };
   const qualityGate = findLatestStructuredReport(comments, botLogin, "### Codex — Quality Gate Coordinator", sha, ["**Checks verificados:**", "**Evidências:**", "## Evidências"]);
   if (!qualityGate) return { reason: "Relatório aprovado do Quality Gate Coordinator com evidências para o HEAD atual não foi encontrado." };
+  // O QA é dispensado no trilho leve (DEV-116), então exigi-lo aqui faria toda entrega de documentação
+  // falhar esta validação e deixar a issue aberta. O trilho não é reclassificado aqui: a regra vive em
+  // `tools/github-reviewer/src/review-track.ts` e duplicá-la criaria a divergência que ela existe para
+  // evitar. A fonte é o relatório aprovado do Coordinator, que declara o trilho, é assinado pelo App e
+  // já foi exigido e validado contra este SHA logo acima. Sem declaração explícita de trilho leve, o QA
+  // continua obrigatório.
+  const reviewTrack = declaresLightTrack(comments, botLogin, sha) ? "light" as const : "full" as const;
+  if (reviewTrack === "full") {
+    const qa = findLatestStructuredReport(comments, botLogin, "### Codex — QA Agent", sha, ["**Verificações de QA:**", "**Evidências:**", "## Evidências"]);
+    if (!qa) return { reason: "Relatório aprovado de QA com evidências para o HEAD atual não foi encontrado." };
+  }
   if (unresolvedThreads > 0) return { reason: `Existem ${unresolvedThreads} conversas de revisão não resolvidas.` };
-  return {};
+  return { reviewTrack };
+}
+
+/**
+ * Lê o trilho declarado no relatório aprovado do Coordinator para este SHA. Falha fechado: qualquer
+ * ausência, texto inesperado ou relatório de outro SHA devolve `false`, e o QA segue obrigatório.
+ */
+function declaresLightTrack(comments: GitHubIssueComment[], botLogin: string, sha: string): boolean {
+  const matching = comments.filter((comment) => comment.user?.login?.toLowerCase() === botLogin
+    && (comment.body ?? "").includes("### Codex — Quality Gate Coordinator"))
+    .sort((left, right) => (left.updated_at ?? left.created_at ?? "").localeCompare(right.updated_at ?? right.created_at ?? ""));
+  const latest = matching.at(-1);
+  if (!latest?.body) return false;
+  const status = latest.body.match(/^\*\*Status:\*\*\s*(.+)$/m)?.[1]?.trim();
+  const commitSha = latest.body.match(/^\*\*Commit:\*\*\s*`([a-f0-9]{40})`$/im)?.[1];
+  if (status !== "APPROVED" || commitSha?.toLowerCase() !== sha.toLowerCase()) return false;
+  return /^\*\*Trilho de revisão:\*\*\s*leve\./m.test(latest.body);
 }
 
 function findLatestStructuredReport(
