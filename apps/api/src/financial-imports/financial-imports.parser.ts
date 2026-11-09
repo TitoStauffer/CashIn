@@ -67,6 +67,14 @@ const DESCRIPTION_SEGMENT_SEPARATOR = "—";
  * So the suppression is per segment, which is the unit the issuer actually writes: a segment that
  * opens with a refund prefix is the refund's own explanation and does not lend its "pagamento" to the
  * decision, while the remaining segments still do.
+ *
+ * The cost, accepted deliberately: a dash **inside** the refund's own explanation splits it, so
+ * "Estorno — pagamento em dobro" becomes a transfer where the whole-description rule made it a card
+ * credit. Nothing in the text distinguishes that from "Estorno de encargos — PAGAMENTO FATURA", where
+ * `transfer` is the right answer, so one of the two has to give — and the project's asymmetry decides
+ * which: a false refund abates the statement the payment should settle, while a false transfer only
+ * keeps the line out of the import for the user to correct. The ambiguous shape therefore lands on
+ * `transfer`, which is the side that costs an edit instead of money.
  */
 function announcesInvoicePayment(description: string): boolean {
   return description

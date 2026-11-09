@@ -579,6 +579,12 @@ test("a payment announced in one segment survives a refund prefix in the next", 
       // is still a payment, and dropping the anchor would silently turn it into a card credit — the
       // direction that abates the statement. Removing `^\s*` from the pattern kills this line alone.
       "<STMTTRN><TRNTYPE>CREDIT<DTPOSTED>20261015<TRNAMT>97.00<FITID>m4<NAME>Pagamento do estorno anterior</STMTTRN>",
+      // The accepted cost of deciding per segment, pinned on purpose: a dash inside the refund's own
+      // explanation splits it, and the tail lends its "pagamento" to the decision. Nothing in the text
+      // tells this apart from "Estorno de encargos — PAGAMENTO FATURA", where `transfer` is right, so
+      // the ambiguous shape lands on `transfer` — the side that costs the user an edit instead of
+      // abating the statement a payment should settle.
+      "<STMTTRN><TRNTYPE>CREDIT<DTPOSTED>20261016<TRNAMT>98.00<FITID>m5<NAME>Estorno — pagamento em dobro</STMTTRN>",
     ].join("\n")),
   });
 
@@ -587,6 +593,7 @@ test("a payment announced in one segment survives a refund prefix in the next", 
     ["Estorno de encargos — PAGAMENTO FATURA", "transfer"],
     ["Estorno de pagamento — Reembolso do pagamento em dobro", "card_credit"],
     ["Pagamento do estorno anterior", "transfer"],
+    ["Estorno — pagamento em dobro", "transfer"],
   ]);
 });
 
