@@ -111,7 +111,10 @@ export function evaluateDeterministicQualityGate(input: StageEvidenceContext & {
       `**Trilho de revisão:** ${reviewTrack === 'light' ? 'leve' : 'completo'}.`,
       reviewTrack === 'light'
         ? `- Todos os ${input.changedFiles.length} arquivo(s) alterado(s) são ${LIGHT_TRACK_RULE}, então o QA não é exigido. Classificado pela lista de arquivos lida da API do GitHub, não pelo corpo do Pull Request.`
-        : `- Exige QA porque ${runtimePaths.length} arquivo(s) alteram runtime: ${runtimePaths.slice(0, 10).map((path) => `\`${path}\``).join(', ')}${runtimePaths.length > 10 ? ', …' : ''}.`,
+        // Os caminhos vêm da API e são interpolados num corpo que o pós-merge analisa com regex ancorada em
+      // início de linha. Um caminho com quebra de linha poderia forjar a declaração de trilho, então as
+      // quebras são removidas antes de entrar no relatório.
+      : `- Exige QA porque ${runtimePaths.length} arquivo(s) alteram runtime: ${runtimePaths.slice(0, 10).map((path) => `\`${path.replace(/[\r\n]+/g, ' ')}\``).join(', ')}${runtimePaths.length > 10 ? ', …' : ''}.`,
       '',
       '**Checks verificados:**',
       ...checkNames.map((name) => `- ${name}: ${input.checks[name] ?? 'UNKNOWN'}; SHA ${input.commitSha}.`),

@@ -143,7 +143,9 @@ export async function processPostMergeEvent(eventValue: unknown, dependencies: P
       `Pull Request: #${number} — ${url}`,
       `Branch: ${headRef} → master.`,
       `Commit de merge: \`${eventMergeSha}\`.`,
-      `Validações: checks obrigatórios, Code Review formal, QA e Quality Gate aprovados para \`${eventHeadSha}\`.`,
+      evidence.reviewTrack === "light"
+        ? `Validações: checks obrigatórios, Code Review formal e Quality Gate aprovados para \`${eventHeadSha}\`. QA dispensado pelo trilho leve.`
+        : `Validações: checks obrigatórios, Code Review formal, QA e Quality Gate aprovados para \`${eventHeadSha}\`.`,
       marker,
     ].join("\n\n");
     try {
@@ -210,7 +212,7 @@ async function readAndValidateEvidence(
   pr: GitHubPullRequest,
   botLogin: string,
   requiredChecks: readonly string[],
-): Promise<{ reason?: string }> {
+): Promise<{ reason?: string; reviewTrack?: "light" | "full" }> {
   const sha = pr.head.sha;
   const [checkRuns, reviews, comments, unresolvedThreads] = await Promise.all([
     github.listCheckRuns(owner, repository, sha),
@@ -269,12 +271,13 @@ async function readAndValidateEvidence(
   // evitar. A fonte é o relatório aprovado do Coordinator, que declara o trilho, é assinado pelo App e
   // já foi exigido e validado contra este SHA logo acima. Sem declaração explícita de trilho leve, o QA
   // continua obrigatório.
-  if (!declaresLightTrack(comments, botLogin, sha)) {
+  const reviewTrack = declaresLightTrack(comments, botLogin, sha) ? "light" as const : "full" as const;
+  if (reviewTrack === "full") {
     const qa = findLatestStructuredReport(comments, botLogin, "### Codex — QA Agent", sha, ["**Verificações de QA:**", "**Evidências:**", "## Evidências"]);
     if (!qa) return { reason: "Relatório aprovado de QA com evidências para o HEAD atual não foi encontrado." };
   }
   if (unresolvedThreads > 0) return { reason: `Existem ${unresolvedThreads} conversas de revisão não resolvidas.` };
-  return {};
+  return { reviewTrack };
 }
 
 /**

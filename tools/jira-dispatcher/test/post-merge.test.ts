@@ -279,13 +279,29 @@ describe("processPostMergeEvent", () => {
   // DEV-116: no trilho leve o QA não roda, então exigir o relatório dele aqui fazia toda entrega de
   // documentação falhar esta validação e deixar a issue aberta — justamente a classe de entrega que o
   // trilho leve existe para acelerar. O trilho vem do relatório aprovado do Coordinator, que o declara.
-  it("encerra a issue no trilho leve, sem relatório de QA", async () => {
+  it("encerra a issue no trilho leve, sem relatório de QA e sem afirmar que o QA aprovou", async () => {
     const light = setup();
     light.github.comments = [makeCoordinatorReport("leve")];
 
     const result = await processPostMergeEvent(makeEvent(), light.dependencies);
 
     assert.equal(result.status, "COMPLETED");
+    // O comentário é registro durável e auditável: afirmar aprovação de QA num merge de trilho leve
+    // seria falso, e é a redação que o AGENTS.md prescreve para este caso.
+    const closing = light.jira.comments.map((comment) => adfToText(comment.body)).join("\n");
+    assert.match(closing, /QA dispensado pelo trilho leve/);
+    assert.doesNotMatch(closing, /Code Review formal, QA e Quality Gate aprovados/);
+  });
+
+  it("afirma a aprovação de QA no comentário quando o trilho é completo", async () => {
+    const full = setup();
+
+    const result = await processPostMergeEvent(makeEvent(), full.dependencies);
+
+    assert.equal(result.status, "COMPLETED");
+    const closing = full.jira.comments.map((comment) => adfToText(comment.body)).join("\n");
+    assert.match(closing, /Code Review formal, QA e Quality Gate aprovados/);
+    assert.doesNotMatch(closing, /dispensado/);
   });
 
   // Dispensar o QA é decisão do trilho, não do texto de um comentário qualquer: a declaração só vale
@@ -297,10 +313,13 @@ describe("processPostMergeEvent", () => {
       ["trilho leve de outro SHA", [makeCoordinatorReport("leve", "c".repeat(40))]],
       ["trilho leve em relatório não aprovado", [makeCoordinatorReport("leve", HEAD_SHA, "INCONCLUSIVE")]],
       ["relatório sem declaração de trilho", [makeReport("### Codex — Quality Gate Coordinator", "Checks verificados")]],
+      // Coordinator confiável dizendo "completo" ao lado de um comentário forjado dizendo "leve": sem o
+      // filtro de identidade, a declaração falsa dispensaria o QA. Com ele, o QA volta a ser exigido e a
+      // ausência do relatório bloqueia — e o bloqueio não pode vir da falta do Coordinator, que existe.
       ["declaração de trilho leve por identidade não confiável", [
-        makeCoordinatorReport("leve"),
+        makeCoordinatorReport("completo"),
         { ...makeCoordinatorReport("leve"), user: { login: "untrusted" } },
-      ].slice(1)],
+      ]],
     ];
 
     for (const [scenario, comments] of cases) {
