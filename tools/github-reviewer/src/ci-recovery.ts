@@ -32,8 +32,16 @@ export interface CiRecoveryResult {
 
 export async function recoverCiAfterMetadataEdit(options: CiRecoveryOptions): Promise<CiRecoveryResult> {
   validateOptions(options);
-  const maxAttempts = options.maxAttempts ?? 24;
-  const delayMs = options.delayMs ?? 5_000;
+  // The wait window has to cover a complete CI run, and the original 24 × 5s = 2 minutes did not
+  // (DEV-110). Measured on this repository: the run at head `636e262` took 4m52s (created
+  // 05:09:26Z, completed 05:14:18Z) and the recovery job that edited metadata while it ran gave up at
+  // 05:11:50Z, two minutes in, with CI still in progress; the run at head `c4d85f6` took 2m05s and
+  // the same job succeeded, by one second. That is the whole defect: an edit made during CI timed
+  // out, an edit made after it did not, and nothing about the Pull Request association was involved.
+  // 60 × 10s = 10 minutes gives roughly double the slowest run observed; `timeout-minutes` on the job
+  // is set above it so the process, not the runner, is what decides.
+  const maxAttempts = options.maxAttempts ?? 60;
+  const delayMs = options.delayMs ?? 10_000;
   const sleep = options.sleep ?? ((delay: number) => new Promise<void>((resolve) => setTimeout(resolve, delay)));
   // One flag, not two: every accepted run that is `completed` returns from this function, so reaching
   // the end of the loop means each accepted run was still running — which is exactly `observedActive`.
@@ -134,5 +142,5 @@ function validateOptions(options: CiRecoveryOptions): void {
   if (!Number.isSafeInteger(options.pullRequestNumber) || options.pullRequestNumber <= 0) throw new Error('PR_NUMBER is invalid.');
   if (!/^[a-f0-9]{40}$/i.test(options.headSha)) throw new Error('PR_HEAD_SHA is invalid.');
   if (!options.token) throw new Error('GITHUB_TOKEN is required.');
-  if (!Number.isInteger(options.maxAttempts ?? 24) || (options.maxAttempts ?? 24) <= 0) throw new Error('maxAttempts must be positive.');
+  if (!Number.isInteger(options.maxAttempts ?? 60) || (options.maxAttempts ?? 60) <= 0) throw new Error('maxAttempts must be positive.');
 }

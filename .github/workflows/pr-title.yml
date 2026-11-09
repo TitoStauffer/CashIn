@@ -82,7 +82,10 @@ jobs:
     name: Recover CI after metadata edit
     needs: pr-title
     runs-on: ubuntu-24.04
-    timeout-minutes: 3
+    # Above the tool's own 10-minute wait window (DEV-110), so the process decides the outcome and
+    # reports which condition it observed, instead of the runner killing it mid-wait. The previous 3
+    # minutes also capped a 2-minute window that was already shorter than a CI run.
+    timeout-minutes: 14
     permissions:
       actions: write
       contents: read
