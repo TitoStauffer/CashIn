@@ -159,19 +159,7 @@ export function storeWalletId(userId: string, walletId: string) {
   }
 }
 
-let activeWalletId: string | null = null
-
-export function setRequestWalletId(walletId: string | null) {
-  activeWalletId = walletId
-}
-
-export function withActiveWallet(init: RequestInit = {}): RequestInit {
-  if (!activeWalletId) return init
-
-  const headers = new Headers(init.headers)
-  headers.set('X-Wallet-Id', activeWalletId)
-  return {
-    ...init,
-    headers,
-  }
-}
+// The active wallet lives in `api/activeWallet.ts` so that the shared HTTP client can read it without
+// importing this module, which imports the client. Re-exported here because `WalletContext` and the
+// tests have always taken it from this file.
+export { setRequestWalletId, withActiveWallet } from '../api/activeWallet'
