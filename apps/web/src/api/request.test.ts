@@ -44,6 +44,18 @@ describe('createApiRequest', () => {
     expect((withoutBody.mock.calls[0]![1] as RequestInit).headers).not.toHaveProperty('Content-Type')
   })
 
+  // `importsApi` posts `FormData` for uploads, and the browser has to set the multipart content type
+  // with its boundary. A truthy check on `init.body` would impose JSON here.
+  it('does not impose the JSON content type on a body that is not a string', async () => {
+    const spy = mockFetch(json({}))
+    const form = new FormData()
+    form.append('file', new Blob(['conteúdo']), 'extrato.ofx')
+
+    await createApiRequest(TestApiError)('/financial-imports/sessions', { method: 'POST', body: form })
+
+    expect((spy.mock.calls[0]![1] as RequestInit).headers).not.toHaveProperty('Content-Type')
+  })
+
   it('returns undefined for 204, which carries no body to parse', async () => {
     mockFetch(new Response(null, { status: 204 }))
 

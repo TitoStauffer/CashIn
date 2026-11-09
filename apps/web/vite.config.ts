@@ -53,6 +53,9 @@ export default defineConfig({
       ],
       exclude: ['src/**/*.test.ts', 'src/**/*.test.tsx', 'src/test/**'],
       thresholds: {
+        // O cliente HTTP compartilhado e a guarda de caminho sustentam uma verificação de segurança,
+        // então uma regressão de cobertura aqui tem de falhar o job, não só aparecer no relatório.
+        'src/api/**': { lines: 80, functions: 80, branches: 80, statements: 80 },
         'src/feedback/**': { lines: 80, functions: 80, branches: 80, statements: 80 },
         'src/layout/**': { lines: 80, functions: 80, branches: 80, statements: 80 },
         'src/period/**': { lines: 80, functions: 80, branches: 80, statements: 80 },

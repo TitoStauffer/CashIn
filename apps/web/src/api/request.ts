@@ -30,7 +30,11 @@ export function createApiRequest(ApiError: ApiErrorConstructor, { scopeToActiveW
       ...init,
       credentials: 'include',
       headers: {
-        ...(init.body ? { 'Content-Type': 'application/json' } : {}),
+        // The condition is `typeof init.body === 'string'`, not a truthy check, because that is what
+        // `importsApi` had before this helper existed: it posts `FormData` for uploads, which must keep
+        // the boundary-carrying content type the browser sets. A truthy check works today only because
+        // those callers pass a content type of their own — close enough to be a trap later.
+        ...(typeof init.body === 'string' ? { 'Content-Type': 'application/json' } : {}),
         ...init.headers,
       },
     }

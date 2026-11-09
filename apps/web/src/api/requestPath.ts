@@ -20,8 +20,14 @@
  * because `encodeURIComponent` produces it; the sequences that would leave `/api` — `//`, `..`, a
  * scheme, a host — are refused below rather than escaped, because a caller producing one of them has a
  * bug, and silently rewriting it would hide the bug.
+ *
+ * `!`, `*`, `'`, `(` and `)` are here because `encodeURIComponent` does **not** escape them, and
+ * `URLSearchParams` does not escape `*`. Leaving them out made the guard refuse legitimate output of
+ * the very encoders the callers use: a category named `Casa (reforma)` or a search for `*` would have
+ * thrown at runtime. That was the false negative the first version of this file warned about and did
+ * not close.
  */
-const ALLOWED_PATH = /^\/[A-Za-z0-9\-._~%/?&=+:,]*$/;
+const ALLOWED_PATH = /^\/[A-Za-z0-9\-._~%/?&=+:,!*'()]*$/;
 
 export class UnsafeApiPathError extends Error {
   // Declared as a field rather than a constructor parameter property: the Web build runs with
@@ -37,10 +43,30 @@ export class UnsafeApiPathError extends Error {
   }
 }
 
+/**
+ * A segment that climbs out of the current directory, in every spelling the URL Standard recognises.
+ *
+ * Comparing against the literal `..` was not enough: `%` is an allowed character, so `.%2e`, `%2e.`
+ * and `%2e%2e` reach the same place, and `%2E` does too because percent-encoding is case-insensitive.
+ * Decoding the segment covers all of them, including a spelling nobody enumerated — `decodeURIComponent`
+ * is what the browser itself applies before resolving the path.
+ */
+function climbsOut(segment: string): boolean {
+  let decoded = segment;
+  try {
+    decoded = decodeURIComponent(segment);
+  } catch {
+    // A lone `%` or a truncated escape is not something any encoder here produces, so a path carrying
+    // one is already a bug: treat it as unsafe instead of guessing what it meant.
+    return true;
+  }
+  return decoded === '..';
+}
+
 export function assertSafeApiPath(path: string): string {
   if (typeof path !== 'string' || !ALLOWED_PATH.test(path)) throw new UnsafeApiPathError(String(path));
-  // `//host` is a protocol-relative URL and `..` climbs out of `/api`; both change the request target
-  // even though every character in them is allowed on its own.
-  if (path.startsWith('//') || path.split(/[/?&=]/).includes('..')) throw new UnsafeApiPathError(path);
+  // `//host` is a protocol-relative URL and a climbing segment leaves `/api`; both change the request
+  // target even though every character in them is allowed on its own.
+  if (path.startsWith('//') || path.split(/[/?&=]/).some(climbsOut)) throw new UnsafeApiPathError(path);
   return path;
 }
