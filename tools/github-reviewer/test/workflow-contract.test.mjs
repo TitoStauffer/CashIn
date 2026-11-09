@@ -45,6 +45,11 @@ test('sequences PR metadata, implementation checks, SonarQube and agent orchestr
   const recoverJob = titleWorkflow.slice(titleWorkflow.indexOf('\n  recover-ci:'));
   const jobHeader = recoverJob.slice(0, recoverJob.indexOf('\n    steps:'));
   assert.doesNotMatch(jobHeader, /^\s+if\s*:/m);
+  // The producer and the consumers of the gate have to be tied by name. Without this, renaming
+  // `id: scope` keeps the suite green while `steps.scope.outputs.recover` resolves empty in
+  // production: the five privileged steps would be skipped and the job would publish **success
+  // without recovering anything** — the green-that-lies this delivery exists to eliminate.
+  assert.match(recoverJob, /^\s+id:\s*scope\s*$/m);
   assert.equal([...recoverJob.matchAll(/^\s+if:\s*steps\.scope\.outputs\.recover == 'true'\s*$/gm)].length, 5);
   // The gate's **semantics**, not just its presence: both operands wired, and the comparison in the
   // direction that skips recovery for the App's own edits. Asserting the `env` and the echo alone let
