@@ -1,5 +1,18 @@
 const API_BASE = 'https://api.github.com';
 
+/**
+ * The wait window, which is the DEV-110 fix: it has to cover a complete CI run.
+ *
+ * Measured on this repository. The run at head `636e262` took 4m52s (created 05:09:26Z, completed
+ * 05:14:18Z) and the recovery job that edited metadata while it was running gave up at 05:11:50Z,
+ * two minutes in, with CI still in progress. The run at head `c4d85f6` took 2m05s and the same job
+ * succeeded, by about a second. That is the whole defect: an edit made during CI timed out, an edit
+ * made after it did not. 60 × 10s is roughly double the slowest run observed, and the job's
+ * `timeout-minutes` sits above it so the process decides and reports which condition it saw.
+ */
+export const DEFAULT_MAX_ATTEMPTS = 60;
+export const DEFAULT_DELAY_MS = 10_000;
+
 interface WorkflowRun {
   id?: number;
   status?: string;
@@ -32,16 +45,9 @@ export interface CiRecoveryResult {
 
 export async function recoverCiAfterMetadataEdit(options: CiRecoveryOptions): Promise<CiRecoveryResult> {
   validateOptions(options);
-  // The wait window has to cover a complete CI run, and the original 24 × 5s = 2 minutes did not
-  // (DEV-110). Measured on this repository: the run at head `636e262` took 4m52s (created
-  // 05:09:26Z, completed 05:14:18Z) and the recovery job that edited metadata while it ran gave up at
-  // 05:11:50Z, two minutes in, with CI still in progress; the run at head `c4d85f6` took 2m05s and
-  // the same job succeeded, by one second. That is the whole defect: an edit made during CI timed
-  // out, an edit made after it did not, and nothing about the Pull Request association was involved.
-  // 60 × 10s = 10 minutes gives roughly double the slowest run observed; `timeout-minutes` on the job
-  // is set above it so the process, not the runner, is what decides.
-  const maxAttempts = options.maxAttempts ?? 60;
-  const delayMs = options.delayMs ?? 10_000;
+  // The window is the fix; see DEFAULT_MAX_ATTEMPTS for the measurement behind these numbers.
+  const maxAttempts = options.maxAttempts ?? DEFAULT_MAX_ATTEMPTS;
+  const delayMs = options.delayMs ?? DEFAULT_DELAY_MS;
   const sleep = options.sleep ?? ((delay: number) => new Promise<void>((resolve) => setTimeout(resolve, delay)));
   // One flag, not two: every accepted run that is `completed` returns from this function, so reaching
   // the end of the loop means each accepted run was still running — which is exactly `observedActive`.
@@ -50,7 +56,10 @@ export async function recoverCiAfterMetadataEdit(options: CiRecoveryOptions): Pr
 
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
     const { run, refusedByAssociation: refused } = await loadLatestCiRun(options);
-    refusedByAssociation = refusedByAssociation || refused;
+    // The latest observation, not an accumulation: a first read that saw another Pull Request's run
+    // followed by empty reads must not end up blaming the association, when what the job last
+    // observed was the absence of any run. Each message names the condition that produced it.
+    refusedByAssociation = refused;
     if (!run) {
       if (attempt < maxAttempts) await sleep(delayMs);
       continue;
@@ -103,17 +112,17 @@ async function loadLatestCiRun(options: CiRecoveryOptions): Promise<RunSearch> {
 /**
  * Whether a run of the CI workflow at this head is the run this recovery is about.
  *
- * The first version required `pull_requests` to carry the PR number, which looked like the safe
- * reading and was in fact the defect (DEV-110): GitHub leaves that array **empty** for these runs, so
- * no run was ever accepted, the loop burned all its attempts and the job failed with a timeout —
- * every time a Pull Request body was edited, not occasionally. Three occurrences, all identical. The
- * five tests missed it because their fixture always populated the array.
+ * **This was not the DEV-110 defect.** An earlier version of this comment said it was, on the strength
+ * of three readings where `pull_requests` came back empty — and those readings were taken after the
+ * Pull Requests had been merged, when GitHub has already dropped the association. While a Pull
+ * Request is open the array **is** populated: measured on PR #95, length 1, number 95. The defect was
+ * the wait window, documented in `recoverCiAfterMetadataEdit`.
  *
- * An empty array therefore cannot be read as "belongs to another Pull Request": it carries no
- * information at all. What identifies the run is the query that produced it — the `ci.yml` workflow,
- * the `pull_request` event and this exact `head_sha` — so an unassociated run at this head is
- * accepted. When GitHub does populate the array, it is still checked, because then it does mean
- * something.
+ * Accepting an unassociated run is kept as defence in depth, because an empty array carries no
+ * information and so cannot be read as "belongs to another Pull Request" — which is the state after
+ * the Pull Request closes. What identifies the run is the query that produced it: the `ci.yml`
+ * workflow, the `pull_request` event and this exact `head_sha`. When GitHub does populate the array,
+ * it is still checked, because then it does mean something.
  */
 function belongsToPullRequest(run: WorkflowRun, pullRequestNumber: number): boolean {
   const associations = Array.isArray(run.pull_requests) ? run.pull_requests : [];
@@ -142,5 +151,6 @@ function validateOptions(options: CiRecoveryOptions): void {
   if (!Number.isSafeInteger(options.pullRequestNumber) || options.pullRequestNumber <= 0) throw new Error('PR_NUMBER is invalid.');
   if (!/^[a-f0-9]{40}$/i.test(options.headSha)) throw new Error('PR_HEAD_SHA is invalid.');
   if (!options.token) throw new Error('GITHUB_TOKEN is required.');
-  if (!Number.isInteger(options.maxAttempts ?? 60) || (options.maxAttempts ?? 60) <= 0) throw new Error('maxAttempts must be positive.');
+  const attempts = options.maxAttempts ?? DEFAULT_MAX_ATTEMPTS;
+  if (!Number.isInteger(attempts) || attempts <= 0) throw new Error('maxAttempts must be positive.');
 }

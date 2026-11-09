@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { recoverCiAfterMetadataEdit } from '../dist/ci-recovery.js';
+import { DEFAULT_DELAY_MS, DEFAULT_MAX_ATTEMPTS, recoverCiAfterMetadataEdit } from '../dist/ci-recovery.js';
 
 const repository = 'owner/repo';
 const pullRequestNumber = 43;
@@ -134,6 +134,47 @@ test('waits for an active successful CI that GitHub leaves unassociated', async 
 
   assert.deepEqual(result, { action: 'active_run_succeeded', runId: 99 });
   assert.equal(writes, 0);
+});
+
+// The window is the DEV-110 fix, and every other test passes `maxAttempts` explicitly — so without
+// this case the defaults could go back to the 2 minutes that caused the defect and the suite would
+// stay green. Exercises the real defaults, counting the waits instead of serving them.
+test('waits a window that covers a complete CI run, by default', async () => {
+  const waits = [];
+  let reads = 0;
+  await assert.rejects(
+    recoverCiAfterMetadataEdit({
+      fetchImpl: async () => { reads += 1; return response({ workflow_runs: [run('in_progress')] }); },
+      repository,
+      pullRequestNumber,
+      headSha,
+      token: 'secret-token',
+      sleep: async (delay) => { waits.push(delay); },
+    }),
+    /never completed within the wait window\./,
+  );
+
+  assert.deepEqual([DEFAULT_MAX_ATTEMPTS, DEFAULT_DELAY_MS], [60, 10_000]);
+  assert.equal(reads, DEFAULT_MAX_ATTEMPTS);
+  assert.equal(waits.length, DEFAULT_MAX_ATTEMPTS - 1);
+  assert.ok(waits.every((delay) => delay === DEFAULT_DELAY_MS));
+  // Ten minutes: about double the slowest CI run measured on this repository (4m52s).
+  assert.equal((DEFAULT_MAX_ATTEMPTS - 1) * DEFAULT_DELAY_MS, 590_000);
+});
+
+// Each message names the condition that produced it, so the refusal flag has to describe the latest
+// observation. Accumulating it blamed the association after the run had simply disappeared.
+test('reports the condition it last observed, not the first one it saw', async () => {
+  let reads = 0;
+  await assert.rejects(
+    recoverCiAfterMetadataEdit(options(async () => {
+      reads += 1;
+      return reads === 1
+        ? response({ workflow_runs: [run('completed', 'success', [{ number: pullRequestNumber + 1 }])] })
+        : response({ workflow_runs: [] });
+    }, { maxAttempts: 3 })),
+    /No CI run exists for the current Pull Request head\./,
+  );
 });
 
 test('reports only the GitHub status code when the API rejects recovery', async () => {
