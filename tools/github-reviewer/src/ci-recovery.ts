@@ -35,8 +35,9 @@ export async function recoverCiAfterMetadataEdit(options: CiRecoveryOptions): Pr
   const maxAttempts = options.maxAttempts ?? 24;
   const delayMs = options.delayMs ?? 5_000;
   const sleep = options.sleep ?? ((delay: number) => new Promise<void>((resolve) => setTimeout(resolve, delay)));
+  // One flag, not two: every accepted run that is `completed` returns from this function, so reaching
+  // the end of the loop means each accepted run was still running — which is exactly `observedActive`.
   let observedActive = false;
-  let observedAnyRun = false;
   let refusedByAssociation = false;
 
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
@@ -46,7 +47,6 @@ export async function recoverCiAfterMetadataEdit(options: CiRecoveryOptions): Pr
       if (attempt < maxAttempts) await sleep(delayMs);
       continue;
     }
-    observedAnyRun = true;
 
     if (run.status !== 'completed') {
       observedActive = true;
@@ -67,7 +67,7 @@ export async function recoverCiAfterMetadataEdit(options: CiRecoveryOptions): Pr
   // of an observation: a head with no CI run at all is missing evidence, a run that never finished is
   // a slow pipeline, and a run refused because GitHub attributes it to another Pull Request is neither.
   // All three still fail closed — absent evidence keeps blocking the merge.
-  if (observedAnyRun) {
+  if (observedActive) {
     throw new Error('The CI run for the current Pull Request head never completed within the wait window.');
   }
   throw new Error(refusedByAssociation

@@ -46,8 +46,12 @@ test('sequences PR metadata, implementation checks, SonarQube and agent orchestr
   const jobHeader = recoverJob.slice(0, recoverJob.indexOf('\n    steps:'));
   assert.doesNotMatch(jobHeader, /^\s+if\s*:/m);
   assert.equal([...recoverJob.matchAll(/^\s+if:\s*steps\.scope\.outputs\.recover == 'true'\s*$/gm)].length, 5);
+  // The gate's **semantics**, not just its presence: both operands wired, and the comparison in the
+  // direction that skips recovery for the App's own edits. Asserting the `env` and the echo alone let
+  // an inverted operator, or a disconnected `EDIT_ACTOR`, keep the suite green.
+  assert.match(titleWorkflow, /EDIT_ACTOR:\s*\$\{\{ github\.actor \}\}/);
   assert.match(titleWorkflow, /APP_BOT_LOGIN:\s*\$\{\{ vars\.CASHIN_APP_BOT_LOGIN \}\}/);
-  assert.match(titleWorkflow, /echo "recover=false" >> "\$\{GITHUB_OUTPUT\}"/);
+  assert.match(titleWorkflow, /if \[\[ -n "\$\{APP_BOT_LOGIN\}" && "\$\{EDIT_ACTOR\}" == "\$\{APP_BOT_LOGIN\}" \]\]; then\s*\r?\n\s+echo "recover=false" >> "\$\{GITHUB_OUTPUT\}"/);
   assert.match(titleWorkflow, /actions:\s*write/);
   assert.match(titleWorkflow, /statuses:\s*write/);
   assert.match(titleWorkflow, /statuses\/\$\{HEAD_SHA\}/);
