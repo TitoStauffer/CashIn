@@ -62,9 +62,11 @@ export default defineConfig({
         'src/period/**': { lines: 80, functions: 80, branches: 80, statements: 80 },
         'src/money/**': { lines: 80, functions: 80, branches: 80, statements: 80 },
         'src/dashboard/**': { lines: 80, functions: 80, branches: 80, statements: 80 },
-        'src/expenses/ExpensesPage.tsx': { lines: 61, functions: 57, branches: 54, statements: 58 },
+        // These two were raised by DEV-121, which added the regressions for the discarded-input state:
+        // the ratchet exists so the coverage this delivery gained cannot be given back silently.
+        'src/expenses/ExpensesPage.tsx': { lines: 89, functions: 86, branches: 82, statements: 86 },
         'src/goals/GoalsPage.tsx': { lines: 64, functions: 56, branches: 60, statements: 58 },
-        'src/incomes/IncomesPage.tsx': { lines: 61, functions: 57, branches: 54, statements: 58 },
+        'src/incomes/IncomesPage.tsx': { lines: 89, functions: 84, branches: 85, statements: 86 },
         'src/imports/**': { lines: 80, functions: 80, branches: 70, statements: 80 },
         'src/wallets/**': { lines: 80, functions: 80, branches: 80, statements: 80 },
         'src/paymentMethods/**': { lines: 80, functions: 80, branches: 80, statements: 80 },
