@@ -1,4 +1,4 @@
-import { withActiveWallet } from '../wallets/walletApi'
+import { createApiRequest } from '../api/request'
 
 export type PaymentMethodNature =
   | 'immediate'
@@ -21,7 +21,6 @@ export type PaymentMethodInput = {
 }
 
 type PaymentMethodListResponse = { items: PaymentMethod[] }
-type ErrorResponse = { message?: string }
 
 export const paymentMethodNatures: Array<{ value: PaymentMethodNature; label: string }> = [
   { value: 'immediate', label: 'Imediata (dinheiro, débito ou Pix)' },
@@ -46,24 +45,7 @@ export class PaymentMethodApiError extends Error {
   }
 }
 
-async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const response = await fetch(`/api${path}`, withActiveWallet({
-    ...init,
-    credentials: 'include',
-    headers: {
-      ...(init.body ? { 'Content-Type': 'application/json' } : {}),
-      ...init.headers,
-    },
-  }))
-
-  if (!response.ok) {
-    const body = (await response.json().catch(() => null)) as ErrorResponse | null
-    throw new PaymentMethodApiError(body?.message ?? '', response.status)
-  }
-
-  if (response.status === 204) return undefined as T
-  return (await response.json()) as T
-}
+const request = createApiRequest(PaymentMethodApiError)
 
 function paymentMethodPath(paymentMethodId: string) {
   return `/payment-methods/${encodeURIComponent(paymentMethodId)}`

@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { UnsafeApiPathError } from '../api/requestPath'
 import { getApiErrorFeedback } from './apiErrorFeedback'
 
 describe('getApiErrorFeedback', () => {
@@ -43,5 +44,36 @@ describe('getApiErrorFeedback', () => {
   it.each([new Error('server-only-detail'), null, { message: 'server-only-detail' }])('uses the action fallback for an unknown error', (error) => {
     expect(getApiErrorFeedback(error, 'Não foi possível salvar a meta. Tente novamente.'))
       .toBe('Não foi possível salvar a meta. Tente novamente.')
+  })
+
+  // A path refused before the request leaves carries no status, so it used to land on the screen's
+  // fallback — which usually blames the connection and tells the person to retry something that cannot
+  // succeed. The message has to say that retrying the action will not help.
+  it('does not blame the connection when the path itself was refused', () => {
+    const refused = new Error('Caminho de API inválido.')
+    refused.name = 'UnsafeApiPathError'
+
+    const fallback = 'Não foi possível carregar. Verifique sua conexão e tente novamente.'
+    const feedback = getApiErrorFeedback(refused, fallback)
+
+    // Not the screen's fallback, and it says the fault is the application's — the message does mention
+    // the connection, to rule it out, so asserting the absence of the word would be the wrong check.
+    expect(feedback).not.toBe(fallback)
+    expect(feedback).toMatch(/falha do aplicativo e não da sua conexão/)
+  })
+
+  // Two routes carry this failure to a person: the screens that go through this module, and
+  // `WalletContext` and `FinancialSidebar`, which show `error.message` verbatim. They used to carry
+  // different texts for the same condition, so what the person read depended on the screen.
+  it('says the same thing the error itself says, since both texts reach the person', () => {
+    const refused = new UnsafeApiPathError('//evil.example.com')
+
+    expect(getApiErrorFeedback(refused, 'Falha.')).toBe(refused.message)
+  })
+
+  // The status-bearing errors must keep their own messages: the name check cannot shadow them.
+  it('keeps the status message when a refused path is not the cause', () => {
+    expect(getApiErrorFeedback(Object.assign(new Error('x'), { status: 400 }), 'Falha.'))
+      .toBe('Confira os dados informados e tente novamente.')
   })
 })

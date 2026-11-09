@@ -1,3 +1,5 @@
+import { createApiRequest } from '../api/request'
+
 export type Wallet = {
   id: string
   name: string
@@ -41,7 +43,6 @@ type WalletMemberListResponse = { items: WalletMember[] }
 type WalletAccessRequestListResponse = { items: WalletAccessRequest[] }
 type WalletInvitationCreateResponse = { invitation: WalletInvitation; message?: string }
 type WalletInvitationAcceptResponse = { wallet: Wallet; message?: string }
-type ErrorResponse = { message?: string }
 
 export class WalletApiError extends Error {
   readonly status: number
@@ -53,24 +54,7 @@ export class WalletApiError extends Error {
   }
 }
 
-async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const response = await fetch(`/api${path}`, {
-    ...init,
-    credentials: 'include',
-    headers: {
-      ...(init.body ? { 'Content-Type': 'application/json' } : {}),
-      ...init.headers,
-    },
-  })
-
-  if (!response.ok) {
-    const body = (await response.json().catch(() => null)) as ErrorResponse | null
-    throw new WalletApiError(body?.message ?? '', response.status)
-  }
-
-  if (response.status === 204) return undefined as T
-  return (await response.json()) as T
-}
+const request = createApiRequest(WalletApiError, { scopeToActiveWallet: false })
 
 export const walletApi = {
   list(signal?: AbortSignal) {
@@ -175,19 +159,7 @@ export function storeWalletId(userId: string, walletId: string) {
   }
 }
 
-let activeWalletId: string | null = null
-
-export function setRequestWalletId(walletId: string | null) {
-  activeWalletId = walletId
-}
-
-export function withActiveWallet(init: RequestInit = {}): RequestInit {
-  if (!activeWalletId) return init
-
-  const headers = new Headers(init.headers)
-  headers.set('X-Wallet-Id', activeWalletId)
-  return {
-    ...init,
-    headers,
-  }
-}
+// The active wallet lives in `api/activeWallet.ts` so that the shared HTTP client can read it without
+// importing this module, which imports the client. Re-exported here because `WalletContext` and the
+// tests have always taken it from this file.
+export { setRequestWalletId, withActiveWallet } from '../api/activeWallet'

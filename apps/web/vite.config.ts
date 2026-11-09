@@ -48,9 +48,15 @@ export default defineConfig({
         'src/paymentMethods/paymentMethodsApi.ts',
         'src/creditCards/CreditCardsPage.tsx',
         'src/creditCards/creditCardsApi.ts',
+        'src/api/activeWallet.ts',
+        'src/api/request.ts',
+        'src/api/requestPath.ts',
       ],
       exclude: ['src/**/*.test.ts', 'src/**/*.test.tsx', 'src/test/**'],
       thresholds: {
+        // The shared HTTP client and the path guard hold a security check, so a coverage regression
+        // here has to fail the job rather than only show up in the report.
+        'src/api/**': { lines: 80, functions: 80, branches: 80, statements: 80 },
         'src/feedback/**': { lines: 80, functions: 80, branches: 80, statements: 80 },
         'src/layout/**': { lines: 80, functions: 80, branches: 80, statements: 80 },
         'src/period/**': { lines: 80, functions: 80, branches: 80, statements: 80 },

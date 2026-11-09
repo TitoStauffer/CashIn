@@ -1,4 +1,4 @@
-import { withActiveWallet } from '../wallets/walletApi'
+import { createApiRequest } from '../api/request'
 
 export type Expense = {
   id: string
@@ -30,7 +30,6 @@ export type ExpenseInput = {
 }
 
 type ExpenseListResponse = { items: Expense[] }
-type ErrorResponse = { message?: string }
 
 export class ExpenseApiError extends Error {
   readonly status: number
@@ -42,24 +41,7 @@ export class ExpenseApiError extends Error {
   }
 }
 
-async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const response = await fetch(`/api${path}`, withActiveWallet({
-    ...init,
-    credentials: 'include',
-    headers: {
-      ...(init.body ? { 'Content-Type': 'application/json' } : {}),
-      ...init.headers,
-    },
-  }))
-
-  if (!response.ok) {
-    const body = (await response.json().catch(() => null)) as ErrorResponse | null
-    throw new ExpenseApiError(body?.message ?? '', response.status)
-  }
-
-  if (response.status === 204) return undefined as T
-  return (await response.json()) as T
-}
+const request = createApiRequest(ExpenseApiError)
 
 function expensePath(expenseId: string) {
   return `/expenses/${encodeURIComponent(expenseId)}`
