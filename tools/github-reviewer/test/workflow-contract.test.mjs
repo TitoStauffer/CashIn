@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
+import { DEFAULT_DELAY_MS, DEFAULT_MAX_ATTEMPTS } from '../dist/ci-recovery.js';
 import { REVIEW_TRACK_OUTPUT } from '../dist/review-track.js';
 
 const mergeReadinessWorkflow = await readFile(new URL('../../../.github/workflows/merge-readiness.yml', import.meta.url), 'utf8');
@@ -39,7 +40,33 @@ test('sequences PR metadata, implementation checks, SonarQube and agent orchestr
   assert.doesNotMatch(ciWorkflow, /types:\s*\[[^\]]*edited/);
   assert.match(titleWorkflow, /pull_request_target:/);
   assert.match(titleWorkflow, /types:\s*\[edited\]/);
-  assert.match(titleWorkflow, /github\.actor != vars\.CASHIN_APP_BOT_LOGIN/);
+  // DEV-110: the recovery job must not be gated at the job level, in any spelling, and every
+  // privileged step must carry the step-level gate. Asserting one occurrence of the step gate, or one
+  // textual form of the job gate, left the property open: the declared mutant survived either way.
+  const recoverJob = titleWorkflow.slice(titleWorkflow.indexOf('\n  recover-ci:'));
+  // Over the whole job, not just the text before `steps:`: YAML keys are unordered, so a job-level
+  // `if:` written after the steps block would have escaped a header-only check. Job keys sit at four
+  // spaces and step keys at eight, and the quoted spelling is refused too.
+  assert.doesNotMatch(recoverJob, /^ {4}"?if"?\s*:/m);
+  // The producer and the consumers of the gate have to be tied by name. Without this, renaming
+  // `id: scope` keeps the suite green while `steps.scope.outputs.recover` resolves empty in
+  // production: the five privileged steps would be skipped and the job would publish **success
+  // without recovering anything** — the green-that-lies this delivery exists to eliminate.
+  assert.match(recoverJob, /^\s+id:\s*scope\s*$/m);
+  assert.equal([...recoverJob.matchAll(/^\s+if:\s*steps\.scope\.outputs\.recover == 'true'\s*$/gm)].length, 5);
+  // The gate's **semantics**, not just its presence: both operands wired, and the comparison in the
+  // direction that skips recovery for the App's own edits. Asserting the `env` and the echo alone let
+  // an inverted operator, or a disconnected `EDIT_ACTOR`, keep the suite green.
+  assert.match(titleWorkflow, /EDIT_ACTOR:\s*\$\{\{ github\.actor \}\}/);
+  assert.match(titleWorkflow, /APP_BOT_LOGIN:\s*\$\{\{ vars\.CASHIN_APP_BOT_LOGIN \}\}/);
+  // The whole branch, both arms: fixing only the `then` left the `else` free to write `recover=false`
+  // too, which would skip the five privileged steps and publish success without recovering anything.
+  assert.match(titleWorkflow, /if \[\[ -n "\$\{APP_BOT_LOGIN\}" && "\$\{EDIT_ACTOR\}" == "\$\{APP_BOT_LOGIN\}" \]\]; then\s*\r?\n\s+echo "recover=false" >> "\$\{GITHUB_OUTPUT\}"/);
+  assert.match(titleWorkflow, /\belse\s*\r?\n\s+echo "recover=true" >> "\$\{GITHUB_OUTPUT\}"/);
+  // The job must outlast the tool's own wait window (DEV-110), or the runner decides instead of the
+  // process and the failure never names the condition it observed.
+  assert.match(recoverJob, /^\s+timeout-minutes:\s*(\d+)\s*$/m);
+  assert.ok(Number(recoverJob.match(/^\s+timeout-minutes:\s*(\d+)\s*$/m)[1]) * 60_000 > (DEFAULT_MAX_ATTEMPTS - 1) * DEFAULT_DELAY_MS);
   assert.match(titleWorkflow, /actions:\s*write/);
   assert.match(titleWorkflow, /statuses:\s*write/);
   assert.match(titleWorkflow, /statuses\/\$\{HEAD_SHA\}/);
