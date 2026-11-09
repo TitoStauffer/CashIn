@@ -1,7 +1,7 @@
 # SonarQube Cloud
 
 **Status:** ativo no CI
-**Última revisão:** 25/10/2026
+**Última revisão:** 09/11/2026
 
 ## Escopo analisado
 

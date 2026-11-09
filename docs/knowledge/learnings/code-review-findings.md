@@ -1,7 +1,7 @@
 # Aprendizados de Code Review
 
 **Status:** auditado até o PR #46, com ocorrências confirmadas dos PRs #56, #58, #63, #64 e #66
-**Última revisão:** 07/11/2026
+**Última revisão:** 09/11/2026
 
 Esta nota converte os achados históricos do Agent de Code Review em regras preventivas. O inventário e os links das revisões estão em [`code-review-audit.md`](code-review-audit.md).
 
