@@ -74,12 +74,11 @@ jobs:
             -f target_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
 
   recover-ci:
-    # The job itself is no longer conditional (DEV-110). It used to be skipped for the GitHub App's own
-    # metadata edits, and a skipped job publishes nothing — so a red conclusion from an earlier run of
-    # this same job stayed in the Pull Request's rollup with no later run able to replace it. Running
-    # always, and deciding inside, means any later metadata edit on the same head publishes a fresh
-    # conclusion over the stale one. The actor check moved to the first step and still governs whether
-    # anything is recovered.
+    # The job carries no gate of its own (DEV-110), only `needs: pr-title`. It used to be skipped for
+    # the GitHub App's own metadata edits, and a skipped job publishes a check run whose conclusion is
+    # `skipped` — a conclusion that says nothing about whether this head has its CI. Deciding inside
+    # the job means every edit that reaches here publishes a conclusion that reflects an evaluation.
+    # The actor check moved to the first step and still governs whether anything is recovered.
     name: Recover CI after metadata edit
     needs: pr-title
     runs-on: ubuntu-24.04

@@ -39,13 +39,15 @@ test('sequences PR metadata, implementation checks, SonarQube and agent orchestr
   assert.doesNotMatch(ciWorkflow, /types:\s*\[[^\]]*edited/);
   assert.match(titleWorkflow, /pull_request_target:/);
   assert.match(titleWorkflow, /types:\s*\[edited\]/);
-  // DEV-110: the recovery job must not be gated at the job level. A skipped job publishes no
-  // conclusion, so an earlier red from this same job used to stay in the rollup forever. The actor
-  // check lives in a step now, and the job always reaches a conclusion that a later edit can replace.
-  assert.doesNotMatch(titleWorkflow, /^\s+if:\s*github\.actor != vars\.CASHIN_APP_BOT_LOGIN\s*$/m);
+  // DEV-110: the recovery job must not be gated at the job level, in any spelling, and every
+  // privileged step must carry the step-level gate. Asserting one occurrence of the step gate, or one
+  // textual form of the job gate, left the property open: the declared mutant survived either way.
+  const recoverJob = titleWorkflow.slice(titleWorkflow.indexOf('\n  recover-ci:'));
+  const jobHeader = recoverJob.slice(0, recoverJob.indexOf('\n    steps:'));
+  assert.doesNotMatch(jobHeader, /^\s+if\s*:/m);
+  assert.equal([...recoverJob.matchAll(/^\s+if:\s*steps\.scope\.outputs\.recover == 'true'\s*$/gm)].length, 5);
   assert.match(titleWorkflow, /APP_BOT_LOGIN:\s*\$\{\{ vars\.CASHIN_APP_BOT_LOGIN \}\}/);
   assert.match(titleWorkflow, /echo "recover=false" >> "\$\{GITHUB_OUTPUT\}"/);
-  assert.match(titleWorkflow, /if:\s*steps\.scope\.outputs\.recover == 'true'/);
   assert.match(titleWorkflow, /actions:\s*write/);
   assert.match(titleWorkflow, /statuses:\s*write/);
   assert.match(titleWorkflow, /statuses\/\$\{HEAD_SHA\}/);

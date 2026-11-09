@@ -19,6 +19,12 @@ export interface CiRecoveryOptions {
   sleep?: (delayMs: number) => Promise<void>;
 }
 
+interface RunSearch {
+  run?: WorkflowRun;
+  /** A run exists at this head but GitHub associates it with a different Pull Request. */
+  refusedByAssociation: boolean;
+}
+
 export interface CiRecoveryResult {
   action: 'rerun_requested' | 'active_run_succeeded';
   runId: number;
@@ -31,9 +37,11 @@ export async function recoverCiAfterMetadataEdit(options: CiRecoveryOptions): Pr
   const sleep = options.sleep ?? ((delay: number) => new Promise<void>((resolve) => setTimeout(resolve, delay)));
   let observedActive = false;
   let observedAnyRun = false;
+  let refusedByAssociation = false;
 
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
-    const run = await loadLatestCiRun(options);
+    const { run, refusedByAssociation: refused } = await loadLatestCiRun(options);
+    refusedByAssociation = refusedByAssociation || refused;
     if (!run) {
       if (attempt < maxAttempts) await sleep(delayMs);
       continue;
@@ -54,15 +62,20 @@ export async function recoverCiAfterMetadataEdit(options: CiRecoveryOptions): Pr
     return { action: 'rerun_requested', runId: run.id! };
   }
 
-  // Two different failures used to share one message, and the operator could not tell them apart: a
-  // head with no CI run at all is a missing-evidence problem, while a run that never finished is a
-  // slow-pipeline problem. Both still fail closed — absent evidence keeps blocking the merge.
-  throw new Error(observedAnyRun
-    ? 'The CI run for the current Pull Request head never completed within the wait window.'
+  // Three different failures used to share one message, and the operator could not tell them apart.
+  // Each names the condition that actually produced it, rather than deriving a cause from the absence
+  // of an observation: a head with no CI run at all is missing evidence, a run that never finished is
+  // a slow pipeline, and a run refused because GitHub attributes it to another Pull Request is neither.
+  // All three still fail closed — absent evidence keeps blocking the merge.
+  if (observedAnyRun) {
+    throw new Error('The CI run for the current Pull Request head never completed within the wait window.');
+  }
+  throw new Error(refusedByAssociation
+    ? 'A CI run exists for this head but GitHub associates it with another Pull Request.'
     : 'No CI run exists for the current Pull Request head.');
 }
 
-async function loadLatestCiRun(options: CiRecoveryOptions): Promise<WorkflowRun | undefined> {
+async function loadLatestCiRun(options: CiRecoveryOptions): Promise<RunSearch> {
   const query = new URLSearchParams({ event: 'pull_request', head_sha: options.headSha, per_page: '100' });
   const response = await options.fetchImpl(
     `${API_BASE}/repos/${options.repository}/actions/workflows/ci.yml/runs?${query}`,
@@ -71,9 +84,12 @@ async function loadLatestCiRun(options: CiRecoveryOptions): Promise<WorkflowRun 
   if (!response.ok) throw new Error(`GitHub API HTTP ${response.status} while reading CI runs.`);
   const payload = await response.json() as { workflow_runs?: WorkflowRun[] };
   const runs = Array.isArray(payload.workflow_runs) ? payload.workflow_runs : [];
-  return runs
-    .filter((run) => Number.isSafeInteger(run.id) && belongsToPullRequest(run, options.pullRequestNumber))
-    .sort((left, right) => String(right.created_at ?? '').localeCompare(String(left.created_at ?? '')))[0];
+  const identified = runs.filter((run) => Number.isSafeInteger(run.id));
+  const mine = identified.filter((run) => belongsToPullRequest(run, options.pullRequestNumber));
+  return {
+    run: [...mine].sort((left, right) => String(right.created_at ?? '').localeCompare(String(left.created_at ?? '')))[0],
+    refusedByAssociation: mine.length === 0 && identified.length > 0,
+  };
 }
 
 /**

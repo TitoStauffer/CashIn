@@ -40,13 +40,16 @@ test('reruns a CI that had already completed before the metadata edit', async ()
   assert.equal(requests.at(-1).url.endsWith('/actions/runs/99/rerun'), true);
 });
 
+// The populated association on the wait-then-succeed path: with the empty shape now the default
+// fixture, this is the case that keeps the association branch covered end to end. Its twin below
+// exercises the same path with the shape GitHub actually returns.
 test('waits for an active successful CI and does not duplicate it', async () => {
   let reads = 0;
   let writes = 0;
   const result = await recoverCiAfterMetadataEdit(options(async (_url, init = {}) => {
     if (init.method === 'POST') { writes += 1; return response(undefined, 201); }
     reads += 1;
-    return response({ workflow_runs: [reads === 1 ? run('in_progress') : run('completed', 'success')] });
+    return response({ workflow_runs: [reads === 1 ? associatedRun('in_progress') : associatedRun('completed', 'success')] });
   }));
 
   assert.deepEqual(result, { action: 'active_run_succeeded', runId: 99 });
@@ -94,11 +97,13 @@ test('still refuses a run that GitHub associates with another pull request', asy
       async () => response({ workflow_runs: [run('completed', 'success', [{ number: pullRequestNumber + 1 }])] }),
       { maxAttempts: 2 },
     )),
-    /No CI run exists for the current Pull Request head\./,
+    /associates it with another Pull Request\./,
   );
 });
 
-test('distinguishes a head with no CI run from one whose run never finished', async () => {
+// Each message has to name the condition that produced it. Deriving the cause from "we observed
+// nothing" made a refused association report that no run exists for the head, which is not why.
+test('names the condition behind each failure instead of inferring one', async () => {
   await assert.rejects(
     recoverCiAfterMetadataEdit(options(async () => response({ workflow_runs: [] }), { maxAttempts: 2 })),
     /No CI run exists for the current Pull Request head\./,
@@ -107,6 +112,14 @@ test('distinguishes a head with no CI run from one whose run never finished', as
   await assert.rejects(
     recoverCiAfterMetadataEdit(options(async () => response({ workflow_runs: [run('in_progress')] }), { maxAttempts: 2 })),
     /never completed within the wait window\./,
+  );
+
+  await assert.rejects(
+    recoverCiAfterMetadataEdit(options(
+      async () => response({ workflow_runs: [run('completed', 'success', [{ number: pullRequestNumber + 7 }])] }),
+      { maxAttempts: 2 },
+    )),
+    /A CI run exists for this head but GitHub associates it with another Pull Request\./,
   );
 });
 
