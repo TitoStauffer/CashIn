@@ -199,6 +199,11 @@ function normalizeParsedItem(
     isRepairable: !isDuplicate && parserAllowsRepair && validationStatus === "invalid"
       && nonRepairableReasons.length === 0
       && (repairableReasons.length > 0 || parserMarkedInvalid),
+    // This object is rebuilt from scratch, so a flag the parser set is lost unless it is carried here. The
+    // parser marks a repeated FITID and amount as an overridable duplicate (DEV-124), and the duplicate
+    // checks that run after this step set their own flag — so without this line only the parser's flag
+    // disappeared, and the screen offered no way to include two real, equal movements.
+    duplicateOverrideAllowed: validationStatus === "duplicate" && item.duplicateOverrideAllowed === true,
     externalId: hasValidExternalId ? rawExternalId : null,
     statementClosingDate: item.statementClosingDate ?? null,
     recordHash: createFinancialImportFingerprint({

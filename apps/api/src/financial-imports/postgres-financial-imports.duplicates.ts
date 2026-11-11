@@ -1,5 +1,6 @@
 import type { QueryExecutor } from "../database.js";
 import {
+  createExternalTransactionIdentity,
   createFinancialImportFingerprint,
   createLegacyFinancialImportFingerprint,
   createLegacyOfxFinancialImportFingerprint,
@@ -81,7 +82,10 @@ export async function markPreviouslyImportedDuplicates(
 
   const accountReferenceHash = sourceMetadata.accountReferenceHash ?? null;
   const existingFingerprints = new Set<string>();
-  const externalIds = new Set<string>();
+  // FITID together with the signed amount, not FITID alone (DEV-124): the issuer reuses one identifier for
+  // a purchase and its IOF, so a FITID already imported does not mean this line was. The query below still
+  // fetches candidates by FITID; the comparison is what requires the amount too.
+  const externalIdentities = new Set<string>();
   for (const batch of chunks(candidates)) {
     const hashes = new Set<string>();
     const candidatesPayload = batch.flatMap((item) => {
@@ -142,15 +146,17 @@ export async function markPreviouslyImportedDuplicates(
         description: row.description,
       });
       if (fingerprint) existingFingerprints.add(fingerprint);
-      if (accountReferenceHash && row.account_reference_hash === accountReferenceHash && row.external_id) {
-        externalIds.add(row.external_id);
+      if (accountReferenceHash && row.account_reference_hash === accountReferenceHash) {
+        const identity = createExternalTransactionIdentity(row.external_id, row.signed_amount);
+        if (identity) externalIdentities.add(identity);
       }
     }
   }
 
   return items.map((item) => {
     if (item.validationStatus === "invalid" || item.validationStatus === "duplicate") return item;
-    const matchesExternalId = Boolean(item.externalId && externalIds.has(item.externalId));
+    const identity = createExternalTransactionIdentity(item.externalId ?? null, item.signedAmount ?? null);
+    const matchesExternalId = identity !== null && externalIdentities.has(identity);
     const matchesFingerprint = duplicateIdentityHashes(item, creditCardId !== null).some((hash) => existingFingerprints.has(hash));
     const fingerprintWasReviewed = item.acceptedDuplicateFingerprint === item.recordHash;
     if (!matchesExternalId && (!matchesFingerprint || fingerprintWasReviewed)) return item;

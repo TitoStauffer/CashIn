@@ -190,8 +190,55 @@ test("keeps valid records visible and explains malformed OFX records", async () 
   assert.match(result.items[2]?.errorMessage ?? "", /valor/i);
   assert.equal(result.items[3]?.isRepairable, false);
   assert.match(result.items[3]?.errorMessage ?? "", /FITID/i);
-  assert.equal(result.items[4]?.validationStatus, "duplicate");
-  assert.equal(result.items[4]?.isRepairable, false);
+  // The fifth line repeats the FITID of the first with a different amount (−8,00 against 50,00). This test
+  // used to assert it was a duplicate, which is exactly the DEV-124 defect: a reused identifier is not a
+  // repeated transaction. It is now a valid line of its own.
+  assert.equal(result.items[4]?.validationStatus, undefined);
+  assert.equal(result.items[4]?.signedAmount, "-8.00");
+});
+
+// The real case from the issuer's file: an international purchase and the IOF charged on it share one
+// FITID. FITID alone marked the purchase a duplicate of its own tax and it never reached the statement.
+test("imports a purchase and its IOF that share a FITID as two transactions", async () => {
+  const result = await new DefaultFinancialImportParser().parse({
+    format: "ofx",
+    fileName: "fatura.ofx",
+    statementKind: "credit_card_statement",
+    content: cardStatementOfx([
+      "<STMTTRN><TRNTYPE>DEBIT<DTPOSTED>20261107<TRNAMT>-3.62<FITID>shared-1<MEMO>IOF de compra internacional</STMTTRN>",
+      "<STMTTRN><TRNTYPE>DEBIT<DTPOSTED>20261107<TRNAMT>-103.50<FITID>shared-1<MEMO>Anthropic</STMTTRN>",
+      // The reversal of that IOF has the same absolute value with the opposite sign, so the amount has to
+      // be compared signed: unsigned, it would collide with the IOF it reverses.
+      "<STMTTRN><TRNTYPE>CREDIT<DTPOSTED>20261107<TRNAMT>3.62<FITID>shared-1<MEMO>IOF de volta de Anthropic</STMTTRN>",
+    ].join("\n")),
+  });
+
+  assert.deepEqual(result.items.map((item) => [item.description, item.validationStatus]), [
+    ["IOF de compra internacional", undefined],
+    ["Anthropic", undefined],
+    ["IOF de volta de Anthropic", undefined],
+  ]);
+});
+
+// The other half: identifier AND amount repeating is still flagged — but it can be overridden, because it can
+// also be two real movements (two equal toll charges on one day), and refusing them is how money got lost.
+test("flags a repeated FITID and amount as an overridable duplicate that names the issuer", async () => {
+  const result = await new DefaultFinancialImportParser().parse({
+    format: "ofx",
+    fileName: "fatura.ofx",
+    statementKind: "credit_card_statement",
+    content: cardStatementOfx([
+      "<STMTTRN><TRNTYPE>DEBIT<DTPOSTED>20261005<TRNAMT>-5.80<FITID>tag-1<MEMO>Transação de NuTag</STMTTRN>",
+      "<STMTTRN><TRNTYPE>DEBIT<DTPOSTED>20261005<TRNAMT>-5.80<FITID>tag-1<MEMO>Transação de NuTag</STMTTRN>",
+    ].join("\n")),
+  });
+
+  const repeated = result.items[1]!;
+  assert.equal(result.items[0]?.validationStatus, undefined);
+  assert.equal(repeated.validationStatus, "duplicate");
+  assert.equal(repeated.duplicateOverrideAllowed, true);
+  assert.equal(repeated.isRepairable, false);
+  assert.match(repeated.errorMessage ?? "", /emissor pode ter reaproveitado o identificador/);
 });
 
 test("decodes the Windows-1252 encoding commonly declared by OFX 1.x", async () => {

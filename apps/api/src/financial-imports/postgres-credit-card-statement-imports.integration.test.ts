@@ -364,3 +364,142 @@ test("PostgreSQL credit card statement import posts purchases and credits to the
     await adminPool.end();
   }
 });
+
+// DEV-124. The card issuer gives an international purchase and the IOF charged on it the same FITID. Trusting
+// the identifier alone, both duplicate checks treated the purchase as a copy of its own tax — inside the file
+// and across imports — and the purchase never reached the statement, with no way to import it from the screen.
+// The identity is now FITID together with the signed amount.
+test("PostgreSQL card import keeps a purchase and its IOF that share a FITID, and still refuses a real reimport", {
+  skip: !testDatabaseUrl,
+}, async () => {
+  const schemaName = `card_fitid_${randomBytes(8).toString("hex")}`;
+  const adminPool = new Pool({ connectionString: testDatabaseUrl });
+  let scopedPool: Pool | undefined;
+  let app: ReturnType<typeof createApp> | undefined;
+
+  try {
+    await adminPool.query(`CREATE SCHEMA ${schemaName}`);
+    scopedPool = new Pool({ connectionString: testDatabaseUrl, options: `-c search_path=${schemaName}` });
+    const database = createDatabase(scopedPool);
+    await runMigrations(database);
+
+    const users = await database.query<{ id: string }>(
+      "INSERT INTO users (email, password_hash, email_verified_at) VALUES ($1, 'test-hash', now()) RETURNING id",
+      [`owner-${schemaName}@example.com`],
+    );
+    const userId = users.rows[0]!.id;
+    const walletId = (await database.query<{ id: string }>(
+      "SELECT id FROM wallets WHERE owner_user_id = $1", [userId],
+    )).rows[0]!.id;
+    const categoryId = (await database.query<{ id: string }>(
+      "INSERT INTO categories (user_id, wallet_id, name, nature) VALUES ($1, $2, 'Assinaturas', 'expense') RETURNING id",
+      [userId, walletId],
+    )).rows[0]!.id;
+    const cardId = (await database.query<{ id: string }>(
+      "INSERT INTO credit_cards (wallet_id, alias, closing_day, due_day) VALUES ($1, 'Principal', 10, 20) RETURNING id",
+      [walletId],
+    )).rows[0]!.id;
+
+    const token = createOpaqueToken();
+    await new PostgresAuthRepository(database).createSession(userId, hashToken(token), new Date(Date.now() + 120_000));
+    app = createApp(database);
+    await app.ready();
+    const headers = { cookie: `cashin_session=${token}`, "x-wallet-id": walletId };
+    const upload = async (content: Buffer, fileName: string) => {
+      const response = await app!.inject({
+        method: "POST",
+        url: "/financial-imports",
+        headers: {
+          ...headers, "content-type": "application/octet-stream",
+          "x-file-name": fileName, "x-file-format": "ofx", "x-credit-card-id": cardId,
+        },
+        payload: content,
+      });
+      assert.equal(response.statusCode, 201);
+      return response.json() as FinancialImportSession;
+    };
+    const byDescription = (session: FinancialImportSession, description: string) => (
+      session.items!.find((item) => item.description === description)!
+    );
+    const patchItem = (importId: string, itemId: string, payload: Record<string, unknown>) => app!.inject({
+      method: "PATCH",
+      url: `/financial-imports/${importId}/items/${itemId}`,
+      headers,
+      payload,
+    });
+
+    // The pair exactly as the issuer exports it: one identifier, two transactions with different amounts.
+    const invoice = cardOfx([
+      { id: "shared-fitid", date: "2026-11-07", amount: "-3.62", name: "IOF de compra internacional" },
+      { id: "shared-fitid", date: "2026-11-07", amount: "-103.50", name: "Anthropic" },
+    ]);
+
+    // 1. Inside the file, neither line is a duplicate of the other, and both reach the confirmation.
+    const first = await upload(invoice, "fatura.ofx");
+    for (const description of ["IOF de compra internacional", "Anthropic"]) {
+      const item = byDescription(first, description);
+      assert.notEqual(item.validationStatus, "duplicate", `${description} must not be a duplicate of its pair`);
+      const patched = await patchItem(first.id, item.id, { date: item.date, description, type: "expense", categoryId, subcategoryId: null });
+      assert.equal(patched.statusCode, 200);
+      assert.equal(patched.json().validationStatus, "valid");
+    }
+    const confirmed = await app.inject({ method: "POST", url: `/financial-imports/${first.id}/confirm`, headers });
+    assert.equal(confirmed.statusCode, 200);
+    assert.equal(confirmed.json().summary.imported, 2);
+
+    // 2. The protection the rule exists for still holds: the same file again is recognised as already
+    // imported, and FITID together with amount is strong enough evidence to refuse the override.
+    const reimported = await upload(invoice, "fatura-de-novo.ofx");
+    for (const description of ["IOF de compra internacional", "Anthropic"]) {
+      const item = byDescription(reimported, description);
+      assert.equal(item.validationStatus, "duplicate", `${description} must be recognised on reimport`);
+      assert.equal(item.canIncludeDuplicate, false);
+      assert.match(item.errorMessage ?? "", /FITID coincide/);
+    }
+
+    // 3. The cross-import half of the defect, isolated: a FITID already imported, with a different amount, is
+    // a different transaction. Before the fix this line was refused as already imported and could not be
+    // included from the screen.
+    const later = await upload(cardOfx([
+      { id: "shared-fitid", date: "2026-11-08", amount: "-50.00", name: "Outra compra internacional" },
+    ]), "outra.ofx");
+    const other = byDescription(later, "Outra compra internacional");
+    assert.notEqual(other.validationStatus, "duplicate");
+
+    // 4. The way back for invoices already hurt by the defect: the IOF went in, the purchase was dropped as
+    // its duplicate. Reimporting the same file after the fix has to bring the purchase and only the purchase.
+    const iofOnly = await upload(cardOfx([
+      { id: "recovered-fitid", date: "2026-11-06", amount: "-16.85", name: "IOF de compra internacional" },
+    ]), "so-iof.ofx");
+    const iof = byDescription(iofOnly, "IOF de compra internacional");
+    assert.equal((await patchItem(iofOnly.id, iof.id, {
+      date: iof.date, description: iof.description, type: "expense", categoryId, subcategoryId: null,
+    })).statusCode, 200);
+    assert.equal((await app.inject({ method: "POST", url: `/financial-imports/${iofOnly.id}/confirm`, headers })).statusCode, 200);
+
+    const recovery = await upload(cardOfx([
+      { id: "recovered-fitid", date: "2026-11-06", amount: "-16.85", name: "IOF de compra internacional" },
+      { id: "recovered-fitid", date: "2026-11-06", amount: "-481.48", name: "Anthropic Claude Sub" },
+    ]), "fatura-recuperada.ofx");
+    assert.equal(byDescription(recovery, "IOF de compra internacional").validationStatus, "duplicate");
+    assert.notEqual(byDescription(recovery, "Anthropic Claude Sub").validationStatus, "duplicate");
+
+    // 5. Identifier and amount repeating inside one file stays flagged, but the flag has to survive to the
+    // screen as an override: two equal toll charges on one day are real, and a duplicate cannot be repairable
+    // by schema, so the override is the only way back. Asserted through the API, not the parser alone.
+    const tolls = await upload(cardOfx([
+      { id: "toll-fitid", date: "2026-10-05", amount: "-5.80", name: "Transação de NuTag" },
+      { id: "toll-fitid", date: "2026-10-05", amount: "-5.80", name: "Transação de NuTag" },
+    ]), "pedagio.ofx");
+    const [firstToll, secondToll] = tolls.items!;
+    assert.notEqual(firstToll!.validationStatus, "duplicate");
+    assert.equal(secondToll!.validationStatus, "duplicate");
+    assert.equal(secondToll!.canIncludeDuplicate, true);
+    assert.match(secondToll!.errorMessage ?? "", /emissor pode ter reaproveitado o identificador/);
+  } finally {
+    await app?.close();
+    await scopedPool?.end();
+    await adminPool.query(`DROP SCHEMA IF EXISTS ${schemaName} CASCADE`);
+    await adminPool.end();
+  }
+});
