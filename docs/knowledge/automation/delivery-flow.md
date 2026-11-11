@@ -57,6 +57,7 @@ flowchart LR
 - Falha exclusiva de publicação é recuperada com o artefato estruturado original, sem repetir a chamada de modelo; workflow, run, tentativa do job e ID do artefato são autenticados pela API do GitHub antes do download. Se houver reexecuções, somente o artefato correlacionado à tentativa bem-sucedida mais recente é selecionado.
 - Falha de infraestrutura antes da criação de um resultado estruturado deixa o job do Agent vermelho, permitindo reexecutar somente o job falho e seus dependentes. Decisões estruturadas continuam publicáveis antes do encerramento fail-closed da rodada.
 - O merge não é executado pelos workflows de agentes ou pelo Merge Readiness.
+- Mutantes declarados em `mutations/<CHAVE>.json` rodam no passo `Mutation check (declared mutants)`, o último dos jobs `API`, `Web` e `GitHub Reviewer`, só para os manifestos que o PR adicionou ou alterou (DEV-126). O passo falha se um mutante sobrevive, se a âncora não é única, se o comando não passa sem a mutação ou se o arquivo não volta ao original; o QA lê a conclusão do passo nos metadados do job. Sem manifesto no diff, o passo verde não prova mutação nenhuma. Formato e motivos em `docs/ci.md`.
 
 ## Economia de execução
 
@@ -86,4 +87,5 @@ flowchart LR
 - [`.github/scripts/assign-pr-owner.sh`](../../../.github/scripts/assign-pr-owner.sh)
 - [`tools/jira-dispatcher/src/post-merge/service.ts`](../../../tools/jira-dispatcher/src/post-merge/service.ts)
 - [`tools/jira-dispatcher/test/review-track-contract.test.ts`](../../../tools/jira-dispatcher/test/review-track-contract.test.ts)
+- [`tools/mutation-check/run.mjs`](../../../tools/mutation-check/run.mjs)
 - [`tools/github-reviewer/src/agent-stage-policy.ts`](../../../tools/github-reviewer/src/agent-stage-policy.ts)

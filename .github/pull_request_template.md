@@ -77,11 +77,11 @@ Descreva os resultados observados. Não marque verificações que não foram exe
 
 **Verificação por mutação (evidência de desenvolvimento):**
 
-Liste cada mutante aplicado, o teste que o derrubou e a confirmação de que o arquivo voltou ao original. A mutação não é critério de aceitação e não entra na seção 8; quando a verificação puder rodar no CI, aponte o teste ou o passo correspondente.
+Prefira declarar os mutantes em `mutations/<CHAVE>.json` (formato em `docs/ci.md`): o passo **Mutation check (declared mutants)** do job do pacote os aplica no CI deste SHA e falha se algum sobreviver, se a âncora não for única ou se o arquivo não voltar ao original. Cite aqui o manifesto e o job. Mutação feita só localmente também é listada aqui — cada mutante, o teste que o derrubou e a confirmação de que o arquivo voltou ao original —, mas não é critério de aceitação e não entra na seção 8.
 
 ## 8. Critérios de aceitação
 
-Descreva somente comportamento verificável pelo diff e pelas execuções de CI deste SHA. Verificação por mutação local fica na seção 7.
+Descreva somente comportamento verificável pelo diff e pelas execuções de CI deste SHA. Um mutante declarado em `mutations/` e aplicado pelo passo de mutação do CI é verificável assim; mutação local fica na seção 7.
 
 - [ ] Critério 1:
 - [ ] Critério 2:
