@@ -151,6 +151,16 @@ test('skips QA only on a confirmed light track and keeps the Coordinator on both
   assert.match(finalCondition, /needs\.quality-gate\.outputs\.decision != 'APPROVED'/);
 });
 
+// DEV-127: on the light track the qa job is skipped, and a job whose if has no status function gets an
+// implicit success() that is false when any ancestor was skipped. The Coordinator report must still publish.
+test('publishes the Coordinator report on the light track, where QA is skipped', () => {
+  const publish = orchestrationWorkflow.split('  publish-quality-gate:')[1].split(/\r?\n  [a-z-]+:\r?\n/)[0];
+  const condition = publish.match(/^    if: (.+?)\r?$/m)?.[1] ?? '';
+  assert.match(condition, /^always\(\) && /, 'publish-quality-gate must start its condition with always()');
+  assert.match(condition, /needs\.quality-gate\.result == 'success'/);
+  assert.match(condition, /needs\.quality-gate\.outputs\.decision != ''/);
+});
+
 test('pins orchestration runtime and isolates deterministic consolidation from Codex', () => {
   assertOrchestrationCheckoutsOmitRef(orchestrationWorkflow);
   const workflowWithExplicitRef = orchestrationWorkflow.replace(/^\s+token:/m, '          ref: master\n          token:');

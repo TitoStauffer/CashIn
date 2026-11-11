@@ -100,6 +100,7 @@ Esta nota converte os achados históricos do Agent de Code Review em regras prev
 - **Impacto:** Agents cancelados pelo próprio App, CI irrecuperável após corrigir título e PRs legítimos do App sem orquestração.
 - **Regra preventiva:** documentar produtores e consumidores de cada evento, identidade do ator, contexto do check e regra de concorrência antes de alterar triggers.
 - **Detecção:** teste contratual da sequência abertura/edição/publicação/conclusão e ensaio controlado em PR de baixo risco.
+- **Ocorrência na DEV-127 (11/11/2026, achada em produção, não em revisão):** o trilho leve da DEV-116 pula o job `qa` por desenho, e o `publish-quality-gate` tinha `if` sem função de status. O GitHub aplica `success()` implícito, que é falso quando qualquer ancestral foi pulado — então o relatório do Coordinator nunca era publicado no trilho leve, e todo PR desse trilho falhava no gate (execuções `43068071022` e `43069221030`, PR #99). O teste de contrato conferia as condições de cada job isoladamente, não o efeito de um ancestral pulado sobre os descendentes. A correção acrescenta `always()` e um teste que trava a forma. A prevenção: **todo job a jusante de um job que pode ser pulado precisa de função de status no `if`**; ao introduzir um caminho que pula uma etapa, percorra o grafo de `needs` e confira cada descendente.
 
 ## 9. Evidência e documentação acompanham o HEAD
 
