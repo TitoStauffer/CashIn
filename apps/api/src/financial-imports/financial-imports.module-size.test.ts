@@ -15,18 +15,10 @@ import test from "node:test";
 // vault cites it, and only a guard keeps a split from being undone one case at a time.
 const MAX_SOURCE_BYTES = 40_000;
 
-// The one file DEV-95 could not split under its own rule of leaving every assertion untouched: it
-// holds a single `test` whose phases share mutable state — `app` is reassigned four times inside the
-// body and the `finally` closes whichever one is current — so moving a phase out has to hand that
-// variable back, and separate files would re-create the schema, the migrations and the setup.
-//
-// Each entry names the ticket that removes it. An exception with no ticket is permanent, because
-// nothing ever brings it back up for decision; DEV-108 carries the restructuring, including the two
-// calls it has to make (the extra setup cost per file, and the test count that stops being constant
-// once one `test` becomes three). Emptying this list is that ticket's acceptance criterion.
-const DECLARED_OVERSIZED: Array<{ name: string; ticket: string }> = [
-  { name: "postgres-financial-imports.integration.test.ts", ticket: "DEV-108" },
-];
+// Each entry names the ticket that removes it. An exception with no ticket is permanent, because nothing
+// ever brings it back up for decision. The list is empty since DEV-108 split the last oversized file — the
+// monolithic PostgreSQL import test — into one file per phase over a shared fixture.
+const DECLARED_OVERSIZED: Array<{ name: string; ticket: string }> = [];
 
 test("every source of financial-imports stays within the size the hosted review can read", () => {
   const directory = fileURLToPath(new URL(".", import.meta.url));
