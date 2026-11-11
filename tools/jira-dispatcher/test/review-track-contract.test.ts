@@ -117,6 +117,23 @@ describe("review track contract between the Coordinator report and the post-merg
   });
 });
 
+// The directives below only guard anything if the typecheck compiles this file. That is a fact about
+// tsconfig.test.json and the package's typecheck script, so it is asserted here, in a test CI runs, instead
+// of being taken on trust: if either stopped covering this file, the type guard would vanish silently.
+describe("the compile-time half of the contract is actually compiled", () => {
+  it("tsconfig.test.json includes this test file and the typecheck script runs it", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const packageRoot = new URL("../", import.meta.url);
+    const tsconfig = JSON.parse(await readFile(new URL("tsconfig.test.json", packageRoot), "utf8")) as { include?: string[]; exclude?: string[] };
+    const manifest = JSON.parse(await readFile(new URL("package.json", packageRoot), "utf8")) as { scripts?: Record<string, string> };
+
+    assert.ok(tsconfig.include?.includes("test/**/*.ts"), `tsconfig.test.json must include test/**/*.ts, got ${JSON.stringify(tsconfig.include)}`);
+    assert.ok(!(tsconfig.exclude ?? []).some((pattern) => /review-track-contract|test\//.test(pattern)), "tsconfig.test.json must not exclude this file");
+    assert.match(manifest.scripts?.typecheck ?? "", /tsc --noEmit -p tsconfig\.test\.json/, "the typecheck script must compile tsconfig.test.json");
+    assert.match(manifest.scripts?.verify ?? "", /npm run typecheck/, "the verify script CI runs must include the typecheck");
+  });
+});
+
 // Compile-time half of DEV-122, checked by `npm run typecheck` (tsconfig.test.json): an evidence result
 // without the review track, or with both a reason and a track, must not type-check. If the union is loosened,
 // these directives become unused and the typecheck fails.
