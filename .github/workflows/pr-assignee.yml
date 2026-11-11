@@ -1,0 +1,41 @@
+name: PR assignee
+
+on:
+  pull_request_target: # zizmor: ignore[dangerous-triggers] — trusted default-branch workflow; it checks out only the default branch and never executes PR code.
+    branches: [master]
+    types: [opened, reopened]
+
+# Permissions are assigned per job.
+permissions: {}
+
+concurrency:
+  group: pr-assignee-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
+
+jobs:
+  assign:
+    name: Assign PR owner
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    permissions:
+      contents: read
+      # Assignees are set through the issues API: a pull request is an issue.
+      issues: write
+
+    steps:
+      # The script comes from the default branch, not from the pull request: this job holds a write token,
+      # and AGENTS.md forbids running PR code in a privileged job. Only the scripts folder is fetched.
+      - name: Checkout trusted default branch scripts
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          sparse-checkout: .github/scripts
+          persist-credentials: false
+
+      - name: Assign the delivery owner when missing
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          ASSIGNEE: TitoStauffer
+        run: bash .github/scripts/assign-pr-owner.sh

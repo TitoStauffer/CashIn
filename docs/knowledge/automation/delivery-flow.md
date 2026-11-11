@@ -5,7 +5,7 @@
 
 ## Sequência real
 
-1. Um PR para `master` dispara o workflow `CI`.
+1. Um PR para `master` dispara o workflow `CI`. Na abertura, o workflow confiável `PR assignee` atribui `TitoStauffer` como responsável, sem executar código do PR e sem bloquear o PR se a API falhar (DEV-66).
 2. `PR title` valida o título e a chave Jira da branch.
 3. `API`, `Web` e `GitHub Reviewer` executam após essa validação.
 4. `SonarQube` depende das três verificações anteriores e aguarda o Quality Gate.
@@ -82,6 +82,8 @@ flowchart LR
 - [`.github/workflows/agent-report-recovery.yml`](../../../.github/workflows/agent-report-recovery.yml)
 - [`.github/workflows/merge-readiness.yml`](../../../.github/workflows/merge-readiness.yml)
 - [`.github/workflows/jira-post-merge.yml`](../../../.github/workflows/jira-post-merge.yml)
+- [`.github/workflows/pr-assignee.yml`](../../../.github/workflows/pr-assignee.yml)
+- [`.github/scripts/assign-pr-owner.sh`](../../../.github/scripts/assign-pr-owner.sh)
 - [`tools/jira-dispatcher/src/post-merge/service.ts`](../../../tools/jira-dispatcher/src/post-merge/service.ts)
 - [`tools/jira-dispatcher/test/review-track-contract.test.ts`](../../../tools/jira-dispatcher/test/review-track-contract.test.ts)
 - [`tools/github-reviewer/src/agent-stage-policy.ts`](../../../tools/github-reviewer/src/agent-stage-policy.ts)
