@@ -47,7 +47,10 @@ A cada início, o processo que inicia o runner recebe um `PATH` com o PowerShell
 - que o hook aponta só para a cópia instalada;
 - que o instalador não passa `--token`;
 - o comando real do hook, executado pelo `bash` com um `powershell` falso que registra a chamada: sem cópia instalada, com cópia instalada e sem `powershell`;
-- os helpers numa pasta temporária: escolha do Codex por versão, detecção de outro listener, rotação do log e marcador de reparação.
+- os helpers numa pasta temporária: escolha do Codex por versão, detecção de outro listener, rotação do log e marcador de reparação;
+- que a falha ao rotacionar o log (arquivo aberto por outro processo) vira aviso e não impede o início do runner;
+- que o token de registro só é aceito como uma única linha no formato de token do GitHub, e que o instalador o normaliza antes de usar;
+- que a limpeza antes da reextração preserva registro, credenciais, `_work` e `_diag`, e que o instalador a chama antes do `Expand-Archive`.
 
 A instalação real, a reparação e o hook religando o runner parado são verificações operacionais na máquina do runner, registradas nos PRs da DEV-74 e da DEV-77.
 
