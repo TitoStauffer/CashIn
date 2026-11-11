@@ -28,7 +28,7 @@ Rode o instalador apenas a partir de um checkout atualizado da `master`: os scri
 O script baixa o runner e o PowerShell das releases oficiais e confere o SHA-256 fixado em `runner-common.ps1`. Depois ele registra o runner com `--replace` (assume um registro offline de mesmo nome), copia os scripts para `scripts/`, cria o atalho `CashIn GitHub Runner.lnk` na pasta Inicializar do Windows e inicia o runner. Use `-Reregister` para forçar novo registro e `-NoStart` para não iniciar ao final.
 
 - **Reparação:** depois de extrair um pacote por completo, o instalador grava em `.cashin-archive-sha256` o SHA-256 do pacote fixado. Execuções seguintes mantêm a pasta só se o executável marcador e esse SHA conferirem. Extração interrompida, pasta sem marcador ou troca da versão fixada levam a uma nova extração, que exige o runner parado. O registro (`.runner`, credenciais) é preservado.
-- **Token de registro:** é obtido pelo `gh` na hora e entregue ao `config.cmd` pela variável `ACTIONS_RUNNER_INPUT_TOKEN`, só no processo do instalador, removida logo depois. Ele nunca aparece na linha de comando, visível na lista de processos, nem é gravado em arquivo.
+- **Token de registro:** é obtido pelo `gh` na hora e entregue ao `config.cmd` pela variável `ACTIONS_RUNNER_INPUT_TOKEN`, definida no processo do instalador e removida logo depois. Ele nunca aparece na linha de comando, visível na lista de processos, nem é gravado em arquivo. Ressalva: enquanto existe, a variável é herdada pelo `config.cmd` e pode ser lida por outros processos do mesmo usuário do Windows; por isso o token, que expira em uma hora, é pedido só no momento do registro. A saída do `gh` é normalizada antes de ser usada: só uma linha não vazia, no formato de token do GitHub, ou o instalador para com mensagem clara.
 
 ## Início automático
 
@@ -55,7 +55,7 @@ A instalação real, a reparação e o hook religando o runner parado são verif
 
 1. Consulte a release desejada: `gh api repos/actions/runner/releases/latest` e `gh api repos/PowerShell/PowerShell/releases/latest` (campo `digest` do asset `win-x64`).
 2. Atualize versão e SHA-256 em `runner-common.ps1`.
-3. Com o runner parado, rode o instalador novamente. O SHA-256 diferente do marcador faz a pasta ser reextraída.
+3. Com o runner parado, rode o instalador novamente. O SHA-256 diferente do marcador faz a pasta ser reextraída. Antes da extração, o instalador apaga o conteúdo da pasta, preservando no runner o registro (`.runner`), as credenciais (`.credentials`, `.credentials_rsaparams`), `.env`, `.path`, `_work` e `_diag`, para que binários que saíram do pacote novo não sobrem da versão anterior.
 
 O runner também se autoatualiza quando o GitHub exige uma versão mais nova.
 

@@ -110,10 +110,42 @@ function Set-RunnerEnvironment {
 function Invoke-RunnerLogRotation {
   param([string]$LogPath, [long]$MaxBytes = $script:RunnerLogMaxBytes)
   if ((Test-Path $LogPath) -and (Get-Item $LogPath).Length -gt $MaxBytes) {
-    Move-Item -Path $LogPath -Destination "$LogPath.1" -Force
-    return $true
+    try {
+      Move-Item -Path $LogPath -Destination "$LogPath.1" -Force -ErrorAction Stop
+      return $true
+    } catch {
+      # A cmd.exe left by an earlier run.cmd can still hold the log open (DEV-80). Rotation is
+      # housekeeping: failing it must never stop the runner from starting.
+      Write-Warning "Não foi possível rotacionar $LogPath ($($_.Exception.Message)); o runner segue sem rotacionar o log."
+      return $false
+    }
   }
   return $false
+}
+
+# Normalizes the registration token gh returns: exactly one non-empty line, in the shape GitHub issues.
+# A multi-line answer would otherwise become an array that passes a truthiness check and is exported with
+# its lines joined (DEV-80). Returns $null for anything else, so the caller fails with a clear message.
+function ConvertTo-RunnerRegistrationToken {
+  param([object[]]$Output)
+  $lines = @($Output | ForEach-Object { "$_".Trim() } | Where-Object { $_ })
+  if ($lines.Count -ne 1) { return $null }
+  if ($lines[0] -notmatch '^[A-Za-z0-9_-]{20,256}$') { return $null }
+  return $lines[0]
+}
+
+# Entries a re-extraction must keep in the runner folder: the registration, its credentials, the job
+# workspace and the diagnostics. Everything else came from the previous archive.
+$script:PreservedRunnerEntries = @('.runner', '.credentials', '.credentials_rsaparams', '.env', '.path', '_work', '_diag')
+
+# Removes what a previous extraction left, so binaries dropped from the new archive do not survive the
+# update next to the new ones (DEV-80). Only called while no listener of this installation is running.
+function Clear-ExtractionTarget {
+  param([string]$Destination, [string[]]$Preserve = $script:PreservedRunnerEntries)
+  if (-not (Test-Path -LiteralPath $Destination)) { return }
+  Get-ChildItem -LiteralPath $Destination -Force |
+    Where-Object { $Preserve -notcontains $_.Name } |
+    Remove-Item -Recurse -Force
 }
 
 function Start-RunnerProcess {

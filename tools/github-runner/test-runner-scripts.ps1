@@ -32,6 +32,10 @@ Assert-True ($hookCommand -match 'LOCALAPPDATA/CashInGithubRunner/scripts/ensure
 # 3. The installer never puts the registration token on the config.cmd command line.
 $installer = Get-Content -Raw (Join-Path $scriptsDir 'install-runner.ps1')
 Assert-True ($installer -notmatch '--token') 'install-runner.ps1 não passa --token ao config.cmd'
+Assert-True ($installer -match 'ConvertTo-RunnerRegistrationToken -Output \$tokenOutput') 'install-runner.ps1 normaliza a saída do gh antes de usar o token'
+$clearAt = $installer.IndexOf('Clear-ExtractionTarget -Destination $Destination')
+$expandAt = $installer.IndexOf('Expand-Archive -Path $archive')
+Assert-True ($clearAt -ge 0 -and $expandAt -gt $clearAt) 'install-runner.ps1 limpa a pasta antes de reextrair'
 Assert-True ($installer -match '\$env:ACTIONS_RUNNER_INPUT_TOKEN = \$token' -and $installer -match 'Remove-Item Env:\\ACTIONS_RUNNER_INPUT_TOKEN') 'install-runner.ps1 entrega o token por variável de ambiente e a remove em seguida'
 
 $sandbox = Join-Path ([System.IO.Path]::GetTempPath()) ("runner-scripts-" + [Guid]::NewGuid().ToString('N'))
@@ -157,6 +161,59 @@ eval "$HOOK_CMD"
   Assert-True (-not (Test-ArchiveInstalled -Destination $archiveDir -Marker 'tool.exe' -ExpectedSha256 'def')) 'troca da versão fixada exige nova extração'
   Remove-Item (Join-Path $archiveDir 'tool.exe')
   Assert-True (-not (Test-ArchiveInstalled -Destination $archiveDir -Marker 'tool.exe' -ExpectedSha256 'abc')) 'pasta sem o executável marcador precisa ser reinstalada'
+
+  # 10. A failed rotation never stops the start (DEV-80): a cmd.exe from an earlier run.cmd can hold the log
+  # open. The move failure is simulated so the check runs on any OS (Linux lets an open file be renamed);
+  # on Windows the real sharing violation is exercised as well.
+  [System.IO.File]::WriteAllBytes($log, (New-Object byte[] 2048))
+  function Move-Item { throw 'O arquivo está em uso por outro processo.' }
+  try {
+    $rotated = $true
+    $threw = $false
+    try { $rotated = Invoke-RunnerLogRotation -LogPath $log -MaxBytes 1024 -WarningAction SilentlyContinue } catch { $threw = $true }
+    Assert-True (-not $threw) 'falha ao rotacionar o log não lança exceção'
+    Assert-True (-not $rotated -and (Test-Path $log)) 'log que não pode ser movido não é rotacionado e o runner segue'
+  } finally {
+    Remove-Item Function:\Move-Item
+  }
+  if ($env:OS -eq 'Windows_NT') {
+    $lock = [System.IO.File]::Open($log, 'Open', 'Read', 'None')
+    try {
+      $threw = $false
+      try { $rotated = Invoke-RunnerLogRotation -LogPath $log -MaxBytes 1024 -WarningAction SilentlyContinue } catch { $threw = $true }
+      Assert-True (-not $threw -and -not $rotated -and (Test-Path $log)) 'log travado por outro processo (Windows) não impede o início'
+    } finally {
+      $lock.Dispose()
+    }
+  }
+
+  # 11. The registration token is normalized to one line in GitHub's token shape (DEV-80).
+  $validToken = 'AABBCCDDEEFFGGHHIIJJKKLLMM12'
+  Assert-True ((ConvertTo-RunnerRegistrationToken -Output @($validToken)) -eq $validToken) 'token de uma linha válido é aceito'
+  Assert-True ((ConvertTo-RunnerRegistrationToken -Output @("  $validToken  ", '')) -eq $validToken) 'espaços e linhas vazias em volta do token são removidos'
+  Assert-True ($null -eq (ConvertTo-RunnerRegistrationToken -Output @($validToken, $validToken))) 'saída com mais de uma linha é recusada'
+  Assert-True ($null -eq (ConvertTo-RunnerRegistrationToken -Output @())) 'saída vazia é recusada'
+  Assert-True ($null -eq (ConvertTo-RunnerRegistrationToken -Output @('token com espaço e mais texto'))) 'texto fora do formato de token é recusado'
+  Assert-True ($null -eq (ConvertTo-RunnerRegistrationToken -Output @('short'))) 'token curto demais é recusado'
+
+  # 12. Re-extraction clears what the previous archive left, keeping registration, credentials and work (DEV-80).
+  $extractDir = Join-Path $sandbox 'extract'
+  foreach ($entry in '.runner', '.credentials', '.credentials_rsaparams', '.env', '.path') {
+    New-Item -ItemType Directory -Force -Path $extractDir | Out-Null
+    Set-Content -Path (Join-Path $extractDir $entry) -Value 'keep'
+  }
+  New-Item -ItemType Directory -Force -Path (Join-Path $extractDir '_work\job') | Out-Null
+  New-Item -ItemType Directory -Force -Path (Join-Path $extractDir '_diag') | Out-Null
+  New-Item -ItemType Directory -Force -Path (Join-Path $extractDir 'bin\old') | Out-Null
+  Set-Content -Path (Join-Path $extractDir 'bin\old\removed.dll') -Value ''
+  Set-Content -Path (Join-Path $extractDir 'stale.exe') -Value ''
+  Clear-ExtractionTarget -Destination $extractDir
+  $remaining = @(Get-ChildItem -LiteralPath $extractDir -Force | ForEach-Object Name | Sort-Object)
+  $expected = @('.credentials', '.credentials_rsaparams', '.env', '.path', '.runner', '_diag', '_work') | Sort-Object
+  Assert-True (($remaining -join ',') -eq ($expected -join ',')) "limpeza preserva só registro, credenciais e trabalho (restou: $($remaining -join ', '))"
+  Assert-True (Test-Path (Join-Path $extractDir '_work\job')) 'conteúdo de _work é preservado'
+  Clear-ExtractionTarget -Destination (Join-Path $sandbox 'does-not-exist')
+  Assert-True $true 'limpeza de pasta inexistente não falha'
 } finally {
   $env:LOCALAPPDATA = $previousLocalAppData
   $env:Path = $previousPath
