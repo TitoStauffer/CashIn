@@ -44,6 +44,10 @@
       "documents": ["docs/knowledge/automation/delivery-flow.md", "docs/knowledge/automation/github-app.md", "docs/knowledge/automation/merge-readiness.md", "docs/knowledge/decisions/ADR-002-agent-orchestration.md", "docs/knowledge/learnings/agent-process.md"]
     },
     {
+      "paths": ["tools/mutation-check/**", "mutations/**"],
+      "documents": ["docs/knowledge/automation/delivery-flow.md"]
+    },
+    {
       "paths": ["tools/jira-dispatcher/**"],
       "documents": ["docs/knowledge/automation/jira-dispatcher.md", "docs/knowledge/runbooks/jira-post-merge.md"]
     },

@@ -7,9 +7,9 @@ Edições de título ou corpo executam o workflow confiável e leve `.github/wor
 | Job | Diretório | Passos (comandos já existentes no projeto) |
 | --- | --- | --- |
 | `PR title` | evento do GitHub | Valida o padrão `[DEV-123] - título`, a chave da branch e a correspondência entre as duas chaves |
-| `GitHub Reviewer` | `tools/github-reviewer` | Depende de `PR title`; instala, compila e executa os testes da infraestrutura de publicação, agentes e Merge Readiness. O nome histórico é preservado durante o rollout dos consumidores privilegiados. |
-| `API` | `apps/api` | Depende de `PR title`; `npm ci` → `npm run typecheck` → espera do PostgreSQL → `npm run test:coverage` (unitários + integração, uma vez) → checagem de testes pulados → reescrita dos caminhos LCOV → upload do artefato `api-coverage` (7 dias) → `npm run build` |
-| `Web` | `apps/web` | Depende de `PR title`; `npm ci` → `npm run lint` → `npm run test:coverage` → reescrita dos caminhos LCOV → upload do artefato `web-coverage` (7 dias) → `npm run build` (o script roda `tsc -b` e depois `vite build`) |
+| `GitHub Reviewer` | `tools/github-reviewer` | Depende de `PR title`; instala, compila e executa os testes da infraestrutura de publicação, agentes e Merge Readiness. O nome histórico é preservado durante o rollout dos consumidores privilegiados. Testa o executor de mutação e roda os mutantes declarados para `tools/*` (ver **Verificação por mutação**). |
+| `API` | `apps/api` | Depende de `PR title`; `npm ci` → `npm run typecheck` → espera do PostgreSQL → `npm run test:coverage` (unitários + integração, uma vez) → checagem de testes pulados → reescrita dos caminhos LCOV → upload do artefato `api-coverage` (7 dias) → `npm run build` → mutantes declarados para `apps/api` |
+| `Web` | `apps/web` | Depende de `PR title`; `npm ci` → `npm run lint` → `npm run test:coverage` → reescrita dos caminhos LCOV → upload do artefato `web-coverage` (7 dias) → `npm run build` (o script roda `tsc -b` e depois `vite build`) → mutantes declarados para `apps/web` |
 | `SonarQube` | raiz do repositório | Depende de `API`, `Web` e `GitHub Reviewer`; baixa os dois LCOV; instala o SonarScanner CLI no tool cache com assinatura GPG verificada (`.github/scripts/prime-sonar-scanner.sh`); analisa PRs do próprio repositório e pushes em `master`; aguarda o Quality Gate e falha se ele reprovar |
 
 ## Decisões
@@ -75,6 +75,48 @@ Sintaxe e segurança do workflow:
 actionlint .github/workflows/ci.yml
 zizmor .github/workflows/ci.yml
 ```
+
+## Verificação por mutação
+
+Toda guarda nova é provada por uma mutação que derruba o teste certo. Para essa prova valer como evidência do SHA avaliado — e não como palavra de quem desenvolveu —, os mutantes são declarados num manifesto versionado e aplicados pelo CI (DEV-126). O executor é `tools/mutation-check/run.mjs`, sem dependências.
+
+**Como declarar.** Um arquivo por entrega, `mutations/<CHAVE>.json`:
+
+```json
+{
+  "ticket": "DEV-126",
+  "mutations": [
+    {
+      "id": "anchor-must-be-unique",
+      "package": "tools/mutation-check",
+      "file": "tools/mutation-check/run.mjs",
+      "find": "if (occurrences !== 1) {",
+      "replace": "if (occurrences === 0) {",
+      "command": ["node", "--test", "run.test.mjs"],
+      "timeoutSeconds": 600
+    }
+  ]
+}
+```
+
+- Só manifestos `mutations/<CHAVE>.json` pertencem ao diretório: qualquer outro arquivo que o PR adicione ou altere ali faz o passo falhar, em vez de ser ignorado.
+- `package` é o diretório do pacote; `command` roda dentro dele e só pode começar por `node`, `npm` ou `npx`. Prefira o teste mais estreito que derruba o mutante, porque cada mutante é uma rodada do comando.
+- `file` fica dentro do pacote; `find` precisa aparecer **exatamente uma vez** no arquivo e é trocado por `replace`. `timeoutSeconds` é opcional (padrão 600), mas o passo vive dentro do job e morre com ele: o teto é de 10 minutos em `GitHub Reviewer` e `Web` e de 15 em `API`, contando o resto do job. Baseline e mutantes somados precisam caber aí, então prefira o teste mais estreito e um `timeoutSeconds` menor.
+- Pacotes aceitos: `apps/api` (job `API`, com o PostgreSQL do job disponível), `apps/web` (job `Web`) e `tools/github-reviewer`, `tools/jira-dispatcher` e `tools/mutation-check` (job `GitHub Reviewer`). Um mutante de outro pacote faz o job `GitHub Reviewer` falhar, em vez de ser pulado por todos.
+
+**O que o passo faz.** Em Pull Requests, o último passo de cada job (`Mutation check (declared mutants)`) compara o merge commit com a base (`HEAD^1`; o checkout usa `fetch-depth: 2`) e roda só os manifestos que o PR **adicionou ou alterou**. Manifestos antigos ficam como registro: reexecutá-los para sempre faria o custo crescer com o histórico e quebraria assim que uma entrega posterior reescrevesse uma âncora. Antes dos mutantes, cada comando roda uma vez sem mutação e precisa passar. O passo falha quando:
+
+- o comando não passa sem a mutação (`BASELINE_FAILED`) — senão um erro alheio faria todo mutante parecer morto;
+- a âncora está ausente ou repetida (`NOT_APPLICABLE`) — passar por vacuidade não prova nada;
+- o comando continua passando com a mutação (`SURVIVED`) — o teste não protege o que a entrega diz proteger;
+- o comando não termina normalmente com a mutação — timeout, erro ao iniciar ou morte por sinal (`INCONCLUSIVE`); as últimas linhas da saída vão para um grupo do log;
+- o arquivo não volta byte a byte ao original, conferido por SHA-256 (`NOT_RESTORED`).
+
+Só `KILLED` em todos os mutantes deixa o passo verde. A tabela de resultados vai para o log e para o resumo do job. O passo é o último do job para que um mutante nunca chegue ao build nem ao relatório de cobertura. Ele executa código do PR, então existe apenas no CI sem credenciais, nunca em job privilegiado.
+
+**Como o QA lê a evidência.** Os agentes recebem, para os jobs `API`, `Web` e `GitHub Reviewer` do SHA, o nome e a conclusão de cada passo. Com `mutations/<CHAVE>.json` no diff, `Mutation check (declared mutants)` concluído com sucesso significa que todos os mutantes daquele manifesto foram mortos no CI deste SHA. Sem manifesto no diff, o passo conclui com sucesso sem rodar nada, e isso não prova mutação alguma.
+
+**Localmente,** depois de commitar o manifesto: `node tools/mutation-check/run.mjs --base master --package <pacote>`.
 
 ## Pendências e limitações conhecidas
 

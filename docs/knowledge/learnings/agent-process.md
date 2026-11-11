@@ -161,6 +161,8 @@
 - **Reincidência:** QA do PR #98 (DEV-122), relatório [`6802134319`](https://github.com/TitoStauffer/CashIn/pull/98#issuecomment-6802134319), SHA `e6e7c52`, `INCONCLUSIVE`: o passo de typecheck verde não provava que o arquivo com as diretivas `@ts-expect-error` era compilado, porque `tsconfig.test.json` não estava na evidência. Corrigido com um teste que lê `tsconfig.test.json` e os scripts `typecheck`/`verify` e exige a inclusão. Prevenção: verificação que depende de configuração (o que o compilador inclui, o que o script roda) precisa de uma asserção sobre essa configuração no próprio CI; o verde de um passo não diz o que ele cobriu.
 - **Regra formalizada (DEV-112, 11/11/2026):** por decisão do Tito, a separação deixou de depender de lembrar desta nota: o `AGENTS.md` (seção de qualidade) e o template de PR (seções 7 e 8) dizem que a mutação é declarada em **Testes executados**, como evidência de desenvolvimento, e que não entra nos critérios de aceitação. Tornar a mutação observável no CI ficou como a [DEV-126](https://titostauffer.atlassian.net/browse/DEV-126).
 
+- **Evolução (DEV-126, 11/11/2026):** a mutação passou a ter caminho auditável. Mutantes declarados em `mutations/<CHAVE>.json` e aplicados pelo passo `Mutation check (declared mutants)` do CI são evidência do SHA avaliado e podem sustentar critério de aceitação; a pergunta preventiva acima continua valendo para mutação feita só localmente, que segue fora dos critérios.
+
 ## Achado comprovado não é, por si só, trabalho que vale fazer
 
 - **Padrão:** `finding-triage-needs-a-value-bar`.

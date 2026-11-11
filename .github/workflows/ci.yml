@@ -90,6 +90,9 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          # The PR merge commit and its first parent (the base), so the mutation check can list the
+          # manifests this Pull Request changed.
+          fetch-depth: 2
 
       - name: Setup Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
@@ -130,6 +133,16 @@ jobs:
         shell: pwsh
         run: ./tools/github-runner/test-runner-scripts.ps1
 
+      - name: Test mutation check runner
+        working-directory: .
+        run: node --test tools/mutation-check/run.test.mjs
+
+      - name: Mutation check (declared mutants)
+        # Runs the mutants declared in mutations/*.json that this PR added or changed (DEV-126); see docs/ci.md.
+        if: github.event_name == 'pull_request'
+        working-directory: .
+        run: node tools/mutation-check/run.mjs --base HEAD^1 --package tools/github-reviewer --package tools/jira-dispatcher --package tools/mutation-check --covered-elsewhere apps/api --covered-elsewhere apps/web
+
   api:
     name: API
     needs: pr-title
@@ -166,6 +179,8 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          # See the GitHub Reviewer job: the mutation check diffs the merge commit against its base.
+          fetch-depth: 2
 
       - name: Setup Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
@@ -235,6 +250,12 @@ jobs:
       - name: Build
         run: npm run build
 
+      - name: Mutation check (declared mutants)
+        # Last step, so a mutant can never reach the build or the coverage report (DEV-126); see docs/ci.md.
+        if: github.event_name == 'pull_request'
+        working-directory: .
+        run: node tools/mutation-check/run.mjs --base HEAD^1 --package apps/api
+
   web:
     name: Web
     needs: pr-title
@@ -249,6 +270,8 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          # See the GitHub Reviewer job: the mutation check diffs the merge commit against its base.
+          fetch-depth: 2
 
       - name: Setup Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
@@ -283,6 +306,12 @@ jobs:
       - name: Typecheck and build
         # The build script runs tsc -b before vite build.
         run: npm run build
+
+      - name: Mutation check (declared mutants)
+        # Last step, so a mutant can never reach the build or the coverage report (DEV-126); see docs/ci.md.
+        if: github.event_name == 'pull_request'
+        working-directory: .
+        run: node tools/mutation-check/run.mjs --base HEAD^1 --package apps/web
 
   sonarqube:
     name: SonarQube
