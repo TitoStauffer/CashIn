@@ -240,9 +240,11 @@ test("manifest strings cannot break the report table or the error annotation", (
 test("main runs a manifest the branch renamed and edited, instead of skipping it as a rename", () => {
   const repo = gitRepository();
   try {
-    commitManifest(repo, "DEV-1.json", [realMutation]);
+    // The edit is tiny so git still pairs the two paths as a rename (R) rather than a delete plus an add.
+    const surviving = { ...realMutation, find: "= 10;", replace: "= 11;" };
+    commitManifest(repo, "DEV-1.json", [{ ...surviving, timeoutSeconds: 600 }]);
     repo.git("mv", "mutations/DEV-1.json", "mutations/DEV-126.json");
-    commitManifest(repo, "DEV-126.json", [{ ...realMutation, find: "= 10;", replace: "= 11;" }]);
+    commitManifest(repo, "DEV-126.json", [{ ...surviving, timeoutSeconds: 601 }]);
     assert.equal(quietMain(["--base", "HEAD~1", "--package", "pkg"], repo.root), 1, "the renamed manifest's surviving mutant must run");
   } finally { rmSync(repo.root, { recursive: true, force: true }); }
 });
