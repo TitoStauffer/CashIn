@@ -72,6 +72,18 @@
         "--test",
         "run.test.mjs"
       ]
+    },
+    {
+      "id": "quoted-names-are-read",
+      "package": "tools/mutation-check",
+      "file": "tools/mutation-check/run.mjs",
+      "find": "[\"diff\", \"-z\", ",
+      "replace": "[\"diff\", ",
+      "command": [
+        "node",
+        "--test",
+        "run.test.mjs"
+      ]
     }
   ]
 }

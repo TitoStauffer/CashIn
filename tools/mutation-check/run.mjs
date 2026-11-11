@@ -147,9 +147,14 @@ export function runMutations(mutations, { runCommand = run, writeFile = writeFil
 
 /** Manifests under `mutations/` that the Pull Request added or changed, compared with `base`. */
 export function changedManifests(repoRoot, base) {
-  const result = spawnSync("git", ["diff", "--name-only", "--no-renames", "--diff-filter=AM", base, "HEAD", "--", "mutations/"], { cwd: repoRoot, encoding: "utf8" });
+  // -z prints paths verbatim, NUL-separated; without it git quotes unusual names and a manifest would be skipped.
+  const result = spawnSync("git", ["diff", "-z", "--name-only", "--no-renames", "--diff-filter=AM", base, "HEAD", "--", "mutations/"], { cwd: repoRoot, encoding: "utf8" });
   if (result.status !== 0) throw new Error(`git diff against ${base} failed: ${result.stderr.trim()}`);
-  return result.stdout.split(/\r?\n/).map((line) => line.trim()).filter((line) => line.endsWith(".json"));
+  const paths = result.stdout.split("\0").filter((path) => path !== "");
+  // Anything else under mutations/ is refused rather than ignored, so a misnamed manifest cannot pass silently.
+  const unexpected = paths.filter((path) => !/^mutations\/[^/]+\.json$/.test(path));
+  if (unexpected.length > 0) throw new Error(`only mutations/<TICKET>.json manifests belong in mutations/: ${unexpected.join(", ")}.`);
+  return paths;
 }
 
 /** A Markdown table cell: manifest strings must not break the row or open a code span. */

@@ -170,10 +170,15 @@ const realMutation = { ...base, command: ["node", "check.mjs"] };
  * `::error` workflow command and leave a red annotation on a green CI job.
  */
 function quietMain(argv, root) {
-  const out = process.stdout.write, err = process.stderr.write;
+  const out = process.stdout.write, err = process.stderr.write, summary = process.env.GITHUB_STEP_SUMMARY;
   process.stdout.write = () => true;
   process.stderr.write = () => true;
-  try { return main(argv, root); } finally { process.stdout.write = out; process.stderr.write = err; }
+  // In CI the fixtures' tables would otherwise land in the job summary next to the real mutation evidence.
+  delete process.env.GITHUB_STEP_SUMMARY;
+  try { return main(argv, root); } finally {
+    process.stdout.write = out; process.stderr.write = err;
+    if (summary !== undefined) process.env.GITHUB_STEP_SUMMARY = summary;
+  }
 }
 
 test("main runs the manifests the branch changed with the real command and exits 0 only when every mutant is killed", () => {
@@ -246,5 +251,17 @@ test("main runs a manifest the branch renamed and edited, instead of skipping it
     repo.git("mv", "mutations/DEV-1.json", "mutations/DEV-126.json");
     commitManifest(repo, "DEV-126.json", [{ ...surviving, timeoutSeconds: 601 }]);
     assert.equal(quietMain(["--base", "HEAD~1", "--package", "pkg"], repo.root), 1, "the renamed manifest's surviving mutant must run");
+  } finally { rmSync(repo.root, { recursive: true, force: true }); }
+});
+
+test("main runs a manifest whose name git would quote, and refuses anything under mutations/ that is not a manifest", () => {
+  const repo = gitRepository();
+  try {
+    commitManifest(repo, "DEV-126-ç.json", [{ ...realMutation, find: "= 10;", replace: "= 11;" }]);
+    assert.equal(quietMain(["--base", "HEAD~1", "--package", "pkg"], repo.root), 1, "the quoted manifest's surviving mutant must run");
+    writeFileSync(join(repo.root, "mutations", "notes.txt"), "not a manifest");
+    repo.git("add", ".");
+    repo.git("-c", "user.email=ci@example.invalid", "-c", "user.name=ci", "commit", "-q", "-m", "notes");
+    assert.throws(() => quietMain(["--base", "HEAD~1", "--package", "pkg"], repo.root), /only mutations\/<TICKET>\.json/);
   } finally { rmSync(repo.root, { recursive: true, force: true }); }
 });

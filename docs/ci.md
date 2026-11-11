@@ -99,6 +99,7 @@ Toda guarda nova é provada por uma mutação que derruba o teste certo. Para es
 }
 ```
 
+- Só manifestos `mutations/<CHAVE>.json` pertencem ao diretório: qualquer outro arquivo que o PR adicione ou altere ali faz o passo falhar, em vez de ser ignorado.
 - `package` é o diretório do pacote; `command` roda dentro dele e só pode começar por `node`, `npm` ou `npx`. Prefira o teste mais estreito que derruba o mutante, porque cada mutante é uma rodada do comando.
 - `file` fica dentro do pacote; `find` precisa aparecer **exatamente uma vez** no arquivo e é trocado por `replace`. `timeoutSeconds` é opcional (padrão 600), mas o passo vive dentro do job e morre com ele: o teto é de 10 minutos em `GitHub Reviewer` e `Web` e de 15 em `API`, contando o resto do job. Baseline e mutantes somados precisam caber aí, então prefira o teste mais estreito e um `timeoutSeconds` menor.
 - Pacotes aceitos: `apps/api` (job `API`, com o PostgreSQL do job disponível), `apps/web` (job `Web`) e `tools/github-reviewer`, `tools/jira-dispatcher` e `tools/mutation-check` (job `GitHub Reviewer`). Um mutante de outro pacote faz o job `GitHub Reviewer` falhar, em vez de ser pulado por todos.
