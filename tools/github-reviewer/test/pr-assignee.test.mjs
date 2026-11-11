@@ -11,7 +11,8 @@ import { promisify } from 'node:util';
 // a fake `gh` on PATH, so the idempotency and failure handling are exercised, not just read.
 const run = promisify(execFile);
 const script = fileURLToPath(new URL('../../../.github/scripts/assign-pr-owner.sh', import.meta.url));
-const workflow = await readFile(new URL('../../../.github/workflows/pr-assignee.yml', import.meta.url), 'utf8');
+// Line endings are normalized: a Windows checkout with core.autocrlf turns the workflow into CRLF.
+const workflow = (await readFile(new URL('../../../.github/workflows/pr-assignee.yml', import.meta.url), 'utf8')).replace(/\r\n/g, '\n');
 
 const FAKE_GH = `#!/usr/bin/env bash
 echo "$*" >> "$FAKE_GH_LOG"
