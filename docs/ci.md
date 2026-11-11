@@ -100,7 +100,7 @@ Toda guarda nova é provada por uma mutação que derruba o teste certo. Para es
 ```
 
 - `package` é o diretório do pacote; `command` roda dentro dele e só pode começar por `node`, `npm` ou `npx`. Prefira o teste mais estreito que derruba o mutante, porque cada mutante é uma rodada do comando.
-- `file` fica dentro do pacote; `find` precisa aparecer **exatamente uma vez** no arquivo e é trocado por `replace`. `timeoutSeconds` é opcional (padrão 600).
+- `file` fica dentro do pacote; `find` precisa aparecer **exatamente uma vez** no arquivo e é trocado por `replace`. `timeoutSeconds` é opcional (padrão 600), mas o passo vive dentro do job e morre com ele: o teto é de 10 minutos em `GitHub Reviewer` e `Web` e de 15 em `API`, contando o resto do job. Baseline e mutantes somados precisam caber aí, então prefira o teste mais estreito e um `timeoutSeconds` menor.
 - Pacotes aceitos: `apps/api` (job `API`, com o PostgreSQL do job disponível), `apps/web` (job `Web`) e `tools/github-reviewer`, `tools/jira-dispatcher` e `tools/mutation-check` (job `GitHub Reviewer`). Um mutante de outro pacote faz o job `GitHub Reviewer` falhar, em vez de ser pulado por todos.
 
 **O que o passo faz.** Em Pull Requests, o último passo de cada job (`Mutation check (declared mutants)`) compara o merge commit com a base (`HEAD^1`; o checkout usa `fetch-depth: 2`) e roda só os manifestos que o PR **adicionou ou alterou**. Manifestos antigos ficam como registro: reexecutá-los para sempre faria o custo crescer com o histórico e quebraria assim que uma entrega posterior reescrevesse uma âncora. Antes dos mutantes, cada comando roda uma vez sem mutação e precisa passar. O passo falha quando:
@@ -108,7 +108,7 @@ Toda guarda nova é provada por uma mutação que derruba o teste certo. Para es
 - o comando não passa sem a mutação (`BASELINE_FAILED`) — senão um erro alheio faria todo mutante parecer morto;
 - a âncora está ausente ou repetida (`NOT_APPLICABLE`) — passar por vacuidade não prova nada;
 - o comando continua passando com a mutação (`SURVIVED`) — o teste não protege o que a entrega diz proteger;
-- o comando não termina normalmente com a mutação, por exemplo por timeout (`INCONCLUSIVE`);
+- o comando não termina normalmente com a mutação — timeout, erro ao iniciar ou morte por sinal (`INCONCLUSIVE`); as últimas linhas da saída vão para um grupo do log;
 - o arquivo não volta byte a byte ao original, conferido por SHA-256 (`NOT_RESTORED`).
 
 Só `KILLED` em todos os mutantes deixa o passo verde. A tabela de resultados vai para o log e para o resumo do job. O passo é o último do job para que um mutante nunca chegue ao build nem ao relatório de cobertura. Ele executa código do PR, então existe apenas no CI sem credenciais, nunca em job privilegiado.

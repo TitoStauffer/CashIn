@@ -7,7 +7,11 @@
       "file": "tools/mutation-check/run.mjs",
       "find": "if (occurrences !== 1) {",
       "replace": "if (occurrences === 0) {",
-      "command": ["node", "--test", "run.test.mjs"]
+      "command": [
+        "node",
+        "--test",
+        "run.test.mjs"
+      ]
     },
     {
       "id": "baseline-must-pass",
@@ -15,7 +19,11 @@
       "file": "tools/mutation-check/run.mjs",
       "find": "if (baseline.status !== \"passed\") {",
       "replace": "if (false) {",
-      "command": ["node", "--test", "run.test.mjs"]
+      "command": [
+        "node",
+        "--test",
+        "run.test.mjs"
+      ]
     },
     {
       "id": "restore-is-checked",
@@ -23,7 +31,11 @@
       "file": "tools/mutation-check/run.mjs",
       "find": "if (sha256(readFileSync(mutation.filePath)) !== originalHash) {",
       "replace": "if (false) {",
-      "command": ["node", "--test", "run.test.mjs"]
+      "command": [
+        "node",
+        "--test",
+        "run.test.mjs"
+      ]
     },
     {
       "id": "survivor-fails-the-step",
@@ -31,7 +43,35 @@
       "file": "tools/mutation-check/run.mjs",
       "find": "results.push({ mutation, outcome: \"SURVIVED\"",
       "replace": "results.push({ mutation, outcome: \"KILLED\"",
-      "command": ["node", "--test", "run.test.mjs"]
+      "command": [
+        "node",
+        "--test",
+        "run.test.mjs"
+      ]
+    },
+    {
+      "id": "signal-is-not-a-kill",
+      "package": "tools/mutation-check",
+      "file": "tools/mutation-check/run.mjs",
+      "find": "if (result.signal) return",
+      "replace": "if (false) return",
+      "command": [
+        "node",
+        "--test",
+        "run.test.mjs"
+      ]
+    },
+    {
+      "id": "renames-are-followed",
+      "package": "tools/mutation-check",
+      "file": "tools/mutation-check/run.mjs",
+      "find": "\"--no-renames\", ",
+      "replace": "\"--find-renames\", ",
+      "command": [
+        "node",
+        "--test",
+        "run.test.mjs"
+      ]
     }
   ]
 }

@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { spawnSync } from "node:child_process";
-import { main, readManifest, runMutations } from "./run.mjs";
+import { annotation, classifyRun, formatReport, main, readManifest, runMutations } from "./run.mjs";
 
 // DEV-126: the runner is the evidence the QA reads, so its own failure modes are tested here — especially the
 // ones that would let a mutation "pass" without proving anything.
@@ -202,5 +202,47 @@ test("main refuses a mutant whose package no CI job runs, instead of every job s
     commitManifest(repo, "DEV-126.json", [realMutation]);
     assert.throws(() => quietMain(["--base", "HEAD~1", "--package", "tools", "--covered-elsewhere", "apps/api"], repo.root), /no CI job runs the package/);
     assert.equal(quietMain(["--base", "HEAD~1", "--package", "tools", "--covered-elsewhere", "pkg"], repo.root), 0);
+  } finally { rmSync(repo.root, { recursive: true, force: true }); }
+});
+
+test("only a normal exit is passed or failed: a death by signal, a timeout or a spawn error is not a kill", () => {
+  assert.equal(classifyRun({ status: 1, signal: null, stdout: "", stderr: "" }).status, "failed");
+  assert.equal(classifyRun({ status: 0, signal: null, stdout: "", stderr: "" }).status, "passed");
+  assert.equal(classifyRun({ status: null, signal: "SIGKILL", stdout: "", stderr: "" }).status, "signal");
+  assert.equal(classifyRun({ status: null, signal: "SIGTERM", error: Object.assign(new Error("t"), { code: "ETIMEDOUT" }) }).status, "timeout");
+  const overflow = classifyRun({ status: null, signal: "SIGTERM", error: Object.assign(new Error("spawnSync node ENOBUFS"), { code: "ENOBUFS" }) });
+  assert.equal(overflow.status, "error");
+  assert.match(overflow.detail, /ENOBUFS/, "the reason must reach the report instead of a bare (error)");
+});
+
+test("a mutated run killed by a signal is INCONCLUSIVE and its reason and output tail reach the result", () => {
+  const root = workspace();
+  try {
+    let first = true;
+    const runCommand = () => {
+      if (first) { first = false; return { status: "passed" }; }
+      return classifyRun({ status: null, signal: "SIGKILL", stdout: "line 1\nlast line", stderr: "" });
+    };
+    const [result] = runMutations(manifest(root, [base]), { runCommand });
+    assert.equal(result.outcome, "INCONCLUSIVE");
+    assert.match(result.detail, /terminated by SIGKILL/);
+    assert.match(result.output, /last line/);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test("manifest strings cannot break the report table or the error annotation", () => {
+  const mutation = { ticket: "DEV-1", id: "a|b`c\nd", file: "pkg/x|y.js" };
+  const row = formatReport([{ mutation, outcome: "SURVIVED", detail: "x|y" }], ["pkg"]).split("\n").at(-1);
+  assert.equal(row, "| DEV-1 | a\\|b'c d | `pkg/x\\|y.js` | SURVIVED | x\\|y |");
+  assert.equal(annotation("50%\nnext"), "50%25%0Anext");
+});
+
+test("main runs a manifest the branch renamed and edited, instead of skipping it as a rename", () => {
+  const repo = gitRepository();
+  try {
+    commitManifest(repo, "DEV-1.json", [realMutation]);
+    repo.git("mv", "mutations/DEV-1.json", "mutations/DEV-126.json");
+    commitManifest(repo, "DEV-126.json", [{ ...realMutation, find: "= 10;", replace: "= 11;" }]);
+    assert.equal(quietMain(["--base", "HEAD~1", "--package", "pkg"], repo.root), 1, "the renamed manifest's surviving mutant must run");
   } finally { rmSync(repo.root, { recursive: true, force: true }); }
 });

@@ -71,16 +71,31 @@ export function readManifest(repoRoot, manifestPath) {
   });
 }
 
+/** Output a full test suite can print; the default 1 MiB would turn a verbose suite into a spurious error. */
+const MAX_OUTPUT_BYTES = 256 * 1024 * 1024;
+const OUTPUT_TAIL_LINES = 40;
+
+/**
+ * Maps a spawnSync result to the runner's statuses. Only a normal exit counts as passed or failed: a timeout,
+ * a spawn error or a death by signal (an OOM kill, for example) proves nothing about the mutant.
+ */
+export function classifyRun(result) {
+  const output = `${result.stdout ?? ""}${result.stderr ?? ""}`.split(/\r?\n/).slice(-OUTPUT_TAIL_LINES).join("\n");
+  if (result.error?.code === "ETIMEDOUT") return { status: "timeout", output };
+  if (result.error) return { status: "error", detail: result.error.message, output };
+  if (result.signal) return { status: "signal", detail: `terminated by ${result.signal}`, output };
+  return { status: result.status === 0 ? "passed" : "failed", code: result.status, output };
+}
+
 function run(command, cwd, timeoutSeconds) {
   const executable = process.platform === "win32" && command[0] !== "node" ? `${command[0]}.cmd` : command[0];
-  const result = spawnSync(executable, command.slice(1), {
-    cwd, encoding: "utf8", timeout: timeoutSeconds * 1000, shell: process.platform === "win32" && command[0] !== "node",
-    env: process.env,
-  });
-  if (result.error && result.error.code === "ETIMEDOUT") return { status: "timeout" };
-  if (result.error) return { status: "error", detail: result.error.message };
-  return { status: result.status === 0 ? "passed" : "failed", code: result.status };
+  return classifyRun(spawnSync(executable, command.slice(1), {
+    cwd, encoding: "utf8", timeout: timeoutSeconds * 1000, maxBuffer: MAX_OUTPUT_BYTES,
+    shell: process.platform === "win32" && command[0] !== "node", env: process.env,
+  }));
 }
+
+const describe = (outcome) => (outcome.detail ? `${outcome.status}: ${outcome.detail}` : outcome.status);
 
 /**
  * Runs every mutation and returns one result per mutation plus the baseline outcome per command.
@@ -95,7 +110,7 @@ export function runMutations(mutations, { runCommand = run, writeFile = writeFil
     if (!baselines.has(key)) baselines.set(key, runCommand(mutation.command, mutation.packageDir, mutation.timeoutSeconds));
     const baseline = baselines.get(key);
     if (baseline.status !== "passed") {
-      results.push({ mutation, outcome: "BASELINE_FAILED", detail: `the command does not pass without the mutation (${baseline.status})` });
+      results.push({ mutation, outcome: "BASELINE_FAILED", detail: `the command does not pass without the mutation (${describe(baseline)})`, output: baseline.output });
       continue;
     }
     if (!existsSync(mutation.filePath)) {
@@ -124,7 +139,7 @@ export function runMutations(mutations, { runCommand = run, writeFile = writeFil
     } else if (outcome.status === "passed") {
       results.push({ mutation, outcome: "SURVIVED", detail: "the command still passes with the mutation applied" });
     } else {
-      results.push({ mutation, outcome: "INCONCLUSIVE", detail: `the mutated run did not finish cleanly (${outcome.status})` });
+      results.push({ mutation, outcome: "INCONCLUSIVE", detail: `the mutated run did not finish cleanly (${describe(outcome)})`, output: outcome.output });
     }
   }
   return results;
@@ -132,24 +147,38 @@ export function runMutations(mutations, { runCommand = run, writeFile = writeFil
 
 /** Manifests under `mutations/` that the Pull Request added or changed, compared with `base`. */
 export function changedManifests(repoRoot, base) {
-  const result = spawnSync("git", ["diff", "--name-only", "--diff-filter=AM", base, "HEAD", "--", "mutations/"], { cwd: repoRoot, encoding: "utf8" });
+  const result = spawnSync("git", ["diff", "--name-only", "--no-renames", "--diff-filter=AM", base, "HEAD", "--", "mutations/"], { cwd: repoRoot, encoding: "utf8" });
   if (result.status !== 0) throw new Error(`git diff against ${base} failed: ${result.stderr.trim()}`);
   return result.stdout.split(/\r?\n/).map((line) => line.trim()).filter((line) => line.endsWith(".json"));
 }
 
-function report(results, packages) {
-  const lines = [`### Verificação por mutação (${packages.join(", ")})`, ""];
+/** A Markdown table cell: manifest strings must not break the row or open a code span. */
+const cell = (value) => String(value).replace(/\\/g, "\\\\").replace(/\|/g, "\\|").replace(/`/g, "'").replace(/[\r\n]+/g, " ");
+/** A workflow command message, escaped as GitHub Actions requires. */
+export const annotation = (value) => String(value).replace(/%/g, "%25").replace(/\r/g, "%0D").replace(/\n/g, "%0A");
+
+export function formatReport(results, packages) {
+  const lines = [`### Verificação por mutação (${packages.map(cell).join(", ")})`, ""];
   if (results.length === 0) {
     lines.push("Nenhum mutante declarado para este pacote nos manifestos alterados por este Pull Request.");
   } else {
     lines.push("| Ticket | Mutante | Arquivo | Resultado | Detalhe |", "| --- | --- | --- | --- | --- |");
     for (const { mutation, outcome, detail } of results) {
-      lines.push(`| ${mutation.ticket} | ${mutation.id} | \`${mutation.file}\` | ${outcome} | ${detail.replace(/\|/g, "\\|")} |`);
+      lines.push(`| ${cell(mutation.ticket)} | ${cell(mutation.id)} | \`${cell(mutation.file)}\` | ${outcome} | ${cell(detail)} |`);
     }
   }
-  const text = lines.join("\n");
+  return lines.join("\n");
+}
+
+function report(results, packages) {
+  const text = formatReport(results, packages);
   process.stdout.write(`${text}\n`);
   if (process.env.GITHUB_STEP_SUMMARY) appendFileSync(process.env.GITHUB_STEP_SUMMARY, `${text}\n\n`);
+  // The tail of the command output explains a baseline or run that failed for a reason other than the mutant.
+  for (const { mutation, outcome, output } of results) {
+    if (!output) continue;
+    process.stdout.write(`::group::${annotation(`${mutation.id} (${outcome}): últimas linhas da saída`)}\n${output}\n::endgroup::\n`);
+  }
 }
 
 const toPosix = (path) => normalize(path).split(sep).join("/");
@@ -186,7 +215,7 @@ export function main(argv, repoRoot = process.cwd()) {
   report(results, packages);
   const failed = results.filter((result) => result.outcome !== "KILLED");
   if (failed.length > 0) {
-    process.stderr.write(`::error title=Verificação por mutação::${failed.length} mutante(s) não foram mortos: ${failed.map((r) => `${r.mutation.id} (${r.outcome})`).join(", ")}\n`);
+    process.stderr.write(`::error title=Verificação por mutação::${annotation(`${failed.length} mutante(s) não foram mortos: ${failed.map((r) => `${r.mutation.id} (${r.outcome})`).join(", ")}`)}\n`);
     return 1;
   }
   return 0;
@@ -196,7 +225,7 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
   try {
     process.exitCode = main(process.argv.slice(2));
   } catch (error) {
-    process.stderr.write(`::error title=Verificação por mutação::${error.message}\n`);
+    process.stderr.write(`::error title=Verificação por mutação::${annotation(error.message)}\n`);
     process.exitCode = 1;
   }
 }
