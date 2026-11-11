@@ -45,6 +45,8 @@ function Install-VerifiedArchive {
     throw "SHA-256 inválido para $Url (esperado $ExpectedSha256, obtido $actual). Download descartado."
   }
   New-Item -ItemType Directory -Force -Path $Destination | Out-Null
+  # Expand-Archive -Force overwrites but never deletes, so files dropped from the new archive would survive.
+  Clear-ExtractionTarget -Destination $Destination
   Expand-Archive -Path $archive -DestinationPath $Destination -Force
   Remove-Item $archive -Force
   # Written last, so an interrupted extraction is repaired on the next run.
@@ -53,8 +55,11 @@ function Install-VerifiedArchive {
 
 function Register-Runner {
   if (-not (Get-Command gh -ErrorAction SilentlyContinue)) { throw 'GitHub CLI (gh) não encontrado.' }
-  $token = (& gh api -X POST "repos/$RunnerRepository/actions/runners/registration-token" --jq '.token' 2>$null)
-  if ($LASTEXITCODE -ne 0 -or -not $token) {
+  $tokenOutput = @(& gh api -X POST "repos/$RunnerRepository/actions/runners/registration-token" --jq '.token' 2>$null)
+  $ghExitCode = $LASTEXITCODE
+  $token = ConvertTo-RunnerRegistrationToken -Output $tokenOutput
+  $tokenOutput = $null
+  if ($ghExitCode -ne 0 -or -not $token) {
     throw "Não foi possível obter o token de registro. Confira 'gh auth status' e se a conta é admin de $RunnerRepository."
   }
   Push-Location $RunnerDir
