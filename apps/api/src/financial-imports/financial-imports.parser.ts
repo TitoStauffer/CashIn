@@ -195,7 +195,8 @@ function resolveOfxDecoderEncoding(
   if (content.subarray(0, 2).equals(Buffer.from([0xfe, 0xff]))) return "utf-16be";
   if (content.subarray(0, 3).equals(Buffer.from([0xef, 0xbb, 0xbf]))) return "utf-8";
   // An explicit UTF-8 declaration stays strict: invalid bytes there mean a broken file, refused as before.
-  if (declaredEncoding === "UTF8" || declaredEncoding === "UNICODE") return "utf-8";
+  // CHARSET:UTF-8 counts as explicit too, next to ENCODING and the XML declaration.
+  if (declaredEncoding === "UTF8" || declaredEncoding === "UNICODE" || charset === "UTF8") return "utf-8";
 
   // The header decides whether the file is accepted, not how it is decoded. Issuers keep a legacy
   // CHARSET:1252 on files whose bytes are UTF-8 (DEV-125), so a supported Western or ASCII declaration

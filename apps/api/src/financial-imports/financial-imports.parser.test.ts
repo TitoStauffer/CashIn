@@ -288,11 +288,15 @@ test("sniffs OFX content declared as ASCII, and keeps an explicit UTF-8 declarat
   assert.equal((await parser.parse({ format: "ofx", fileName: "ascii.ofx", content: ascii })).items[0]?.description, "Café");
 
   // A file that declares UTF-8 and carries invalid UTF-8 is broken, and is still refused, not guessed.
-  const brokenUtf8 = Buffer.from(document(["OFXHEADER:100", "VERSION:102", "ENCODING:UTF-8", "CHARSET:NONE"]), "latin1");
-  await assert.rejects(
-    parser.parse({ format: "ofx", fileName: "broken.ofx", content: brokenUtf8 }),
-    /Não foi possível interpretar a codificação do arquivo OFX/,
-  );
+  // Both places a header can say UTF-8: ENCODING, and CHARSET next to an ASCII encoding.
+  for (const header of [["ENCODING:UTF-8", "CHARSET:NONE"], ["ENCODING:USASCII", "CHARSET:UTF-8"]]) {
+    const brokenUtf8 = Buffer.from(document(["OFXHEADER:100", "VERSION:102", ...header]), "latin1");
+    await assert.rejects(
+      parser.parse({ format: "ofx", fileName: "broken.ofx", content: brokenUtf8 }),
+      /Não foi possível interpretar a codificação do arquivo OFX/,
+      `${header.join(" ")} must stay strict`,
+    );
+  }
 });
 
 test("decodes ISO-8859-1 declarations and UTF-16 XML exports", async () => {
