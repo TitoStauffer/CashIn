@@ -16,6 +16,10 @@ import { assertSafeApiPath } from './requestPath'
  * reaching the API is nine places to forget it. Collapsing them here also puts the behaviour under one
  * set of tests, instead of spreading it across modules whose own tests mock the API wholesale and never
  * execute `request` at all.
+ *
+ * `authApi` was the tenth client and stayed out of DEV-105, because it built relative paths the path guard
+ * refuses. DEV-123 moved it here with absolute paths, so every HTTP client of the Web now uses this helper
+ * and every path goes through `assertSafeApiPath`.
  */
 type ApiErrorConstructor = new (message: string, status: number) => Error
 
@@ -23,8 +27,9 @@ type ErrorResponse = { message?: string }
 
 export type ApiRequestOptions = {
   /**
-   * Whether the request carries the active wallet. True for every domain, and false for the wallet
-   * routes themselves: picking or listing wallets cannot be scoped by the wallet already chosen.
+   * Whether the request carries the active wallet. True for every domain, and false for two kinds of route:
+   * the wallet routes themselves, since picking or listing wallets cannot be scoped by the wallet already
+   * chosen, and the auth routes, which run before or regardless of any wallet and never read the header.
    */
   scopeToActiveWallet?: boolean
 }
