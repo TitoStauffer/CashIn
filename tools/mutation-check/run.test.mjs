@@ -165,13 +165,24 @@ function commitManifest({ root, git }, name, mutations) {
 
 const realMutation = { ...base, command: ["node", "check.mjs"] };
 
+/**
+ * Runs main with its report and annotations captured: a deliberately failing case would otherwise print a real
+ * `::error` workflow command and leave a red annotation on a green CI job.
+ */
+function quietMain(argv, root) {
+  const out = process.stdout.write, err = process.stderr.write;
+  process.stdout.write = () => true;
+  process.stderr.write = () => true;
+  try { return main(argv, root); } finally { process.stdout.write = out; process.stderr.write = err; }
+}
+
 test("main runs the manifests the branch changed with the real command and exits 0 only when every mutant is killed", () => {
   const repo = gitRepository();
   try {
     commitManifest(repo, "DEV-126.json", [realMutation]);
-    assert.equal(main(["--base", "HEAD~2", "--package", "pkg"], repo.root), 0);
+    assert.equal(quietMain(["--base", "HEAD~2", "--package", "pkg"], repo.root), 0);
     commitManifest(repo, "DEV-126.json", [{ ...realMutation, find: "= 10;", replace: "= 11;" }]);
-    assert.equal(main(["--base", "HEAD~1", "--package", "pkg"], repo.root), 1, "a surviving mutant must fail the step");
+    assert.equal(quietMain(["--base", "HEAD~1", "--package", "pkg"], repo.root), 1, "a surviving mutant must fail the step");
   } finally { rmSync(repo.root, { recursive: true, force: true }); }
 });
 
@@ -180,8 +191,8 @@ test("main ignores manifests the branch did not touch and other packages' mutant
   try {
     commitManifest(repo, "DEV-1.json", [{ ...realMutation, find: "= 10;", replace: "= 11;" }]);
     commitManifest(repo, "DEV-126.json", [realMutation]);
-    assert.equal(main(["--base", "HEAD~1", "--package", "pkg"], repo.root), 0, "the old surviving manifest is history, not this PR");
-    assert.equal(main(["--base", "HEAD~2", "--package", "other"], repo.root), 0);
+    assert.equal(quietMain(["--base", "HEAD~1", "--package", "pkg"], repo.root), 0, "the old surviving manifest is history, not this PR");
+    assert.equal(quietMain(["--base", "HEAD~2", "--package", "other"], repo.root), 0);
   } finally { rmSync(repo.root, { recursive: true, force: true }); }
 });
 
@@ -189,7 +200,7 @@ test("main refuses a mutant whose package no CI job runs, instead of every job s
   const repo = gitRepository();
   try {
     commitManifest(repo, "DEV-126.json", [realMutation]);
-    assert.throws(() => main(["--base", "HEAD~1", "--package", "tools", "--covered-elsewhere", "apps/api"], repo.root), /no CI job runs the package/);
-    assert.equal(main(["--base", "HEAD~1", "--package", "tools", "--covered-elsewhere", "pkg"], repo.root), 0);
+    assert.throws(() => quietMain(["--base", "HEAD~1", "--package", "tools", "--covered-elsewhere", "apps/api"], repo.root), /no CI job runs the package/);
+    assert.equal(quietMain(["--base", "HEAD~1", "--package", "tools", "--covered-elsewhere", "pkg"], repo.root), 0);
   } finally { rmSync(repo.root, { recursive: true, force: true }); }
 });
