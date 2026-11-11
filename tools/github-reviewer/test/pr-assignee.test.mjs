@@ -20,7 +20,7 @@ if [[ "$*" == *"--method POST"* ]]; then
   if [[ -n "\${FAKE_POST_FAIL:-}" ]]; then echo "HTTP 403: Resource not accessible by integration" >&2; exit 1; fi
   printf '%s\\n' "$FAKE_UPDATED"
 else
-  if [[ -n "\${FAKE_GET_FAIL:-}" ]]; then echo "HTTP 502: Bad Gateway" >&2; exit 1; fi
+  if [[ -n "\${FAKE_GET_FAIL:-}" ]]; then printf '%s\\n' "\${FAKE_ERROR:-HTTP 502: Bad Gateway}" >&2; exit 1; fi
   printf '%s\\n' "$FAKE_CURRENT"
 fi
 `;
@@ -88,6 +88,15 @@ test('reports API failures as a warning without failing the job or claiming the 
     assert.match(result.summary, message, `${name}: job summary`);
     assert.doesNotMatch(result.stdout, /atribuído ao PR #42\.$/m, `${name}: must not claim success`);
   }
+});
+
+test('a multi-line API error stays inside one escaped annotation and cannot inject workflow commands', async () => {
+  const result = await assign({ FAKE_GET_FAIL: '1', FAKE_ERROR: 'HTTP 502\n::error::injected command\n100% broken' });
+  const lines = result.stdout.split(/\r?\n/).filter(Boolean);
+  assert.equal(lines.filter((line) => line.startsWith('::')).length, 1, 'exactly one workflow command line');
+  assert.ok(!lines.some((line) => line.startsWith('::error::')), 'the error text must not become its own command');
+  assert.match(result.stdout, /HTTP 502%0A::error::injected command%0A100%25 broken/);
+  assert.doesNotMatch(result.summary, /\n::error::/, 'the job summary keeps the error on one line');
 });
 
 test('the workflow runs only trusted code with the narrowest token it needs', () => {

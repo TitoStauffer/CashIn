@@ -19,10 +19,16 @@ if [[ ! "$PR_NUMBER" =~ ^[0-9]+$ ]]; then
   exit 1
 fi
 
+# The message carries raw gh/API error text. It is escaped as the workflow command format requires, so a
+# multi-line error stays one annotation instead of having each extra line read as a workflow command.
 warn() {
-  echo "::warning title=Responsável não atribuído::$1"
+  local message="${1//'%'/%25}"
+  message="${message//$'\r'/%0D}"
+  message="${message//$'\n'/%0A}"
+  echo "::warning title=Responsável não atribuído::${message}"
   if [[ -n "${GITHUB_STEP_SUMMARY:-}" ]]; then
-    echo "- $1" >>"$GITHUB_STEP_SUMMARY"
+    local line="${1//$'\r'/ }"
+    echo "- ${line//$'\n'/ }" >>"$GITHUB_STEP_SUMMARY"
   fi
 }
 
