@@ -108,6 +108,10 @@ export function evaluateDeterministicQualityGate(input: StageEvidenceContext & {
   return {
     stage: 'qualityGate', decision, reviewTrack, commitSha: input.commitSha, contextHash: input.contextHash,
     reportMarkdown: [
+      // Contract with another package: `declaresLightTrack`, in tools/jira-dispatcher/src/post-merge/service.ts,
+      // reads this exact line to decide whether the post-merge may close an issue without a QA report.
+      // tools/jira-dispatcher/test/review-track-contract.test.ts runs this code against that parser, so a
+      // format change here that the parser does not follow fails CI instead of leaving light issues open.
       `**Trilho de revisão:** ${reviewTrack === 'light' ? 'leve' : 'completo'}.`,
       reviewTrack === 'light'
         ? `- Todos os ${input.changedFiles.length} arquivo(s) alterado(s) são ${LIGHT_TRACK_RULE}, então o QA não é exigido. Classificado pela lista de arquivos lida da API do GitHub, não pelo corpo do Pull Request.`

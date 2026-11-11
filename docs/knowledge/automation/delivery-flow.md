@@ -1,7 +1,7 @@
 # Fluxo de entrega
 
 **Status:** ativo
-**Última revisão:** 08/11/2026
+**Última revisão:** 11/11/2026
 
 ## Sequência real
 
@@ -41,6 +41,7 @@ flowchart LR
 - A primeira versão desta regra listava os caminhos sensíveis, e o Code Review do [PR #91](https://github.com/TitoStauffer/CashIn/pull/91) mostrou que a forma era insegura: `apps/api/migrations/**`, os manifestos e `compose.yaml` alteram runtime e ficavam de fora, então uma migration chegaria ao merge sem QA.
 - O trilho leve dispensa **somente o QA**, que é a única etapa de modelo no runner serializado.
 - O Coordinator roda nos dois trilhos. Ele é determinístico, não chama modelo, e seu relatório publicado é o registro assinado pelo App que declara o trilho e os arquivos que o determinaram.
+- A linha `**Trilho de revisão:** leve.` desse relatório é um contrato entre dois pacotes sem dependência entre si: `tools/github-reviewer` a escreve e o pós-merge do `tools/jira-dispatcher` a lê para decidir se fecha a issue sem relatório de QA. `tools/jira-dispatcher/test/review-track-contract.test.ts` gera o relatório com o código real do produtor e o passa pelo parser do consumidor, então mudar o formato de um lado só falha o CI em vez de deixar toda entrega de trilho leve sem fechar no Jira (DEV-122). O resultado da validação do pós-merge também é exclusivo por tipo: ou motivo de bloqueio, ou trilho — um retorno sem trilho não compila, para nunca cair na redação que afirma QA aprovado.
 - Lista de arquivos vazia ou inutilizável classifica como **completo**: ausência de evidência não é mudança de documentação.
 - A classificação é função pura da lista de arquivos, que já entra no hash de contexto. Um commit de runtime num PR antes leve muda o hash, invalida as evidências anteriores e exige o trilho completo no HEAD novo — não existe estado em que o trilho desça sozinho.
 - O `Merge Readiness` reclassifica por conta própria, no início e no fim da avaliação, e bloqueia se os dois resultados divergirem. Ele nunca aceita a palavra de um Agent sobre o trilho.
@@ -81,3 +82,6 @@ flowchart LR
 - [`.github/workflows/agent-report-recovery.yml`](../../../.github/workflows/agent-report-recovery.yml)
 - [`.github/workflows/merge-readiness.yml`](../../../.github/workflows/merge-readiness.yml)
 - [`.github/workflows/jira-post-merge.yml`](../../../.github/workflows/jira-post-merge.yml)
+- [`tools/jira-dispatcher/src/post-merge/service.ts`](../../../tools/jira-dispatcher/src/post-merge/service.ts)
+- [`tools/jira-dispatcher/test/review-track-contract.test.ts`](../../../tools/jira-dispatcher/test/review-track-contract.test.ts)
+- [`tools/github-reviewer/src/agent-stage-policy.ts`](../../../tools/github-reviewer/src/agent-stage-policy.ts)

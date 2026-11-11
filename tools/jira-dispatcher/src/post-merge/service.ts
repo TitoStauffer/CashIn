@@ -98,7 +98,10 @@ export async function processPostMergeEvent(eventValue: unknown, dependencies: P
   const botLogin = dependencies.reportingAppLogin.trim().toLowerCase();
   if (!botLogin) throw new PostMergeError("GITHUB_APP_BOT_LOGIN não configurado.");
   const evidence = await readAndValidateEvidence(dependencies.github, owner, repository, pullRequest, botLogin, dependencies.requiredChecks ?? DEFAULT_REQUIRED_CHECKS);
-  if (evidence.reason) return { status: "BLOCKED", reason: evidence.reason, issueKey, pullRequestNumber: number };
+  // Compared with undefined, not by truthiness: an empty reason must still block, and only this check
+  // narrows the union so that the track below is never undefined.
+  if (evidence.reason !== undefined) return { status: "BLOCKED", reason: evidence.reason, issueKey, pullRequestNumber: number };
+  const reviewTrack = evidence.reviewTrack;
 
   const finalPullRequest = await dependencies.github.getPullRequest(owner, repository, number);
   if (!isSameMergedPullRequest(finalPullRequest, number, eventHeadSha, eventMergeSha)) {
@@ -143,9 +146,7 @@ export async function processPostMergeEvent(eventValue: unknown, dependencies: P
       `Pull Request: #${number} — ${url}`,
       `Branch: ${headRef} → master.`,
       `Commit de merge: \`${eventMergeSha}\`.`,
-      evidence.reviewTrack === "light"
-        ? `Validações: checks obrigatórios, Code Review formal e Quality Gate aprovados para \`${eventHeadSha}\`. QA dispensado pelo trilho leve.`
-        : `Validações: checks obrigatórios, Code Review formal, QA e Quality Gate aprovados para \`${eventHeadSha}\`.`,
+      validationSentence(reviewTrack, eventHeadSha),
       marker,
     ].join("\n\n");
     try {
@@ -205,6 +206,33 @@ function isSameMergedPullRequest(pr: GitHubPullRequest, number: number, headSha:
     && pr.merge_commit_sha?.toLowerCase() === mergeSha.toLowerCase();
 }
 
+/**
+ * The evidence validation result: either a blocking reason or the review track — never both, never neither
+ * (DEV-122). The closing comment picks its wording by track, and a missing track used to fall into the
+ * branch that states QA was approved. With the pair exclusive by type, a new `return` that forgets the track
+ * stops compiling, instead of writing to Jira a QA approval that never happened.
+ */
+export type PostMergeEvidence =
+  | { reason: string; reviewTrack?: never }
+  | { reason?: never; reviewTrack: "light" | "full" };
+
+/**
+ * The durable validation line of the closing comment. Exhaustive over the track: a new track value fails to
+ * compile here rather than inheriting the sentence that claims QA was approved.
+ */
+function validationSentence(reviewTrack: "light" | "full", headSha: string): string {
+  switch (reviewTrack) {
+    case "light":
+      return `Validações: checks obrigatórios, Code Review formal e Quality Gate aprovados para \`${headSha}\`. QA dispensado pelo trilho leve.`;
+    case "full":
+      return `Validações: checks obrigatórios, Code Review formal, QA e Quality Gate aprovados para \`${headSha}\`.`;
+    default: {
+      const unreachable: never = reviewTrack;
+      throw new PostMergeError(`Trilho de revisão desconhecido: ${String(unreachable)}.`);
+    }
+  }
+}
+
 async function readAndValidateEvidence(
   github: GitHubReadApi,
   owner: string,
@@ -212,7 +240,7 @@ async function readAndValidateEvidence(
   pr: GitHubPullRequest,
   botLogin: string,
   requiredChecks: readonly string[],
-): Promise<{ reason?: string; reviewTrack?: "light" | "full" }> {
+): Promise<PostMergeEvidence> {
   const sha = pr.head.sha;
   const [checkRuns, reviews, comments, unresolvedThreads] = await Promise.all([
     github.listCheckRuns(owner, repository, sha),
@@ -284,7 +312,7 @@ async function readAndValidateEvidence(
  * Lê o trilho declarado no relatório aprovado do Coordinator para este SHA. Falha fechado: qualquer
  * ausência, texto inesperado ou relatório de outro SHA devolve `false`, e o QA segue obrigatório.
  */
-function declaresLightTrack(comments: GitHubIssueComment[], botLogin: string, sha: string): boolean {
+export function declaresLightTrack(comments: GitHubIssueComment[], botLogin: string, sha: string): boolean {
   const matching = comments.filter((comment) => comment.user?.login?.toLowerCase() === botLogin
     && (comment.body ?? "").includes("### Codex — Quality Gate Coordinator"))
     .sort((left, right) => (left.updated_at ?? left.created_at ?? "").localeCompare(right.updated_at ?? right.created_at ?? ""));
@@ -293,6 +321,10 @@ function declaresLightTrack(comments: GitHubIssueComment[], botLogin: string, sh
   const status = latest.body.match(/^\*\*Status:\*\*\s*(.+)$/m)?.[1]?.trim();
   const commitSha = latest.body.match(/^\*\*Commit:\*\*\s*`([a-f0-9]{40})`$/im)?.[1];
   if (status !== "APPROVED" || commitSha?.toLowerCase() !== sha.toLowerCase()) return false;
+  // Contract with the producer: the line comes from `evaluateDeterministicQualityGate`, in
+  // `tools/github-reviewer/src/agent-stage-policy.ts`, inside the body of `formatPullRequestReport`, in
+  // `tools/github-reviewer/src/github-report-publisher.ts`. `test/review-track-contract.test.ts` ties both
+  // sides together with the real report; changing one without the other fails that test.
   return /^\*\*Trilho de revisão:\*\*\s*leve\./m.test(latest.body);
 }
 
