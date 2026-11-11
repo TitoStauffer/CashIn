@@ -1,7 +1,7 @@
 # SonarQube Cloud
 
 **Status:** ativo no CI
-**Última revisão:** 09/11/2026
+**Última revisão:** 11/11/2026
 
 ## Escopo analisado
 
@@ -19,6 +19,10 @@ O projeto usa o gate padrão `Sonar way`:
 - duplicação no código novo menor ou igual a 3%.
 
 A opção do projeto ignora cobertura e duplicação até existirem ao menos 20 linhas novas. Essa configuração remota foi confirmada visualmente em 25/10/2026 e não é versionada no repositório.
+
+## Instalação do scanner
+
+O job instala o SonarScanner CLI antes da `sonarqube-scan-action`, por `.github/scripts/prime-sonar-scanner.sh`, porque a importação de chave da action (`gpg --recv-keys`) não tem timeout e travou o job até o limite de 15 minutos quando `keyserver.ubuntu.com` não respondeu (11/11/2026, check runs `130519550174` e `130544528864`). O script limita cada download, alterna para `keys.openpgp.org` e mantém a verificação: chave com exatamente uma primária igual à fingerprint fixada e assinatura `VALIDSIG` por ela. Cada tentativa de buscar a chave tem limite de 30 segundos, com até três tentativas por keyserver; se nenhum responder, o job falha em poucos minutos com mensagem explícita, em vez de esperar o timeout de 15 minutos. A versão do scanner (`SONAR_SCANNER_VERSION`) precisa acompanhar o pin da action.
 
 ## Efeito na automação
 
@@ -48,4 +52,5 @@ Depois do merge da DEV-105 em `1106dc6`, o gate da `master` voltou a **OK** nas 
 - [`sonar-project.properties`](../../../sonar-project.properties)
 - [`docs/ci.md`](../../ci.md)
 - [`.github/workflows/ci.yml`](../../../.github/workflows/ci.yml)
+- [`.github/scripts/prime-sonar-scanner.sh`](../../../.github/scripts/prime-sonar-scanner.sh)
 - Configuração remota do projeto no SonarQube Cloud — verificar novamente quando houver dúvida.

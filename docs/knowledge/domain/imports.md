@@ -1,7 +1,7 @@
 # Importação financeira OFX e CSV
 
 **Status:** importação OFX e CSV com regras por carteira (DEV-55), faturas de cartão (DEV-56), conciliação do pagamento da fatura na API (DEV-85) e na tela (DEV-57), transferências entre carteiras na API (DEV-88) e na tela (DEV-58) e segurança, permissões e rastreabilidade (DEV-59), com a garantia do log verificada na linha emitida (DEV-97)
-**Última revisão:** 09/11/2026
+**Última revisão:** 11/11/2026
 
 ## Fluxo definido
 
@@ -15,7 +15,7 @@
 ## Idempotência e duplicidade
 
 - Itens usam impressão digital de data, valor assinado, tipo e descrição normalizada para detectar repetição entre OFX, CSV e importações anteriores da mesma carteira.
-- FITID já importado da mesma conta OFX é duplicidade confirmada e fica bloqueado; coincidência apenas pela impressão digital aparece como possível duplicidade, com justificativa para revisão.
+- O FITID identifica a transação junto com o valor assinado, não sozinho (DEV-124): o emissor de cartão dá o mesmo FITID a uma compra internacional e ao IOF dela, e confiar no identificador sozinho descartava a compra como cópia do próprio imposto. FITID com o mesmo valor já importado da mesma conta OFX é duplicidade confirmada e fica bloqueado; no mesmo arquivo, FITID e valor repetidos aparecem como possível duplicidade, sobreponível quando a linha não tem outro motivo de invalidez (sem isso a tela ofereceria "Importar mesmo assim" sobre campos que não deixa editar); coincidência apenas pela impressão digital também aparece como possível duplicidade, com justificativa para revisão. O valor, e não a impressão inteira, é a corroboração porque o FITID existe justamente para reconhecer uma transação cuja descrição ou data mudou entre exportações.
 - Possíveis duplicidades só são importadas após decisão explícita do usuário, persistida para o fingerprint revisado; mudar a identidade invalida essa decisão. A confirmação revalida duplicidades históricas e entre itens editados da sessão; ao encontrar novas, devolve a prévia sem importar parcialmente. Confirmações concorrentes são serializadas por carteira e revalidadas antes de gravar.
 - O identificador bruto da conta não é persistido; a sessão conserva somente seu hash.
 

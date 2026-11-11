@@ -48,7 +48,7 @@
       "documents": ["docs/knowledge/automation/jira-dispatcher.md", "docs/knowledge/runbooks/jira-post-merge.md"]
     },
     {
-      "paths": ["sonar-project.properties", ".github/workflows/ci.yml"],
+      "paths": ["sonar-project.properties", ".github/workflows/ci.yml", ".github/scripts/prime-sonar-scanner.sh"],
       "documents": ["docs/knowledge/automation/sonarqube.md"]
     },
     {

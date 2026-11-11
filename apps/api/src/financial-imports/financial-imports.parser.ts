@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { TextDecoder } from "node:util";
 import { FinancialImportError } from "./financial-imports.errors.js";
-import { createFinancialImportFingerprint } from "./financial-imports.fingerprint.js";
+import { createExternalTransactionIdentity, createFinancialImportFingerprint } from "./financial-imports.fingerprint.js";
 import { parseCsv } from "./financial-imports.csv.js";
 import type {
   FinancialImportParser,
@@ -137,11 +137,11 @@ export class OfxFinancialImportParser implements FinancialImportParser {
       throw new FinancialImportError("Nenhuma movimentação foi encontrada no arquivo OFX.", 422);
     }
 
-    const seenExternalIds = new Set<string>();
+    const seenTransactionIdentities = new Set<string>();
     const items = transactionBlocks.map((block, index) => parseTransaction(
       block,
       index + 1,
-      seenExternalIds,
+      seenTransactionIdentities,
     ));
 
     return {
@@ -280,7 +280,7 @@ function extractTransactionBlocks(document: string): string[] {
 function parseTransaction(
   block: string,
   sequence: number,
-  seenExternalIds: Set<string>,
+  seenTransactionIdentities: Set<string>,
 ): ParsedFinancialImportItem {
   const rawDate = optionalTag(block, "DTPOSTED");
   const rawAmount = optionalTag(block, "TRNAMT");
@@ -302,11 +302,14 @@ function parseTransaction(
   if (!rawExternalId) nonRepairableReasons.push("A movimentação OFX não possui FITID.");
   else if (!externalId) nonRepairableReasons.push("O FITID da movimentação OFX excede o tamanho permitido.");
 
-  const repeatedExternalId = externalId !== null && seenExternalIds.has(externalId);
-  if (externalId) seenExternalIds.add(externalId);
+  // FITID plus signed amount, not FITID alone: the card issuer reuses one identifier for a purchase and
+  // its IOF charge (DEV-124). See createExternalTransactionIdentity.
+  const transactionIdentity = createExternalTransactionIdentity(externalId, signedAmount);
+  const repeatedIdentity = transactionIdentity !== null && seenTransactionIdentities.has(transactionIdentity);
+  if (transactionIdentity) seenTransactionIdentities.add(transactionIdentity);
   const recordHash = createFinancialImportFingerprint({ date, signedAmount, type, description });
 
-  if (repeatedExternalId) {
+  if (repeatedIdentity) {
     return {
       sequence,
       date,
@@ -315,8 +318,12 @@ function parseTransaction(
       type,
       sourceTransactionType: transactionType,
       validationStatus: "duplicate",
-      errorMessage: "O FITID está repetido no arquivo OFX.",
+      // Overridable, never final: identifier and amount repeating can still be two real movements — two
+      // equal toll charges on the same day, for instance — and refusing them outright is how this file
+      // lost money before. A duplicate cannot be repairable by schema, so the override is the way back.
+      errorMessage: "O FITID e o valor se repetem no arquivo OFX. O emissor pode ter reaproveitado o identificador em duas movimentações iguais; revise antes de importar.",
       isRepairable: false,
+      duplicateOverrideAllowed: true,
       externalId,
       recordHash,
     };

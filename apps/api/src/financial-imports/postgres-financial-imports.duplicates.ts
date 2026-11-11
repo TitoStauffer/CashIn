@@ -1,5 +1,6 @@
 import type { QueryExecutor } from "../database.js";
 import {
+  createExternalTransactionIdentity,
   createFinancialImportFingerprint,
   createLegacyFinancialImportFingerprint,
   createLegacyOfxFinancialImportFingerprint,
@@ -73,15 +74,25 @@ export async function markPreviouslyImportedDuplicates(
   sourceMetadata: Record<string, string>,
   creditCardId: string | null,
 ): Promise<ParsedFinancialImportItem[]> {
+  // A repeat inside the file is an overridable duplicate by the time it gets here (DEV-124). It still has to
+  // be checked against history: if that line was already imported, this is a reimport, and offering
+  // "include anyway" would hand the person an action the confirmation refuses.
+  const isOverridableDuplicate = (item: ParsedFinancialImportItem) => (
+    item.validationStatus === "duplicate" && item.duplicateOverrideAllowed === true
+  );
   const candidates = items.filter((item) => (
     item.recordHash && item.date && item.signedAmount
-    && item.validationStatus !== "invalid" && item.validationStatus !== "duplicate"
+    && item.validationStatus !== "invalid"
+    && (item.validationStatus !== "duplicate" || isOverridableDuplicate(item))
   ));
   if (candidates.length === 0) return items;
 
   const accountReferenceHash = sourceMetadata.accountReferenceHash ?? null;
   const existingFingerprints = new Set<string>();
-  const externalIds = new Set<string>();
+  // FITID together with the signed amount, not FITID alone (DEV-124): the issuer reuses one identifier for
+  // a purchase and its IOF, so a FITID already imported does not mean this line was. The query below still
+  // fetches candidates by FITID; the comparison is what requires the amount too.
+  const externalIdentities = new Set<string>();
   for (const batch of chunks(candidates)) {
     const hashes = new Set<string>();
     const candidatesPayload = batch.flatMap((item) => {
@@ -142,15 +153,20 @@ export async function markPreviouslyImportedDuplicates(
         description: row.description,
       });
       if (fingerprint) existingFingerprints.add(fingerprint);
-      if (accountReferenceHash && row.account_reference_hash === accountReferenceHash && row.external_id) {
-        externalIds.add(row.external_id);
+      if (accountReferenceHash && row.account_reference_hash === accountReferenceHash) {
+        const identity = createExternalTransactionIdentity(row.external_id, row.signed_amount);
+        if (identity) externalIdentities.add(identity);
       }
     }
   }
 
   return items.map((item) => {
-    if (item.validationStatus === "invalid" || item.validationStatus === "duplicate") return item;
-    const matchesExternalId = Boolean(item.externalId && externalIds.has(item.externalId));
+    if (item.validationStatus === "invalid") return item;
+    if (item.validationStatus === "duplicate" && !isOverridableDuplicate(item)) return item;
+    const identity = createExternalTransactionIdentity(item.externalId ?? null, item.signedAmount ?? null);
+    const matchesExternalId = identity !== null && externalIdentities.has(identity);
+    // Already a duplicate: only a confirmed reimport changes it. A fingerprint match adds nothing here.
+    if (item.validationStatus === "duplicate" && !matchesExternalId) return item;
     const matchesFingerprint = duplicateIdentityHashes(item, creditCardId !== null).some((hash) => existingFingerprints.has(hash));
     const fingerprintWasReviewed = item.acceptedDuplicateFingerprint === item.recordHash;
     if (!matchesExternalId && (!matchesFingerprint || fingerprintWasReviewed)) return item;
