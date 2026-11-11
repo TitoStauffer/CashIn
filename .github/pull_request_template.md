@@ -75,7 +75,13 @@ O Agent técnico principal informa os comandos e resultados. O Agent de Product 
 
 Descreva os resultados observados. Não marque verificações que não foram executadas.
 
+**Verificação por mutação (evidência de desenvolvimento):**
+
+Liste cada mutante aplicado, o teste que o derrubou e a confirmação de que o arquivo voltou ao original. A mutação não é critério de aceitação e não entra na seção 8; quando a verificação puder rodar no CI, aponte o teste ou o passo correspondente.
+
 ## 8. Critérios de aceitação
+
+Descreva somente comportamento verificável pelo diff e pelas execuções de CI deste SHA. Verificação por mutação local fica na seção 7.
 
 - [ ] Critério 1:
 - [ ] Critério 2:
