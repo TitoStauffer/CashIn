@@ -93,6 +93,28 @@ describe("review track contract between the Coordinator report and the post-merg
     assert.equal(track, "full");
     assert.equal(declaresLightTrack([comment], BOT_LOGIN, SHA), false);
   });
+
+  // The mutation check, run by CI instead of on a developer machine so the evidence is auditable from this
+  // job: each variant is the real light-track report with one change a producer edit could plausibly make.
+  // The parser has to refuse every one; if it accepted any, the contract above could pass while the two
+  // sides had drifted apart.
+  it("refuses every drifted form of the light-track line, so the contract test is sensitive to format changes", async () => {
+    const { comment } = await coordinatorComment(["docs/knowledge/automation/delivery-flow.md"]);
+    const lightLine = "**Trilho de revisão:** leve.";
+    assert.ok(comment.body.includes(lightLine), "the real report must carry the line the variants mutate");
+    const drifts: Array<[string, string]> = [
+      ["label renamed", "**Trilho:** leve."],
+      ["value translated", "**Trilho de revisão:** light."],
+      ["bold markers dropped", "Trilho de revisão: leve."],
+      ["line indented as a list item", "- **Trilho de revisão:** leve."],
+      ["status line inside the value", "**Trilho de revisão:** completo."],
+    ];
+    for (const [drift, replacement] of drifts) {
+      const mutated = { ...comment, body: comment.body.replace(lightLine, replacement) };
+      assert.notEqual(mutated.body, comment.body, `${drift}: the variant must differ from the real report`);
+      assert.equal(declaresLightTrack([mutated], BOT_LOGIN, SHA), false, `${drift} must not be read as the light track`);
+    }
+  });
 });
 
 // Compile-time half of DEV-122, checked by `npm run typecheck` (tsconfig.test.json): an evidence result

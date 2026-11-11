@@ -246,7 +246,7 @@ npm test          # testes automatizados via node:test e tsx
 npm run typecheck
 ```
 
-Os 101 testes cobrem allowlist de épicos, elegibilidade, concorrência (lock de processo, recuperação de lock incompleto, execução ativa por issue, mudança de status ou épico concorrente, transição indisponível ou ambígua), reserva (comentário no formato do `AGENTS.md`, retry só do comentário), recuperação (`interrupted`, Codex órfão vivo, `resume`, revogação ou troca de épico, pai ausente, `clear`, persistência), falhas do Codex com um processo real simulado (código ≠ 0, timeout, resultado inválido, issue errada, comando inexistente, parada forçada), redação de segredos, worktree com Git real, clientes HTTP do Jira e GitHub, idempotência e falhas parciais do pós-merge, além do loop com encerramento gracioso.
+Os testes cobrem allowlist de épicos, elegibilidade, concorrência (lock de processo, recuperação de lock incompleto, execução ativa por issue, mudança de status ou épico concorrente, transição indisponível ou ambígua), reserva (comentário no formato do `AGENTS.md`, retry só do comentário), recuperação (`interrupted`, Codex órfão vivo, `resume`, revogação ou troca de épico, pai ausente, `clear`, persistência), falhas do Codex com um processo real simulado (código ≠ 0, timeout, resultado inválido, issue errada, comando inexistente, parada forçada), redação de segredos, worktree com Git real, clientes HTTP do Jira e GitHub, idempotência e falhas parciais do pós-merge, além do loop com encerramento gracioso.
 
 ## O que ainda exige configuração ou verificação manual
 
