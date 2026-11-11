@@ -22,6 +22,8 @@ concurrency:
 env:
   # Same major version as the Docker images (node:24-alpine), pinned to an exact release.
   NODE_VERSION: "24.22.0"
+  # The scanner default of sonarqube-scan-action v8.3.0; change both together when the action pin moves.
+  SONAR_SCANNER_VERSION: "8.1.0.6389"
 
 defaults:
   run:
@@ -310,10 +312,18 @@ jobs:
           name: web-coverage
           path: apps/web/coverage
 
+      - name: Install SonarScanner CLI with verified signature
+        # The action's own key import has no timeout and hung on an unresponsive keyserver until the job
+        # timeout. This step bounds every download, falls back to a second keyserver and keeps the GPG check;
+        # the action then finds the scanner in the tool cache and skips its own download.
+        run: bash .github/scripts/prime-sonar-scanner.sh
+
       - name: SonarQube Cloud scan
         # The scanner waits for the Quality Gate so a failure is visible as a failed PR check.
         uses: SonarSource/sonarqube-scan-action@d209202bc7d53ff1cc128f7f907dac145c9d6ae9 # v8.3.0
         with:
           args: -Dsonar.qualitygate.wait=true
+          # Same version the previous step cached, so the action does not fall back to its own download.
+          scannerVersion: ${{ env.SONAR_SCANNER_VERSION }}
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
