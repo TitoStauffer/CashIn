@@ -255,6 +255,46 @@ test("decodes the Windows-1252 encoding commonly declared by OFX 1.x", async () 
   assert.equal(result.items[0]?.description, "Café");
 });
 
+test("decodes UTF-8 content behind a legacy CHARSET:1252 header, as the card issuer exports it", async () => {
+  // DEV-125: the header says 1252, the bytes are UTF-8. Trusting the header stored "CrÃ©dito".
+  const header = ["OFXHEADER:100", "DATA:OFXSGML", "VERSION:102", "ENCODING:USASCII", "CHARSET:1252", ""];
+  const body = (name: string) => [
+    "<OFX><BANKMSGSRSV1><STMTTRNRS><STMTRS><CURDEF>BRL",
+    "<BANKACCTFROM><ACCTID>123</BANKACCTFROM><BANKTRANLIST>",
+    `<STMTTRN><DTPOSTED>20261020<TRNAMT>-1.00<FITID>1<MEMO>${name}</STMTTRN>`,
+    "</BANKTRANLIST></STMTRS></STMTTRNRS></BANKMSGSRSV1></OFX>",
+  ];
+  const content = Buffer.from([...header, ...body("Boleto no Crédito - Pagamento à vista")].join("\r\n"), "utf8");
+  assert.deepEqual([...content.subarray(content.indexOf("Cr"), content.indexOf("Cr") + 4)], [0x43, 0x72, 0xc3, 0xa9]);
+
+  const result = await new OfxFinancialImportParser().parse({ format: "ofx", fileName: "nubank.ofx", content });
+
+  assert.equal(result.items[0]?.description, "Boleto no Crédito - Pagamento à vista");
+});
+
+test("sniffs OFX content declared as ASCII, and keeps an explicit UTF-8 declaration strict", async () => {
+  const document = (header: string[]) => [
+    ...header, "",
+    "<OFX><BANKMSGSRSV1><STMTTRNRS><STMTRS><CURDEF>BRL",
+    "<BANKACCTFROM><ACCTID>123</BANKACCTFROM><BANKTRANLIST>",
+    "<STMTTRN><DTPOSTED>20261020<TRNAMT>-1.00<FITID>1<NAME>Café</STMTTRN>",
+    "</BANKTRANLIST></STMTRS></STMTTRNRS></BANKMSGSRSV1></OFX>",
+  ].join("\r\n");
+  const parser = new OfxFinancialImportParser();
+
+  // Same rule as the CSV: a Windows-1252 byte behind an ASCII declaration is read as Windows-1252,
+  // where strict UTF-8 used to refuse the whole file.
+  const ascii = Buffer.from(document(["OFXHEADER:100", "VERSION:102", "ENCODING:USASCII", "CHARSET:NONE"]), "latin1");
+  assert.equal((await parser.parse({ format: "ofx", fileName: "ascii.ofx", content: ascii })).items[0]?.description, "Café");
+
+  // A file that declares UTF-8 and carries invalid UTF-8 is broken, and is still refused, not guessed.
+  const brokenUtf8 = Buffer.from(document(["OFXHEADER:100", "VERSION:102", "ENCODING:UTF-8", "CHARSET:NONE"]), "latin1");
+  await assert.rejects(
+    parser.parse({ format: "ofx", fileName: "broken.ofx", content: brokenUtf8 }),
+    /Não foi possível interpretar a codificação do arquivo OFX/,
+  );
+});
+
 test("decodes ISO-8859-1 declarations and UTF-16 XML exports", async () => {
   const xml = (encoding: string) => [
     `<?xml version="1.0" encoding="${encoding}"?>`,
