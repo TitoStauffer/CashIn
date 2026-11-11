@@ -3,6 +3,7 @@ import { TextDecoder } from "node:util";
 import { FinancialImportError } from "./financial-imports.errors.js";
 import { createExternalTransactionIdentity, createFinancialImportFingerprint } from "./financial-imports.fingerprint.js";
 import { parseCsv } from "./financial-imports.csv.js";
+import { detectUtf8OrWindows1252 } from "./financial-imports.text-encoding.js";
 import type {
   FinancialImportParser,
   FinancialImportParserInput,
@@ -193,22 +194,21 @@ function resolveOfxDecoderEncoding(
   if (content.subarray(0, 2).equals(Buffer.from([0xff, 0xfe]))) return "utf-16le";
   if (content.subarray(0, 2).equals(Buffer.from([0xfe, 0xff]))) return "utf-16be";
   if (content.subarray(0, 3).equals(Buffer.from([0xef, 0xbb, 0xbf]))) return "utf-8";
-  if (declaredEncoding === "UTF8" || declaredEncoding === "UNICODE") return "utf-8";
+  // An explicit UTF-8 declaration stays strict: invalid bytes there mean a broken file, refused as before.
+  // CHARSET:UTF-8 counts as explicit too, next to ENCODING and the XML declaration.
+  if (declaredEncoding === "UTF8" || declaredEncoding === "UNICODE" || charset === "UTF8") return "utf-8";
 
+  // The header decides whether the file is accepted, not how it is decoded. Issuers keep a legacy
+  // CHARSET:1252 on files whose bytes are UTF-8 (DEV-125), so a supported Western or ASCII declaration
+  // only lets the content be sniffed, with the same rule the CSV import uses.
   const legacyWesternEncodings = new Set(["1252", "WINDOWS1252", "ISO88591", "88591"]);
-  if (legacyWesternEncodings.has(declaredEncoding ?? "") || legacyWesternEncodings.has(charset ?? "")) {
-    return "windows-1252";
-  }
-
   const asciiEncodings = new Set(["USASCII", "ASCII"]);
   const compatibleCharsets = new Set(["NONE", "UTF8", "USASCII", "ASCII"]);
-  if (
-    (declaredEncoding === undefined || asciiEncodings.has(declaredEncoding))
-    && (charset === undefined || compatibleCharsets.has(charset))
-  ) {
-    return "utf-8";
-  }
-  return null;
+  const declaresLegacyWestern = legacyWesternEncodings.has(declaredEncoding ?? "") || legacyWesternEncodings.has(charset ?? "");
+  const declaresAsciiCompatible = (declaredEncoding === undefined || asciiEncodings.has(declaredEncoding))
+    && (charset === undefined || compatibleCharsets.has(charset));
+  if (!declaresLegacyWestern && !declaresAsciiCompatible) return null;
+  return detectUtf8OrWindows1252(content);
 }
 
 function validateDocumentShape(document: string, isCardStatement: boolean): void {

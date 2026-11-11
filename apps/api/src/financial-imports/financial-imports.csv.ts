@@ -1,6 +1,7 @@
 import { TextDecoder } from "node:util";
 import { FinancialImportError } from "./financial-imports.errors.js";
 import { createFinancialImportFingerprint } from "./financial-imports.fingerprint.js";
+import { detectUtf8OrWindows1252 } from "./financial-imports.text-encoding.js";
 import {
   CSV_DATE_FORMATS,
   CSV_ENCODINGS,
@@ -269,8 +270,7 @@ function decodeCsv(content: Buffer, encoding: CsvEncoding): string {
 }
 
 function detectEncoding(content: Buffer): CsvEncoding {
-  try { new TextDecoder("utf-8", { fatal: true }).decode(content); return "utf-8"; }
-  catch { return "windows-1252"; }
+  return detectUtf8OrWindows1252(content);
 }
 
 function detectDelimiter(text: string): CsvDelimiter {
