@@ -496,6 +496,17 @@ test("PostgreSQL card import keeps a purchase and its IOF that share a FITID, an
     assert.equal(secondToll!.validationStatus, "duplicate");
     assert.equal(secondToll!.canIncludeDuplicate, true);
     assert.match(secondToll!.errorMessage ?? "", /emissor pode ter reaproveitado o identificador/);
+
+    // 6. The override is offered only when consent can finish: a repeated line that is also invalid (here a
+    // date that does not exist) cannot be edited on the screen, so "include anyway" would be a dead end.
+    const brokenTolls = await upload(cardOfx([
+      { id: "broken-toll-fitid", date: "2026-10-07", amount: "-5.80", name: "Transação de NuTag" },
+      { id: "broken-toll-fitid", date: "2026-13-45", amount: "-5.80", name: "Transação de NuTag" },
+    ]), "pedagio-data-invalida.ofx");
+    const brokenToll = brokenTolls.items![1]!;
+    assert.equal(brokenToll.validationStatus, "duplicate");
+    assert.ok(!brokenToll.date, "the impossible date must not survive as a date");
+    assert.equal(brokenToll.canIncludeDuplicate, false);
   } finally {
     await app?.close();
     await scopedPool?.end();
