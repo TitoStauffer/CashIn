@@ -62,7 +62,8 @@ readonly KEY_FILE="${WORK_DIR}/sonarsource.asc"
 key_fetched=false
 for key_url in "${KEY_URLS[@]}"; do
   echo "Fetching the SonarSource public key from ${key_url%%/pks/*}"
-  # A keyserver that does not answer is skipped after the bounded wait instead of holding the job.
+  # A keyserver that does not answer is skipped after the bounded wait (30 s per attempt, up to three
+  # attempts) instead of holding the job.
   if fetch "$key_url" "$KEY_FILE" 30; then
     key_fetched=true
     break
@@ -86,8 +87,11 @@ fi
 gpg --homedir "$GNUPG_DIR" --batch --quiet --import "$KEY_FILE"
 
 # VALIDSIG's last field is the primary key fingerprint of the signer; a good signature by any other key fails.
-if ! gpg --homedir "$GNUPG_DIR" --batch --status-fd 1 --verify "$SIGNATURE" "$ARCHIVE" 2>/dev/null \
-  | grep -Eq "^\[GNUPG:\] VALIDSIG .* ${KEY_FINGERPRINT}$"; then
+# The status output is captured before it is searched: piping gpg into an early-exiting grep could kill gpg
+# with SIGPIPE, and under pipefail a valid signature would then be reported as invalid.
+verify_status="$(gpg --homedir "$GNUPG_DIR" --batch --status-fd 1 --verify "$SIGNATURE" "$ARCHIVE" 2>/dev/null)" \
+  || verify_status=""
+if ! grep -Eq "^\[GNUPG:\] VALIDSIG .* ${KEY_FINGERPRINT}$" <<<"$verify_status"; then
   echo "::error::The SonarScanner CLI signature is not a valid signature by ${KEY_FINGERPRINT}." >&2
   exit 1
 fi
