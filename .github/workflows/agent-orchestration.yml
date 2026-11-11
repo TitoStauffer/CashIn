@@ -369,7 +369,10 @@ jobs:
   publish-quality-gate:
     name: Publish Quality Gate report
     needs: quality-gate
-    if: needs.quality-gate.result == 'success' && needs.quality-gate.outputs.decision != ''
+    # always() is required, not decoration (DEV-127): without a status function GitHub applies success(),
+    # which skips this job whenever any ancestor was skipped. On the light track the qa job is skipped by
+    # design, so the Coordinator report was never published and every light-track round failed.
+    if: always() && needs.quality-gate.result == 'success' && needs.quality-gate.outputs.decision != ''
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
