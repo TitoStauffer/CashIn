@@ -51,12 +51,15 @@ export default defineConfig({
         'src/api/activeWallet.ts',
         'src/api/request.ts',
         'src/api/requestPath.ts',
+        'src/authApi.ts',
       ],
       exclude: ['src/**/*.test.ts', 'src/**/*.test.tsx', 'src/test/**'],
       thresholds: {
         // The shared HTTP client and the path guard hold a security check, so a coverage regression
         // here has to fail the job rather than only show up in the report.
         'src/api/**': { lines: 80, functions: 80, branches: 80, statements: 80 },
+        // DEV-123 moved authentication onto the shared client; its tests keep the requests the screens rely on.
+        'src/authApi.ts': { lines: 90, functions: 90, branches: 90, statements: 90 },
         'src/feedback/**': { lines: 80, functions: 80, branches: 80, statements: 80 },
         'src/layout/**': { lines: 80, functions: 80, branches: 80, statements: 80 },
         'src/period/**': { lines: 80, functions: 80, branches: 80, statements: 80 },
