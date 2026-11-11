@@ -205,6 +205,16 @@ function isSameMergedPullRequest(pr: GitHubPullRequest, number: number, headSha:
     && pr.merge_commit_sha?.toLowerCase() === mergeSha.toLowerCase();
 }
 
+/**
+ * O resultado da validação de evidências: ou um motivo de bloqueio, ou o trilho de revisão — nunca os
+ * dois, nunca nenhum (DEV-122). O comentário de encerramento escolhe a redação pelo trilho, e a ausência
+ * dele caía no ramo que afirma QA aprovado. Com o par exclusivo por tipo, um `return` novo que esqueça o
+ * trilho deixa de compilar, em vez de gravar no Jira uma aprovação de QA que não aconteceu.
+ */
+export type PostMergeEvidence =
+  | { reason: string; reviewTrack?: never }
+  | { reason?: never; reviewTrack: "light" | "full" };
+
 async function readAndValidateEvidence(
   github: GitHubReadApi,
   owner: string,
@@ -212,7 +222,7 @@ async function readAndValidateEvidence(
   pr: GitHubPullRequest,
   botLogin: string,
   requiredChecks: readonly string[],
-): Promise<{ reason?: string; reviewTrack?: "light" | "full" }> {
+): Promise<PostMergeEvidence> {
   const sha = pr.head.sha;
   const [checkRuns, reviews, comments, unresolvedThreads] = await Promise.all([
     github.listCheckRuns(owner, repository, sha),
@@ -284,7 +294,7 @@ async function readAndValidateEvidence(
  * Lê o trilho declarado no relatório aprovado do Coordinator para este SHA. Falha fechado: qualquer
  * ausência, texto inesperado ou relatório de outro SHA devolve `false`, e o QA segue obrigatório.
  */
-function declaresLightTrack(comments: GitHubIssueComment[], botLogin: string, sha: string): boolean {
+export function declaresLightTrack(comments: GitHubIssueComment[], botLogin: string, sha: string): boolean {
   const matching = comments.filter((comment) => comment.user?.login?.toLowerCase() === botLogin
     && (comment.body ?? "").includes("### Codex — Quality Gate Coordinator"))
     .sort((left, right) => (left.updated_at ?? left.created_at ?? "").localeCompare(right.updated_at ?? right.created_at ?? ""));
@@ -293,6 +303,10 @@ function declaresLightTrack(comments: GitHubIssueComment[], botLogin: string, sh
   const status = latest.body.match(/^\*\*Status:\*\*\s*(.+)$/m)?.[1]?.trim();
   const commitSha = latest.body.match(/^\*\*Commit:\*\*\s*`([a-f0-9]{40})`$/im)?.[1];
   if (status !== "APPROVED" || commitSha?.toLowerCase() !== sha.toLowerCase()) return false;
+  // Contrato com o produtor: a linha vem de `evaluateDeterministicQualityGate`, em
+  // `tools/github-reviewer/src/agent-stage-policy.ts`, dentro do corpo de `formatPullRequestReport`, em
+  // `tools/github-reviewer/src/github-report-publisher.ts`. `test/review-track-contract.test.ts` liga os
+  // dois lados com o relatório real; mudar um sem o outro faz esse teste falhar.
   return /^\*\*Trilho de revisão:\*\*\s*leve\./m.test(latest.body);
 }
 
