@@ -506,6 +506,24 @@ test("PostgreSQL card import keeps a purchase and its IOF that share a FITID, an
     const brokenToll = brokenTolls.items![1]!;
     assert.equal(brokenToll.validationStatus, "duplicate");
     assert.ok(!brokenToll.date, "the impossible date must not survive as a date");
+
+    // 7. Once the two equal tolls are imported, the same file again is a reimport for both lines. The second
+    // one must not keep the in-file override, which the confirmation would refuse anyway.
+    const tollPayload = { date: "2026-10-05", description: "Transação de NuTag", type: "expense", categoryId, subcategoryId: null };
+    assert.equal((await patchItem(tolls.id, firstToll!.id, tollPayload)).statusCode, 200);
+    assert.equal((await patchItem(tolls.id, secondToll!.id, { ...tollPayload, includeDuplicate: true })).statusCode, 200);
+    const tollsConfirmed = await app.inject({ method: "POST", url: `/financial-imports/${tolls.id}/confirm`, headers });
+    assert.equal(tollsConfirmed.statusCode, 200);
+    assert.equal(tollsConfirmed.json().summary.imported, 2);
+    const tollsAgain = await upload(cardOfx([
+      { id: "toll-fitid", date: "2026-10-05", amount: "-5.80", name: "Transação de NuTag" },
+      { id: "toll-fitid", date: "2026-10-05", amount: "-5.80", name: "Transação de NuTag" },
+    ]), "pedagio-de-novo.ofx");
+    for (const toll of tollsAgain.items!) {
+      assert.equal(toll.validationStatus, "duplicate");
+      assert.equal(toll.canIncludeDuplicate, false, "a reimported line cannot be offered as an override");
+      assert.match(toll.errorMessage ?? "", /já foi importada/);
+    }
     assert.equal(brokenToll.canIncludeDuplicate, false);
   } finally {
     await app?.close();

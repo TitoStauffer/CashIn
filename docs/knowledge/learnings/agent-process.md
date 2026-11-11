@@ -1,7 +1,7 @@
 # Aprendizados do processo dos Agents
 
 **Status:** ativo
-**Última revisão:** 08/11/2026
+**Última revisão:** 11/11/2026
 
 ## Consolidar a rodada antes de publicar
 
@@ -92,6 +92,7 @@
 - **Prevenção:** registrar link da revisão, identificador e SHA exatos em cada aprendizado derivado de Code Review ou QA.
 - **Detecção:** revisão documental confirma a presença dos três identificadores na evidência.
 - **Evidência:** PR #49, revisão [`5684471719`](https://github.com/TitoStauffer/CashIn/pull/49#pullrequestreview-5684471719), SHA `5628865a67bc944f7f6f3ccbe9cf414d4b447daa`.
+- **Reincidência:** PR #96 (DEV-124), revisão [`5859946848`](https://github.com/TitoStauffer/CashIn/pull/96#pullrequestreview-5859946848), SHA `972ab058875af5b97ed9f04eb8e9713a802653c7`: a ocorrência registrada na rodada 1 citava só o link do PR. Corrigida para o link, o identificador e o SHA exatos da revisão `5858391994`.
 
 ## Rejeitar datas inválidas antes de comparar intervalos
 
