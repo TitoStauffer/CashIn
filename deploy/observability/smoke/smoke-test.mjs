@@ -23,7 +23,11 @@ const ADMIN_USER = "smoke-test";
 const secretsDirectory = mkdtempSync(join(tmpdir(), "observability-smoke-"));
 const passwordFile = join(secretsDirectory, "grafana-admin-password");
 const password = randomBytes(18).toString("base64url");
-writeFileSync(passwordFile, password, { mode: 0o600 });
+// Outside swarm, a Compose secret is a bind mount that keeps the host permissions, and Grafana runs as
+// uid 472: a 600 file owned by the runner is unreadable inside the container, and Grafana would start
+// without the configured password. The file is world-readable inside a 700 directory instead, which keeps
+// other host users out (same layout as the runbook).
+writeFileSync(passwordFile, password, { mode: 0o644 });
 const env = { ...process.env, GRAFANA_ADMIN_USER: ADMIN_USER, GRAFANA_ADMIN_PASSWORD_FILE: passwordFile };
 
 function run(command, args, { allowFailure = false } = {}) {

@@ -38,8 +38,10 @@ No total, até 2,5 CPUs e cerca de 2,2 GB. A VPS precisa ter folga para isso **a
    ```bash
    install -d -m 700 /etc/saldocerto/observability
    openssl rand -base64 24 > /etc/saldocerto/observability/grafana-admin-password
-   chmod 600 /etc/saldocerto/observability/grafana-admin-password
+   chmod 644 /etc/saldocerto/observability/grafana-admin-password
    ```
+
+   O `644` é proposital. Fora do swarm, o secret do Compose é um bind mount que mantém as permissões do host, e o Grafana roda como uid 472 dentro do container. Um arquivo `600` do root fica ilegível para ele, e o Grafana subiria **sem** a senha configurada. Quem impede os outros usuários do host de ler a senha é o diretório `700`. O smoke test do CI pegou esse problema na primeira execução.
 
 2. Copie `deploy/observability/.env.example` para `deploy/observability/.env` e preencha `GRAFANA_ADMIN_USER` com um login que não seja `admin`, e `GRAFANA_ADMIN_PASSWORD_FILE` com o caminho do passo 1. O `.env` fica fora do Git.
 3. Valide antes de subir:
