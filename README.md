@@ -27,7 +27,7 @@ Opcionalmente, copie .env.example para .env para explicitar as credenciais locai
 - Web: http://localhost:5173
 - Health da API e do PostgreSQL: http://localhost:3000/health
 - PostgreSQL no host: localhost:5433
-- Grafana (logs e traces da API): http://localhost:3001, só nesta máquina. Veja [docs/observability.md](docs/observability.md).
+- Grafana (logs, traces e métricas da API): http://localhost:3001, só nesta máquina. Veja [docs/observability.md](docs/observability.md).
 
 O Compose cria um volume persistente para os dados locais do PostgreSQL. As credenciais padrão no Compose são exclusivas para desenvolvimento local e não devem ser reutilizadas em produção.
 
