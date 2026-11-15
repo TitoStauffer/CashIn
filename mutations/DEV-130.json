@@ -1,0 +1,53 @@
+{
+  "ticket": "DEV-130",
+  "mutations": [
+    {
+      "id": "client-id-length-is-capped",
+      "package": "apps/api",
+      "file": "apps/api/src/shared/request-id.ts",
+      "find": "{1,128}$/;",
+      "replace": "{1,129}$/;",
+      "command": ["npx", "tsx", "--test", "src/app.test.ts"]
+    },
+    {
+      "id": "client-id-is-anchored-at-start",
+      "package": "apps/api",
+      "file": "apps/api/src/shared/request-id.ts",
+      "find": "= /^[A-Za-z0-9._-]",
+      "replace": "= /[A-Za-z0-9._-]",
+      "command": ["npx", "tsx", "--test", "src/app.test.ts"]
+    },
+    {
+      "id": "client-id-is-anchored-at-end",
+      "package": "apps/api",
+      "file": "apps/api/src/shared/request-id.ts",
+      "find": "{1,128}$/;",
+      "replace": "{1,128}/;",
+      "command": ["npx", "tsx", "--test", "src/app.test.ts"]
+    },
+    {
+      "id": "generated-id-is-random",
+      "package": "apps/api",
+      "file": "apps/api/src/shared/request-id.ts",
+      "find": "return randomUUID();",
+      "replace": "return \"00000000-0000-4000-8000-000000000000\";",
+      "command": ["npx", "tsx", "--test", "src/app.test.ts"]
+    },
+    {
+      "id": "raw-header-is-not-trusted",
+      "package": "apps/api",
+      "file": "apps/api/src/app.ts",
+      "find": "requestIdHeader: false,",
+      "replace": "requestIdHeader: \"x-request-id\",",
+      "command": ["npx", "tsx", "--test", "src/app.test.ts"]
+    },
+    {
+      "id": "every-response-carries-the-id",
+      "package": "apps/api",
+      "file": "apps/api/src/app.ts",
+      "find": "reply.header(REQUEST_ID_HEADER, request.id);",
+      "replace": "void reply;",
+      "command": ["npx", "tsx", "--test", "src/app.test.ts"]
+    }
+  ]
+}

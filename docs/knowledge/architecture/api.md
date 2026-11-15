@@ -34,6 +34,7 @@ Regra de aplicação inteira, implementada em `requestLoggerOptions` do `src/app
 
 - O logger serializa de cada requisição apenas método, rota e endereço de origem, e de cada resposta apenas o código; `req.headers`, `res.headers` e `req.body` estão na redação do pino. Nenhum log carrega cookie de sessão, conteúdo de arquivo ou valor financeiro — afirmação verificada na **linha realmente emitida** pelo pino, com destino injetado no teste, e não apenas no objeto de configuração. A redação é a segunda trava, também verificada: uma regressão monta a configuração com um serializer que vaza os cabeçalhos de propósito e afirma que a linha continua sem o cookie.
 - Quem mudar o logger, os serializers ou a redação em `src/app.ts` mantém essas duas travas e os testes que leem a linha emitida.
+- **ID de correlação (DEV-130).** Cada requisição tem um `reqId`, que aparece em todas as linhas de log dela e volta ao cliente no header `X-Request-Id` de toda resposta, inclusive 404, 400 do parser e 500 do error handler. O header é gravado num hook `onRequest`, e o Fastify preserva headers já definidos quando o error handler responde. O id vem de `resolveRequestId` (`src/shared/request-id.ts`). Ele reaproveita o `X-Request-Id` do cliente quando é um valor único de 1 a 128 caracteres em `[A-Za-z0-9._-]`. Qualquer outro valor é descartado em silêncio e trocado por um `randomUUID()`. O alfabeto curto existe porque o valor vai literal para o log e para um header de resposta: sem espaço, aspas nem quebra de linha, um id do cliente não consegue forjar uma linha de log nem quebrar um header. A opção `requestIdHeader` do Fastify fica desligada de propósito, porque ela aceitaria o header sem validar.
 
 ## Comandos
 
@@ -51,6 +52,7 @@ Os testes de integração exigem `TEST_DATABASE_URL`. Consulte [`docs/ci.md`](..
 
 - [`apps/api/src/app.ts`](../../../apps/api/src/app.ts)
 - [`apps/api/src/app.test.ts`](../../../apps/api/src/app.test.ts)
+- [`apps/api/src/shared/request-id.ts`](../../../apps/api/src/shared/request-id.ts)
 - [`apps/api/src/server.ts`](../../../apps/api/src/server.ts)
 - [`apps/api/src/database.ts`](../../../apps/api/src/database.ts)
 - [`apps/api/package.json`](../../../apps/api/package.json)

@@ -174,3 +174,113 @@ test("the emitted request log line carries no cookie and no payload", async () =
   assert.deepEqual(Object.keys(response?.res ?? {}), ["statusCode"]);
   assert.equal(typeof response?.res?.statusCode, "number");
 });
+
+// DEV-130 — correlation id. Every response carries `X-Request-Id`, and the same value is the `reqId` of
+// every log line of that request, so an id quoted by a user leads straight to the right log lines.
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+
+function createLoggedApp() {
+  const lines: Array<{ reqId?: string; msg?: string }> = [];
+  const app = createApp(createHealthDatabase(async () => ({ rows: [{ "?column?": 1 }] })), {
+    logger: { write: (line) => { lines.push(JSON.parse(line) as { reqId?: string; msg?: string }); } },
+  });
+  return { app, lines };
+}
+
+function linesOf(lines: Array<{ reqId?: string; msg?: string }>, requestId: string) {
+  return lines.filter((line) => line.reqId === requestId);
+}
+
+test("a request without X-Request-Id gets a generated UUID, returned and logged as reqId", async () => {
+  const { app, lines } = createLoggedApp();
+
+  const response = await app.inject({ method: "GET", url: "/health" });
+  await app.close();
+
+  const requestId = response.headers["x-request-id"];
+  assert.equal(typeof requestId, "string");
+  assert.match(requestId as string, UUID_PATTERN);
+  const logged = linesOf(lines, requestId as string).map((line) => line.msg);
+  assert.ok(logged.includes("incoming request"), "the request line must carry the returned id");
+  assert.ok(logged.includes("request completed"), "the response line must carry the returned id");
+  // No line of the request may carry another id — the old `req-N` counter included.
+  assert.deepEqual(lines.filter((line) => line.reqId !== undefined && line.reqId !== requestId), []);
+});
+
+test("generated ids never repeat, across requests and across a restart of the API", async () => {
+  const ids = new Set<string>();
+  for (let restart = 0; restart < 2; restart += 1) {
+    const app = createApp(createHealthDatabase(async () => ({ rows: [{ "?column?": 1 }] })));
+    for (let request = 0; request < 3; request += 1) {
+      const response = await app.inject({ method: "GET", url: "/health" });
+      ids.add(response.headers["x-request-id"] as string);
+    }
+    await app.close();
+  }
+  assert.equal(ids.size, 6);
+});
+
+test("a valid X-Request-Id sent by the client is reused in the response and in the log", async () => {
+  const { app, lines } = createLoggedApp();
+  const clientId = `client-${"a".repeat(121)}`;
+  assert.equal(clientId.length, 128);
+
+  const response = await app.inject({ method: "GET", url: "/health", headers: { "x-request-id": clientId } });
+  await app.close();
+
+  assert.equal(response.headers["x-request-id"], clientId);
+  assert.ok(linesOf(lines, clientId).length >= 2, "the request and response lines must carry the client id");
+});
+
+for (const [label, supplied] of [
+  ["empty", ""],
+  ["longer than 128 characters", "a".repeat(129)],
+  ["with a space", "abc def"],
+  ["with a character outside the alphabet", "abc;drop"],
+  ["with a non-ASCII letter", "requisição"],
+  ["repeated", ["first-id", "second-id"]],
+] as const) {
+  test(`an X-Request-Id ${label} is discarded and replaced by a generated UUID`, async () => {
+    const { app, lines } = createLoggedApp();
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/health",
+      headers: { "x-request-id": supplied as string | string[] },
+    });
+    await app.close();
+
+    const requestId = response.headers["x-request-id"] as string;
+    assert.match(requestId, UUID_PATTERN);
+    assert.ok(linesOf(lines, requestId).length >= 2);
+    const rejected = Array.isArray(supplied) ? supplied : [supplied];
+    for (const value of rejected.filter((item) => item !== "")) {
+      assert.equal(JSON.stringify(lines).includes(value), false, `the discarded id ${value} must not reach the log`);
+    }
+  });
+}
+
+test("error responses carry X-Request-Id too, and the error log line has the same reqId", async () => {
+  const { app, lines } = createLoggedApp();
+  app.get("/test-only/failure", async () => {
+    throw new Error("unexpected");
+  });
+
+  const failure = await app.inject({ method: "GET", url: "/test-only/failure", headers: { "x-request-id": "failure-id" } });
+  const notFound = await app.inject({ method: "GET", url: "/rota-inexistente", headers: { "x-request-id": "not-found-id" } });
+  const badBody = await app.inject({
+    method: "POST",
+    url: "/auth/login",
+    headers: { "content-type": "application/json", "x-request-id": "bad-body-id" },
+    payload: "{",
+  });
+  await app.close();
+
+  assert.equal(failure.statusCode, 500);
+  assert.equal(failure.headers["x-request-id"], "failure-id");
+  assert.ok(linesOf(lines, "failure-id").some((line) => line.msg === "Request failed"));
+  assert.equal(notFound.statusCode, 404);
+  assert.equal(notFound.headers["x-request-id"], "not-found-id");
+  assert.equal(badBody.statusCode, 400);
+  assert.equal(badBody.headers["x-request-id"], "bad-body-id");
+});
