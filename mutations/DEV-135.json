@@ -91,6 +91,19 @@
         "--test",
         "src/metrics.test.ts"
       ]
+    },
+    {
+      "id": "process-metrics-are-released",
+      "package": "apps/api",
+      "file": "apps/api/src/process-metrics.ts",
+      "find": "meter.removeBatchObservableCallback(observe, observables);",
+      "replace": "void observables;",
+      "command": [
+        "npx",
+        "tsx",
+        "--test",
+        "src/process-metrics.test.ts"
+      ]
     }
   ]
 }

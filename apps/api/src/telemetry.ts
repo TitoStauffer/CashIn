@@ -185,7 +185,13 @@ export interface TelemetryOptions {
   logProcessor?: LogRecordProcessor;
 }
 
-export function startTelemetry({ environment, exporter, logProcessor }: TelemetryOptions): NodeSDK | null {
+// What the caller keeps: shutting down flushes buffered telemetry and releases what the SDK and the
+// process metrics hold (the event loop delay monitor included).
+export interface Telemetry {
+  shutdown(): Promise<void>;
+}
+
+export function startTelemetry({ environment, exporter, logProcessor }: TelemetryOptions): Telemetry | null {
   if (!exporter && !isTelemetryEnabled(environment)) return null;
   const sendLogs = logProcessor !== undefined || isLogExportEnabled(environment);
   const sendMetrics = isMetricExportEnabled(environment);
@@ -209,6 +215,11 @@ export function startTelemetry({ environment, exporter, logProcessor }: Telemetr
   sdk.start();
   // HTTP and pg metrics come from their instrumentations once the SDK sets the meter provider; the
   // process metrics are registered here, on that same provider.
-  if (sendMetrics) registerProcessMetrics(metrics.getMeter(DEFAULT_SERVICE_NAME));
-  return sdk;
+  const stopProcessMetrics = sendMetrics ? registerProcessMetrics(metrics.getMeter(DEFAULT_SERVICE_NAME)) : undefined;
+  return {
+    shutdown: async () => {
+      stopProcessMetrics?.();
+      await sdk.shutdown();
+    },
+  };
 }
