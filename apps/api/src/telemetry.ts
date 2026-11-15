@@ -11,6 +11,7 @@ type NodeSdkConfiguration = NonNullable<ConstructorParameters<typeof NodeSDK>[0]
 export type SpanExporter = NonNullable<NodeSdkConfiguration["traceExporter"]>;
 export type ExportedSpan = Parameters<SpanExporter["export"]>[0][number];
 type ExportCallback = Parameters<SpanExporter["export"]>[1];
+export type LogRecordProcessor = NonNullable<NodeSdkConfiguration["logRecordProcessors"]>[number];
 
 export const DEFAULT_SERVICE_NAME = "saldocerto-api";
 
@@ -22,6 +23,15 @@ type Environment = Readonly<Record<string, string | undefined>>;
 
 export function isTelemetryEnabled(environment: Environment): boolean {
   return TELEMETRY_ENDPOINT_VARIABLES.some((name) => (environment[name] ?? "").trim() !== "");
+}
+
+// Sending logs over OTLP is a second, explicit opt-in on top of the endpoint (`OTEL_LOGS_EXPORTER=otlp`):
+// with only the endpoint set, logs stay on stdout as before. When enabled, the SDK builds the OTLP log
+// exporter from the same standard variables. What it sends is the line pino already serialized — after
+// `requestLoggerOptions` applied its serializers and redaction — so the log rules of `app.ts` hold for
+// the copy that leaves the process too.
+export function isLogExportEnabled(environment: Environment): boolean {
+  return (environment.OTEL_LOGS_EXPORTER ?? "").trim().toLowerCase() === "otlp";
 }
 
 // What leaves the process is an allowlist, not a denylist (vault rule 21: a guard whose silence means
@@ -102,7 +112,7 @@ export const pgInstrumentationConfig = {
   requireParentSpan: true,
 } as const;
 
-export function createInstrumentations() {
+export function createInstrumentations({ sendLogs }: { sendLogs: boolean }) {
   return [
     new HttpInstrumentation({
       ignoreIncomingRequestHook: (request) => UNTRACED_PATHS.has((request.url ?? "").split("?")[0]),
@@ -113,11 +123,19 @@ export function createInstrumentations() {
     }),
     new PgInstrumentation(pgInstrumentationConfig),
     new PinoInstrumentation({
-      // Logs keep going to stdout as JSON; the instrumentation only correlates each line with its span.
-      disableLogSending: true,
+      // Logs always keep going to stdout as JSON; the instrumentation correlates each line with its span
+      // and, only when log export is enabled, also hands the same line to the OTLP log exporter.
+      disableLogSending: !sendLogs,
       logKeys: { traceId: "traceId", spanId: "spanId", traceFlags: "traceFlags" },
     }),
   ];
+}
+
+// What `logRecordProcessors` the SDK receives. `undefined` is not "nothing": it makes the SDK build the
+// OTLP log exporter from the environment, which is the production path. An empty list keeps logs off.
+export function logRecordProcessorsFor({ logProcessor, sendLogs }: { logProcessor?: LogRecordProcessor; sendLogs: boolean }): LogRecordProcessor[] | undefined {
+  if (logProcessor) return [logProcessor];
+  return sendLogs ? undefined : [];
 }
 
 export interface TelemetryOptions {
@@ -125,10 +143,13 @@ export interface TelemetryOptions {
   // Tests inject an in-memory exporter; production builds the OTLP one, which reads its endpoint from
   // the same standard variables.
   exporter?: SpanExporter;
+  // Tests inject an in-memory log processor; production uses the OTLP one when `isLogExportEnabled`.
+  logProcessor?: LogRecordProcessor;
 }
 
-export function startTelemetry({ environment, exporter }: TelemetryOptions): NodeSDK | null {
+export function startTelemetry({ environment, exporter, logProcessor }: TelemetryOptions): NodeSDK | null {
   if (!exporter && !isTelemetryEnabled(environment)) return null;
+  const sendLogs = logProcessor !== undefined || isLogExportEnabled(environment);
   const sdk = new NodeSDK({
     serviceName: environment.OTEL_SERVICE_NAME?.trim() || DEFAULT_SERVICE_NAME,
     // No resource detection: the process detector would export the command line and the host
@@ -139,10 +160,11 @@ export function startTelemetry({ environment, exporter }: TelemetryOptions): Nod
     // service, so there is nothing to propagate onwards either.
     textMapPropagator: null,
     traceExporter: new RedactingSpanExporter(exporter ?? new OTLPTraceExporter()),
-    instrumentations: createInstrumentations(),
-    // Traces only. Empty lists keep the SDK from configuring log and metric exporters from the
-    // environment on its own.
-    logRecordProcessors: [],
+    instrumentations: createInstrumentations({ sendLogs }),
+    // An empty list keeps the SDK from configuring a log exporter from the environment on its own;
+    // leaving it undefined lets the SDK build the OTLP log exporter from `OTEL_LOGS_EXPORTER`.
+    logRecordProcessors: logRecordProcessorsFor({ logProcessor, sendLogs }),
+    // No metrics yet: the empty list keeps the SDK from configuring a metric exporter on its own.
     metricReaders: [],
   });
   sdk.start();

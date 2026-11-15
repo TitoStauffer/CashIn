@@ -3,8 +3,8 @@ import { before, test } from "node:test";
 import type { AddressInfo } from "node:net";
 import { createServer } from "node:http";
 import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-http";
-import type { ExportedSpan, SpanExporter } from "./telemetry.js";
-import { isTelemetryEnabled, pgInstrumentationConfig, redactAttributes, redactEvents, startTelemetry } from "./telemetry.js";
+import type { ExportedSpan, LogRecordProcessor, SpanExporter } from "./telemetry.js";
+import { isLogExportEnabled, isTelemetryEnabled, logRecordProcessorsFor, pgInstrumentationConfig, redactAttributes, redactEvents, startTelemetry } from "./telemetry.js";
 
 // DEV-131. The SDK patches Fastify, pino, http and pg when they are loaded, so it is started here before
 // `app.js` and `pg` are imported — the same order `node --import ./dist/instrumentation.js` gives
@@ -32,11 +32,20 @@ const SECRETS = {
 const CLIENT_TRACE_ID = "0af7651916cd43dd8448eb211c80319c";
 
 const exporter = new CollectingExporter();
+
+// DEV-132. The log records the SDK would hand to the OTLP log exporter, collected in memory.
+type EmittedLogRecord = Parameters<LogRecordProcessor["onEmit"]>[0];
+const logRecords: EmittedLogRecord[] = [];
+const logProcessor: LogRecordProcessor = {
+  onEmit: (record) => { logRecords.push(record); },
+  forceFlush: async () => {},
+  shutdown: async () => {},
+};
 const logLines: Array<Record<string, unknown>> = [];
 let sensitiveStatus = 0;
 
 before(async () => {
-  const sdk = startTelemetry({ environment: {}, exporter });
+  const sdk = startTelemetry({ environment: {}, exporter, logProcessor });
   assert.ok(sdk, "an injected exporter must start the SDK");
   const { createApp } = await import("./app.js");
   const pg = await import("pg");
@@ -239,4 +248,32 @@ test("the redacted spans survive the real OTLP exporter and the payload still ca
   for (const [kind, secret] of Object.entries(SECRETS)) {
     assert.equal(payload.includes(secret), false, `${kind} leaked into the OTLP payload`);
   }
+});
+
+test("log records sent over OTLP carry the trace context, the reqId and no secret", () => {
+  const traceId = requestTraceId();
+  const handlerRecord = logRecords.find((record) => record.body === "handling sensitive request");
+  assert.ok(handlerRecord, `the handler line must be sent as a log record; got ${logRecords.length} records`);
+  // The native trace context of the record is what links Tempo to Loki in Grafana.
+  assert.equal(handlerRecord.spanContext?.traceId, traceId);
+  assert.equal(typeof handlerRecord.attributes.reqId, "string");
+  const sent = JSON.stringify(logRecords.map((record) => ({ body: record.body, attributes: record.attributes })));
+  for (const [kind, secret] of Object.entries(SECRETS)) {
+    assert.equal(sent.includes(secret), false, `${kind} leaked into a log record`);
+  }
+});
+
+test("log export is a separate opt-in: only OTEL_LOGS_EXPORTER=otlp enables it", () => {
+  assert.equal(isLogExportEnabled({}), false);
+  assert.equal(isLogExportEnabled({ OTEL_EXPORTER_OTLP_ENDPOINT: "http://collector:4318" }), false);
+  assert.equal(isLogExportEnabled({ OTEL_LOGS_EXPORTER: "none" }), false);
+  assert.equal(isLogExportEnabled({ OTEL_LOGS_EXPORTER: " OTLP " }), true);
+});
+
+test("the SDK builds the OTLP log exporter from the environment only when log export is enabled", () => {
+  // Production path: no injected processor and OTEL_LOGS_EXPORTER=otlp. `undefined` lets the SDK build the
+  // OTLP log exporter; an empty list here would silently stop every log from reaching Loki.
+  assert.equal(logRecordProcessorsFor({ sendLogs: true }), undefined);
+  assert.deepEqual(logRecordProcessorsFor({ sendLogs: false }), []);
+  assert.deepEqual(logRecordProcessorsFor({ logProcessor, sendLogs: true }), [logProcessor]);
 });

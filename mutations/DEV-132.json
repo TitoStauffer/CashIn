@@ -1,0 +1,83 @@
+{
+  "ticket": "DEV-132",
+  "mutations": [
+    {
+      "id": "logs-are-sent-when-enabled",
+      "package": "apps/api",
+      "file": "apps/api/src/telemetry.ts",
+      "find": "disableLogSending: !sendLogs,",
+      "replace": "disableLogSending: true,",
+      "command": [
+        "npx",
+        "tsx",
+        "--test",
+        "src/telemetry.test.ts"
+      ]
+    },
+    {
+      "id": "log-export-opt-in-is-normalized",
+      "package": "apps/api",
+      "file": "apps/api/src/telemetry.ts",
+      "find": "(environment.OTEL_LOGS_EXPORTER ?? \"\").trim().toLowerCase() === \"otlp\"",
+      "replace": "(environment.OTEL_LOGS_EXPORTER ?? \"\") === \"otlp\"",
+      "command": [
+        "npx",
+        "tsx",
+        "--test",
+        "src/telemetry.test.ts"
+      ]
+    },
+    {
+      "id": "logged-path-drops-query-string",
+      "package": "apps/api",
+      "file": "apps/api/src/app.ts",
+      "find": "url: request.url.split(\"?\")[0],",
+      "replace": "url: request.url,",
+      "command": [
+        "npx",
+        "tsx",
+        "--test",
+        "src/app.test.ts"
+      ]
+    },
+    {
+      "id": "injected-log-processor-is-installed",
+      "package": "apps/api",
+      "file": "apps/api/src/telemetry.ts",
+      "find": "if (logProcessor) return [logProcessor];",
+      "replace": "if (logProcessor) return [];",
+      "command": [
+        "npx",
+        "tsx",
+        "--test",
+        "src/telemetry.test.ts"
+      ]
+    },
+    {
+      "id": "env-log-exporter-is-built",
+      "package": "apps/api",
+      "file": "apps/api/src/telemetry.ts",
+      "find": "return sendLogs ? undefined : [];",
+      "replace": "return sendLogs ? [] : [];",
+      "command": [
+        "npx",
+        "tsx",
+        "--test",
+        "src/telemetry.test.ts"
+      ]
+    },
+    {
+      "id": "client-address-is-not-logged",
+      "package": "apps/api",
+      "file": "apps/api/src/app.ts",
+      "find": "url: request.url.split(\"?\")[0],",
+      "replace": "url: request.url.split(\"?\")[0], remoteAddress: (request as { ip?: string }).ip,",
+      "command": [
+        "npx",
+        "tsx",
+        "--test",
+        "src/app.test.ts"
+      ]
+    }
+  ]
+}

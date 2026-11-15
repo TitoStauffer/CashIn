@@ -10,7 +10,7 @@
 | Web | React, TypeScript e Vite | Interface, navegação, sessão e consumo da API |
 | API | Node.js, TypeScript e Fastify | HTTP, autenticação, regras de negócio e persistência |
 | Banco | PostgreSQL 17 | Dados transacionais, integridade e migrations versionadas |
-| Ambiente local | Docker Compose | Web, API e banco com volumes locais |
+| Ambiente local | Docker Compose | Web, API e banco com volumes locais; observabilidade com `grafana/otel-lgtm` (Grafana só em `127.0.0.1:3001`, ver [`docs/observability.md`](../../observability.md)) |
 | Entrega | GitHub Actions e SonarQube Cloud | CI, análise, agentes, gate e pós-merge |
 
 ## Fluxo de uma operação financeira

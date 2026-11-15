@@ -27,6 +27,7 @@ Edições de título ou corpo executam o workflow confiável e leve `.github/wor
 
 - Os arquivos `*.integration.test.ts` rodam só quando `TEST_DATABASE_URL` está definida. Sem ela, eles são **pulados em silêncio**.
 - No CI, o job `API` sobe `postgres:17-alpine` (a mesma imagem do `compose.yaml`) como serviço, com health check `pg_isready`. Usuário, senha e banco (`saldocerto` / `saldocerto_ci_only` / `saldocerto_test`) existem só dentro do job. Não há dados nem credenciais de produção.
+- O job `API` também roda `docker compose config --quiet` na raiz, logo depois do checkout. A checagem confirma que o `compose.yaml` da stack local (API, banco, Web e observabilidade, DEV-132) continua válido, porque um arquivo quebrado só apareceria quando alguém rodasse `docker compose up`.
 - Antes dos testes, um passo confirma a conexão pelo driver `pg`, o mesmo usado pelos testes.
 - Cada teste de integração cria um schema temporário, aplica as migrations com o mecanismo oficial do projeto (`runMigrations`, em `src/database.ts`, que lê `apps/api/migrations/`) e remove o schema ao final. O teste de autenticação aplica as migrations duas vezes, o que valida a idempotência.
 - **Proteção contra falso verde:** o passo "Ensure no test was skipped" lê a linha de resumo do `node:test` (`skipped N`, nos formatos TAP e spec) e falha o job se algum teste foi pulado.
