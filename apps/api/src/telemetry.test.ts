@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { before, test } from "node:test";
 import type { AddressInfo } from "node:net";
+import { createServer } from "node:http";
+import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-http";
 import type { ExportedSpan, SpanExporter } from "./telemetry.js";
 import { isTelemetryEnabled, pgInstrumentationConfig, redactAttributes, redactEvents, startTelemetry } from "./telemetry.js";
 
@@ -203,4 +205,38 @@ test("the exported resource names the service and carries no host or process det
   assert.equal(resource["service.name"], "saldocerto-api");
   const detected = Object.keys(resource).filter((key) => key.startsWith("host.") || key.startsWith("process.") || key.startsWith("os."));
   assert.deepEqual(detected, []);
+});
+
+// The redacted spans are views built with `Object.create`. The in-memory exporter reads them field by
+// field, but the OTLP exporter serializes them, so this sends the spans the redaction produced through
+// the real exporter to a local receiver and checks the payload that would leave the process.
+test("the redacted spans survive the real OTLP exporter and the payload still carries no secret", async () => {
+  const bodies: string[] = [];
+  const receiver = createServer((request, response) => {
+    const chunks: Buffer[] = [];
+    request.on("data", (chunk: Buffer) => chunks.push(chunk));
+    request.on("end", () => {
+      bodies.push(Buffer.concat(chunks).toString("utf8"));
+      response.writeHead(200, { "content-type": "application/json" });
+      response.end("{}");
+    });
+  });
+  await new Promise<void>((resolve) => receiver.listen(0, "127.0.0.1", resolve));
+  const { port } = receiver.address() as AddressInfo;
+  const otlp = new OTLPTraceExporter({ url: `http://127.0.0.1:${port}/v1/traces` });
+
+  const result = await new Promise<{ code: number; error?: Error }>((resolve) => otlp.export(exporter.spans, resolve));
+  await otlp.shutdown();
+  await new Promise<void>((resolve) => receiver.close(() => resolve()));
+
+  assert.equal(result.code, 0, `the OTLP export failed: ${result.error?.message ?? ""}`);
+  const payload = bodies.join("");
+  const exported = (JSON.parse(bodies[0]) as { resourceSpans: Array<{ scopeSpans: Array<{ spans: Array<{ name: string; traceId: string }> }> }> })
+    .resourceSpans.flatMap((resource) => resource.scopeSpans.flatMap((scope) => scope.spans));
+  assert.equal(exported.length, exporter.spans.length);
+  assert.ok(exported.some((span) => span.name.startsWith("pg.query")));
+  assert.ok(exported.some((span) => span.traceId === requestTraceId()), "the trace ids must survive serialization");
+  for (const [kind, secret] of Object.entries(SECRETS)) {
+    assert.equal(payload.includes(secret), false, `${kind} leaked into the OTLP payload`);
+  }
 });
