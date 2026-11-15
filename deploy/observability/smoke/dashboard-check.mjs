@@ -13,6 +13,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 import { setTimeout as delay } from "node:timers/promises";
+import { dashboardTargets, evaluateUntil } from "./dashboard-evaluation.mjs";
 
 const COMPOSE_FILE = "deploy/observability/compose.yaml";
 const DASHBOARD = "deploy/observability/grafana/dashboards/saldocerto-api.json";
@@ -47,13 +48,6 @@ async function until(description, check, timeoutMs = 180_000) {
   throw new Error(`timed out waiting for ${description}`);
 }
 
-// Grafana variables replaced by fixed windows. The traffic of drive-api.mjs lasts about 25 seconds; 5 minutes
-// keeps it inside every rate window for the whole retry period below, so a slow ingestion cannot turn into
-// a false "no data" for a query that does have data.
-export function concreteQuery(expr) {
-  return expr.replaceAll("$__rate_interval", "5m").replaceAll("$__range", "15m");
-}
-
 let failed = false;
 try {
   console.log("== bring the stack up");
@@ -79,21 +73,17 @@ try {
   });
   if (login.status !== 200) throw new Error(`login answered ${login.status}`);
   const cookie = login.headers.getSetCookie().map((value) => value.split(";")[0]).join("; ");
-  const dashboard = JSON.parse(readFileSync(DASHBOARD, "utf8"));
-  const targets = dashboard.panels.flatMap((panel) => (panel.targets ?? []).map((target) => ({ panel: panel.title, legend: target.legendFormat, expr: target.expr })));
-  const empty = [];
-  await until("every query to return data", async () => {
-    empty.length = 0;
-    for (const target of targets) {
-      const query = encodeURIComponent(concreteQuery(target.expr));
-      const result = await (await fetch(`${GRAFANA}/api/datasources/proxy/uid/prometheus/api/v1/query?query=${query}`, { headers: { cookie } })).json();
-      if (result.status !== "success" || (result.data?.result?.length ?? 0) === 0) empty.push(`${target.panel} · ${target.legend}`);
-    }
-    return empty.length === 0;
-  }, 90_000).catch(() => undefined);
-  for (const target of targets) console.log(`${empty.includes(`${target.panel} · ${target.legend}`) ? "EMPTY" : "data "} | ${target.panel} · ${target.legend}`);
-  if (empty.length > 0) throw new Error(`${empty.length} dashboard queries returned no data`);
-  console.log(`\nAll ${targets.length} dashboard queries returned data.`);
+  const targets = dashboardTargets(JSON.parse(readFileSync(DASHBOARD, "utf8")));
+  const runQuery = async (expr) => (await fetch(
+    `${GRAFANA}/api/datasources/proxy/uid/prometheus/api/v1/query?query=${encodeURIComponent(expr)}`,
+    { headers: { cookie } },
+  )).json();
+  // Fails closed (dashboard-evaluation.mjs): a query that throws counts as empty, the verdict is always a
+  // complete pass, and running out of time is a failure.
+  const verdict = await evaluateUntil(targets, runQuery, { deadlineMs: Date.now() + 90_000, sleep: delay });
+  for (const target of targets) console.log(`${verdict.empty.includes(target.label) ? "EMPTY" : "data "} | ${target.label}`);
+  if (!verdict.passed) throw new Error(`${verdict.empty.length} of ${verdict.checked} dashboard queries returned no data`);
+  console.log(`\nAll ${verdict.checked} dashboard queries returned data.`);
 } catch (error) {
   failed = true;
   console.error(`\nDashboard check FAILED: ${error.message}`);

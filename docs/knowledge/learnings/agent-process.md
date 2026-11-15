@@ -102,6 +102,7 @@
 - **Prevenção:** exigir timestamps finitos e intervalo ordenado antes de avaliar pertencimento temporal.
 - **Detecção:** regressões cobrem cada data ausente, cada data inválida e intervalo invertido.
 - **Evidência:** PR #49, revisão [`5684655538`](https://github.com/TitoStauffer/CashIn/pull/49#pullrequestreview-5684655538), SHA `5a21a75806d40530ca55f1c17bccde45e209cdaf`.
+- **Ocorrência na DEV-136, PR #114, revisão [`5913457101`](https://github.com/TitoStauffer/CashIn/pull/114#pullrequestreview-5913457101) (`87ec6b76ebf48b6f18dbe7bb8f1aea7eae787a3f`, MEDIUM):** o `dashboard-check.mjs` zerava a lista de consultas vazias no começo de cada tentativa, engolia exceções na repetição e descartava o timeout. Se a última tentativa lançasse exceção logo na primeira consulta, a lista ficava vazia e o check dava verde sem ter observado nada. É a mesma forma deste padrão: uma guarda por exclusão ("falhou se houver vazio") que fica permissiva quando o erro impede de preencher a lista. **Correção:** a avaliação foi para `dashboard-evaluation.mjs`, como função pura. Exceção e resposta de erro contam como vazio, o veredito é sempre de uma passagem completa, o timeout reprova e um painel sem consultas não passa. São 8 testes de sensibilidade e 4 mutantes locais. **Prevenção:** uma checagem de evidência precisa provar o positivo (todas as consultas observadas e com dados), nunca só a ausência de falha registrada.
 
 ## Manter documentação de segurança alinhada ao runtime
 

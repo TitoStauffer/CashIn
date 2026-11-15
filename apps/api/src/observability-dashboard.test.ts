@@ -9,6 +9,7 @@ import { PROCESS_METRIC_NAMES } from "./process-metrics.js";
 // this test instead of leaving an empty panel nobody notices.
 
 const DASHBOARD_PATH = new URL("../../../deploy/observability/grafana/dashboards/saldocerto-api.json", import.meta.url);
+const PROVIDER_PATH = new URL("../../../deploy/observability/grafana/provisioning/dashboards/saldocerto.yaml", import.meta.url);
 
 // Every metric name the API exports, as OpenTelemetry names it: the HTTP and pg ones come from their
 // instrumentations, the process and business ones from this code base.
@@ -99,4 +100,12 @@ test("every panel reads the provisioned Prometheus datasource, and the dashboard
   assert.ok(links.some((url) => url.includes('"uid":"tempo"')), "a link must open Tempo");
   assert.ok(links.some((url) => url.includes('"uid":"loki"')), "a link must open Loki");
   assert.ok(dashboard.links.every((link) => link.keepTime), "links must keep the selected period");
+});
+
+test("the provider refuses UI saves and points at the folder both stacks mount", () => {
+  const provider = readFileSync(PROVIDER_PATH, "utf8");
+  // Criterion 3 rests on this flag: with it, Grafana answers "Cannot save provisioned dashboard".
+  assert.match(provider, /^\s*allowUiUpdates:\s*false\s*$/m);
+  assert.match(provider, /^\s*disableDeletion:\s*true\s*$/m);
+  assert.match(provider, /^\s*path:\s*\/var\/lib\/saldocerto\/dashboards\s*$/m);
 });
