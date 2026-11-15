@@ -80,7 +80,7 @@ De sua máquina, abra o túnel com `ssh -N -L 3001:127.0.0.1:3001 <usuário>@<vp
 
 ## Validação (simulando a VPS)
 
-`node deploy/observability/smoke/smoke-test.mjs`, na raiz do repositório, faz a validação completa. O job `Observability stack` do CI roda o mesmo script sempre que o commit altera `deploy/observability`. Ele verifica, por trace, log e métrica OTLP enviados pela rede `saldocerto-observability`:
+`node deploy/observability/smoke/smoke-test.mjs`, na raiz do repositório, faz a validação completa. O passo "Smoke test production observability stack" do job `API` roda o mesmo script sempre que o commit altera `deploy/observability`. Ele verifica, por trace, log e métrica OTLP enviados pela rede `saldocerto-observability`:
 - os três sinais chegam e podem ser consultados pelo Grafana autenticado;
 - o Grafana recusa acesso anônimo (`401`);
 - os dados persistem depois de `down`/`up`;
