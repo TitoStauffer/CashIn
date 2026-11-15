@@ -104,6 +104,19 @@
         "--test",
         "src/process-metrics.test.ts"
       ]
+    },
+    {
+      "id": "only-completed-confirmations-count",
+      "package": "apps/api",
+      "file": "apps/api/src/financial-imports/financial-imports.service.ts",
+      "find": "if (session.status === \"completed\") this.metrics.importConfirmed(confirmedEventOf(session));",
+      "replace": "this.metrics.importConfirmed(confirmedEventOf(session));",
+      "command": [
+        "npx",
+        "tsx",
+        "--test",
+        "src/financial-imports/financial-imports.metrics.test.ts"
+      ]
     }
   ]
 }

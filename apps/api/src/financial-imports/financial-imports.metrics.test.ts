@@ -71,6 +71,17 @@ test("a confirmation whose transaction fails is not recorded", async () => {
   assert.deepEqual(metrics.confirmed, []);
 });
 
+test("a confirmation that leaves the import in preview, with nothing imported, is not recorded", async () => {
+  const { repository, metrics, service, upload } = setup();
+  const preview = await upload();
+  // What the PostgreSQL repository returns when it detects new duplicates during the confirmation, or no
+  // valid line is left: the session, still in preview. The memory repository never does this by itself.
+  repository.confirmImport = async (userId, walletId, importId) => repository.getImport(userId, walletId, importId);
+  const session = await service.confirmImport(USER_A, WALLET, preview.id);
+  assert.equal(session.status, "preview");
+  assert.deepEqual(metrics.confirmed, []);
+});
+
 test("an undone import is recorded once, and a refused undo is not", async () => {
   const { metrics, service, upload } = setup();
   const preview = await upload();

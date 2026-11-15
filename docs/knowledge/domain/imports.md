@@ -93,7 +93,7 @@ Sessões desfeitas não bloqueiam uma importação futura, pois somente itens ai
 ## Métricas de uso (DEV-135)
 
 - O `FinancialImportsService` recebe um `FinancialImportMetrics` (`financial-imports.metrics.ts`), uma interface de domínio sem SDK. O padrão não registra nada, e `createApp` injeta o adaptador do OpenTelemetry (`src/business-metrics.ts`), que usa só a API do OpenTelemetry e não faz nada quando o SDK está desligado.
-- **Confirmação:** registrada **depois** de `repository.confirmImport` retornar, ou seja, com a transação efetivada. Uma confirmação recusada (`409`) ou com transação desfeita nunca conta. O teste de integração força a falha da inserção do lançamento dentro da transação real do PostgreSQL e confere que a importação continua `preview`, sem nenhum lançamento.
+- **Confirmação:** registrada **depois** de `repository.confirmImport` retornar, ou seja, com a transação efetivada. Ela conta só com a sessão em `completed`: o repositório PostgreSQL também devolve a sessão ainda em `preview`, sem nada importado, quando detecta duplicidade nova ou não sobra item válido, e essa tentativa não é confirmação. Uma confirmação recusada (`409`) ou com transação desfeita também nunca conta. O teste de integração força a falha da inserção do lançamento dentro da transação real do PostgreSQL e confere que a importação continua `preview`, sem nenhum lançamento.
 - **Desfazer:** registrado depois do desfazer efetivado. Um desfazer recusado não conta.
 - **Falha:** um upload que não vira prévia (o service marca a sessão como `failed`) conta uma vez.
 - **Métricas exportadas:**

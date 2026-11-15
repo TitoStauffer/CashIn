@@ -550,9 +550,11 @@ export class FinancialImportsService {
     this.validateImportId(importId);
     const session = await this.repository.confirmImport(userId, walletId, importId);
     if (!session) throw new FinancialImportError("A importação não foi encontrada ou não pode ser confirmada.", 409);
-    // Recorded only after the repository returned, i.e. after the transaction committed: a confirmation
-    // rolled back never reaches this line and is never counted.
-    this.metrics.importConfirmed(confirmedEventOf(session));
+    // Recorded only after the repository returned, i.e. after the transaction committed — a confirmation
+    // rolled back never reaches this line — and only when the import really completed: the repository also
+    // returns the session still in `preview`, with nothing imported, when it detects new duplicates or no
+    // valid line is left, and that attempt is not a confirmation.
+    if (session.status === "completed") this.metrics.importConfirmed(confirmedEventOf(session));
     return session;
   }
 
