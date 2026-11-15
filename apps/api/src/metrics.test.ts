@@ -6,6 +6,7 @@ import { metrics } from "@opentelemetry/api";
 import type { ExportedSpan, SpanExporter } from "./telemetry.js";
 import { filterMetricAttributes, isMetricExportEnabled, metricReadersFor, startTelemetry } from "./telemetry.js";
 import { PROCESS_METRIC_NAMES } from "./process-metrics.js";
+import { BUSINESS_METRIC_NAMES, OpenTelemetryFinancialImportMetrics } from "./business-metrics.js";
 
 // DEV-134. The production path, end to end: OTEL_METRICS_EXPORTER=otlp makes the SDK build its own OTLP
 // metric exporter from the environment, which here points to a local receiver. Its own process (node
@@ -85,6 +86,11 @@ before(async () => {
   // Today no instrumentation emits a forbidden label on a metric, so this probe is what proves the
   // allowlist View: one allowed label and one that identifies a person.
   metrics.getMeter("test-probe").createCounter("test.probe").add(1, { "http.route": "/probe", "user.id": USER_ID });
+  // DEV-135: the import adapter, recording through the same SDK.
+  const imports = new OpenTelemetryFinancialImportMetrics();
+  imports.importConfirmed({ format: "csv", kind: "credit_card_statement", imported: 40, skippedDuplicate: 3, rejectedInvalid: 1 });
+  imports.importUndone({ format: "ofx", kind: "bank_statement" });
+  imports.importFailed({ format: "csv", kind: "bank_statement" });
   await fetch(`${base}/test-only/items/${ITEM_ID}`);
   await fetch(`${base}/test-only/items/${ITEM_ID}?wallet=x`);
   metricsRouteStatus = (await fetch(`${base}/metrics`)).status;
@@ -152,4 +158,20 @@ test("metric export is a separate opt-in, built from the environment only when e
   assert.equal(isMetricExportEnabled({ OTEL_METRICS_EXPORTER: " OTLP " }), true);
   assert.equal(metricReadersFor({ sendMetrics: true }), undefined);
   assert.deepEqual(metricReadersFor({ sendMetrics: false }), []);
+});
+
+test("the import metrics are exported with only format, kind and line outcome as labels", () => {
+  const exported = exportedMetrics();
+  const names = new Set(exported.map((metric) => metric.name));
+  assert.deepEqual(BUSINESS_METRIC_NAMES.filter((name) => !names.has(name)), []);
+  const items = exported.filter((metric) => metric.name === "financial_import.items").flatMap(dataPoints).map((point): Record<string, unknown> => ({
+    ...attributesOf(point),
+    value: Number(point.asInt ?? point.asDouble),
+  }));
+  for (const [outcome, value] of [["imported", 40], ["skipped_duplicate", 3], ["rejected_invalid", 1]] as const) {
+    assert.ok(items.some((item) => item["item.outcome"] === outcome && item.value === value && item["import.kind"] === "credit_card_statement" && item["import.format"] === "csv"), JSON.stringify(items));
+  }
+  const confirmed = exported.filter((metric) => metric.name === "financial_import.confirmed").flatMap(dataPoints).map(attributesOf);
+  assert.ok(confirmed.length > 0);
+  assert.ok(confirmed.every((labels) => Object.keys(labels).sort().join() === "import.format,import.kind"), JSON.stringify(confirmed));
 });

@@ -1,7 +1,7 @@
 # Importação financeira OFX e CSV
 
 **Status:** importação OFX e CSV com regras por carteira (DEV-55), faturas de cartão (DEV-56), conciliação do pagamento da fatura na API (DEV-85) e na tela (DEV-57), transferências entre carteiras na API (DEV-88) e na tela (DEV-58) e segurança, permissões e rastreabilidade (DEV-59), com a garantia do log verificada na linha emitida (DEV-97)
-**Última revisão:** 11/11/2026
+**Última revisão:** 15/11/2026
 
 ## Fluxo definido
 
@@ -90,8 +90,22 @@ Sessões desfeitas não bloqueiam uma importação futura, pois somente itens ai
 - **Por que importa além desta tela:** o padrão "ausente não é vazio" já tinha produzido um defeito na DEV-58. A correção é tornar a ausência impossível no contrato, em vez de pedir a cada cliente que a interprete.
 - **Na tela:** cada razão tem a sua frase, com a ação que desbloqueia a linha — salvar o tipo Transferência, ajustar a descrição que aponta pagamento de fatura, ou escolher outro tipo quando não há mesmo opção.
 
+## Métricas de uso (DEV-135)
+
+- O `FinancialImportsService` recebe um `FinancialImportMetrics` (`financial-imports.metrics.ts`), uma interface de domínio sem SDK. O padrão não registra nada, e `createApp` injeta o adaptador do OpenTelemetry (`src/business-metrics.ts`), que usa só a API do OpenTelemetry e não faz nada quando o SDK está desligado.
+- **Confirmação:** registrada **depois** de `repository.confirmImport` retornar, ou seja, com a transação efetivada. Ela conta só com a sessão em `completed`: o repositório PostgreSQL também devolve a sessão ainda em `preview`, sem nada importado, quando detecta duplicidade nova ou não sobra item válido, e essa tentativa não é confirmação. Uma confirmação recusada (`409`) ou com transação desfeita também nunca conta. O teste de integração força a falha da inserção do lançamento dentro da transação real do PostgreSQL e confere que a importação continua `preview`, sem nenhum lançamento.
+- **Desfazer:** registrado depois do desfazer efetivado. Um desfazer recusado não conta.
+- **Falha:** um upload que não vira prévia (o service marca a sessão como `failed`) conta uma vez.
+- **Métricas exportadas:**
+  - `financial_import.confirmed`, `financial_import.undone` e `financial_import.failed`;
+  - `financial_import.items`, por `item.outcome` (`imported`, `skipped_duplicate`, `rejected_invalid`, vindos do resumo da sessão confirmada);
+  - o histograma `financial_import.batch.size` (linhas importadas por confirmação).
+- **Rótulos:** `import.format` e `import.kind`, e `item.outcome` nas linhas. Nunca usuário, carteira, nome de arquivo, descrição ou valor; a lista de permissão de `telemetry.ts` descartaria qualquer outro.
+
 ## Fontes verificáveis
 
+- [`apps/api/src/financial-imports/financial-imports.metrics.ts`](../../../apps/api/src/financial-imports/financial-imports.metrics.ts)
+- [`apps/api/src/business-metrics.ts`](../../../apps/api/src/business-metrics.ts)
 - [`docs/financial-imports-contract.md`](../../financial-imports-contract.md)
 - [`apps/api/src/financial-imports/financial-imports.service.ts`](../../../apps/api/src/financial-imports/financial-imports.service.ts)
 - [`apps/api/src/financial-imports/financial-imports.parser.ts`](../../../apps/api/src/financial-imports/financial-imports.parser.ts)

@@ -1,0 +1,122 @@
+{
+  "ticket": "DEV-135",
+  "mutations": [
+    {
+      "id": "confirmation-is-recorded",
+      "package": "apps/api",
+      "file": "apps/api/src/financial-imports/financial-imports.service.ts",
+      "find": "this.metrics.importConfirmed(confirmedEventOf(session));",
+      "replace": "void confirmedEventOf;",
+      "command": [
+        "npx",
+        "tsx",
+        "--test",
+        "src/financial-imports/financial-imports.metrics.test.ts"
+      ]
+    },
+    {
+      "id": "confirmation-counted-only-after-commit",
+      "package": "apps/api",
+      "file": "apps/api/src/financial-imports/financial-imports.service.ts",
+      "find": "const session = await this.repository.confirmImport(userId, walletId, importId);",
+      "replace": "this.metrics.importConfirmed({ format: \"csv\", kind: \"bank_statement\", imported: 0, skippedDuplicate: 0, rejectedInvalid: 0 }); const session = await this.repository.confirmImport(userId, walletId, importId);",
+      "command": [
+        "npx",
+        "tsx",
+        "--test",
+        "src/financial-imports/financial-imports.metrics.test.ts"
+      ]
+    },
+    {
+      "id": "undo-is-recorded",
+      "package": "apps/api",
+      "file": "apps/api/src/financial-imports/financial-imports.service.ts",
+      "find": "this.metrics.importUndone(originOf(session));",
+      "replace": "void originOf;",
+      "command": [
+        "npx",
+        "tsx",
+        "--test",
+        "src/financial-imports/financial-imports.metrics.test.ts"
+      ]
+    },
+    {
+      "id": "failure-is-recorded",
+      "package": "apps/api",
+      "file": "apps/api/src/financial-imports/financial-imports.service.ts",
+      "find": "this.metrics.importFailed({ format, kind });",
+      "replace": "void kind;",
+      "command": [
+        "npx",
+        "tsx",
+        "--test",
+        "src/financial-imports/financial-imports.metrics.test.ts"
+      ]
+    },
+    {
+      "id": "duplicates-map-to-skipped",
+      "package": "apps/api",
+      "file": "apps/api/src/financial-imports/financial-imports.metrics.ts",
+      "find": "skippedDuplicate: session.summary.duplicate,",
+      "replace": "skippedDuplicate: session.summary.invalid,",
+      "command": [
+        "npx",
+        "tsx",
+        "--test",
+        "src/financial-imports/financial-imports.metrics.test.ts"
+      ]
+    },
+    {
+      "id": "outcome-label-is-distinct",
+      "package": "apps/api",
+      "file": "apps/api/src/business-metrics.ts",
+      "find": "{ ...origin, \"item.outcome\": \"skipped_duplicate\" }",
+      "replace": "{ ...origin, \"item.outcome\": \"imported\" }",
+      "command": [
+        "npx",
+        "tsx",
+        "--test",
+        "src/metrics.test.ts"
+      ]
+    },
+    {
+      "id": "import-labels-are-allowlisted",
+      "package": "apps/api",
+      "file": "apps/api/src/telemetry.ts",
+      "find": "\"import.format\", \"import.kind\", \"item.outcome\",",
+      "replace": "\"item.outcome\",",
+      "command": [
+        "npx",
+        "tsx",
+        "--test",
+        "src/metrics.test.ts"
+      ]
+    },
+    {
+      "id": "process-metrics-are-released",
+      "package": "apps/api",
+      "file": "apps/api/src/process-metrics.ts",
+      "find": "meter.removeBatchObservableCallback(observe, observables);",
+      "replace": "void observables;",
+      "command": [
+        "npx",
+        "tsx",
+        "--test",
+        "src/process-metrics.test.ts"
+      ]
+    },
+    {
+      "id": "only-completed-confirmations-count",
+      "package": "apps/api",
+      "file": "apps/api/src/financial-imports/financial-imports.service.ts",
+      "find": "if (session.status === \"completed\") this.metrics.importConfirmed(confirmedEventOf(session));",
+      "replace": "this.metrics.importConfirmed(confirmedEventOf(session));",
+      "command": [
+        "npx",
+        "tsx",
+        "--test",
+        "src/financial-imports/financial-imports.metrics.test.ts"
+      ]
+    }
+  ]
+}
