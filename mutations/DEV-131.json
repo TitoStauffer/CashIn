@@ -110,7 +110,7 @@
       "package": "apps/api",
       "file": "apps/api/src/telemetry.ts",
       "find": "events: { value: redactEvents(span.events), enumerable: true },",
-      "replace": "",
+      "replace": "events: { value: span.events, enumerable: true },",
       "command": [
         "npx",
         "tsx",
@@ -123,7 +123,7 @@
       "package": "apps/api",
       "file": "apps/api/src/telemetry.ts",
       "find": "status: { value: { code: span.status.code }, enumerable: true },",
-      "replace": "",
+      "replace": "status: { value: span.status, enumerable: true },",
       "command": [
         "npx",
         "tsx",
