@@ -31,7 +31,7 @@
       "id": "range-selectors-are-not-metrics",
       "package": "apps/api",
       "file": "apps/api/src/observability-dashboard.test.ts",
-      "find": ".replace(/[[^]]*]/g, \"\");",
+      "find": ".replace(/\\[[^\\]]*\\]/g, \"\");",
       "replace": ";",
       "command": [
         "npx",
