@@ -1,0 +1,187 @@
+{
+  "ticket": "DEV-131",
+  "mutations": [
+    {
+      "id": "no-endpoint-no-sdk",
+      "package": "apps/api",
+      "file": "apps/api/src/telemetry.ts",
+      "find": "if (!exporter && !isTelemetryEnabled(environment)) return null;",
+      "replace": "if (false) return null;",
+      "command": [
+        "npx",
+        "tsx",
+        "--test",
+        "src/telemetry.test.ts"
+      ]
+    },
+    {
+      "id": "blank-endpoint-is-off",
+      "package": "apps/api",
+      "file": "apps/api/src/telemetry.ts",
+      "find": "(environment[name] ?? \"\").trim() !== \"\"",
+      "replace": "(environment[name] ?? \"\") !== \"\"",
+      "command": [
+        "npx",
+        "tsx",
+        "--test",
+        "src/telemetry.test.ts"
+      ]
+    },
+    {
+      "id": "spans-go-through-redaction",
+      "package": "apps/api",
+      "file": "apps/api/src/telemetry.ts",
+      "find": "traceExporter: new RedactingSpanExporter(exporter ?? new OTLPTraceExporter()),",
+      "replace": "traceExporter: exporter ?? new OTLPTraceExporter(),",
+      "command": [
+        "npx",
+        "tsx",
+        "--test",
+        "src/telemetry.test.ts"
+      ]
+    },
+    {
+      "id": "url-query-string-is-stripped",
+      "package": "apps/api",
+      "file": "apps/api/src/telemetry.ts",
+      "find": "value.split(\"?\")[0] : value",
+      "replace": "value : value",
+      "command": [
+        "npx",
+        "tsx",
+        "--test",
+        "src/telemetry.test.ts"
+      ]
+    },
+    {
+      "id": "pg-parameters-are-never-attached",
+      "package": "apps/api",
+      "file": "apps/api/src/telemetry.ts",
+      "find": "enhancedDatabaseReporting: false,",
+      "replace": "enhancedDatabaseReporting: true,",
+      "command": [
+        "npx",
+        "tsx",
+        "--test",
+        "src/telemetry.test.ts"
+      ]
+    },
+    {
+      "id": "health-is-not-traced",
+      "package": "apps/api",
+      "file": "apps/api/src/telemetry.ts",
+      "find": "new Set([\"/health\"])",
+      "replace": "new Set<string>([])",
+      "command": [
+        "npx",
+        "tsx",
+        "--test",
+        "src/telemetry.test.ts"
+      ]
+    },
+    {
+      "id": "log-carries-trace-id",
+      "package": "apps/api",
+      "file": "apps/api/src/telemetry.ts",
+      "find": "logKeys: { traceId: \"traceId\",",
+      "replace": "logKeys: { traceId: \"trace_id\",",
+      "command": [
+        "npx",
+        "tsx",
+        "--test",
+        "src/telemetry.test.ts"
+      ]
+    },
+    {
+      "id": "no-resource-detection",
+      "package": "apps/api",
+      "file": "apps/api/src/telemetry.ts",
+      "find": "autoDetectResources: false,",
+      "replace": "autoDetectResources: true,",
+      "command": [
+        "npx",
+        "tsx",
+        "--test",
+        "src/telemetry.test.ts"
+      ]
+    },
+    {
+      "id": "exception-events-are-redacted",
+      "package": "apps/api",
+      "file": "apps/api/src/telemetry.ts",
+      "find": "events: { value: redactEvents(span.events), enumerable: true },",
+      "replace": "events: { value: span.events, enumerable: true },",
+      "command": [
+        "npx",
+        "tsx",
+        "--test",
+        "src/telemetry.test.ts"
+      ]
+    },
+    {
+      "id": "status-keeps-only-the-code",
+      "package": "apps/api",
+      "file": "apps/api/src/telemetry.ts",
+      "find": "status: { value: { code: span.status.code }, enumerable: true },",
+      "replace": "status: { value: span.status, enumerable: true },",
+      "command": [
+        "npx",
+        "tsx",
+        "--test",
+        "src/telemetry.test.ts"
+      ]
+    },
+    {
+      "id": "client-traceparent-is-ignored",
+      "package": "apps/api",
+      "file": "apps/api/src/telemetry.ts",
+      "find": "textMapPropagator: null,",
+      "replace": "textMapPropagator: undefined,",
+      "command": [
+        "npx",
+        "tsx",
+        "--test",
+        "src/telemetry.test.ts"
+      ]
+    },
+    {
+      "id": "unlisted-attributes-are-dropped",
+      "package": "apps/api",
+      "file": "apps/api/src/telemetry.ts",
+      "find": "if (!EXPORTED_ATTRIBUTES.has(key)) continue;",
+      "replace": "if (false) continue;",
+      "command": [
+        "npx",
+        "tsx",
+        "--test",
+        "src/telemetry.test.ts"
+      ]
+    },
+    {
+      "id": "url-path-loses-query",
+      "package": "apps/api",
+      "file": "apps/api/src/telemetry.ts",
+      "find": "const PATH_ATTRIBUTES = new Set([\"url.path\", ",
+      "replace": "const PATH_ATTRIBUTES = new Set([",
+      "command": [
+        "npx",
+        "tsx",
+        "--test",
+        "src/telemetry.test.ts"
+      ]
+    },
+    {
+      "id": "event-keeps-only-the-type",
+      "package": "apps/api",
+      "file": "apps/api/src/telemetry.ts",
+      "find": ".filter(([key]) => EXPORTED_EVENT_ATTRIBUTES.has(key))",
+      "replace": ".filter(() => true)",
+      "command": [
+        "npx",
+        "tsx",
+        "--test",
+        "src/telemetry.test.ts"
+      ]
+    }
+  ]
+}
