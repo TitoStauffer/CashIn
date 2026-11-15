@@ -1,0 +1,47 @@
+# Datasources of the production Grafana (DEV-133), with the same trace <-> logs links as the local
+# grafana/otel-lgtm image, so docs/observability.md works in both environments.
+apiVersion: 1
+
+datasources:
+  - name: Prometheus
+    type: prometheus
+    uid: prometheus
+    url: http://prometheus:9090
+    editable: false
+    jsonData:
+      timeInterval: 60s
+      exemplarTraceIdDestinations:
+        - name: trace_id
+          datasourceUid: tempo
+
+  - name: Tempo
+    type: tempo
+    uid: tempo
+    url: http://tempo:3200
+    editable: false
+    jsonData:
+      tracesToLogsV2:
+        customQuery: true
+        datasourceUid: loki
+        query: '{$${__tags}} | trace_id = "$${__trace.traceId}"'
+        tags:
+          - key: service.name
+            value: service_name
+      lokiSearch:
+        datasourceUid: loki
+      search:
+        hide: false
+
+  - name: Loki
+    type: loki
+    uid: loki
+    url: http://loki:3100
+    editable: false
+    jsonData:
+      derivedFields:
+        - name: trace_id
+          matcherType: label
+          matcherRegex: trace_id
+          url: "$${__value.raw}"
+          datasourceUid: tempo
+          urlDisplayLabel: "Trace: $${__value.raw}"

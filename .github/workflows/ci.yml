@@ -188,6 +188,17 @@ jobs:
         working-directory: .
         run: docker compose config --quiet
 
+      - name: Validate production observability stack
+        # deploy/observability (DEV-133) is applied on the VPS only on request, so nothing else would
+        # notice a broken rule before that day. Placeholder values stand in for the .env kept on the VPS.
+        working-directory: .
+        env:
+          GRAFANA_ADMIN_USER: ci-check
+          GRAFANA_ADMIN_PASSWORD_FILE: deploy/observability/.env.example
+        run: |
+          node --test deploy/observability/check-compose.test.mjs
+          docker compose -f deploy/observability/compose.yaml config --format json | node deploy/observability/check-compose.mjs
+
       - name: Setup Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:

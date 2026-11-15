@@ -11,6 +11,7 @@
 | API | Node.js, TypeScript e Fastify | HTTP, autenticação, regras de negócio e persistência |
 | Banco | PostgreSQL 17 | Dados transacionais, integridade e migrations versionadas |
 | Ambiente local | Docker Compose | Web, API e banco com volumes locais; observabilidade com `grafana/otel-lgtm` (Grafana só em `127.0.0.1:3001`, ver [`docs/observability.md`](../../observability.md)) |
+| Observabilidade na VPS | Collector, Loki, Tempo, Prometheus e Grafana separados (`deploy/observability`) | Preparada e testada localmente, não aplicada; ver [`runbooks/observability-vps.md`](../runbooks/observability-vps.md) |
 | Entrega | GitHub Actions e SonarQube Cloud | CI, análise, agentes, gate e pós-merge |
 
 ## Fluxo de uma operação financeira
@@ -32,6 +33,7 @@
 ## Fontes verificáveis
 
 - [`compose.yaml`](../../../compose.yaml)
+- [`deploy/observability/compose.yaml`](../../../deploy/observability/compose.yaml)
 - [`apps/api/src/app.ts`](../../../apps/api/src/app.ts)
 - [`apps/api/src/database.ts`](../../../apps/api/src/database.ts)
 - [`apps/web/src/App.tsx`](../../../apps/web/src/App.tsx)
