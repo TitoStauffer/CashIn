@@ -1,3 +1,4 @@
+import { confirmedEventOf, noFinancialImportMetrics, originOf, type FinancialImportMetrics } from "./financial-imports.metrics.js";
 import { createHash } from "node:crypto";
 import { FinancialImportError } from "./financial-imports.errors.js";
 import { createFinancialImportFingerprint } from "./financial-imports.fingerprint.js";
@@ -312,6 +313,7 @@ export class FinancialImportsService {
     private readonly repository: FinancialImportRepository,
     private readonly parser: FinancialImportParser,
     private readonly categorizationRules?: FinancialCategorizationRulesService,
+    private readonly metrics: FinancialImportMetrics = noFinancialImportMetrics,
   ) {}
 
   async createImport(
@@ -434,6 +436,7 @@ export class FinancialImportsService {
       const failureMessage = truncateUtf8(rawFailureMessage.trim(), MAX_FINANCIAL_IMPORT_FAILURE_MESSAGE_BYTES)
         || "Não foi possível processar o arquivo importado.";
       await this.repository.markFailed(userId, walletId, session.id, failureMessage);
+      this.metrics.importFailed({ format, kind });
       throw error;
     }
   }
@@ -547,6 +550,9 @@ export class FinancialImportsService {
     this.validateImportId(importId);
     const session = await this.repository.confirmImport(userId, walletId, importId);
     if (!session) throw new FinancialImportError("A importação não foi encontrada ou não pode ser confirmada.", 409);
+    // Recorded only after the repository returned, i.e. after the transaction committed: a confirmation
+    // rolled back never reaches this line and is never counted.
+    this.metrics.importConfirmed(confirmedEventOf(session));
     return session;
   }
 
@@ -559,6 +565,7 @@ export class FinancialImportsService {
         409,
       );
     }
+    this.metrics.importUndone(originOf(session));
     return session;
   }
 

@@ -57,6 +57,8 @@ export const METRIC_ATTRIBUTES = new Set([
   "http.request.method", "http.response.status_code", "http.route", "error.type", "url.scheme", "network.protocol.version",
   "db.system", "db.system.name", "db.namespace", "db.operation.name", "db.client.connection.state", "db.client.connection.pool.name",
   "cpu.mode",
+  // Business metrics of the financial imports (business-metrics.ts).
+  "import.format", "import.kind", "item.outcome",
 ]);
 
 export function filterMetricAttributes(attributes: Record<string, unknown>): Record<string, unknown> {

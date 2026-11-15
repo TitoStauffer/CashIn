@@ -57,6 +57,8 @@ import { DefaultFinancialImportParser } from "./financial-imports/financial-impo
 import { registerFinancialImportRoutes } from "./financial-imports/financial-imports.routes.js";
 import type { FinancialCategorizationRulesRepository, FinancialImportParser, FinancialImportRepository } from "./financial-imports/financial-imports.types.js";
 import { REQUEST_ID_HEADER, resolveRequestId } from "./shared/request-id.js";
+import type { FinancialImportMetrics } from "./financial-imports/financial-imports.metrics.js";
+import { OpenTelemetryFinancialImportMetrics } from "./business-metrics.js";
 
 // What a request contributes to a log line, decided here instead of left to the defaults. Nothing in
 // the API logs a payload or a header today, and this is what keeps it that way: the serializers let
@@ -101,6 +103,7 @@ export interface AppOptions {
   financialImportRepository?: FinancialImportRepository;
   financialCategorizationRulesRepository?: FinancialCategorizationRulesRepository;
   financialImportParser?: FinancialImportParser;
+  financialImportMetrics?: FinancialImportMetrics;
   authConfiguration?: Partial<AuthConfiguration>;
   walletInvitationTokenTtlHours?: number;
   walletAccessLinkTtlHours?: number;
@@ -302,6 +305,7 @@ export function createApp(
       new FinancialCategorizationRulesService(
         options.financialCategorizationRulesRepository ?? new PostgresFinancialCategorizationRulesRepository(database),
       ),
+      options.financialImportMetrics ?? new OpenTelemetryFinancialImportMetrics(),
     ),
   });
 
