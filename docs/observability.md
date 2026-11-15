@@ -57,7 +57,7 @@ O Grafana relê a pasta a cada 30 segundos.
 ## O que é enviado
 
 - **Traces:** só os atributos da lista de permissão de `apps/api/src/telemetry.ts`. Sem query string, headers, corpo, valores de SQL nem mensagem de erro. Detalhes em `docs/knowledge/architecture/api.md`, seção Traces.
-- **Métricas:** só os rótulos da lista de permissão (`METRIC_ATTRIBUTES` em `apps/api/src/telemetry.ts`): método, rota-modelo, status, estado das conexões do banco e modo de CPU. Nunca usuário, carteira, e-mail, valor ou URL.
+- **Métricas:** só os rótulos da lista de permissão (`METRIC_ATTRIBUTES` em `apps/api/src/telemetry.ts`): método, rota-modelo, status, estado das conexões do banco, modo de CPU e, nas métricas de importação (`financial_import.*`), formato (`import.format`), tipo (`import.kind`) e resultado da linha (`item.outcome`). Nunca usuário, carteira, e-mail, valor ou URL.
 - **Logs:** a mesma linha JSON que a API escreve na saída padrão, depois dos serializers e da redação do pino. O caminho da requisição vai sem query string, e o IP de quem fez a requisição não é registrado. A saída padrão recebe a mesma linha: `docker compose logs api` continua mostrando tudo.
 
 ## Desligar
