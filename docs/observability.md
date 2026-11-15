@@ -54,6 +54,8 @@ Os links **Traces no Tempo** e **Logs no Loki**, no topo, abrem o Explore no mes
 
 O Grafana relê a pasta a cada 30 segundos.
 
+**Checagem automática.** Quando um commit altera `deploy/observability`, o job `API` roda `deploy/observability/smoke/dashboard-check.mjs`. O script sobe a stack de produção, roda a API compilada contra ela e o PostgreSQL do job, faz requisições reais (incluindo um 500 e um 401) e registra eventos de importação pelo adaptador real. Por fim, executa cada consulta do painel e falha se alguma vier vazia. Localmente, depois de `npm run build` em `apps/api`: `DATABASE_URL=postgresql://…@host.docker.internal:<porta>/<banco> node deploy/observability/smoke/dashboard-check.mjs`, com um PostgreSQL descartável.
+
 ## O que é enviado
 
 - **Traces:** só os atributos da lista de permissão de `apps/api/src/telemetry.ts`. Sem query string, headers, corpo, valores de SQL nem mensagem de erro. Detalhes em `docs/knowledge/architecture/api.md`, seção Traces.

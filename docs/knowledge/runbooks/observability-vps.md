@@ -99,3 +99,4 @@ Rode o script antes de trocar versões ou configurações. Ele usa uma senha tem
 - [`deploy/observability/check-compose.mjs`](../../../deploy/observability/check-compose.mjs)
 - [`deploy/observability/smoke/smoke-test.mjs`](../../../deploy/observability/smoke/smoke-test.mjs)
 - [`deploy/observability/grafana/dashboards/saldocerto-api.json`](../../../deploy/observability/grafana/dashboards/saldocerto-api.json)
+- [`deploy/observability/smoke/dashboard-check.mjs`](../../../deploy/observability/smoke/dashboard-check.mjs)

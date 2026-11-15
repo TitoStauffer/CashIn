@@ -283,6 +283,21 @@ jobs:
       - name: Build
         run: npm run build
 
+      - name: Dashboard queries return data
+        # DEV-136: runs the compiled API above in a container wired to the production observability stack and
+        # the job's PostgreSQL, drives real traffic, and fails if any query of the versioned Grafana dashboard
+        # comes back empty (deploy/observability/smoke/dashboard-check.mjs). Same trigger as the smoke test:
+        # only when the commit under test changes deploy/observability.
+        working-directory: .
+        env:
+          DATABASE_URL: postgresql://saldocerto:saldocerto_ci_only@host.docker.internal:5432/saldocerto_test
+        run: |
+          if git diff --quiet HEAD^1 HEAD -- deploy/observability; then
+            echo "deploy/observability is unchanged by this commit: dashboard check not needed."
+            exit 0
+          fi
+          node deploy/observability/smoke/dashboard-check.mjs
+
       - name: Mutation check (declared mutants)
         # Last step, so a mutant can never reach the build or the coverage report (DEV-126); see docs/ci.md.
         if: github.event_name == 'pull_request'
