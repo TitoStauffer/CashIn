@@ -59,7 +59,8 @@ test("request logging keeps credentials and payloads out of every log line", () 
     body: Buffer.from("conteudo do extrato"),
   } as never);
 
-  assert.deepEqual(serialized, { method: "POST", url: "/financial-imports", remoteAddress: "203.0.113.10" });
+  // No caller IP: it is personal data and the lines may leave the process (DEV-132).
+  assert.deepEqual(serialized, { method: "POST", url: "/financial-imports" });
   assert.deepEqual(requestLoggerOptions.serializers.res({ statusCode: 201, headers: { "set-cookie": "x" } } as never), { statusCode: 201 });
   for (const path of ["req.headers", "req.body", "res.headers"]) {
     assert.ok(requestLoggerOptions.redact.paths.includes(path), `${path} must be redacted`);
@@ -181,7 +182,7 @@ test("the emitted request log line carries no cookie and no payload", async () =
   // project's configuration entirely ignored. The default adds `host`, `remotePort` and `version`,
   // and it is their absence that tells one serializer from the other.
   const request = lines.map((line) => JSON.parse(line) as { req?: Record<string, unknown> }).find((entry) => entry.req);
-  assert.deepEqual(Object.keys(request?.req ?? {}).sort(), ["method", "remoteAddress", "url"]);
+  assert.deepEqual(Object.keys(request?.req ?? {}).sort(), ["method", "url"]);
   assert.equal(request?.req?.method, "POST");
   assert.equal(request?.req?.url, "/auth/login");
   const response = lines.map((line) => JSON.parse(line) as { res?: Record<string, unknown> }).find((entry) => entry.res);

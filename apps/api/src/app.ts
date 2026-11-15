@@ -60,9 +60,10 @@ import { REQUEST_ID_HEADER, resolveRequestId } from "./shared/request-id.js";
 
 // What a request contributes to a log line, decided here instead of left to the defaults. Nothing in
 // the API logs a payload or a header today, and this is what keeps it that way: the serializers let
-// only the method, the path and the caller's address through, and the redaction covers the headers
+// only the method and the path through, and the redaction covers the headers
 // that carry a session cookie, so a log line can never become a credential or a financial record.
-// The path is logged without its query string, which is where a token would travel (DEV-132: these
+// The path is logged without its query string, which is where a token would travel, and the caller's IP
+// address is not logged at all — it is personal data, and the traces already drop it (DEV-132: these
 // lines also leave the process, to Loki, when log export is enabled).
 export const requestLoggerOptions = {
   redact: {
@@ -70,10 +71,9 @@ export const requestLoggerOptions = {
     censor: "[redacted]",
   },
   serializers: {
-    req: (request: { method: string; url: string; ip?: string }) => ({
+    req: (request: { method: string; url: string }) => ({
       method: request.method,
       url: request.url.split("?")[0],
-      remoteAddress: request.ip,
     }),
     res: (reply: { statusCode: number }) => ({ statusCode: reply.statusCode }),
   },

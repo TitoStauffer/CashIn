@@ -131,6 +131,13 @@ export function createInstrumentations({ sendLogs }: { sendLogs: boolean }) {
   ];
 }
 
+// What `logRecordProcessors` the SDK receives. `undefined` is not "nothing": it makes the SDK build the
+// OTLP log exporter from the environment, which is the production path. An empty list keeps logs off.
+export function logRecordProcessorsFor({ logProcessor, sendLogs }: { logProcessor?: LogRecordProcessor; sendLogs: boolean }): LogRecordProcessor[] | undefined {
+  if (logProcessor) return [logProcessor];
+  return sendLogs ? undefined : [];
+}
+
 export interface TelemetryOptions {
   environment: Environment;
   // Tests inject an in-memory exporter; production builds the OTLP one, which reads its endpoint from
@@ -156,7 +163,7 @@ export function startTelemetry({ environment, exporter, logProcessor }: Telemetr
     instrumentations: createInstrumentations({ sendLogs }),
     // An empty list keeps the SDK from configuring a log exporter from the environment on its own;
     // leaving it undefined lets the SDK build the OTLP log exporter from `OTEL_LOGS_EXPORTER`.
-    logRecordProcessors: logProcessor ? [logProcessor] : sendLogs ? undefined : [],
+    logRecordProcessors: logRecordProcessorsFor({ logProcessor, sendLogs }),
     // No metrics yet: the empty list keeps the SDK from configuring a metric exporter on its own.
     metricReaders: [],
   });

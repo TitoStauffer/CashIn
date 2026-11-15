@@ -32,7 +32,7 @@ Toda resposta da API traz o header `X-Request-Id`, o mesmo valor que aparece com
 ## O que é enviado
 
 - **Traces:** só os atributos da lista de permissão de `apps/api/src/telemetry.ts`. Sem query string, headers, corpo, valores de SQL nem mensagem de erro. Detalhes em `docs/knowledge/architecture/api.md`, seção Traces.
-- **Logs:** a mesma linha JSON que a API escreve na saída padrão, depois dos serializers e da redação do pino. O caminho da requisição vai sem query string. A saída padrão continua igual: `docker compose logs api` mostra tudo como antes.
+- **Logs:** a mesma linha JSON que a API escreve na saída padrão, depois dos serializers e da redação do pino. O caminho da requisição vai sem query string, e o IP de quem fez a requisição não é registrado. A saída padrão recebe a mesma linha: `docker compose logs api` continua mostrando tudo.
 
 ## Desligar
 
