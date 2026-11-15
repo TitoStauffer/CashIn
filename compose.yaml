@@ -20,6 +20,8 @@ services:
   api:
     build:
       context: ./apps/api
+    # Reinstalls dependencies when the lockfile changed since the node_modules volume was filled.
+    command: ["sh", "./scripts/dev-container.sh"]
     environment:
       NODE_ENV: development
       PORT: 3000
@@ -31,6 +33,11 @@ services:
       SMTP_USER: ${SMTP_USER:-}
       SMTP_PASSWORD: ${SMTP_PASSWORD:-}
       SMTP_FROM: ${SMTP_FROM:-}
+      # Traces and logs to the local LGTM stack (DEV-132). Set OTEL_EXPORTER_OTLP_ENDPOINT to an empty
+      # value in .env to run the API without telemetry; the API never waits for this service.
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT-http://observability:4318}
+      OTEL_LOGS_EXPORTER: ${OTEL_LOGS_EXPORTER:-otlp}
+      OTEL_SERVICE_NAME: saldocerto-api
     ports:
       - "3000:3000"
     volumes:
@@ -44,7 +51,8 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
-      start_period: 10s
+      # Room for an npm ci after a dependency change (scripts/dev-container.sh).
+      start_period: 180s
 
   web:
     build:
@@ -60,7 +68,18 @@ services:
       api:
         condition: service_healthy
 
+  # Grafana, Loki, Tempo and Prometheus in one development image, receiving OTLP from the API over the
+  # compose network. Only Grafana is published, and only on 127.0.0.1. Development only: production uses
+  # separate components with authentication (DEV-133).
+  observability:
+    image: grafana/otel-lgtm:0.40.0@sha256:72e05804790e6e0d8c0b70a6d5ff1f721ef7b203463374631e99aa3429bd0cf6
+    ports:
+      - "127.0.0.1:3001:3000"
+    volumes:
+      - observability_data:/data
+
 volumes:
   postgres_data:
+  observability_data:
   api_node_modules:
   web_node_modules:

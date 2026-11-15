@@ -141,6 +141,20 @@ for (const { path, secret, serializers, read } of leakingSerializerCases) {
 
 // The right configuration is not the same as the right line: between them sits the premise that
 // Fastify applies these serializers and this redaction. This is the line pino really emitted.
+test("the request log line keeps the path but drops the query string", async () => {
+  const lines: string[] = [];
+  const app = createApp(createHealthDatabase(async () => ({ rows: [{ "?column?": 1 }] })), {
+    logger: { write: (line) => { lines.push(line); } },
+  });
+
+  await app.inject({ method: "GET", url: "/health?token=segredo-na-query" });
+  await app.close();
+
+  assert.doesNotMatch(lines.join(""), /segredo-na-query/);
+  const request = lines.map((line) => JSON.parse(line) as { req?: { url?: string } }).find((entry) => entry.req);
+  assert.equal(request?.req?.url, "/health");
+});
+
 test("the emitted request log line carries no cookie and no payload", async () => {
   const lines: string[] = [];
   const app = createApp(createHealthDatabase(async () => ({ rows: [{ "?column?": 1 }] })), {
