@@ -188,17 +188,6 @@ jobs:
         working-directory: .
         run: docker compose config --quiet
 
-      - name: Validate production observability stack
-        # deploy/observability (DEV-133) is applied on the VPS only on request, so nothing else would
-        # notice a broken rule before that day. Placeholder values stand in for the .env kept on the VPS.
-        working-directory: .
-        env:
-          GRAFANA_ADMIN_USER: ci-check
-          GRAFANA_ADMIN_PASSWORD_FILE: deploy/observability/.env.example
-        run: |
-          node --test deploy/observability/check-compose.test.mjs
-          docker compose -f deploy/observability/compose.yaml config --format json | node deploy/observability/check-compose.mjs
-
       - name: Setup Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
@@ -329,6 +318,48 @@ jobs:
         if: github.event_name == 'pull_request'
         working-directory: .
         run: node tools/mutation-check/run.mjs --base HEAD^1 --package apps/web
+
+  observability:
+    name: Observability stack
+    needs: pr-title
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          # The smoke test runs only when the merge commit changes deploy/observability (see below).
+          fetch-depth: 2
+
+      - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Validate production observability stack
+        # deploy/observability (DEV-133) is applied on the VPS only on request, so nothing else would notice
+        # a broken rule before that day. The rules run on the configuration Compose resolves. The password
+        # file only has to exist for `config`; it is resolved next to compose.yaml, hence the bare name.
+        env:
+          GRAFANA_ADMIN_USER: ci-check
+          GRAFANA_ADMIN_PASSWORD_FILE: .env.example
+        run: |
+          node --test deploy/observability/check-compose.test.mjs
+          docker compose -f deploy/observability/compose.yaml config --format json | node deploy/observability/check-compose.mjs
+
+      - name: Smoke test production observability stack
+        # Brings the stack up, sends a trace, a log and a metric through the collector, reads them back
+        # through the authenticated Grafana, restarts and reads them again, and checks the published ports
+        # (deploy/observability/smoke/smoke-test.mjs). It pulls five images, so it runs only when the
+        # commit under test (the merge commit of a PR, or the pushed commit) changes deploy/observability.
+        run: |
+          if git diff --quiet HEAD^1 HEAD -- deploy/observability; then
+            echo "deploy/observability is unchanged by this commit: smoke test not needed."
+            exit 0
+          fi
+          node deploy/observability/smoke/smoke-test.mjs
 
   sonarqube:
     name: SonarQube

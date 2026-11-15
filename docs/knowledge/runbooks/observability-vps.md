@@ -76,13 +76,15 @@ De sua máquina, abra o túnel com `ssh -N -L 3001:127.0.0.1:3001 <usuário>@<vp
 - **Disco cheio:** reduza a retenção (tabela acima), suba de novo o serviço e aguarde a compactação. Em último caso, `docker volume rm` do volume do sinal afetado apaga só o histórico daquele sinal.
 - **Configuração inválida depois de atualizar uma imagem:** volte o digest anterior no `compose.yaml`. Rode o `check-compose.mjs` e o roteiro de validação antes de trocar versões.
 
-## Validação local (simulando a VPS)
+## Validação (simulando a VPS)
 
-A DEV-133 subiu esta composição localmente e verificou, por trace, log e métrica OTLP enviados pela rede `saldocerto-observability`:
+`node deploy/observability/smoke/smoke-test.mjs`, na raiz do repositório, faz a validação completa. O job `Observability stack` do CI roda o mesmo script sempre que o commit altera `deploy/observability`. Ele verifica, por trace, log e métrica OTLP enviados pela rede `saldocerto-observability`:
 - os três sinais chegam e podem ser consultados pelo Grafana autenticado;
 - o Grafana recusa acesso anônimo (`401`);
 - os dados persistem depois de `down`/`up`;
 - só o Grafana publica porta, e só em `127.0.0.1`.
+
+Rode o script antes de trocar versões ou configurações. Ele usa uma senha temporária e sempre desmonta a stack com os volumes.
 
 ## Fontes
 
@@ -91,3 +93,4 @@ A DEV-133 subiu esta composição localmente e verificou, por trace, log e métr
 - [`deploy/observability/loki.yaml`](../../../deploy/observability/loki.yaml)
 - [`deploy/observability/tempo.yaml`](../../../deploy/observability/tempo.yaml)
 - [`deploy/observability/check-compose.mjs`](../../../deploy/observability/check-compose.mjs)
+- [`deploy/observability/smoke/smoke-test.mjs`](../../../deploy/observability/smoke/smoke-test.mjs)
