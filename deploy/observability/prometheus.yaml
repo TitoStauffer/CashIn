@@ -1,0 +1,16 @@
+# Prometheus of the production observability stack (DEV-133). Metrics arrive from the collector through
+# the OTLP receiver; retention by age and size is set on the command line in compose.yaml.
+global:
+  scrape_interval: 60s
+
+otlp:
+  # Promoted to labels so dashboards can filter by service.
+  promote_resource_attributes:
+    - service.name
+    - service.namespace
+    - service.version
+    - deployment.environment.name
+
+storage:
+  tsdb:
+    out_of_order_time_window: 10m

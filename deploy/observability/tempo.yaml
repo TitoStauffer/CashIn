@@ -1,0 +1,41 @@
+# Tempo of the production observability stack (DEV-133): single binary, local storage, 7-day retention.
+server:
+  http_listen_port: 3200
+  log_level: warn
+
+distributor:
+  receivers:
+    otlp:
+      protocols:
+        http:
+          endpoint: 0.0.0.0:4318
+
+storage:
+  trace:
+    backend: local
+    wal:
+      path: /var/tempo/wal
+    local:
+      path: /var/tempo/blocks
+
+# Retention: trace blocks older than 7 days are deleted. Tempo 3 runs compaction and retention in the
+# backend scheduler and worker, and both read the value.
+backend_scheduler:
+  provider:
+    compaction:
+      compaction:
+        block_retention: 168h
+
+backend_worker:
+  compaction:
+    block_retention: 168h
+
+overrides:
+  defaults:
+    ingestion:
+      # Ingestion ceiling, which bounds how fast the disk can fill.
+      rate_limit_bytes: 4000000
+      burst_size_bytes: 8000000
+
+usage_report:
+  reporting_enabled: false

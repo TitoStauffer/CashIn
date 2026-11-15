@@ -60,6 +60,10 @@
       "documents": ["docs/knowledge/learnings/agent-process.md"]
     },
     {
+      "paths": ["deploy/observability/**"],
+      "documents": ["docs/knowledge/runbooks/observability-vps.md", "docs/knowledge/architecture/system-overview.md"]
+    },
+    {
       "paths": ["tools/knowledge/**"],
       "documents": ["docs/knowledge/evidence/README.md"]
     }

@@ -147,7 +147,9 @@ jobs:
     name: API
     needs: pr-title
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    # 15 minutes for the API itself plus room for the observability smoke test (DEV-133), which pulls
+    # five images when deploy/observability changes.
+    timeout-minutes: 22
     defaults:
       run:
         working-directory: apps/api
@@ -194,6 +196,31 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
           cache-dependency-path: apps/api/package-lock.json
+
+      - name: Validate production observability stack
+        working-directory: .
+        # deploy/observability (DEV-133) is applied on the VPS only on request, so nothing else would notice
+        # a broken rule before that day. The rules run on the configuration Compose resolves. The password
+        # file only has to exist for `config`; it is resolved next to compose.yaml, hence the bare name.
+        env:
+          GRAFANA_ADMIN_USER: ci-check
+          GRAFANA_ADMIN_PASSWORD_FILE: .env.example
+        run: |
+          node --test deploy/observability/check-compose.test.mjs
+          docker compose -f deploy/observability/compose.yaml config --format json | node deploy/observability/check-compose.mjs
+
+      - name: Smoke test production observability stack
+        working-directory: .
+        # Brings the stack up, sends a trace, a log and a metric through the collector, reads them back
+        # through the authenticated Grafana, restarts and reads them again, and checks the published ports
+        # (deploy/observability/smoke/smoke-test.mjs). It pulls five images, so it runs only when the
+        # commit under test (the merge commit of a PR, or the pushed commit) changes deploy/observability.
+        run: |
+          if git diff --quiet HEAD^1 HEAD -- deploy/observability; then
+            echo "deploy/observability is unchanged by this commit: smoke test not needed."
+            exit 0
+          fi
+          node deploy/observability/smoke/smoke-test.mjs
 
       - name: Install dependencies
         run: npm ci --fetch-timeout=15000 --fetch-retries=1

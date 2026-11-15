@@ -1,0 +1,119 @@
+# Observability stack for the production VPS (DEV-133). NOT deployed by this repository: applying it on
+# the VPS requires an explicit request (docs/knowledge/runbooks/observability-vps.md).
+#
+# Separate, pinned components instead of the grafana/otel-lgtm development image. The API reaches the
+# collector over the external `observability` Docker network; nothing in this stack listens on a public
+# interface. Grafana is published only on 127.0.0.1 and is reached through an SSH tunnel.
+#
+# Required environment (from a .env file kept outside version control, see .env.example):
+#   GRAFANA_ADMIN_USER           Grafana administrator login; there is no default user.
+#   GRAFANA_ADMIN_PASSWORD_FILE  Path, on the host, of a file holding the administrator password.
+name: saldocerto-observability
+
+services:
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.164.0@sha256:340c9ca6a36617084c6661bdc4f0fe92b7cda5a805d61673ec8db375fddc522b
+    command: ["--config=/etc/otelcol/config.yaml"]
+    volumes:
+      - ./otel-collector.yaml:/etc/otelcol/config.yaml:ro
+    networks: [observability, internal]
+    depends_on: [loki, tempo, prometheus]
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits: { cpus: "0.50", memory: 256M }
+
+  loki:
+    image: grafana/loki:3.7.9@sha256:0db216b630ae1f348a1584c67f3cead8b4c1fc839169a39501db664744158e28
+    command: ["-config.file=/etc/loki/config.yaml"]
+    volumes:
+      - ./loki.yaml:/etc/loki/config.yaml:ro
+      - loki_data:/loki
+    networks: [internal]
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits: { cpus: "0.50", memory: 512M }
+
+  tempo:
+    image: grafana/tempo:3.1.1@sha256:64e2fbd56d9c2b3412a4b430a58ea59e91a670b1e75f920a0c702213ad145044
+    command: ["-config.file=/etc/tempo/config.yaml"]
+    volumes:
+      - ./tempo.yaml:/etc/tempo/config.yaml:ro
+      - tempo_data:/var/tempo
+    networks: [internal]
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits: { cpus: "0.50", memory: 512M }
+
+  prometheus:
+    image: prom/prometheus:v3.16.0@sha256:e04987641b57704f408e31f6373ba4138ecf27cb4a165d24aabb6c38fddd0f06
+    command:
+      - --config.file=/etc/prometheus/prometheus.yaml
+      - --storage.tsdb.path=/prometheus
+      # Retention by age and by size, whichever comes first: the size cap is the disk ceiling.
+      - --storage.tsdb.retention.time=15d
+      - --storage.tsdb.retention.size=2GB
+      # Metrics arrive from the collector over OTLP; nothing is scraped from outside the stack.
+      - --web.enable-otlp-receiver
+    volumes:
+      - ./prometheus.yaml:/etc/prometheus/prometheus.yaml:ro
+      - prometheus_data:/prometheus
+    networks: [internal]
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits: { cpus: "0.50", memory: 512M }
+
+  grafana:
+    image: grafana/grafana:13.3.0@sha256:488984b716c0862639f91a698adbe2862677a5a07bad42da5f03f3030883b205
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:?set GRAFANA_ADMIN_USER in the .env kept outside version control}
+      GF_SECURITY_ADMIN_PASSWORD__FILE: /run/secrets/grafana_admin_password
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+      GF_AUTH_BASIC_ENABLED: "false"
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_USERS_ALLOW_ORG_CREATE: "false"
+      GF_SECURITY_DISABLE_GRAVATAR: "true"
+      GF_SECURITY_COOKIE_SAMESITE: strict
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+      # No plugin downloads or updates at startup: the stack runs only what the pinned image ships.
+      GF_PLUGINS_PREINSTALL_DISABLED: "true"
+      GF_PLUGINS_PLUGIN_ADMIN_ENABLED: "false"
+      GF_SERVER_ROOT_URL: http://localhost:3001
+    secrets: [grafana_admin_password]
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - grafana_data:/var/lib/grafana
+    ports:
+      # Loopback only: reach it with `ssh -L 3001:127.0.0.1:3001 <vps>`.
+      - "127.0.0.1:3001:3000"
+    # `internal` networks cannot publish ports, so Grafana also joins `ui`, which carries only that port.
+    networks: [internal, ui]
+    depends_on: [loki, tempo, prometheus]
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits: { cpus: "0.50", memory: 384M }
+
+secrets:
+  grafana_admin_password:
+    file: ${GRAFANA_ADMIN_PASSWORD_FILE:?set GRAFANA_ADMIN_PASSWORD_FILE to a file outside version control}
+
+networks:
+  # Shared with the API container, which sends OTLP to otel-collector:4318. Only the collector joins it.
+  observability:
+    name: saldocerto-observability
+  # Storage and query components talk only among themselves.
+  internal:
+    internal: true
+  # Carries only Grafana's loopback-published port.
+  ui:
+
+volumes:
+  loki_data:
+  tempo_data:
+  prometheus_data:
+  grafana_data:
