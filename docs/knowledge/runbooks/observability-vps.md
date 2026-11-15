@@ -54,6 +54,7 @@ No total, até 2,5 CPUs e cerca de 2,2 GB. A VPS precisa ter folga para isso **a
 5. Ligue a API à rede `saldocerto-observability` e defina, no ambiente dela:
    - `OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318`
    - `OTEL_LOGS_EXPORTER=otlp`
+   - `OTEL_METRICS_EXPORTER=otlp` (métricas técnicas, DEV-134)
    - `OTEL_SERVICE_NAME=saldocerto-api`
 6. Confira a ausência de porta pública: `ss -tlnp` não pode listar 3001, 3100, 3200, 4318 ou 9090 fora de `127.0.0.1`.
 

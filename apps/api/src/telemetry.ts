@@ -3,7 +3,9 @@ import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-http";
 import { HttpInstrumentation } from "@opentelemetry/instrumentation-http";
 import { PgInstrumentation } from "@opentelemetry/instrumentation-pg";
 import { PinoInstrumentation } from "@opentelemetry/instrumentation-pino";
+import { metrics } from "@opentelemetry/api";
 import { NodeSDK } from "@opentelemetry/sdk-node";
+import { registerProcessMetrics } from "./process-metrics.js";
 
 // The exporter and span shapes are taken from the SDK's own configuration type instead of importing
 // `@opentelemetry/sdk-trace`, which is only a transitive dependency of the packages approved for this API.
@@ -12,6 +14,7 @@ export type SpanExporter = NonNullable<NodeSdkConfiguration["traceExporter"]>;
 export type ExportedSpan = Parameters<SpanExporter["export"]>[0][number];
 type ExportCallback = Parameters<SpanExporter["export"]>[1];
 export type LogRecordProcessor = NonNullable<NodeSdkConfiguration["logRecordProcessors"]>[number];
+type MetricView = NonNullable<NodeSdkConfiguration["views"]>[number];
 
 export const DEFAULT_SERVICE_NAME = "saldocerto-api";
 
@@ -33,6 +36,39 @@ export function isTelemetryEnabled(environment: Environment): boolean {
 export function isLogExportEnabled(environment: Environment): boolean {
   return (environment.OTEL_LOGS_EXPORTER ?? "").trim().toLowerCase() === "otlp";
 }
+
+// Metrics follow the same rule as logs (DEV-134): a separate opt-in, `OTEL_METRICS_EXPORTER=otlp`, and the
+// SDK builds the OTLP metric exporter from the standard variables. They are pushed to the collector; the
+// API exposes no /metrics endpoint, so nothing about them is reachable through its public port.
+export function isMetricExportEnabled(environment: Environment): boolean {
+  return (environment.OTEL_METRICS_EXPORTER ?? "").trim().toLowerCase() === "otlp";
+}
+
+// `undefined` makes the SDK build the metric readers from the environment — the production path. The SDK
+// defaults OTEL_METRICS_EXPORTER to otlp when it is empty, so the empty list is what keeps metrics off.
+export function metricReadersFor({ sendMetrics }: { sendMetrics: boolean }): [] | undefined {
+  return sendMetrics ? undefined : [];
+}
+
+// The metric twin of the span allowlist (vault rule 21): only these attributes become metric labels. A
+// label is a dimension stored for every combination of values, so anything identifying — a user, a
+// wallet, an e-mail, an amount, a raw URL — would be both personal data and unbounded cardinality.
+export const METRIC_ATTRIBUTES = new Set([
+  "http.request.method", "http.response.status_code", "http.route", "error.type", "url.scheme", "network.protocol.version",
+  "db.system", "db.system.name", "db.namespace", "db.operation.name", "db.client.connection.state", "db.client.connection.pool.name",
+  "cpu.mode",
+]);
+
+export function filterMetricAttributes(attributes: Record<string, unknown>): Record<string, unknown> {
+  return Object.fromEntries(Object.entries(attributes).filter(([key]) => METRIC_ATTRIBUTES.has(key)));
+}
+
+export const metricViews: MetricView[] = [{
+  instrumentName: "*",
+  attributesProcessors: [{ process: (incoming) => filterMetricAttributes(incoming) as typeof incoming }],
+  // A ceiling on label combinations per metric, in case an allowed label ever turns unbounded.
+  aggregationCardinalityLimit: 2000,
+}];
 
 // What leaves the process is an allowlist, not a denylist (vault rule 21: a guard whose silence means
 // "let it through" lists the inert, never the sensitive). An attribute is exported only if it is named
@@ -150,6 +186,7 @@ export interface TelemetryOptions {
 export function startTelemetry({ environment, exporter, logProcessor }: TelemetryOptions): NodeSDK | null {
   if (!exporter && !isTelemetryEnabled(environment)) return null;
   const sendLogs = logProcessor !== undefined || isLogExportEnabled(environment);
+  const sendMetrics = isMetricExportEnabled(environment);
   const sdk = new NodeSDK({
     serviceName: environment.OTEL_SERVICE_NAME?.trim() || DEFAULT_SERVICE_NAME,
     // No resource detection: the process detector would export the command line and the host
@@ -164,9 +201,12 @@ export function startTelemetry({ environment, exporter, logProcessor }: Telemetr
     // An empty list keeps the SDK from configuring a log exporter from the environment on its own;
     // leaving it undefined lets the SDK build the OTLP log exporter from `OTEL_LOGS_EXPORTER`.
     logRecordProcessors: logRecordProcessorsFor({ logProcessor, sendLogs }),
-    // No metrics yet: the empty list keeps the SDK from configuring a metric exporter on its own.
-    metricReaders: [],
+    metricReaders: metricReadersFor({ sendMetrics }),
+    views: metricViews,
   });
   sdk.start();
+  // HTTP and pg metrics come from their instrumentations once the SDK sets the meter provider; the
+  // process metrics are registered here, on that same provider.
+  if (sendMetrics) registerProcessMetrics(metrics.getMeter(DEFAULT_SERVICE_NAME));
   return sdk;
 }

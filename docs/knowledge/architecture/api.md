@@ -48,6 +48,21 @@ A API usa o OpenTelemetry, configurado em `src/telemetry.ts` e carregado por `sr
 - **Testes.** `src/telemetry.test.ts` inicia o SDK com um exportador em memória antes de importar `app.js` e `pg` e serve requisições reais por socket. Ele afirma os spans, o `traceId` do log igual ao do trace, a ausência dos segredos (query string, cookie, `authorization`, corpo, valor de SQL e mensagem de erro) em atributos, eventos, status e recurso, o `traceparent` do cliente ignorado e a ausência de span do `/health`. O span do `pg` é obtido sem banco: um `Client` encerrado antes de conectar rejeita a consulta logo depois de a instrumentação abrir o span. A lista de permissão tem teste unitário com um atributo desconhecido.
 - **Logs por OTLP (DEV-132).** Com `OTEL_LOGS_EXPORTER=otlp`, além do endpoint, a instrumentação do pino entrega ao exportador OTLP de logs do SDK a mesma linha que vai para a saída padrão. Essa linha já passou pelos serializers e pela redação de `requestLoggerOptions`, e o registro leva o contexto nativo do span (`trace_id`/`span_id`), que é o que liga Tempo e Loki no Grafana. O serializer `req` passou a gravar o caminho sem query string e deixou de gravar o IP de origem, porque essas linhas agora saem do processo. O teste de sensibilidade da telemetria pegou o token da query no log exportado, e o Code Review apontou o IP. A escolha de `logRecordProcessors` fica em `logRecordProcessorsFor`, testada nos três ramos: `undefined` é o caminho de produção (o SDK monta o exportador pelo ambiente), e trocá-lo por `[]` desligaria os logs em silêncio. Testado com um processador de logs em memória (`logProcessor`), que afirma o contexto do trace, o `reqId` e a ausência dos segredos. Sem `OTEL_LOGS_EXPORTER=otlp`, os logs continuam só na saída padrão. Uso local em [`docs/observability.md`](../../observability.md).
 
+## Métricas (DEV-134)
+
+- **Opcional, como os logs.** Com `OTEL_METRICS_EXPORTER=otlp`, além do endpoint, `metricReadersFor` deixa `metricReaders` indefinido e o SDK monta o exportador OTLP de métricas pelo ambiente. Sem a variável, a lista vazia mantém as métricas desligadas. A lista vazia é necessária: o SDK assume `otlp` quando `OTEL_METRICS_EXPORTER` está vazio. As métricas são enviadas ao coletor, e a API **não expõe `/metrics`**, então nada delas é alcançável pela porta pública.
+- **O que é medido.**
+  - HTTP: `http.server.request.duration` (histograma, com contagem) por `http.route` (o modelo da rota, nunca o ID), método e status. Vem da instrumentação HTTP.
+  - Pool do `pg`: `db.client.connection.count` por estado (`used`/`idle`), `db.client.connection.pending_requests`, `db.client.connection.max` e `db.client.operation.duration`. Vem da instrumentação do `pg`, que só registra dentro de um span (`requireParentSpan`), ou seja, nas consultas feitas por requisições.
+  - Processo (`src/process-metrics.ts`, sobre a API do OpenTelemetry e sem dependência nova): atraso do event loop (p50, p99 e máximo do intervalo), memória residente, heap, CPU por modo e uptime.
+- **Rótulos por lista de permissão.** Uma View aplica `METRIC_ATTRIBUTES` a todo instrumento, e qualquer outro atributo é descartado. Um rótulo é dimensão armazenada por combinação de valores: identificar usuário, carteira, e-mail, valor ou URL seria dado pessoal e cardinalidade sem limite. O teto de 2.000 combinações por métrica protege contra um rótulo permitido que fique sem limite.
+- **Testes.** `src/metrics.test.ts` roda num processo próprio, pelo caminho de produção (variáveis de ambiente e exportador OTLP real), até um receptor local. Ele afirma:
+  - a rota parametrizada contada pelo modelo e sem o ID no payload;
+  - todos os rótulos na lista, e `server.address`, `client.address` e URLs ausentes;
+  - as métricas de processo exportadas;
+  - `/metrics` respondendo 404;
+  - com `TEST_DATABASE_URL`, uma conexão `used` durante uma consulta lenta feita por uma rota.
+
 ## Comandos
 
 ```bash

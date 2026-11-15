@@ -37,6 +37,7 @@ services:
       # value in .env to run the API without telemetry; the API never waits for this service.
       OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT-http://observability:4318}
       OTEL_LOGS_EXPORTER: ${OTEL_LOGS_EXPORTER:-otlp}
+      OTEL_METRICS_EXPORTER: ${OTEL_METRICS_EXPORTER:-otlp}
       OTEL_SERVICE_NAME: saldocerto-api
     ports:
       - "3000:3000"

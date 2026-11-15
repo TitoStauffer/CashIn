@@ -29,15 +29,26 @@ Toda resposta da API traz o header `X-Request-Id`, o mesmo valor que aparece com
 2. O trace mostra o span HTTP, os spans do Fastify e os spans do PostgreSQL (`pg-pool.connect`, `pg.query:<comando>`).
 3. No painel do trace, **Logs for this span** abre no Loki as linhas daquela requisição, pela consulta `{service_name="saldocerto-api"} | trace_id="…"`.
 
+## Métricas
+
+No Grafana, **Explore** → **Prometheus**. Exemplos:
+
+- requisições por rota: `sum by (http_route) (rate(http_server_request_duration_seconds_count[5m]))`
+- latência p95 por rota: `histogram_quantile(0.95, sum by (le, http_route) (rate(http_server_request_duration_seconds_bucket[5m])))`
+- conexões do pool: `db_client_connection_count` (rótulo `db_client_connection_state`)
+- event loop: `nodejs_eventloop_delay_p99_seconds`
+
 ## O que é enviado
 
 - **Traces:** só os atributos da lista de permissão de `apps/api/src/telemetry.ts`. Sem query string, headers, corpo, valores de SQL nem mensagem de erro. Detalhes em `docs/knowledge/architecture/api.md`, seção Traces.
+- **Métricas:** só os rótulos da lista de permissão (`METRIC_ATTRIBUTES` em `apps/api/src/telemetry.ts`): método, rota-modelo, status, estado das conexões do banco e modo de CPU. Nunca usuário, carteira, e-mail, valor ou URL.
 - **Logs:** a mesma linha JSON que a API escreve na saída padrão, depois dos serializers e da redação do pino. O caminho da requisição vai sem query string, e o IP de quem fez a requisição não é registrado. A saída padrão recebe a mesma linha: `docker compose logs api` continua mostrando tudo.
 
 ## Desligar
 
 - **Sem telemetria:** defina `OTEL_EXPORTER_OTLP_ENDPOINT=` (valor vazio) no `.env`. A API não inicia o SDK e não exporta nada.
 - **Só traces, logs apenas na saída padrão:** defina `OTEL_LOGS_EXPORTER=none`.
+- **Sem métricas:** defina `OTEL_METRICS_EXPORTER=none`.
 - **Sem a stack:** `docker compose up db api web` sobe só o necessário. A API não depende do serviço `observability` e continua funcionando sem ele; os envios falham em silêncio.
 
 ## Roteiro de verificação manual

@@ -1,0 +1,70 @@
+{
+  "ticket": "DEV-134",
+  "mutations": [
+    {
+      "id": "metric-labels-are-allowlisted",
+      "package": "apps/api",
+      "file": "apps/api/src/telemetry.ts",
+      "find": "attributesProcessors: [{ process: (incoming) => filterMetricAttributes(incoming) as typeof incoming }],",
+      "replace": "attributesProcessors: [],",
+      "command": [
+        "npx",
+        "tsx",
+        "--test",
+        "src/metrics.test.ts"
+      ]
+    },
+    {
+      "id": "env-metric-readers-are-built",
+      "package": "apps/api",
+      "file": "apps/api/src/telemetry.ts",
+      "find": "return sendMetrics ? undefined : [];",
+      "replace": "return sendMetrics ? [] : [];",
+      "command": [
+        "npx",
+        "tsx",
+        "--test",
+        "src/metrics.test.ts"
+      ]
+    },
+    {
+      "id": "metric-opt-in-is-normalized",
+      "package": "apps/api",
+      "file": "apps/api/src/telemetry.ts",
+      "find": "(environment.OTEL_METRICS_EXPORTER ?? \"\").trim().toLowerCase() === \"otlp\"",
+      "replace": "(environment.OTEL_METRICS_EXPORTER ?? \"\") === \"otlp\"",
+      "command": [
+        "npx",
+        "tsx",
+        "--test",
+        "src/metrics.test.ts"
+      ]
+    },
+    {
+      "id": "process-metrics-are-registered",
+      "package": "apps/api",
+      "file": "apps/api/src/telemetry.ts",
+      "find": "if (sendMetrics) registerProcessMetrics(metrics.getMeter(DEFAULT_SERVICE_NAME));",
+      "replace": "if (false) registerProcessMetrics(metrics.getMeter(DEFAULT_SERVICE_NAME));",
+      "command": [
+        "npx",
+        "tsx",
+        "--test",
+        "src/metrics.test.ts"
+      ]
+    },
+    {
+      "id": "route-template-is-a-label",
+      "package": "apps/api",
+      "file": "apps/api/src/telemetry.ts",
+      "find": "\"http.route\", \"error.type\",",
+      "replace": "\"error.type\",",
+      "command": [
+        "npx",
+        "tsx",
+        "--test",
+        "src/metrics.test.ts"
+      ]
+    }
+  ]
+}
