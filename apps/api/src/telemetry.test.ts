@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { before, test } from "node:test";
 import type { AddressInfo } from "node:net";
 import type { ExportedSpan, SpanExporter } from "./telemetry.js";
-import { isTelemetryEnabled, pgInstrumentationConfig, redactAttributes, startTelemetry } from "./telemetry.js";
+import { isTelemetryEnabled, pgInstrumentationConfig, redactAttributes, redactEvents, startTelemetry } from "./telemetry.js";
 
 // DEV-131. The SDK patches Fastify, pino, http and pg when they are loaded, so it is started here before
 // `app.js` and `pg` are imported — the same order `node --import ./dist/instrumentation.js` gives
@@ -23,7 +23,11 @@ const SECRETS = {
   authorization: "segredo-do-authorization",
   password: "segredo-do-corpo",
   sqlValue: "segredo-parametro-sql",
+  errorMessage: "segredo-na-mensagem-de-erro",
 };
+
+// A traceparent a client might send to pick the traceId of its own request. It must be ignored.
+const CLIENT_TRACE_ID = "0af7651916cd43dd8448eb211c80319c";
 
 const exporter = new CollectingExporter();
 const logLines: Array<Record<string, unknown>> = [];
@@ -50,6 +54,10 @@ before(async () => {
     await client.query("SELECT id FROM users WHERE password_hash = $1", [SECRETS.sqlValue]).catch(() => undefined);
     return { ok: true };
   });
+  // An error whose message carries a value: the exception event and the span status must not export it.
+  app.get("/test-only/failure", async () => {
+    throw new Error(`falha ao processar ${SECRETS.errorMessage}`);
+  });
 
   await app.listen({ port: 0, host: "127.0.0.1" });
   const { port } = app.server.address() as AddressInfo;
@@ -61,10 +69,12 @@ before(async () => {
       "content-type": "application/json",
       cookie: `cashin_session=${SECRETS.cookie}`,
       authorization: `Bearer ${SECRETS.authorization}`,
+      traceparent: `00-${CLIENT_TRACE_ID}-b7ad6b7169203331-01`,
     },
     body: JSON.stringify({ password: SECRETS.password }),
   });
   sensitiveStatus = sensitive.status;
+  await fetch(`${base}/test-only/failure`);
   await fetch(`${base}/health`);
 
   await app.close();
@@ -105,6 +115,7 @@ test("no exported span carries a password, token, cookie, request body or SQL pa
     name: span.name,
     attributes: span.attributes,
     events: span.events,
+    status: span.status,
     resource: span.resource.attributes,
   })));
   for (const [kind, secret] of Object.entries(SECRETS)) {
@@ -113,33 +124,66 @@ test("no exported span carries a password, token, cookie, request body or SQL pa
   assert.equal(JSON.stringify(logLines).includes(SECRETS.sqlValue), false);
 });
 
+test("an exception is exported by its type only, without the message or the stack trace", () => {
+  const exceptions = exporter.spans.flatMap((span) => span.events.filter((event) => event.name === "exception"));
+  // Without an exception event the assertion below would pass on nothing.
+  assert.ok(exceptions.length > 0, "the failing route must export an exception event");
+  // The type survives where the instrumentation recorded one (pg records only the message).
+  assert.ok(exceptions.some((event) => event.attributes?.["exception.type"] === "Error"));
+  for (const event of exceptions) {
+    assert.equal(event.attributes?.["exception.message"], undefined);
+    assert.equal(event.attributes?.["exception.stacktrace"], undefined);
+  }
+  for (const span of exporter.spans) assert.equal(span.status.message, undefined);
+});
+
+test("a traceparent sent by the client does not choose the traceId of the request", () => {
+  assert.notEqual(requestTraceId(), CLIENT_TRACE_ID);
+  assert.deepEqual(exporter.spans.filter((span) => span.spanContext().traceId === CLIENT_TRACE_ID).map((span) => span.name), []);
+});
+
 test("the health check is not traced", () => {
   const health = exporter.spans.filter((span) => JSON.stringify(span.attributes).includes("/health"));
   assert.deepEqual(health.map((span) => span.name), []);
 });
 
-test("redaction drops header, body, query and parameter attributes and strips query strings from URLs", () => {
+test("redaction exports only allowlisted attributes and strips query strings from paths", () => {
   assert.deepEqual(redactAttributes({
     "http.request.header.cookie": ["x"],
     "http.response.header.set-cookie": ["x"],
     "http.request.body.size": 10,
     "db.query.parameter.0": "x",
     "db.statement.parameters": "x",
-    "db.postgresql.values": "x",
+    "db.user": "x",
+    "db.connection_string": "postgresql://x",
     "url.query": "token=x",
     "url.full": "http://host/path?token=x",
-    "http.target": "/path?token=x",
     "http.url": "http://host/path?token=x",
+    "client.address": "203.0.113.10",
+    "network.peer.address": "203.0.113.10",
+    "user_agent.original": "x",
+    // An attribute no instrumentation sets today: unknown means dropped.
+    "some.future.attribute": "x",
+    "http.target": "/path?token=x",
     // @fastify/otel writes the raw request URL, query string included, into `url.path`.
     "url.path": "/path?token=x",
+    "http.route": "/path",
+    "http.request.method": "GET",
     "db.query.text": "SELECT 1",
   }), {
-    "url.full": "http://host/path",
     "http.target": "/path",
-    "http.url": "http://host/path",
     "url.path": "/path",
+    "http.route": "/path",
+    "http.request.method": "GET",
     "db.query.text": "SELECT 1",
   });
+});
+
+test("an exception event keeps only the error type", () => {
+  assert.deepEqual(redactEvents([
+    { name: "exception", time: [0, 0], attributes: { "exception.type": "Error", "exception.message": "x", "exception.stacktrace": "x", "other": "x" } },
+    { name: "exception", time: [0, 0] },
+  ]).map((event) => event.attributes), [{ "exception.type": "Error" }, {}]);
 });
 
 test("telemetry stays off without an OTLP endpoint", () => {

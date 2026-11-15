@@ -24,41 +24,59 @@ export function isTelemetryEnabled(environment: Environment): boolean {
   return TELEMETRY_ENDPOINT_VARIABLES.some((name) => (environment[name] ?? "").trim() !== "");
 }
 
-// Attributes that may carry what a trace must never hold — a query string can carry a token, a header a
-// cookie or a credential, a statement parameter a password or a financial value. They are dropped at
-// export time, the last point before data leaves the process, so the rule holds for attributes any
-// current or future instrumentation sets, not only for the ones configured below.
-const DROPPED_ATTRIBUTE_PREFIXES = [
-  "http.request.header.",
-  "http.response.header.",
-  "http.request.body",
-  "http.response.body",
-  "db.query.parameter.",
-  "db.operation.parameter.",
-] as const;
-const DROPPED_ATTRIBUTES = new Set(["url.query", "db.statement.parameters", "db.postgresql.values"]);
-// Attributes that hold a URL, a path or a request target: kept, but without the query string. `url.path`
-// is here because @fastify/otel writes the raw request URL, query string included, into it.
-const URL_ATTRIBUTES = new Set(["url.full", "url.path", "http.url", "http.target"]);
+// What leaves the process is an allowlist, not a denylist (vault rule 21: a guard whose silence means
+// "let it through" lists the inert, never the sensitive). An attribute is exported only if it is named
+// here; anything else — a header, a body, a query string, a statement parameter, a client address, or an
+// attribute some future instrumentation invents — is dropped at export time, the last point before data
+// leaves the process.
+const EXPORTED_ATTRIBUTES = new Set([
+  // HTTP server span (stable semantic conventions, plus the legacy names an opt-in could switch back to).
+  "http.request.method", "http.response.status_code", "http.route", "url.path", "url.scheme", "error.type",
+  "server.address", "server.port", "network.protocol.version",
+  "http.method", "http.status_code", "http.target", "http.scheme", "http.flavor", "net.host.name", "net.host.port",
+  // Fastify lifecycle spans.
+  "fastify.root", "fastify.type", "hook.name", "hook.callback.name",
+  // PostgreSQL spans. The statement text carries placeholders ($1), never values — see
+  // `pgInstrumentationConfig`. The database user and connection string stay out.
+  "db.system", "db.system.name", "db.namespace", "db.name", "db.query.text", "db.statement",
+  "db.operation.name", "db.collection.name", "db.response.status_code", "net.peer.name", "net.peer.port",
+  "db.postgresql.idle.timeout.millis", "db.postgresql.max.clients",
+]);
+// Exported, but without the query string: @fastify/otel writes the raw request URL into `url.path`.
+const PATH_ATTRIBUTES = new Set(["url.path", "http.target"]);
 
 export function redactAttributes(attributes: ExportedSpan["attributes"]): ExportedSpan["attributes"] {
   const redacted: Record<string, ExportedSpan["attributes"][string]> = {};
   for (const [key, value] of Object.entries(attributes)) {
-    if (DROPPED_ATTRIBUTES.has(key) || DROPPED_ATTRIBUTE_PREFIXES.some((prefix) => key.startsWith(prefix))) continue;
-    redacted[key] = URL_ATTRIBUTES.has(key) && typeof value === "string" ? value.split("?")[0] : value;
+    if (!EXPORTED_ATTRIBUTES.has(key)) continue;
+    redacted[key] = PATH_ATTRIBUTES.has(key) && typeof value === "string" ? value.split("?")[0] : value;
   }
   return redacted;
 }
 
-// Wraps the real exporter and hands it spans whose attributes went through `redactAttributes`. The span
-// is not copied field by field: a view with the span as prototype keeps every field and method
-// (`spanContext()` included) and overrides only `attributes`.
+// An error message is free text written by whoever threw it, and PostgreSQL echoes the offending value
+// in some of them (`invalid input syntax for type uuid: "…"`). An exception event keeps only the error
+// type, and the span status keeps only its code — the log line of the request still says what failed.
+const EXPORTED_EVENT_ATTRIBUTES = new Set(["exception.type"]);
+
+export function redactEvents(events: ExportedSpan["events"]): ExportedSpan["events"] {
+  return events.map((event) => ({
+    ...event,
+    attributes: Object.fromEntries(Object.entries(event.attributes ?? {}).filter(([key]) => EXPORTED_EVENT_ATTRIBUTES.has(key))),
+  }));
+}
+
+// Wraps the real exporter and hands it spans whose attributes, events and status went through the
+// redaction. The span is not copied field by field: a view with the span as prototype keeps every field
+// and method (`spanContext()` included) and overrides only what is redacted.
 export class RedactingSpanExporter implements SpanExporter {
   constructor(private readonly delegate: SpanExporter) {}
 
   export(spans: ExportedSpan[], resultCallback: ExportCallback): void {
     const redacted = spans.map((span) => Object.create(span, {
       attributes: { value: redactAttributes(span.attributes), enumerable: true },
+      events: { value: redactEvents(span.events), enumerable: true },
+      status: { value: { code: span.status.code }, enumerable: true },
     }) as ExportedSpan);
     this.delegate.export(redacted, resultCallback);
   }
@@ -116,6 +134,10 @@ export function startTelemetry({ environment, exporter }: TelemetryOptions): Nod
     // No resource detection: the process detector would export the command line and the host
     // detectors machine details, none of which a trace of this API needs.
     autoDetectResources: false,
+    // No propagator: a `traceparent` sent by the client is ignored, so no caller chooses the traceId that
+    // lands in our logs or decides whether its own request is sampled. The API calls no other traced
+    // service, so there is nothing to propagate onwards either.
+    textMapPropagator: null,
     traceExporter: new RedactingSpanExporter(exporter ?? new OTLPTraceExporter()),
     instrumentations: createInstrumentations(),
     // Traces only. Empty lists keep the SDK from configuring log and metric exporters from the
