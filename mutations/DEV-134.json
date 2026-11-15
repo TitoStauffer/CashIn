@@ -57,8 +57,8 @@
       "id": "route-template-is-a-label",
       "package": "apps/api",
       "file": "apps/api/src/telemetry.ts",
-      "find": "\"http.request.method\", \"http.response.status_code\", \"http.route\",",
-      "replace": "\"http.request.method\", \"http.response.status_code\",",
+      "find": "\"http.route\", \"error.type\",",
+      "replace": "\"error.type\",",
       "command": [
         "npx",
         "tsx",

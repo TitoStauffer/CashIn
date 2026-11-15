@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { before, test } from "node:test";
+import { metrics } from "@opentelemetry/api";
 import type { ExportedSpan, SpanExporter } from "./telemetry.js";
 import { filterMetricAttributes, isMetricExportEnabled, metricReadersFor, startTelemetry } from "./telemetry.js";
 import { PROCESS_METRIC_NAMES } from "./process-metrics.js";
@@ -15,6 +16,7 @@ type Metric = { name: string; sum?: { dataPoints: DataPoint[] }; gauge?: { dataP
 
 const payloads: string[] = [];
 const ITEM_ID = "segredo-id-do-recurso-123";
+const USER_ID = "segredo-id-do-usuario-42";
 let metricsRouteStatus = 0;
 let poolQueryRan = false;
 
@@ -78,6 +80,9 @@ before(async () => {
   await app.listen({ port: 0, host: "127.0.0.1" });
   const base = `http://127.0.0.1:${(app.server.address() as AddressInfo).port}`;
 
+  // Today no instrumentation emits a forbidden label on a metric, so this probe is what proves the
+  // allowlist View: one allowed label and one that identifies a person.
+  metrics.getMeter("test-probe").createCounter("test.probe").add(1, { "http.route": "/probe", "user.id": USER_ID });
   await fetch(`${base}/test-only/items/${ITEM_ID}`);
   await fetch(`${base}/test-only/items/${ITEM_ID}?wallet=x`);
   metricsRouteStatus = (await fetch(`${base}/metrics`)).status;
@@ -98,6 +103,13 @@ test("HTTP requests are counted under the route template, never under the id in 
   assert.ok(points.some((attributes) => attributes["http.route"] === "/test-only/items/:itemId"), `got ${JSON.stringify(points)}`);
   assert.ok(points.every((attributes) => attributes["http.response.status_code"] !== undefined));
   assert.equal(payloads.join("").includes(ITEM_ID), false, "the resource id leaked into a metric");
+});
+
+test("the allowlist View drops a label that identifies a person and keeps an allowed one", () => {
+  const probe = exportedMetrics().filter((metric) => metric.name === "test.probe").flatMap(dataPoints).map(attributesOf);
+  assert.ok(probe.length > 0, "the probe counter must be exported");
+  assert.ok(probe.every((attributes) => attributes["http.route"] === "/probe" && !("user.id" in attributes)), JSON.stringify(probe));
+  assert.equal(payloads.join("").includes(USER_ID), false, "the user id leaked into a metric");
 });
 
 test("every exported metric label is on the allowlist", () => {
