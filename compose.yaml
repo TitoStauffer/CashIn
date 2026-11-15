@@ -78,6 +78,9 @@ services:
       - "127.0.0.1:3001:3000"
     volumes:
       - observability_data:/data
+      # The same versioned dashboard as production (DEV-136): one provider file, one dashboards folder.
+      - ./deploy/observability/grafana/provisioning/dashboards/saldocerto.yaml:/otel-lgtm/grafana/conf/provisioning/dashboards/saldocerto.yaml:ro
+      - ./deploy/observability/grafana/dashboards:/var/lib/saldocerto/dashboards:ro
 
 volumes:
   postgres_data:

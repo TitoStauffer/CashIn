@@ -1,0 +1,14 @@
+# Dashboard provider of the SaldoCerto Grafana (DEV-136), used by the local grafana/otel-lgtm image and by
+# the production Grafana alike. The dashboards are files versioned in deploy/observability/grafana/dashboards:
+# edits made in the Grafana UI cannot be saved (allowUiUpdates: false); change the JSON in the repository.
+apiVersion: 1
+
+providers:
+  - name: saldocerto
+    type: file
+    disableDeletion: true
+    allowUiUpdates: false
+    updateIntervalSeconds: 30
+    options:
+      path: /var/lib/saldocerto/dashboards
+      foldersFromFilesStructure: false

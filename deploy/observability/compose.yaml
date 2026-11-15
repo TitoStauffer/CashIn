@@ -86,6 +86,8 @@ services:
     secrets: [grafana_admin_password]
     volumes:
       - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      # Versioned dashboards (DEV-136), read by grafana/provisioning/dashboards/saldocerto.yaml.
+      - ./grafana/dashboards:/var/lib/saldocerto/dashboards:ro
       - grafana_data:/var/lib/grafana
     ports:
       # Loopback only: reach it with `ssh -L 3001:127.0.0.1:3001 <vps>`.

@@ -38,6 +38,22 @@ No Grafana, **Explore** → **Prometheus**. Exemplos:
 - conexões do pool: `db_client_connection_count` (rótulo `db_client_connection_state`)
 - event loop: `nodejs_eventloop_delay_p99_seconds`
 
+## Painel
+
+O painel **SaldoCerto · API** (Dashboards no Grafana) abre pronto, sem passo manual. Ele tem duas seções:
+- **Saúde da API:** requisições por segundo, taxa de erro 5xx, latência p50/p95/p99 por rota, pool do PostgreSQL, event loop e memória.
+- **Uso das importações:** confirmadas, desfeitas e com falha; linhas por resultado; linhas ignoradas por duplicidade no período; tamanho do lote.
+
+Os links **Traces no Tempo** e **Logs no Loki**, no topo, abrem o Explore no mesmo período.
+
+**Mudar o painel.** O arquivo versionado é `deploy/observability/grafana/dashboards/saldocerto-api.json`, e o mesmo arquivo é montado na stack local e na de produção. O Grafana carrega o painel como provisionado e **não deixa salvar alterações pela interface** (`allowUiUpdates: false`), para nada divergir em silêncio do repositório. Para mudar:
+1. edite o painel no Grafana sem salvar;
+2. use **Export → Export as JSON** e substitua o arquivo no repositório;
+3. rode `npm test` em `apps/api`, porque `observability-dashboard.test.ts` recusa consulta a métrica que a API não exporta;
+4. abra o PR.
+
+O Grafana relê a pasta a cada 30 segundos.
+
 ## O que é enviado
 
 - **Traces:** só os atributos da lista de permissão de `apps/api/src/telemetry.ts`. Sem query string, headers, corpo, valores de SQL nem mensagem de erro. Detalhes em `docs/knowledge/architecture/api.md`, seção Traces.
