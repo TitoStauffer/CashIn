@@ -16,6 +16,8 @@ type Metric = { name: string; sum?: { dataPoints: DataPoint[] }; gauge?: { dataP
 
 const payloads: string[] = [];
 const ITEM_ID = "segredo-id-do-recurso-123";
+// A real wallet route of the API (unauthenticated, so it answers 401 — the route is still matched).
+const WALLET_ID = "7d3c5a1e-9b2f-4c8d-a6e1-3f0b2c9d8e71";
 const USER_ID = "segredo-id-do-usuario-42";
 let metricsRouteStatus = 0;
 let poolQueryRan = false;
@@ -86,6 +88,7 @@ before(async () => {
   await fetch(`${base}/test-only/items/${ITEM_ID}`);
   await fetch(`${base}/test-only/items/${ITEM_ID}?wallet=x`);
   metricsRouteStatus = (await fetch(`${base}/metrics`)).status;
+  await fetch(`${base}/wallets/${WALLET_ID}/access-requests`);
 
   if (pool) {
     poolQueryRan = (await fetch(`${base}/test-only/slow-query`)).status === 200;
@@ -103,6 +106,9 @@ test("HTTP requests are counted under the route template, never under the id in 
   assert.ok(points.some((attributes) => attributes["http.route"] === "/test-only/items/:itemId"), `got ${JSON.stringify(points)}`);
   assert.ok(points.every((attributes) => attributes["http.response.status_code"] !== undefined));
   assert.equal(payloads.join("").includes(ITEM_ID), false, "the resource id leaked into a metric");
+  // The acceptance criterion's own example: a wallet route is counted under its template, never its id.
+  assert.ok(points.some((attributes) => attributes["http.route"] === "/wallets/:walletId/access-requests"), `got ${JSON.stringify(points)}`);
+  assert.equal(payloads.join("").includes(WALLET_ID), false, "the wallet id leaked into a metric");
 });
 
 test("the allowlist View drops a label that identifies a person and keeps an allowed one", () => {
