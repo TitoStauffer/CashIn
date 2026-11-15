@@ -147,8 +147,10 @@ jobs:
     name: API
     needs: pr-title
     runs-on: ubuntu-24.04
-    # 15 minutes for the API itself plus room for the observability smoke test (DEV-133), which pulls
-    # five images when deploy/observability changes.
+    # 15 minutes for the API itself plus room for the two observability checks that run only when
+    # deploy/observability changes: the stack smoke test (DEV-133, about 2 minutes plus the image pulls) and
+    # the dashboard check (DEV-136, about 2 minutes: the stack again, 25 seconds of traffic and up to 90 seconds
+    # of waiting for data).
     timeout-minutes: 22
     defaults:
       run:
@@ -206,7 +208,7 @@ jobs:
           GRAFANA_ADMIN_USER: ci-check
           GRAFANA_ADMIN_PASSWORD_FILE: .env.example
         run: |
-          node --test deploy/observability/check-compose.test.mjs
+          node --test deploy/observability/check-compose.test.mjs deploy/observability/smoke/dashboard-evaluation.test.mjs
           docker compose -f deploy/observability/compose.yaml config --format json | node deploy/observability/check-compose.mjs
 
       - name: Smoke test production observability stack
@@ -282,6 +284,21 @@ jobs:
 
       - name: Build
         run: npm run build
+
+      - name: Dashboard queries return data
+        # DEV-136: runs the compiled API above in a container wired to the production observability stack and
+        # the job's PostgreSQL, drives real traffic, and fails if any query of the versioned Grafana dashboard
+        # comes back empty (deploy/observability/smoke/dashboard-check.mjs). Same trigger as the smoke test:
+        # only when the commit under test changes deploy/observability.
+        working-directory: .
+        env:
+          DATABASE_URL: postgresql://saldocerto:saldocerto_ci_only@host.docker.internal:5432/saldocerto_test
+        run: |
+          if git diff --quiet HEAD^1 HEAD -- deploy/observability; then
+            echo "deploy/observability is unchanged by this commit: dashboard check not needed."
+            exit 0
+          fi
+          node deploy/observability/smoke/dashboard-check.mjs
 
       - name: Mutation check (declared mutants)
         # Last step, so a mutant can never reach the build or the coverage report (DEV-126); see docs/ci.md.

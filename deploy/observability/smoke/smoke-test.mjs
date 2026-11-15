@@ -1,5 +1,5 @@
-// Smoke test of the production observability stack (DEV-133), run by the `Observability stack` CI job when
-// deploy/observability changes, and runnable locally from the repository root:
+// Smoke test of the production observability stack (DEV-133), run by the "Smoke test production observability
+// stack" step of the API CI job when deploy/observability changes, and runnable locally from the repository root:
 //
 //   node deploy/observability/smoke/smoke-test.mjs
 //
@@ -117,6 +117,11 @@ try {
 
   step("read all three back through the authenticated Grafana");
   await readBack(traceId);
+
+  step("the versioned dashboard is provisioned without any manual step (DEV-136)");
+  const dashboard = await (await fetch(`${GRAFANA}/api/dashboards/uid/saldocerto-api`, { headers: { cookie: await login() } })).json();
+  console.log(`dashboard: ${dashboard.dashboard?.title ?? "missing"}; provisioned: ${dashboard.meta?.provisioned === true}; panels: ${dashboard.dashboard?.panels?.length ?? 0}`);
+  if (dashboard.meta?.provisioned !== true || !(dashboard.dashboard?.panels?.length > 0)) throw new Error("the SaldoCerto dashboard was not provisioned");
 
   step("restart the stack and read them again (persistence)");
   compose("down");

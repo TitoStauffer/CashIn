@@ -11,6 +11,7 @@ Configuração em `deploy/observability/`: OpenTelemetry Collector, Loki, Tempo,
 - **Rede interna.** Loki, Tempo, Prometheus e Grafana conversam só pela rede `internal`, marcada como `internal: true`.
 - **Portas.** Nenhuma porta fica em interface pública. O Grafana é o único publicado, em `127.0.0.1:3001`, por uma rede `ui` que carrega só essa porta.
 - **Acesso.** Túnel SSH, nunca porta aberta no firewall.
+- **Painel.** O painel versionado `deploy/observability/grafana/dashboards/saldocerto-api.json` (DEV-136) é provisionado por `grafana/provisioning/dashboards/saldocerto.yaml`, é o mesmo do ambiente local e não aceita salvar pela interface. Para mudar, siga `docs/observability.md`, seção Painel.
 - **Persistência.** Volumes nomeados `loki_data`, `tempo_data`, `prometheus_data` e `grafana_data`.
 
 | Sinal | Componente | Retenção | Teto |
@@ -97,3 +98,5 @@ Rode o script antes de trocar versões ou configurações. Ele usa uma senha tem
 - [`deploy/observability/tempo.yaml`](../../../deploy/observability/tempo.yaml)
 - [`deploy/observability/check-compose.mjs`](../../../deploy/observability/check-compose.mjs)
 - [`deploy/observability/smoke/smoke-test.mjs`](../../../deploy/observability/smoke/smoke-test.mjs)
+- [`deploy/observability/grafana/dashboards/saldocerto-api.json`](../../../deploy/observability/grafana/dashboards/saldocerto-api.json)
+- [`deploy/observability/smoke/dashboard-check.mjs`](../../../deploy/observability/smoke/dashboard-check.mjs)

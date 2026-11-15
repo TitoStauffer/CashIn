@@ -1,0 +1,44 @@
+{
+  "ticket": "DEV-136",
+  "mutations": [
+    {
+      "id": "unknown-metrics-are-reported",
+      "package": "apps/api",
+      "file": "apps/api/src/observability-dashboard.test.ts",
+      "find": ".filter((name) => !openTelemetryNamesOf(name).some((candidate) => known.has(candidate)));",
+      "replace": ".filter(() => false);",
+      "command": [
+        "npx",
+        "tsx",
+        "--test",
+        "src/observability-dashboard.test.ts"
+      ]
+    },
+    {
+      "id": "dashboard-metrics-come-from-the-api",
+      "package": "apps/api",
+      "file": "apps/api/src/observability-dashboard.test.ts",
+      "find": "  \"http.server.request.duration\",",
+      "replace": "  \"http.server.request.duration.renamed\",",
+      "command": [
+        "npx",
+        "tsx",
+        "--test",
+        "src/observability-dashboard.test.ts"
+      ]
+    },
+    {
+      "id": "range-selectors-are-not-metrics",
+      "package": "apps/api",
+      "file": "apps/api/src/observability-dashboard.test.ts",
+      "find": ".replace(/\\[[^\\]]*\\]/g, \"\");",
+      "replace": ";",
+      "command": [
+        "npx",
+        "tsx",
+        "--test",
+        "src/observability-dashboard.test.ts"
+      ]
+    }
+  ]
+}

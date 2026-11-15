@@ -54,7 +54,9 @@ A API usa o OpenTelemetry, configurado em `src/telemetry.ts` e carregado por `sr
 - **O que é medido.**
   - HTTP: `http.server.request.duration` (histograma, com contagem) por `http.route` (o modelo da rota, nunca o ID), método e status. Vem da instrumentação HTTP.
   - Pool do `pg`: `db.client.connection.count` por estado (`used`/`idle`), `db.client.connection.pending_requests`, `db.client.connection.max` e `db.client.operation.duration`. Vem da instrumentação do `pg`, que só registra dentro de um span (`requireParentSpan`), ou seja, nas consultas feitas por requisições.
-  - Processo (`src/process-metrics.ts`, sobre a API do OpenTelemetry e sem dependência nova): atraso do event loop (p50, p99 e máximo do intervalo), memória residente, heap, CPU por modo e uptime.
+  - Processo (`src/process-metrics.ts`, sobre a API do OpenTelemetry e sem dependência nova): atraso do event loop (p50, p99 e máximo do intervalo), memória residente, heap, CPU por modo e uptime. Elas são liberadas no `shutdown` do `Telemetry` que `startTelemetry` devolve.
+  - Importação (DEV-135): `financial_import.*`, descritas em `domain/imports.md`.
+- **Painel (DEV-136).** `deploy/observability/grafana/dashboards/saldocerto-api.json` é provisionado na stack local e na de produção. `src/observability-dashboard.test.ts` recusa consulta a métrica que a API não exporta, o que obriga a atualizar o painel junto quando uma métrica muda de nome.
 - **Rótulos por lista de permissão.** Uma View aplica `METRIC_ATTRIBUTES` a todo instrumento, e qualquer outro atributo é descartado. Um rótulo é dimensão armazenada por combinação de valores: identificar usuário, carteira, e-mail, valor ou URL seria dado pessoal e cardinalidade sem limite. O teto de 2.000 combinações por métrica protege contra um rótulo permitido que fique sem limite.
 - **Testes.** `src/metrics.test.ts` roda num processo próprio, pelo caminho de produção (variáveis de ambiente e exportador OTLP real), até um receptor local. Ele afirma:
   - a rota parametrizada contada pelo modelo e sem o ID no payload;
