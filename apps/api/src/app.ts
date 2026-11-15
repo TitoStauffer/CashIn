@@ -56,6 +56,7 @@ import { PostgresFinancialCategorizationRulesRepository } from "./financial-impo
 import { DefaultFinancialImportParser } from "./financial-imports/financial-imports.parser.js";
 import { registerFinancialImportRoutes } from "./financial-imports/financial-imports.routes.js";
 import type { FinancialCategorizationRulesRepository, FinancialImportParser, FinancialImportRepository } from "./financial-imports/financial-imports.types.js";
+import { REQUEST_ID_HEADER, resolveRequestId } from "./shared/request-id.js";
 
 // What a request contributes to a log line, decided here instead of left to the defaults. Nothing in
 // the API logs a payload or a header today, and this is what keeps it that way: the serializers let
@@ -113,7 +114,18 @@ export function createApp(
   database: Database,
   options: AppOptions = {},
 ): FastifyInstance {
-  const app = Fastify({ logger: requestLoggerConfiguration(options.logger) });
+  const app = Fastify({
+    logger: requestLoggerConfiguration(options.logger),
+    // The correlation id is decided by `resolveRequestId`, never taken raw from a header: Fastify's own
+    // `requestIdHeader` would trust whatever the client sent, so it stays off.
+    requestIdHeader: false,
+    genReqId: (request) => resolveRequestId(request.headers),
+  });
+  // Set before anything else can answer, so every response carries the id — a 404, a body the parser
+  // refused and a reply built by the error handler included, since Fastify keeps headers already set.
+  app.addHook("onRequest", async (request, reply) => {
+    reply.header(REQUEST_ID_HEADER, request.id);
+  });
   const walletsService = new WalletsService(
     options.walletRepository ?? new PostgresWalletsRepository(database),
   );
