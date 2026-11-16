@@ -1,6 +1,6 @@
 # Referência da API
 
-Referência dos recursos HTTP da API, por domínio. Ela saiu do README na DEV-137 sem mudança de conteúdo. Contratos maiores ficam em documentos próprios:
+Referência dos recursos HTTP da API, por domínio. Ela saiu do README na DEV-137. Nessa mudança, três trechos defasados foram atualizados: o pagamento parcial de fatura, o CSV já suportado e a menção ao MVP 1. Contratos maiores ficam em documentos próprios:
 
 - importação financeira: [`financial-imports-contract.md`](financial-imports-contract.md);
 - resumo do dashboard: [`dashboard-summary-contract.md`](dashboard-summary-contract.md);
@@ -81,9 +81,9 @@ Cada cartão pertence à carteira ativa e possui apelido, dia de fechamento e di
 - `POST /credit-cards` recebe `{ "nickname": "Gold", "closingDay": 10, "dueDay": 20 }`.
 - `PATCH /credit-cards/:creditCardId` altera `nickname`, `closingDay`, `dueDay` e/ou `isActive`.
 - `GET /credit-cards/:creditCardId/statements?from=AAAA-MM-DD&to=AAAA-MM-DD` lista faturas pelo período da data de fechamento, com total, compras categorizadas e situação.
-- `POST /credit-cards/:creditCardId/statements/:statementId/pay` recebe `{ "date": "2026-10-20" }` e registra a quitação integral. Uma fatura só pode ser paga uma vez.
+- `POST /credit-cards/:creditCardId/statements/:statementId/pay` recebe `{ "date": "2026-10-20" }` e quita o saldo devedor da fatura, ou `{ "date": "2026-10-20", "amount": "300.00" }` para um pagamento parcial (DEV-85). Uma fatura liquidada não aceita novos pagamentos. Pagamentos também podem vir do extrato bancário importado, pela conciliação descrita em [`financial-imports-contract.md`](financial-imports-contract.md).
 
-O pagamento integral reduz o saldo em dinheiro na data informada. As compras permanecem registradas como despesas nas datas originais e em suas categorias; o pagamento não cria uma nova despesa. Após pagar uma fatura, suas compras não podem ser adicionadas, editadas ou excluídas.
+Cada pagamento, integral ou parcial, reduz o saldo em dinheiro na data informada. As compras permanecem registradas como despesas nas datas originais e em suas categorias; o pagamento não cria uma nova despesa. A fatura é liquidada quando os pagamentos cobrem o total. Depois disso, suas compras não podem ser adicionadas, editadas ou excluídas.
 
 ## Lançamentos de entrada
 
@@ -126,6 +126,6 @@ Todas as operações de metas e aportes exigem autenticação e usam a carteira 
 
 O total aportado e o percentual são derivados na consulta, portanto criação, edição e exclusão de aportes atualizam o progresso sem duplicar valores. Aportes são registros financeiros separados das despesas de consumo.
 
-O MVP 1 será validado com API e Web. A API é independente do cliente e poderá ser consumida pelo aplicativo Mobile quando essa etapa entrar no escopo.
+A API é independente do cliente. Hoje ela atende a Web, e o aplicativo Mobile poderá consumi-la quando essa etapa entrar no escopo.
 
-O contrato da importação financeira, incluindo suporte a extratos bancários OFX, limites, estados, prévia, confirmação atômica e desfazer, está em [financial-imports-contract.md](financial-imports-contract.md). O parser CSV permanece uma entrega separada.
+O contrato da importação financeira está em [financial-imports-contract.md](financial-imports-contract.md). Ele cobre extratos bancários OFX e CSV configurável, faturas de cartão, limites, estados, prévia, confirmação atômica e desfazer.

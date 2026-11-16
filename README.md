@@ -139,8 +139,8 @@ docker compose up --build
 ## Testes e qualidade
 
 ```bash
-cd apps/api && npm ci && npm run typecheck && npm test && npm run build
-cd apps/web && npm ci && npm run lint && npm test && npm run build
+(cd apps/api && npm ci && npm run typecheck && npm test && npm run build)
+(cd apps/web && npm ci && npm run lint && npm test && npm run build)
 ```
 
 - **API:** os testes de integração exigem `TEST_DATABASE_URL` apontando para um PostgreSQL descartável. Sem ela, eles são pulados. Veja [`docs/ci.md`](docs/ci.md).
