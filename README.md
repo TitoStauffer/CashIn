@@ -1,164 +1,203 @@
 # Saldo Certo
 
-Base inicial do MVP 1.
+Controle financeiro pessoal e compartilhado. O Saldo Certo organiza entradas, despesas, cartões de crédito e metas de investimento por **carteira**: uma pessoal para cada usuário e outras que podem ser compartilhadas com a família ou o grupo. Ele importa extratos e faturas para tirar do usuário o trabalho de digitar cada lançamento.
+
+> Repositório **CashIn**: o nome do produto é Saldo Certo. Monorepo com API, Web, configuração de infraestrutura e a automação de entrega.
+
+## Funcionalidades
+
+**Conta e acesso**
+- Cadastro com confirmação por e-mail, login e sessão autenticada por cookie.
+- Senha forte obrigatória e limite de tentativas por IP no cadastro e no login.
+
+**Carteiras**
+- Carteira pessoal para cada conta e carteiras adicionais compartilháveis.
+- Convite por e-mail, solicitação de acesso por link e administração de membros pelo proprietário.
+- Todos os dados financeiros são isolados por carteira, inclusive no banco.
+
+**Lançamentos**
+- Categorias e subcategorias por carteira e natureza (entrada, saída e investimento).
+- Entradas separadas por saldo: dinheiro, benefício VA/VR e Auxílio Home Office.
+- Despesas com forma de pagamento (Pix, débito, crédito e benefícios), com o saldo de cada benefício controlado à parte.
+- Valores monetários sempre como decimal exato, nunca ponto flutuante.
+
+**Cartões de crédito**
+- Cartões com dia de fechamento e vencimento, fatura calculada por compra.
+- Pagamento integral ou parcial e estornos que abatem a fatura.
+- Conciliação do pagamento da fatura com o extrato bancário.
+
+**Metas de investimento**
+- Metas com valor-alvo e prazo, aportes e progresso calculado, com encerramento.
+
+**Dashboard**
+- Resumo do período, comparação com o anterior, metas e categorias de maior gasto.
+- Fluxo de caixa com transferências entre carteiras, sem que elas virem receita ou despesa.
+
+**Importação financeira**
+- Extratos bancários **OFX** (1.x e 2.x) e **CSV** configurável, com modelos reutilizáveis por carteira.
+- Faturas de cartão em OFX e CSV.
+- Prévia editável antes de confirmar, detecção de duplicidade, confirmação atômica e desfazer.
+- Regras de categorização por carteira, criadas com confirmação do usuário.
+
+O estado detalhado de cada área está em [`docs/knowledge/current-state.md`](docs/knowledge/current-state.md).
 
 ## Stack
 
-- API: Node.js, Fastify e TypeScript
-- Web: React, Vite e TypeScript
-- Banco local: PostgreSQL
+| Camada | Tecnologia |
+| --- | --- |
+| API | Node.js 24, TypeScript, Fastify 5, `pg` (sem ORM), migrations SQL versionadas |
+| Web | React 19, TypeScript, Vite 8, Vitest, Testing Library, oxlint |
+| Banco | PostgreSQL 17 |
+| Observabilidade | OpenTelemetry (traces, logs e métricas) e Grafana LGTM: Loki, Grafana, Tempo e Prometheus |
+| Ambiente local | Docker Compose |
+| Qualidade e entrega | GitHub Actions, SonarQube Cloud, verificação por mutação e agentes de revisão (Code Review, QA, Quality Gate Coordinator) |
+| Gestão | Jira, com cada entrega ligada a uma issue |
 
-## Conhecimento do projeto
+## Arquitetura
 
-O índice versionado de arquitetura, domínio, automação, decisões e runbooks está em [`docs/knowledge/README.md`](docs/knowledge/README.md). Comece por ele e por [`docs/knowledge/current-state.md`](docs/knowledge/current-state.md), validando informações críticas nas fontes de código e configuração indicadas em cada nota.
+### Visão do sistema
 
-## Requisitos locais
+```mermaid
+flowchart LR
+    user(["Pessoa usuária"])
 
-- Docker Desktop com Docker Compose
-- Node.js 24 ou compatível com os projetos
-- npm
+    subgraph local["Docker Compose"]
+        web["Web<br/>React + Vite<br/>:5173"]
+        api["API<br/>Fastify + TypeScript<br/>:3000"]
+        db[("PostgreSQL 17<br/>:5433")]
+        obs["Observabilidade<br/>grafana/otel-lgtm<br/>Grafana :3001"]
+    end
 
-## Iniciar a Web, API e PostgreSQL
+    smtp[["SMTP<br/>confirmação e convites"]]
 
-Opcionalmente, copie .env.example para .env para explicitar as credenciais locais. Depois, na raiz do repositório, execute:
+    user -->|navegador| web
+    web -->|"/api (proxy do Vite)<br/>cookie de sessão + X-Wallet-Id"| api
+    api -->|SQL, escopo por carteira| db
+    api -->|e-mail| smtp
+    api -.->|"OTLP: traces, logs e métricas"| obs
+```
 
-    docker compose up --build
+- **API independente do cliente:** a Web é um dos consumidores, e um app mobile pode consumir o mesmo contrato.
+- **Escopo por carteira:** a carteira ativa vai no header `X-Wallet-Id`; sem ele, vale a carteira pessoal. Carteira inexistente ou sem acesso responde `404`.
+- **Rastreio por requisição:** toda resposta traz `X-Request-Id`, o mesmo `reqId` das linhas de log daquela requisição.
 
-- Web: http://localhost:5173
-- Health da API e do PostgreSQL: http://localhost:3000/health
-- PostgreSQL no host: localhost:5433
-- Grafana (logs, traces e métricas da API): http://localhost:3001, só nesta máquina. Veja [docs/observability.md](docs/observability.md).
+### Camadas da API
 
-O Compose cria um volume persistente para os dados locais do PostgreSQL. As credenciais padrão no Compose são exclusivas para desenvolvimento local e não devem ser reutilizadas em produção.
+```mermaid
+flowchart TB
+    http["Requisição HTTP"] --> route["*.routes.ts<br/>contrato, validação e autenticação"]
+    route --> service["*.service.ts<br/>casos de uso e regras de negócio"]
+    service --> repo["postgres-*.repository.ts<br/>SQL e persistência"]
+    repo --> pg[("PostgreSQL")]
+    service -.->|interface injetável| metrics["métricas de negócio<br/>(adaptador OpenTelemetry)"]
+```
 
-## Confirmação de e-mail
+Cada domínio (carteiras, categorias, entradas, despesas, cartões, metas, resumo, importações e outros) segue essa divisão em `apps/api/src/<domínio>/`. As regras de negócio não dependem do Fastify nem do banco: o `createApp` recebe os repositórios, o que permite testar os services e as rotas sem PostgreSQL. Os testes de integração rodam contra um PostgreSQL real, num schema descartável.
 
-Para enviar links de confirmação, preencha `SMTP_USER` e `SMTP_PASSWORD` no arquivo `.env` local. Para Gmail, use o endereço completo da conta e uma senha de app do Google; não use a senha normal da conta. Ative a verificação em duas etapas na conta para criar uma senha de app.
+### Observabilidade
 
-O padrão usa `smtp.gmail.com` na porta `587` com STARTTLS (`SMTP_SECURE=false`). Para a porta `465`, configure `SMTP_SECURE=true`. `SMTP_FROM` é opcional e, se omitido, usa `SMTP_USER`. Mantenha o `.env` fora do Git. Sem credenciais válidas, a API sobe, mas não envia a confirmação.
+```mermaid
+flowchart LR
+    api["API<br/>OpenTelemetry SDK"] -->|OTLP| col["Collector"]
+    col --> tempo["Tempo<br/>traces"]
+    col --> loki["Loki<br/>logs"]
+    col --> prom["Prometheus<br/>métricas"]
+    tempo --> graf["Grafana<br/>painel SaldoCerto · API"]
+    loki --> graf
+    prom --> graf
+```
 
-O cadastro responde sem aguardar o envio do e-mail, que ocorre em segundo plano no processo da API. Se o envio falhar, a conta pendente é removida e o erro SMTP é registrado sem credenciais ou conteúdo do e-mail; corrija a configuração e tente cadastrar novamente. Esse processamento em memória atende ao MVP local, mas não mantém tarefas pendentes caso o processo da API seja reiniciado durante o envio.
+- **Traces:** cada requisição gera um trace com HTTP, Fastify e as consultas ao PostgreSQL.
+- **Logs:** as linhas de log carregam o `traceId`, e o Grafana navega do trace aos logs e de volta.
+- **Métricas:** latência e erros por rota, pool do banco, processo Node e uso das importações.
+- **Dado sensível:** nenhum valor sensível sai do processo. Os traces usam lista de permissão de atributos, os logs não levam query string, corpo, cookie nem IP, e as métricas só aceitam rótulos permitidos.
+- **Local:** um container `grafana/otel-lgtm` reúne tudo.
+- **VPS:** os componentes ficam separados em [`deploy/observability`](deploy/observability), com autenticação, retenção e nenhuma porta pública. A stack está preparada e testada no CI, mas ainda não foi aplicada.
 
-O mesmo SMTP envia convites de carteira. O prazo padrão do convite é de 168 horas; `WALLET_INVITATION_TOKEN_TTL_HOURS` pode alterar esse prazo. O token bruto existe apenas no link enviado e nunca é armazenado no banco (somente seu hash é persistido). Em cadastro iniciado por convite, a Web envia `inviteToken` para `POST /auth/register`; a API preserva o convite no link de confirmação para que o fluxo funcione mesmo quando o e-mail abre outra aba. A pessoa confirma o e-mail, entra na conta e aceita o convite autenticada.
+Guia de uso: [`docs/observability.md`](docs/observability.md).
 
-As senhas de novas contas devem ter pelo menos 8 caracteres e incluir uma letra maiúscula, uma minúscula, um número e um caractere especial.
+## Como rodar localmente
 
-Cadastro e login têm limites temporários de tentativas por endereço IP para reduzir abuso. O controle é mantido em memória e atende ao MVP com uma única instância da API; para múltiplas instâncias, será necessário compartilhar o estado do limitador.
+**Requisitos:** Docker Desktop com Docker Compose. Node.js 24 e npm só são necessários para rodar testes e builds fora dos containers.
 
-## Carteiras e escopo dos dados
+```bash
+docker compose up --build
+```
 
-Os dados financeiros são organizados por carteira. Toda conta possui uma carteira pessoal; um usuário também pode ter acesso a outras carteiras quando estiver cadastrado como membro.
+| Serviço | Endereço |
+| --- | --- |
+| Web | http://localhost:5173 |
+| API (health) | http://localhost:3000/health |
+| PostgreSQL no host | `localhost:5433` |
+| Grafana (só nesta máquina) | http://localhost:3001 |
 
-- `GET /wallets` lista as carteiras às quais o usuário autenticado pertence. A resposta tem o formato `{ "items": [{ "id": "<uuid>", "name": "Pessoal", "isPersonal": true, "role": "owner" }] }`.
-- `POST /wallets` cria uma carteira adicional para o usuário autenticado, com `{ "name": "Viagem" }`, e retorna a carteira criada com status `201`.
+- Opcionalmente, copie `.env.example` para `.env` para ajustar as credenciais locais. As credenciais padrão do Compose valem só para desenvolvimento.
+- Para os e-mails de confirmação e convite, preencha `SMTP_USER` e `SMTP_PASSWORD`; o detalhe está em [`docs/api.md`](docs/api.md#confirmação-de-e-mail). Sem SMTP, a API sobe, mas não envia e-mails.
+- `docker compose down` para os containers, e `docker compose down -v` remove também os dados locais.
+- Depois de uma mudança de dependências da API, o container reinstala os pacotes sozinho na primeira subida.
 
-Convites e administração de membros são exclusivos do proprietário de carteiras compartilhadas (carteira pessoal não pode ser compartilhada):
+## Testes e qualidade
 
-- `POST /wallets/:walletId/invites` com `{ "email": "pessoa@example.com" }` cria um convite e agenda o e-mail em segundo plano; retorna `202` sem o token.
-- `GET /wallets/:walletId/invites` lista convites e estados `pending`, `accepted`, `cancelled` ou `expired`.
-- `DELETE /wallets/:walletId/invites/:inviteId` cancela um convite pendente e retorna `204`.
-- `POST /wallet-invitations/accept` com `{ "token": "..." }` exige sessão autenticada e e-mail confirmado que corresponda ao endereço convidado; retorna `200` com a carteira concedida. Tokens expirados, cancelados ou já usados são recusados.
-- `GET /wallets/:walletId/members` lista proprietário e membros; `DELETE /wallets/:walletId/members/:userId` remove um membro e encerra seu acesso à carteira. A propriedade não pode ser removida por esse endpoint.
+```bash
+(cd apps/api && npm ci && npm run typecheck && npm test && npm run build)
+(cd apps/web && npm ci && npm run lint && npm test && npm run build)
+```
 
-Convites não concedem acesso até a aceitação autenticada. Um membro pode usar os recursos financeiros da carteira, mas não pode listar/cancelar convites, administrar membros ou transferir propriedade; essas rotas respondem `404` para não proprietários.
+- **API:** os testes de integração exigem `TEST_DATABASE_URL` apontando para um PostgreSQL descartável. Sem ela, eles são pulados. Veja [`docs/ci.md`](docs/ci.md).
+- **Mutação:** toda guarda nova é provada por mutação. Os mutantes declarados em `mutations/<CHAVE>.json` rodam no CI e falham se algum sobreviver.
 
-Envie `X-Wallet-Id: <uuid>` nas operações de categorias, entradas, saídas, metas de investimento, aportes e resumo financeiro para selecionar a carteira. Se o header for omitido, a API usa a carteira pessoal do usuário. A API só permite acessar uma carteira quando há um registro de membership para o usuário autenticado; carteira inexistente ou sem acesso retorna `404`.
+## Como entregamos
 
-Links de solicitação de acesso a carteiras compartilhadas são válidos por 168 horas por padrão; configure WALLET_ACCESS_LINK_TTL_HOURS para mudar esse prazo. Cada novo link revoga o anterior e somente seu hash é armazenado. A solicitação válida notifica o proprietário por e-mail, sem revelar informações financeiras ao solicitante. A aprovação envia um convite de uso único; o acesso só é concedido após cadastro ou login, confirmação do e-mail e aceite autenticado.
+```mermaid
+flowchart LR
+    jira["Issue no Jira"] --> branch["Branch<br/>feature/fix/chore + chave"]
+    branch --> pr["Pull Request"]
+    pr --> ci["CI: API, Web,<br/>GitHub Reviewer e SonarQube"]
+    ci --> cr["Code Review<br/>(agente)"]
+    cr --> qa["QA<br/>(agente, trilho completo)"]
+    qa --> qg["Quality Gate<br/>Coordinator"]
+    qg --> mr["Merge Readiness"]
+    mr --> merge["Squash merge"]
+    merge --> post["Pós-merge:<br/>issue concluída no Jira"]
+```
 
-- POST /wallets/:walletId/access-links (somente proprietário) cria link e retorna seu URL e prazo de expiração.
-- POST /wallet-access-requests recebe token e e-mail sem autenticação; retorna a mesma resposta para links válidos e inválidos e limita tentativas por IP.
-- GET /wallets/:walletId/access-requests lista solicitações somente para o proprietário.
-- POST /wallets/:walletId/access-requests/:requestId/approve aprova e envia convite; /reject recusa. DELETE /wallets/:walletId/access-requests/:requestId cancela solicitações pendentes.
+- **Uma issue, uma branch, um PR:** o PR segue o template de [`.github/pull_request_template.md`](.github/pull_request_template.md).
+- **Agentes:** Code Review e QA rodam num runner self-hosted. Só mudanças em Markdown e testes seguem o trilho leve, sem QA.
+- **Gate:** o `Merge Readiness` só libera o merge com todas as evidências aprovadas para o mesmo SHA.
+- **Pós-merge:** fecha a issue no Jira sozinho.
+- **Regras completas:** em [`AGENTS.md`](AGENTS.md) e [`docs/knowledge/automation/delivery-flow.md`](docs/knowledge/automation/delivery-flow.md).
 
-## Categorias financeiras
+## Estrutura do repositório
 
-Categorias e subcategorias são gerenciadas dentro da carteira selecionada. As naturezas disponíveis são `income` (entrada), `expense` (saída), `investment` (meta de investimento) e `investment_goal` (natureza legada, mantida por compatibilidade). Uma subcategoria herda a natureza da categoria.
+```text
+apps/api/            API Fastify: domínios em src/<domínio>/, migrations SQL, telemetria
+apps/web/            Web React: telas e clientes HTTP por domínio
+deploy/observability Stack de observabilidade da VPS, painel do Grafana e smoke tests
+docs/                Contratos, guias e o vault de conhecimento (docs/knowledge)
+mutations/           Mutantes declarados por entrega, aplicados no CI
+tools/               Automação: agentes de revisão, dispatcher do Jira, mutação e vault
+.github/             Workflows de CI, revisão, gate e pós-merge
+```
 
-- `GET /categories?nature=income|expense|investment|investment_goal` lista categorias e suas subcategorias; o filtro `nature` é opcional.
-- `POST /categories` cria uma categoria com `{ "name": "...", "nature": "income" }`.
-- `PATCH /categories/:categoryId` renomeia uma categoria com `{ "name": "..." }`.
-- `DELETE /categories/:categoryId` exclui uma categoria e suas subcategorias, desde que não estejam referenciadas por movimentações ou metas.
-- `POST /categories/:categoryId/subcategories` cria uma subcategoria com `{ "name": "..." }`.
-- `PATCH /categories/:categoryId/subcategories/:subcategoryId` renomeia uma subcategoria com `{ "name": "..." }`.
-- `DELETE /categories/:categoryId/subcategories/:subcategoryId` exclui uma subcategoria, desde que não esteja referenciada.
+## Documentação
 
-Os nomes são normalizados sem espaços nas extremidades e não diferenciam maiúsculas de minúsculas: categorias devem ser únicas por carteira e natureza; subcategorias, dentro da categoria. A natureza de uma categoria não pode ser alterada. A API responde `409` para nomes duplicados ou tentativas de excluir itens em uso.
+| Assunto | Onde |
+| --- | --- |
+| Endpoints da API | [`docs/api.md`](docs/api.md) |
+| Importação financeira | [`docs/financial-imports-contract.md`](docs/financial-imports-contract.md) |
+| Resumo do dashboard | [`docs/dashboard-summary-contract.md`](docs/dashboard-summary-contract.md) |
+| Observabilidade | [`docs/observability.md`](docs/observability.md) |
+| CI e checks | [`docs/ci.md`](docs/ci.md) |
+| Arquitetura, domínio, decisões e runbooks | [`docs/knowledge/README.md`](docs/knowledge/README.md) |
 
-### Formas de pagamento
+O vault em `docs/knowledge/` é a memória versionada do projeto. Comece por [`current-state.md`](docs/knowledge/current-state.md) e confirme o que for crítico nas fontes de código que cada nota indica.
 
-Cada carteira recebe as formas iniciais Crédito, Débito, Pix, Cartão de benefícios (VA/VR) e Auxílio Home Office (AHO). VA e VR compartilham um único saldo e uma única opção para novos lançamentos; formas antigas de VA e VR permanecem inativas para preservar o histórico. As formas podem ser consultadas, cadastradas, renomeadas, reclassificadas e desativadas na carteira ativa. Formas de pagamento não são removidas fisicamente para preservar o histórico das despesas.
+## Estado e próximos passos
 
-- `GET /payment-methods` lista formas ativas e inativas da carteira; a Web usa somente as ativas em novos lançamentos e mantém as inativas visíveis no histórico.
-- `POST /payment-methods` recebe `{ "name": "Cartão de débito", "nature": "immediate" }`.
-- `PATCH /payment-methods/:paymentMethodId` altera `name`, `nature` e/ou `isActive`.
+- **Deploy:** a VPS própria é o destino. A configuração de observabilidade está pronta, e aplicar qualquer coisa em produção exige pedido explícito.
+- **Mobile:** fora do estado atual; a API já atende outros clientes.
+- **Limitações conhecidas:**
+  - o envio de e-mail e os limitadores de tentativas guardam estado em memória, o que atende a uma instância só;
+  - não existe papel somente leitura em carteira compartilhada.
 
-Os valores aceitos para `nature` incluem `immediate`, `credit_card`, `food_meal_benefit` e `home_office_benefit`. `food_benefit` e `meal_benefit` continuam aceitos para compatibilidade e registros históricos, mas novas gravações são normalizadas para `food_meal_benefit`. Nomes são únicos por carteira sem diferenciar caixa ou acentuação. Despesas no cartão VA/VR reduzem o saldo unificado VA/VR; despesas com AHO reduzem o saldo AHO.
-Despesas com natureza `credit_card` exigem um cartão cadastrado na mesma carteira.
-
-### Cartões de crédito e faturas
-
-Cada cartão pertence à carteira ativa e possui apelido, dia de fechamento e dia de vencimento próprios. Os dias aceitam valores de 1 a 31; em meses mais curtos, o fechamento ou vencimento é limitado ao último dia do mês. Compras até e inclusive o dia de fechamento entram na fatura que fecha naquele dia; compras posteriores entram no próximo ciclo. Quando o vencimento configurado não é posterior ao fechamento, ele ocorre no mês seguinte.
-
-- `GET /credit-cards` lista cartões ativos e inativos.
-- `POST /credit-cards` recebe `{ "nickname": "Gold", "closingDay": 10, "dueDay": 20 }`.
-- `PATCH /credit-cards/:creditCardId` altera `nickname`, `closingDay`, `dueDay` e/ou `isActive`.
-- `GET /credit-cards/:creditCardId/statements?from=AAAA-MM-DD&to=AAAA-MM-DD` lista faturas pelo período da data de fechamento, com total, compras categorizadas e situação.
-- `POST /credit-cards/:creditCardId/statements/:statementId/pay` recebe `{ "date": "2026-10-20" }` e registra a quitação integral. Uma fatura só pode ser paga uma vez.
-
-O pagamento integral reduz o saldo em dinheiro na data informada. As compras permanecem registradas como despesas nas datas originais e em suas categorias; o pagamento não cria uma nova despesa. Após pagar uma fatura, suas compras não podem ser adicionadas, editadas ou excluídas.
-
-Para parar os containers, use docker compose down. Para remover também os dados locais do banco, use docker compose down -v.
-
-## Lançamentos de entrada
-
-Todas as operações de entrada exigem uma sessão autenticada e são isoladas pela carteira selecionada. Os valores monetários são enviados e retornados como strings decimais, com até duas casas, para preservar a precisão.
-
-- `GET /incomes?from=AAAA-MM-DD&to=AAAA-MM-DD` lista entradas; os filtros de data são opcionais e inclusivos, com ordenação por data e criação mais recentes primeiro.
-- `POST /incomes` cria uma entrada com `{ "amount": "1250.50", "date": "2026-10-19", "description": "Salário", "categoryId": "<uuid>", "subcategoryId": "<uuid-ou-null>", "balanceType": "cash" }`. `balanceType` aceita `cash`, `food_meal_benefit` ou `home_office_benefit`; os valores antigos `food_benefit` e `meal_benefit` continuam aceitos e são normalizados para o saldo unificado. Quando omitido por clientes antigos, a entrada é tratada como dinheiro.
-- `PUT /incomes/:incomeId` substitui os campos editáveis e aceita a mesma estrutura do cadastro; descrição e subcategoria podem ser omitidas ou nulas.
-- `DELETE /incomes/:incomeId` exclui uma entrada e retorna `204`.
-
-As categorias precisam pertencer à carteira selecionada e ter natureza `income`. A subcategoria, quando informada, precisa pertencer à categoria selecionada.
-
-## Lançamentos de saída
-
-Todas as operações de saída exigem uma sessão autenticada e são isoladas pela carteira selecionada. Os valores monetários são enviados e retornados como strings decimais, com até duas casas, para preservar a precisão.
-
-- `GET /expenses?from=AAAA-MM-DD&to=AAAA-MM-DD` lista saídas; os filtros de data são opcionais e inclusivos, com ordenação por data e criação mais recentes primeiro.
-- `POST /expenses` cria uma saída com `{ "amount": "1250.50", "date": "2026-10-19", "description": "Mercado", "categoryId": "<uuid>", "subcategoryId": "<uuid-ou-null>", "paymentMethodId": "<uuid-ou-null>", "creditCardId": "<uuid-ou-null>" }`. Quando a forma de pagamento tem natureza `credit_card`, `creditCardId` é obrigatório.
-- `PUT /expenses/:expenseId` substitui os campos editáveis e aceita a mesma estrutura do cadastro; descrição, subcategoria e forma de pagamento podem ser omitidas ou nulas.
-- `DELETE /expenses/:expenseId` exclui uma saída e retorna `204`.
-
-O valor deve ser positivo. As categorias precisam pertencer à carteira selecionada e ter natureza `expense`; a subcategoria, quando informada, precisa pertencer à categoria selecionada. Uma forma de pagamento e um cartão informados precisam pertencer à mesma carteira; novos lançamentos só podem usar meios e cartões ativos. IDs de saídas de outras carteiras não podem ser consultados, alterados ou excluídos.
-
-## Resumo financeiro
-
-`GET /financial-summary?from=AAAA-MM-DD&to=AAAA-MM-DD` retorna os totais da carteira selecionada, com filtros de data opcionais e inclusivos. `incomeTotal` e `expenseTotal` continuam representando todos os lançamentos do período, contabilizados nas datas das compras. `availableBalance` mantém compatibilidade e equivale a `cashBalance`, que considera entradas em dinheiro, despesas pagas em dinheiro, aportes e pagamentos de faturas na data da quitação. O pagamento da fatura não duplica `expenseTotal`. `benefitBalances` informa separadamente os saldos de VA, VR e AHO; cada despesa paga com um benefício reduz somente o saldo daquele tipo. Entradas antigas sem destino são tratadas como dinheiro.
-
-## Metas de investimento e aportes
-
-Todas as operações de metas e aportes exigem autenticação e usam a carteira selecionada como escopo. Valores monetários são decimais enviados e retornados como strings, preservando até duas casas decimais. A natureza de categoria `investment` pode ser usada para associar uma meta; `investment_goal` permanece válida para compatibilidade com categorias existentes.
-
-- `GET /investment-goals` lista metas com `contributedAmount` e `progressPercentage` calculados a partir dos aportes atuais.
-- `GET /investment-goals/:goalId` consulta uma meta e seu progresso.
-- `POST /investment-goals` cria uma meta com `{ "title": "Reserva", "description": "Reserva de emergência", "targetAmount": "10000.00", "dueDate": null, "categoryId": "<uuid-ou-null>", "subcategoryId": "<uuid-ou-null>" }`. Prazo e categoria/subcategoria são opcionais.
-- `PUT /investment-goals/:goalId` substitui os campos editáveis da meta usando o mesmo formato de cadastro.
-- `POST /investment-goals/:goalId/close` encerra uma meta. Metas encerradas continuam consultáveis; criação de aporte, edição da meta e edição ou exclusão de aportes retornam `409`.
-- `GET /investment-goals/:goalId/contributions` lista os aportes da meta.
-- `POST /investment-goals/:goalId/contributions` cria um aporte com `{ "amount": "250.00", "date": "2026-10-19", "description": "Aporte mensal" }`.
-- `PUT /investment-goals/:goalId/contributions/:contributionId` atualiza um aporte; `DELETE` no mesmo caminho o exclui.
-
-O total aportado e o percentual são derivados na consulta, portanto criação, edição e exclusão de aportes atualizam o progresso sem duplicar valores. Aportes são registros financeiros separados das despesas de consumo.
-
-O MVP 1 será validado com API e Web. A API é independente do cliente e poderá ser consumida pelo aplicativo Mobile quando essa etapa entrar no escopo.
-
-O contrato da importação financeira, incluindo suporte a extratos bancários OFX, limites, estados, prévia, confirmação atômica e desfazer, está em [docs/financial-imports-contract.md](docs/financial-imports-contract.md). O parser CSV permanece uma entrega separada.
-
-## Integração contínua
-
-O workflow `.github/workflows/ci.yml` (GitHub Actions) valida a API e a Web em todo Pull Request e push para `master`: lint (Web), typecheck, testes unitários e de integração com PostgreSQL (API) e build. Detalhes, checks obrigatórios do GitHub e a preparação para o SonarQube estão em [docs/ci.md](docs/ci.md).
-
-## Deploy
-
-Deploy em nuvem e domínio próprio estão fora desta etapa. As imagens e configurações locais serão usadas para validar o ambiente antes de escolher o provedor.
+  A lista completa está no [estado atual](docs/knowledge/current-state.md#limitações-conhecidas).
