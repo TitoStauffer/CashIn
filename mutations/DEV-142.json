@@ -44,7 +44,7 @@
       "id": "offline-launch-keeps-the-token",
       "package": "apps/mobile",
       "file": "apps/mobile/src/auth/SessionProvider.tsx",
-      "find": "return { status: 'unavailable', message: error instanceof ApiError ? error.message : RESTORE_FAILED_MESSAGE } as const",
+      "find": "return { status: 'unavailable', message: error instanceof ApiError || error instanceof ApiConfigurationError ? error.message : RESTORE_FAILED_MESSAGE } as const",
       "replace": "await tokenStore.clear(); return { status: 'signedOut' } as const",
       "command": [
         "npx",
@@ -150,6 +150,19 @@
       "file": "apps/mobile/src/auth/SessionProvider.tsx",
       "find": "await tokenStore.clear().catch(() => { /* still signs out */ })",
       "replace": "await tokenStore.clear()",
+      "command": [
+        "npx",
+        "jest",
+        "src/auth/SessionProvider.test.tsx"
+      ],
+      "timeoutSeconds": 180
+    },
+    {
+      "id": "configuration-error-is-shown-on-launch",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/auth/SessionProvider.tsx",
+      "find": "error instanceof ApiError || error instanceof ApiConfigurationError ? error.message",
+      "replace": "error instanceof ApiError ? error.message",
       "command": [
         "npx",
         "jest",

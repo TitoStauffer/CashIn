@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
 
 import { ApiError } from '../api/client'
+import { ApiConfigurationError } from '../config/apiUrl'
 import type { AuthApi, User } from './authApi'
 
 export type SessionState =
@@ -66,7 +67,8 @@ export function SessionProvider({
             await tokenStore.clear()
             return { status: 'signedOut', notice: SESSION_EXPIRED_NOTICE } as const
           }
-          return { status: 'unavailable', message: error instanceof ApiError ? error.message : RESTORE_FAILED_MESSAGE } as const
+          // Both are written for the person, in Portuguese: a request failure and a build without the API address.
+          return { status: 'unavailable', message: error instanceof ApiError || error instanceof ApiConfigurationError ? error.message : RESTORE_FAILED_MESSAGE } as const
         }
       })
       .catch(() => ({ status: 'unavailable', message: RESTORE_FAILED_MESSAGE }) as const)

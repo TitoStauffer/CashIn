@@ -2,6 +2,7 @@ import { act, fireEvent, render, screen } from '@testing-library/react-native'
 import { Pressable, Text } from 'react-native'
 
 import { ApiError } from '../api/client'
+import { ApiConfigurationError } from '../config/apiUrl'
 import type { AuthApi } from './authApi'
 import { SESSION_EXPIRED_NOTICE, SessionProvider, useSession, type SessionState } from './SessionProvider'
 
@@ -100,6 +101,15 @@ describe('SessionProvider', () => {
 
     await fireEvent.press(screen.getByLabelText('tentar'))
     expect(await screen.findByText('signedIn:pessoa@example.com')).toBeTruthy()
+  })
+
+  // A build without the API address fails before any request; its message is already in Portuguese and
+  // says what is wrong, so the launch shows it instead of the generic one.
+  it('shows the configuration error when the API address is missing', async () => {
+    const tokenStore = memoryTokenStore(TOKEN)
+    await mount(fakeAuthApi({ me: jest.fn(async () => { throw new ApiConfigurationError('O endereço da API não foi configurado neste aplicativo.') }) }), tokenStore)
+    expect(await screen.findByText('unavailable:O endereço da API não foi configurado neste aplicativo.')).toBeTruthy()
+    expect(tokenStore.current).toBe(TOKEN)
   })
 
   it('stores the token from the token login only in the secure store', async () => {
