@@ -27,6 +27,16 @@ O app fica em `apps/mobile`, com Expo SDK 58, React Native e TypeScript estrito,
   - em desenvolvimento, sem ele, o app usa o host do servidor do Expo na porta 3000, o que funciona no celular da mesma rede;
   - fora de desenvolvimento, o endereço é obrigatório e só `https` é aceito, porque o token vai em toda requisição.
 
+## Conta e sessão (DEV-142)
+
+- **Rotas:** `index` decide pela sessão (verificando, indisponível, fora ou dentro), `login` e `register`. As telas ficam em `src/screens/` e recebem as ações por props; a sessão vive em `src/auth/SessionProvider.tsx`.
+- **Abertura do app:** um token guardado é conferido com `GET /auth/me`. Se a API recusa (`401`), o token sai do aparelho e o login mostra "Sua sessão expirou". Sem conexão, o token fica e a tela oferece tentar de novo, para o app não deslogar quem só está offline.
+- **Login:** `POST /auth/token`; o token vai só para o `expo-secure-store`. As recusas mostram a mensagem da API (senha errada e conta não confirmada respondem igual, de propósito; limite de tentativas).
+- **Cadastro:** `POST /auth/register`. A regra de senha é a da API, que responde a mensagem; o app só confere campos vazios e a repetição da senha. Um e-mail já usado recebe a mesma resposta de sucesso, porque a API não revela quem tem conta. O link de confirmação abre a Web, e a tela explica isso.
+- **Logout:** `POST /auth/logout` encerra a sessão no servidor e o token sempre sai do aparelho, mesmo sem conexão.
+- **`401` posterior:** qualquer requisição autenticada que receba `401` encerra a sessão, desde que o token recusado seja o guardado; um `401` atrasado de antes de um novo login é ignorado. Um `401` sem token (senha errada no login) não conta, e o logout não reporta o próprio `401`. Se o armazenamento seguro recusar apagar o token, o app sai mesmo assim.
+- **Envio único:** os formulários desabilitam o botão enquanto enviam, com uma trava por `ref` para dois toques no mesmo quadro.
+
 ## Qualidade
 
 - Job `Mobile` no CI: lint (`expo lint`), Jest com `jest-expo` e Testing Library, typecheck, `expo export` dos bundles Android e iOS e mutantes declarados para `apps/mobile`. A cobertura vai ao SonarQube, sem as rotas.
@@ -55,4 +65,6 @@ A API precisa estar acessível pelo celular. O `docker compose up` publica a por
 - [`apps/mobile/src/api/client.ts`](../../../apps/mobile/src/api/client.ts)
 - [`apps/mobile/src/config/apiUrl.ts`](../../../apps/mobile/src/config/apiUrl.ts)
 - [`apps/mobile/src/auth/tokenStorage.ts`](../../../apps/mobile/src/auth/tokenStorage.ts)
+- [`apps/mobile/src/auth/SessionProvider.tsx`](../../../apps/mobile/src/auth/SessionProvider.tsx)
+- [`apps/mobile/src/auth/authApi.ts`](../../../apps/mobile/src/auth/authApi.ts)
 - [`.github/workflows/ci.yml`](../../../.github/workflows/ci.yml)

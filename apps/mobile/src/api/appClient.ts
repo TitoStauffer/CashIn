@@ -1,8 +1,9 @@
 import Constants from 'expo-constants'
 
+import { createAuthApi, type AuthApi } from '../auth/authApi'
 import { tokenStorage } from '../auth/tokenStorage'
 import { resolveApiBaseUrl } from '../config/apiUrl'
-import { createApiClient, type ApiClient } from './client'
+import { createApiClient, type ApiClient, type ApiRequestOptions } from './client'
 
 /**
  * The app's API client, wired to the real configuration and the secure token storage. Built on first
@@ -11,6 +12,7 @@ import { createApiClient, type ApiClient } from './client'
  * the API falls back to the personal wallet.
  */
 let client: ApiClient | null = null
+let unauthorizedHandler: ((rejectedToken: string) => void) | null = null
 
 export function getApiClient(): ApiClient {
   client ??= createApiClient({
@@ -21,6 +23,20 @@ export function getApiClient(): ApiClient {
     }),
     getToken: () => tokenStorage.read(),
     getActiveWalletId: () => null,
+    onUnauthorized: (rejectedToken) => unauthorizedHandler?.(rejectedToken),
   })
   return client
 }
+
+/** The session registers here to hear about a `401`; the returned function unregisters it. */
+export function registerUnauthorizedHandler(handler: (rejectedToken: string) => void): () => void {
+  unauthorizedHandler = handler
+  return () => {
+    if (unauthorizedHandler === handler) unauthorizedHandler = null
+  }
+}
+
+// The client is resolved on each call, not at import, for the reason above.
+const lazyClient: ApiClient = <T,>(path: string, options?: ApiRequestOptions) => getApiClient()<T>(path, options)
+
+export const appAuthApi: AuthApi = createAuthApi(lazyClient)

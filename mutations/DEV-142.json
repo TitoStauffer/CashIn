@@ -1,0 +1,174 @@
+{
+  "ticket": "DEV-142",
+  "mutations": [
+    {
+      "id": "login-401-does-not-end-a-session",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/api/client.ts",
+      "find": "if (response.status === 401 && token && reportUnauthorized) onUnauthorized?.(token)",
+      "replace": "if (response.status === 401 && reportUnauthorized) onUnauthorized?.(token ?? '')",
+      "command": [
+        "npx",
+        "jest",
+        "src/api/client.test.ts"
+      ],
+      "timeoutSeconds": 180
+    },
+    {
+      "id": "logout-does-not-report-its-own-401",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/auth/authApi.ts",
+      "find": "scopeToActiveWallet: false, reportUnauthorized: false })",
+      "replace": "scopeToActiveWallet: false })",
+      "command": [
+        "npx",
+        "jest",
+        "src/auth/authApi.test.ts"
+      ],
+      "timeoutSeconds": 180
+    },
+    {
+      "id": "refused-token-is-dropped-on-launch",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/auth/SessionProvider.tsx",
+      "find": "if (error instanceof ApiError && error.status === 401) {",
+      "replace": "if (false) {",
+      "command": [
+        "npx",
+        "jest",
+        "src/auth/SessionProvider.test.tsx"
+      ],
+      "timeoutSeconds": 180
+    },
+    {
+      "id": "offline-launch-keeps-the-token",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/auth/SessionProvider.tsx",
+      "find": "return { status: 'unavailable', message: error instanceof ApiError || error instanceof ApiConfigurationError ? error.message : RESTORE_FAILED_MESSAGE } as const",
+      "replace": "await tokenStore.clear(); return { status: 'signedOut' } as const",
+      "command": [
+        "npx",
+        "jest",
+        "src/auth/SessionProvider.test.tsx"
+      ],
+      "timeoutSeconds": 180
+    },
+    {
+      "id": "token-login-stores-the-token",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/auth/SessionProvider.tsx",
+      "find": "await tokenStore.save(session.token)",
+      "replace": "void session.token",
+      "command": [
+        "npx",
+        "jest",
+        "src/auth/SessionProvider.test.tsx"
+      ],
+      "timeoutSeconds": 180
+    },
+    {
+      "id": "sign-out-always-drops-the-token",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/auth/SessionProvider.tsx",
+      "find": "} finally {",
+      "replace": "} if (false) {",
+      "command": [
+        "npx",
+        "jest",
+        "src/auth/SessionProvider.test.tsx"
+      ],
+      "timeoutSeconds": 180
+    },
+    {
+      "id": "login-requires-both-fields",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/screens/LoginScreen.tsx",
+      "find": "if (!email.trim() || !password) {",
+      "replace": "if (false) {",
+      "command": [
+        "npx",
+        "jest",
+        "src/screens/LoginScreen.test.tsx"
+      ],
+      "timeoutSeconds": 180
+    },
+    {
+      "id": "register-catches-a-mistyped-repetition",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/screens/RegisterScreen.tsx",
+      "find": "if (password !== confirmation) {",
+      "replace": "if (false) {",
+      "command": [
+        "npx",
+        "jest",
+        "src/screens/RegisterScreen.test.tsx"
+      ],
+      "timeoutSeconds": 180
+    },
+    {
+      "id": "busy-button-is-disabled",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/ui/Form.tsx",
+      "find": "      disabled={busy}",
+      "replace": "      disabled={false}",
+      "command": [
+        "npx",
+        "jest",
+        "src/screens/LoginScreen.test.tsx"
+      ],
+      "timeoutSeconds": 180
+    },
+    {
+      "id": "later-401-ends-the-session",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/auth/SessionProvider.tsx",
+      "find": "setState({ status: 'signedOut', notice: SESSION_EXPIRED_NOTICE })",
+      "replace": "void SESSION_EXPIRED_NOTICE",
+      "command": [
+        "npx",
+        "jest",
+        "src/auth/SessionProvider.test.tsx"
+      ],
+      "timeoutSeconds": 180
+    },
+    {
+      "id": "late-401-for-an-older-token-is-ignored",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/auth/SessionProvider.tsx",
+      "find": "if (stored !== rejectedToken) return",
+      "replace": "void stored",
+      "command": [
+        "npx",
+        "jest",
+        "src/auth/SessionProvider.test.tsx"
+      ],
+      "timeoutSeconds": 180
+    },
+    {
+      "id": "sign-out-survives-a-store-failure",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/auth/SessionProvider.tsx",
+      "find": "await tokenStore.clear().catch(() => { /* still signs out */ })",
+      "replace": "await tokenStore.clear()",
+      "command": [
+        "npx",
+        "jest",
+        "src/auth/SessionProvider.test.tsx"
+      ],
+      "timeoutSeconds": 180
+    },
+    {
+      "id": "configuration-error-is-shown-on-launch",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/auth/SessionProvider.tsx",
+      "find": "error instanceof ApiError || error instanceof ApiConfigurationError ? error.message",
+      "replace": "error instanceof ApiError ? error.message",
+      "command": [
+        "npx",
+        "jest",
+        "src/auth/SessionProvider.test.tsx"
+      ],
+      "timeoutSeconds": 180
+    }
+  ]
+}
