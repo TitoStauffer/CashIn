@@ -67,7 +67,8 @@ async function coordinatorComment(changedFiles: string[]): Promise<{ track: stri
   };
   const outcome = producer.evaluateDeterministicQualityGate({
     ...context,
-    checks: { api: "PASSED", web: "PASSED", githubReviewer: "PASSED", sonarQube: "PASSED", sonarCloud: "PASSED" },
+    // DEV-153: the Coordinator requires the Mobile check too, so the producer fixture carries it.
+    checks: { api: "PASSED", web: "PASSED", mobile: "PASSED", githubReviewer: "PASSED", sonarQube: "PASSED", sonarCloud: "PASSED" },
     priorResults: [codeReview, qa],
     reviews: [{ user: { login: BOT_LOGIN }, commit_id: SHA, state: "APPROVED", submitted_at: "2026-11-01T09:00:00Z", body: producer.formatFormalReviewEvidence(codeReview) }],
     comments: [qaComment],
