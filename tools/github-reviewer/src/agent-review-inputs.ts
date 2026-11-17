@@ -37,6 +37,8 @@ export interface AgentCheckEvidence {
 const MAX_SOURCE_FILES = 32;
 const MAX_DEPENDENCY_FILES = 64;
 const MAX_SOURCE_BYTES = 500_000;
+// A lockfile read raw is summarized, never sent whole, but it is still held in memory to be parsed.
+const MAX_RAW_LOCKFILE_BYTES = 20_000_000;
 
 export async function loadAgentReviewInputs(
   fetchImpl: typeof fetch,
@@ -117,14 +119,22 @@ async function loadChangedSourceFiles(
       `/repos/${repository}/contents/${encodedPath}?ref=${encodeURIComponent(ref)}`,
       token,
     );
-    if (payload.encoding !== 'base64' || typeof payload.content !== 'string') {
+    // GitHub omits the body of files over 1 MB from this response (`encoding: none`). A lockfile can
+    // pass that size and is summarized anyway, so it alone is read again through the raw media type.
+    const rawLockfile = isNpmLockfile(path) && payload.encoding === 'none'
+      ? await requestGitHubText(fetchImpl, `/repos/${repository}/contents/${encodedPath}?ref=${encodeURIComponent(ref)}`, token, 'application/vnd.github.raw')
+      : null;
+    if (rawLockfile !== null && Buffer.byteLength(rawLockfile, 'utf8') > MAX_RAW_LOCKFILE_BYTES) {
+      throw new Error(`Pull Request lockfile exceeds the supported raw read size: ${path}.`);
+    }
+    if (rawLockfile === null && (payload.encoding !== 'base64' || typeof payload.content !== 'string')) {
       throw new Error(`Could not read the full Pull Request source file: ${path}.`);
     }
-    const content = Buffer.from(payload.content.replace(/\s/g, ''), 'base64').toString('utf8');
+    const content = rawLockfile ?? Buffer.from(String(payload.content).replace(/\s/g, ''), 'base64').toString('utf8');
     if (content.includes('\0')) throw new Error(`Pull Request includes a binary file that cannot be reviewed as source: ${path}.`);
     const reviewContent = isEncodedReviewFixture(path)
       ? encodedFixtureMarker(path, content)
-      : content;
+      : isNpmLockfile(path) ? summarizeNpmLockfile(path, content) : content;
     const contentBytes = Buffer.byteLength(reviewContent, 'utf8');
     if (totalBytes + contentBytes > MAX_SOURCE_BYTES) {
       if (isChangedFile) throw new Error('Pull Request source files exceed the supported review context size.');
@@ -149,15 +159,97 @@ async function loadChangedSourceFiles(
 export function sanitizeAgentDiff(diff: string): string {
   return diff.split(/(?=^diff --git )/m).map((section) => {
     const path = section.match(/^diff --git a\/.+ b\/(.+)$/m)?.[1]?.trim();
-    if (!path || !isEncodedReviewFixture(path)) return section;
+    if (!path) return section;
     const header = section.split(/\r?\n/, 1)[0];
     const bytes = Buffer.byteLength(section, 'utf8');
-    return `${header}\n[encoded test fixture diff section omitted from model context; diffSectionBytes=${bytes}; diffSectionSha256=${hash(section)}]\n`;
+    if (isEncodedReviewFixture(path)) {
+      return `${header}\n[encoded test fixture diff section omitted from model context; diffSectionBytes=${bytes}; diffSectionSha256=${hash(section)}]\n`;
+    }
+    if (isNpmLockfile(path)) {
+      return `${header}\n[npm lockfile diff section omitted from model context; the source context carries its deterministic summary; diffSectionBytes=${bytes}; diffSectionSha256=${hash(section)}]\n`;
+    }
+    return section;
   }).join('');
 }
 
 function isEncodedReviewFixture(path: string): boolean {
   return /^tools\/github-reviewer\/test\/fixtures\/[A-Za-z0-9._-]+\.json\.gz\.base64$/.test(path);
+}
+
+// An npm lockfile is generated, and most of it is integrity hashes no reader can check by eye; an
+// Expo app's lockfile alone passes the whole source budget (DEV-152). What a reviewer can judge is
+// where each package comes from, so the lockfile reaches the model as a deterministic summary that
+// names every package resolved outside the official registry and every package without an integrity
+// hash. That the lockfile matches its package.json is enforced by `npm ci` in every CI job that
+// installs a package, not by the model.
+//
+// Everything in the lockfile is written by whoever opens the PR, so no value of it reaches the summary
+// raw: a newline or a `]` in a key, a URL or `lockfileVersion` could otherwise write a whole clean-looking
+// summary ahead of the real one. Integers are kept only when they are integers, and every string —
+// path, location, URL, host — is emitted as a JSON string literal, cut to a bounded length first.
+const NPM_REGISTRY_PREFIX = 'https://registry.npmjs.org/';
+const MAX_LISTED_LOCKFILE_ANOMALIES = 50;
+const MAX_LOCKFILE_VALUE_CHARS = 200;
+
+function isNpmLockfile(path: string): boolean {
+  return /(^|\/)package-lock\.json$/.test(path);
+}
+
+function quoted(value: string): string {
+  const bounded = value.length > MAX_LOCKFILE_VALUE_CHARS ? `${value.slice(0, MAX_LOCKFILE_VALUE_CHARS)}…` : value;
+  return JSON.stringify(bounded);
+}
+
+export function summarizeNpmLockfile(path: string, content: string): string {
+  const header = `[npm lockfile summarized for the model context; path=${quoted(path)}; sourceBytes=${Buffer.byteLength(content, 'utf8')}; sourceSha256=${hash(content)}`;
+  let lockfile: unknown;
+  try {
+    lockfile = JSON.parse(content);
+  } catch {
+    return `${header}; parse=INVALID_JSON]`;
+  }
+  const packages = asRecord(asRecord(lockfile)?.packages);
+  if (!packages) return `${header}; parse=NO_PACKAGES_OBJECT]`;
+
+  const hosts = new Map<string, number>();
+  const outsideRegistry: string[] = [];
+  const withoutIntegrity: string[] = [];
+  let installed = 0;
+  for (const [location, entry] of Object.entries(packages)) {
+    // The empty key is the project itself; links point at local folders and carry no tarball.
+    const record = asRecord(entry);
+    if (location === '' || !record || record.link === true) continue;
+    installed += 1;
+    const resolved = typeof record.resolved === 'string' ? record.resolved : '';
+    const host = resolvedHost(resolved);
+    hosts.set(host, (hosts.get(host) ?? 0) + 1);
+    if (!resolved.startsWith(NPM_REGISTRY_PREFIX)) outsideRegistry.push(`${quoted(location)} -> ${resolved ? quoted(resolved) : '(no resolved)'}`);
+    if (typeof record.integrity !== 'string' || !/^sha(256|384|512)-/.test(record.integrity)) withoutIntegrity.push(quoted(location));
+  }
+  const hostList = [...hosts.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([host, count]) => `${quoted(host)}=${count}`).join(', ');
+  const version = asRecord(lockfile)?.lockfileVersion;
+  return [
+    `${header}; lockfileVersion=${Number.isSafeInteger(version) ? String(version) : 'invalid'}; installedPackages=${installed}`,
+    `resolvedHosts: ${hostList || '(none)'}`,
+    `packagesResolvedOutsideRegistry (${outsideRegistry.length}): ${listAnomalies(outsideRegistry)}`,
+    `packagesWithoutIntegrity (${withoutIntegrity.length}): ${listAnomalies(withoutIntegrity)}]`,
+  ].join('\n');
+}
+
+function resolvedHost(resolved: string): string {
+  if (!resolved) return '(no resolved)';
+  try {
+    const url = new URL(resolved);
+    return `${url.protocol}//${url.host}`;
+  } catch {
+    return '(not a URL)';
+  }
+}
+
+function listAnomalies(entries: string[]): string {
+  if (entries.length === 0) return 'none';
+  const listed = entries.slice(0, MAX_LISTED_LOCKFILE_ANOMALIES).join('; ');
+  return entries.length > MAX_LISTED_LOCKFILE_ANOMALIES ? `${listed}; ... and ${entries.length - MAX_LISTED_LOCKFILE_ANOMALIES} more` : listed;
 }
 
 function encodedFixtureMarker(path: string, content: string): string {
