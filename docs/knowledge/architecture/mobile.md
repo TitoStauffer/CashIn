@@ -18,7 +18,7 @@ O app fica em `apps/mobile`, com Expo SDK 58, React Native e TypeScript estrito,
   - anexa o token e, nas rotas escopadas, o `X-Wallet-Id`;
   - recusa caminho inseguro (`..` em qualquer grafia, protocolo-relativo, esquema próprio);
   - aplica timeout de 15 s;
-  - transforma toda falha em `ApiError`, com a mensagem da API ou um texto fixo em português por status;
+  - transforma toda falha da requisição ou da resposta em `ApiError`, com a mensagem da API ou um texto fixo em português por status. A exceção é o caminho inseguro, que lança `Error` antes de qualquer requisição porque é erro de programação, e não algo a mostrar à pessoa;
   - chama `onUnauthorized` no `401`.
 
   Nada nele registra em log ou console, e há teste para isso. A carteira ativa entra com a DEV-143; até lá, a API usa a carteira pessoal.

@@ -2,10 +2,12 @@
  * The single HTTP client every screen of the app uses to reach the API.
  *
  * It sends the session token in `Authorization: Bearer` (DEV-140) and, for routes scoped to a wallet,
- * the active wallet in `X-Wallet-Id`. It turns every failure into an `ApiError` whose message can be
- * shown to the person as is: the API's own message, already in Portuguese, when there is one, and a
- * fixed Portuguese message by status otherwise. Nothing here logs: a request carries the token, and a
- * log line on a phone is one more place for it to leak.
+ * the active wallet in `X-Wallet-Id`. It turns every failure of the request or of its response into an
+ * `ApiError` whose message can be shown to the person as is: the API's own message, already in
+ * Portuguese, when there is one, and a fixed Portuguese message by status otherwise. An unsafe path is
+ * the one exception: it throws a plain `Error` before any request, because it is a programming error.
+ * Nothing here logs: a request carries the token, and a log line on a phone is one more place for it
+ * to leak.
  */
 export class ApiError extends Error {
   constructor(
