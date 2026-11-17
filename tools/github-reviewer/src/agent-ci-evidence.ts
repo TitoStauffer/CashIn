@@ -118,6 +118,7 @@ export async function loadCiSnapshots(fetchImpl: typeof fetch, repository: strin
     WORKFLOW_PATH,
     'apps/api/package.json',
     'apps/web/package.json',
+    'apps/mobile/package.json',
     'tools/github-reviewer/package.json',
     'tools/jira-dispatcher/package.json',
   ]) {

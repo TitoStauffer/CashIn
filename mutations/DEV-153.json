@@ -1,0 +1,83 @@
+{
+  "ticket": "DEV-153",
+  "mutations": [
+    {
+      "id": "merge-readiness-requires-mobile",
+      "package": "tools/github-reviewer",
+      "file": "tools/github-reviewer/src/merge-readiness.ts",
+      "find": "const REQUIRED_QUALITY_CHECKS = ['API', 'Web', 'Mobile', 'SonarQube', 'SonarCloud Code Analysis'];",
+      "replace": "const REQUIRED_QUALITY_CHECKS = ['API', 'Web', 'SonarQube', 'SonarCloud Code Analysis'];",
+      "command": [
+        "npm",
+        "run",
+        "test:required-checks"
+      ],
+      "timeoutSeconds": 240
+    },
+    {
+      "id": "coordinator-requires-mobile",
+      "package": "tools/github-reviewer",
+      "file": "tools/github-reviewer/src/agent-stage-policy.ts",
+      "find": "['api', 'web', 'mobile', 'githubReviewer', 'sonarQube', 'sonarCloud']",
+      "replace": "['api', 'web', 'githubReviewer', 'sonarQube', 'sonarCloud']",
+      "command": [
+        "npm",
+        "run",
+        "test:required-checks"
+      ],
+      "timeoutSeconds": 240
+    },
+    {
+      "id": "agent-summary-reads-the-mobile-check",
+      "package": "tools/github-reviewer",
+      "file": "tools/github-reviewer/src/agent-review-inputs.ts",
+      "find": "    mobile: status(REQUIRED_AGENT_CHECKS.mobile),",
+      "replace": "    mobile: 'PASSED',",
+      "command": [
+        "npm",
+        "run",
+        "test:required-checks"
+      ],
+      "timeoutSeconds": 240
+    },
+    {
+      "id": "mobile-steps-reach-the-agents",
+      "package": "tools/github-reviewer",
+      "file": "tools/github-reviewer/src/agent-review-inputs.ts",
+      "find": "REQUIRED_AGENT_CHECKS.web(name) || REQUIRED_AGENT_CHECKS.mobile(name) ||",
+      "replace": "REQUIRED_AGENT_CHECKS.web(name) ||",
+      "command": [
+        "npm",
+        "run",
+        "test:required-checks"
+      ],
+      "timeoutSeconds": 240
+    },
+    {
+      "id": "evidence-holds-four-ci-jobs",
+      "package": "tools/github-reviewer",
+      "file": "tools/github-reviewer/src/agent-review-inputs.ts",
+      "find": "if (ciChecks.length > 4) throw new Error",
+      "replace": "if (ciChecks.length > 3) throw new Error",
+      "command": [
+        "npm",
+        "run",
+        "test:required-checks"
+      ],
+      "timeoutSeconds": 240
+    },
+    {
+      "id": "mobile-scripts-reach-the-agents",
+      "package": "tools/github-reviewer",
+      "file": "tools/github-reviewer/src/agent-ci-evidence.ts",
+      "find": "    'apps/mobile/package.json',",
+      "replace": "    'apps/web/package.json',",
+      "command": [
+        "npm",
+        "run",
+        "test:required-checks"
+      ],
+      "timeoutSeconds": 240
+    }
+  ]
+}
