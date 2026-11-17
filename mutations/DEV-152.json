@@ -1,0 +1,109 @@
+{
+  "ticket": "DEV-152",
+  "mutations": [
+    {
+      "id": "lockfile-source-is-summarized",
+      "package": "tools/github-reviewer",
+      "file": "tools/github-reviewer/src/agent-review-inputs.ts",
+      "find": ": isNpmLockfile(path) ? summarizeNpmLockfile(path, content) : content;",
+      "replace": ": content;",
+      "command": [
+        "npm",
+        "run",
+        "test:review-inputs"
+      ],
+      "timeoutSeconds": 180
+    },
+    {
+      "id": "only-the-official-registry-counts-as-inside",
+      "package": "tools/github-reviewer",
+      "file": "tools/github-reviewer/src/agent-review-inputs.ts",
+      "find": "const NPM_REGISTRY_PREFIX = 'https://registry.npmjs.org/';",
+      "replace": "const NPM_REGISTRY_PREFIX = 'https://registry.npmjs.org';",
+      "command": [
+        "npm",
+        "run",
+        "test:review-inputs"
+      ],
+      "timeoutSeconds": 180
+    },
+    {
+      "id": "weak-integrity-is-reported",
+      "package": "tools/github-reviewer",
+      "file": "tools/github-reviewer/src/agent-review-inputs.ts",
+      "find": "!/^sha(256|384|512)-/.test(record.integrity)",
+      "replace": "!/^sha[0-9]+-/.test(record.integrity)",
+      "command": [
+        "npm",
+        "run",
+        "test:review-inputs"
+      ],
+      "timeoutSeconds": 180
+    },
+    {
+      "id": "invalid-lockfile-is-not-reported-clean",
+      "package": "tools/github-reviewer",
+      "file": "tools/github-reviewer/src/agent-review-inputs.ts",
+      "find": "return `${header}; parse=INVALID_JSON]`;",
+      "replace": "lockfile = { packages: {} };",
+      "command": [
+        "npm",
+        "run",
+        "test:review-inputs"
+      ],
+      "timeoutSeconds": 180
+    },
+    {
+      "id": "lockfile-diff-section-is-replaced",
+      "package": "tools/github-reviewer",
+      "file": "tools/github-reviewer/src/agent-review-inputs.ts",
+      "find": "if (isNpmLockfile(path)) {",
+      "replace": "if (false) {",
+      "command": [
+        "npm",
+        "run",
+        "test:review-inputs"
+      ],
+      "timeoutSeconds": 180
+    },
+    {
+      "id": "anomaly-list-is-capped",
+      "package": "tools/github-reviewer",
+      "file": "tools/github-reviewer/src/agent-review-inputs.ts",
+      "find": "const MAX_LISTED_LOCKFILE_ANOMALIES = 50;",
+      "replace": "const MAX_LISTED_LOCKFILE_ANOMALIES = 5000;",
+      "command": [
+        "npm",
+        "run",
+        "test:review-inputs"
+      ],
+      "timeoutSeconds": 180
+    },
+    {
+      "id": "large-lockfile-is-read-raw",
+      "package": "tools/github-reviewer",
+      "file": "tools/github-reviewer/src/agent-review-inputs.ts",
+      "find": "const rawLockfile = isNpmLockfile(path) && payload.encoding === 'none'",
+      "replace": "const rawLockfile = isNpmLockfile(path) && payload.encoding === 'never'",
+      "command": [
+        "npm",
+        "run",
+        "test:review-inputs"
+      ],
+      "timeoutSeconds": 180
+    },
+    {
+      "id": "raw-read-is-only-for-lockfiles",
+      "package": "tools/github-reviewer",
+      "file": "tools/github-reviewer/src/agent-review-inputs.ts",
+      "find": "const rawLockfile = isNpmLockfile(path) && payload.encoding === 'none'",
+      "replace": "const rawLockfile = payload.encoding === 'none'",
+      "command": [
+        "npm",
+        "run",
+        "test:review-inputs"
+      ],
+      "timeoutSeconds": 180
+    }
+  ]
+}

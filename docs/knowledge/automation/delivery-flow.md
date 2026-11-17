@@ -1,7 +1,7 @@
 # Fluxo de entrega
 
 **Status:** ativo
-**Última revisão:** 11/11/2026
+**Última revisão:** 17/11/2026
 
 ## Sequência real
 
@@ -67,6 +67,7 @@ flowchart LR
 - O Merge Readiness avalia após o CI, quando uma revisão formal muda e após o relatório final do Coordinator. Relatórios intermediários de Code Review e QA e edições de metadados não criam avaliações equivalentes adicionais.
 - O cache de pacotes npm é reutilizado entre jobs compatíveis; cada job continua executando instalação limpa e checkout confiável.
 - A rodada termina antes de uma repetição no mesmo grupo; os checkouts deixam `ref` sem configuração explícita para preservar a ref confiável do evento e o SHA imutável associado. O despacho manual continua restrito à `master`; mudanças no HEAD do PR continuam invalidando resultados antigos.
+- O contexto dos agentes carrega cada arquivo alterado inteiro, até 32 arquivos e 500 KB. A exceção são artefatos gerados: fixtures codificadas e, desde a [DEV-152](https://titostauffer.atlassian.net/browse/DEV-152), `package-lock.json`, que chega como resumo determinístico (tamanho, SHA-256, pacotes por host de `resolved`, pacotes fora de `https://registry.npmjs.org/` e sem `integrity`). O lockfile do app Expo passava sozinho do teto. Que o lockfile bate com o `package.json` continua garantido pelo `npm ci`, não pelo modelo. Detalhes em `tools/github-reviewer/README.md`.
 - Edições só de checkboxes não recuperam CI; título ou conteúdo substantivo alterado mantém a recuperação.
 - O job `Recover CI after metadata edit` executa **sempre que a validação de metadados passa** — ele mantém `needs: pr-title`, então segue pulado quando título ou branch reprovam — e decide internamente (DEV-110). O portão do ator saiu do nível do job e virou condição de passo, então a recuperação continua restrita às edições humanas substantivas, e cada edição publica uma conclusão que **reflete uma avaliação**, em vez de um `skipped` que não diz nada sobre o head.
 - **Como o check desse job se comporta, medido na API e não inferido:** job pulado por `if` de nível de job **publica** check run, com conclusão `skipped` — check run `128994959193`, head `636e262`. As conclusões **coexistem** na mesma SHA: nesse mesmo head, `128991498373` com `failure` às 05:09:34Z e `128994959193` com `skipped` às 05:21:11Z, mesmo nome. E o workflow `PR title` roda em `pull_request_target`, cujo `head_sha` é o topo da `master` no momento, não o head do PR, então execuções seguintes publicam em SHAs diferentes conforme a `master` anda. Consequência: o que elimina um vermelho obsoleto é parar de produzi-lo, não uma conclusão posterior apagando a anterior.
@@ -89,3 +90,4 @@ flowchart LR
 - [`tools/jira-dispatcher/test/review-track-contract.test.ts`](../../../tools/jira-dispatcher/test/review-track-contract.test.ts)
 - [`tools/mutation-check/run.mjs`](../../../tools/mutation-check/run.mjs)
 - [`tools/github-reviewer/src/agent-stage-policy.ts`](../../../tools/github-reviewer/src/agent-stage-policy.ts)
+- [`tools/github-reviewer/src/agent-review-inputs.ts`](../../../tools/github-reviewer/src/agent-review-inputs.ts)
