@@ -21,7 +21,7 @@ A divergência entre `GITHUB_APP_*` e `CASHIN_APP_*` impediu autenticação. Cad
 
 ## Ordem do CI reduz desperdício
 
-Título é validado antes dos jobs caros; API, Web e ferramentas executam antes do Sonar; Agents só iniciam após o CI aprovado. Isso reduz execuções inúteis e consumo do runner/Codex.
+Título é validado antes dos jobs caros; API, Web, Mobile e ferramentas executam antes do Sonar; Agents só iniciam após o CI aprovado. Isso reduz execuções inúteis e consumo do runner/Codex.
 
 ## Revisão precisa percorrer todo o diff
 

@@ -141,7 +141,7 @@ jobs:
         # Runs the mutants declared in mutations/*.json that this PR added or changed (DEV-126); see docs/ci.md.
         if: github.event_name == 'pull_request'
         working-directory: .
-        run: node tools/mutation-check/run.mjs --base HEAD^1 --package tools/github-reviewer --package tools/jira-dispatcher --package tools/mutation-check --covered-elsewhere apps/api --covered-elsewhere apps/web
+        run: node tools/mutation-check/run.mjs --base HEAD^1 --package tools/github-reviewer --package tools/jira-dispatcher --package tools/mutation-check --covered-elsewhere apps/api --covered-elsewhere apps/web --covered-elsewhere apps/mobile
 
   api:
     name: API
@@ -363,9 +363,76 @@ jobs:
         working-directory: .
         run: node tools/mutation-check/run.mjs --base HEAD^1 --package apps/web
 
+  mobile:
+    # The Expo app (DEV-141). Same bar as the Web: lint, tests with coverage, typecheck, a real bundle
+    # build for both platforms and the declared mutants. Runs on every PR, like API and Web.
+    name: Mobile
+    needs: pr-title
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    defaults:
+      run:
+        working-directory: apps/mobile
+    env:
+      # No usage report from the Expo CLI and non-interactive output in CI.
+      EXPO_NO_TELEMETRY: "1"
+      CI: "1"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          # See the GitHub Reviewer job: the mutation check diffs the merge commit against its base.
+          fetch-depth: 2
+
+      - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: apps/mobile/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci --fetch-timeout=15000 --fetch-retries=1
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Test with coverage
+        run: npm run test:coverage
+
+      - name: Prepare coverage report for SonarQube
+        # SonarQube needs paths relative to the repository root in a monorepo (apps/mobile/src/...).
+        run: |
+          test -s coverage/lcov.info
+          sed -i 's#^SF:src/#SF:apps/mobile/src/#' coverage/lcov.info
+
+      - name: Upload coverage report
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: mobile-coverage
+          path: apps/mobile/coverage/lcov.info
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Build Android and iOS bundles
+        # A JS bundle export for both platforms: proves the app compiles for release without native
+        # toolchains. Native builds (EAS) come with publication, DEV-151.
+        run: npm run build
+
+      - name: Mutation check (declared mutants)
+        # Last step, so a mutant can never reach the build or the coverage report (DEV-126); see docs/ci.md.
+        if: github.event_name == 'pull_request'
+        working-directory: .
+        run: node tools/mutation-check/run.mjs --base HEAD^1 --package apps/mobile
+
   sonarqube:
     name: SonarQube
-    needs: [api, web, automation-tools]
+    needs: [api, web, mobile, automation-tools]
     # Secrets are not available to PRs from forks; skip instead of failing.
     if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-24.04
@@ -390,6 +457,12 @@ jobs:
         with:
           name: web-coverage
           path: apps/web/coverage
+
+      - name: Download Mobile coverage report
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: mobile-coverage
+          path: apps/mobile/coverage
 
       - name: Install SonarScanner CLI with verified signature
         # The action's own key import has no timeout and hung on an unresponsive keyserver until the job

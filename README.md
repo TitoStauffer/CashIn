@@ -47,6 +47,7 @@ O estado detalhado de cada área está em [`docs/knowledge/current-state.md`](do
 | --- | --- |
 | API | Node.js 24, TypeScript, Fastify 5, `pg` (sem ORM), migrations SQL versionadas |
 | Web | React 19, TypeScript, Vite 8, Vitest, Testing Library, oxlint |
+| Mobile | Expo SDK 58, React Native, Expo Router, TypeScript, Jest com Testing Library (Android e iOS) |
 | Banco | PostgreSQL 17 |
 | Observabilidade | OpenTelemetry (traces, logs e métricas) e Grafana LGTM: Loki, Grafana, Tempo e Prometheus |
 | Ambiente local | Docker Compose |
@@ -69,15 +70,18 @@ flowchart LR
     end
 
     smtp[["SMTP<br/>confirmação e convites"]]
+    mobile["App mobile<br/>Expo · Android e iOS"]
 
     user -->|navegador| web
+    user -->|celular| mobile
+    mobile -->|"Authorization: Bearer + X-Wallet-Id"| api
     web -->|"/api (proxy do Vite)<br/>cookie de sessão + X-Wallet-Id"| api
     api -->|SQL, escopo por carteira| db
     api -->|e-mail| smtp
     api -.->|"OTLP: traces, logs e métricas"| obs
 ```
 
-- **API independente do cliente:** a Web é um dos consumidores, e um app mobile pode consumir o mesmo contrato.
+- **API independente do cliente:** a Web usa o cookie de sessão; o app mobile usa o mesmo contrato com o token em `Authorization: Bearer` (DEV-140).
 - **Escopo por carteira:** a carteira ativa vai no header `X-Wallet-Id`; sem ele, vale a carteira pessoal. Carteira inexistente ou sem acesso responde `404`.
 - **Rastreio por requisição:** toda resposta traz `X-Request-Id`, o mesmo `reqId` das linhas de log daquela requisição.
 
@@ -136,11 +140,26 @@ docker compose up --build
 - `docker compose down` para os containers, e `docker compose down -v` remove também os dados locais.
 - Depois de uma mudança de dependências da API, o container reinstala os pacotes sozinho na primeira subida.
 
+### App mobile
+
+Com a API rodando, no celular com o app **Expo Go** e na mesma rede Wi-Fi do computador:
+
+```bash
+cd apps/mobile
+npm ci
+npx expo start
+```
+
+- Leia o QR code com o Expo Go (Android) ou com a câmera (iOS).
+- **Endereço da API:** em desenvolvimento, o app usa o IP do computador na porta 3000. Se o firewall do Windows bloquear a porta, libere-a para a rede privada. Para outro endereço, defina `EXPO_PUBLIC_API_URL`, que é obrigatório e só aceita `https` fora de desenvolvimento.
+- **Detalhes:** em [`docs/knowledge/architecture/mobile.md`](docs/knowledge/architecture/mobile.md).
+
 ## Testes e qualidade
 
 ```bash
 (cd apps/api && npm ci && npm run typecheck && npm test && npm run build)
 (cd apps/web && npm ci && npm run lint && npm test && npm run build)
+(cd apps/mobile && npm ci && npm run lint && npm test && npm run typecheck && npm run build)
 ```
 
 - **API:** os testes de integração exigem `TEST_DATABASE_URL` apontando para um PostgreSQL descartável. Sem ela, eles são pulados. Veja [`docs/ci.md`](docs/ci.md).
@@ -152,7 +171,7 @@ docker compose up --build
 flowchart LR
     jira["Issue no Jira"] --> branch["Branch<br/>feature/fix/chore + chave"]
     branch --> pr["Pull Request"]
-    pr --> ci["CI: API, Web,<br/>GitHub Reviewer e SonarQube"]
+    pr --> ci["CI: API, Web, Mobile,<br/>GitHub Reviewer e SonarQube"]
     ci --> cr["Code Review<br/>(agente)"]
     cr --> qa["QA<br/>(agente, trilho completo)"]
     qa --> qg["Quality Gate<br/>Coordinator"]
@@ -172,6 +191,7 @@ flowchart LR
 ```text
 apps/api/            API Fastify: domínios em src/<domínio>/, migrations SQL, telemetria
 apps/web/            Web React: telas e clientes HTTP por domínio
+apps/mobile/         App Expo (Android e iOS): rotas em src/app/, telas, cliente da API
 deploy/observability Stack de observabilidade da VPS, painel do Grafana e smoke tests
 docs/                Contratos, guias e o vault de conhecimento (docs/knowledge)
 mutations/           Mutantes declarados por entrega, aplicados no CI
@@ -195,7 +215,7 @@ O vault em `docs/knowledge/` é a memória versionada do projeto. Comece por [`c
 ## Estado e próximos passos
 
 - **Deploy:** a VPS própria é o destino. A configuração de observabilidade está pronta, e aplicar qualquer coisa em produção exige pedido explícito.
-- **Mobile:** fora do estado atual; a API já atende outros clientes.
+- **Mobile:** a fundação do app está pronta (DEV-141). As telas chegam nos épicos DEV-138 e DEV-139.
 - **Limitações conhecidas:**
   - o envio de e-mail e os limitadores de tentativas guardam estado em memória, o que atende a uma instância só;
   - não existe papel somente leitura em carteira compartilhada.

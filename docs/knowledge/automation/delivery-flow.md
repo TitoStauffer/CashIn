@@ -7,8 +7,8 @@
 
 1. Um PR para `master` dispara o workflow `CI`. Na abertura, o workflow confiável `PR assignee` atribui `TitoStauffer` como responsável, sem executar código do PR e sem bloquear o PR se a API falhar (DEV-66).
 2. `PR title` valida o título e a chave Jira da branch.
-3. `API`, `Web` e `GitHub Reviewer` executam após essa validação.
-4. `SonarQube` depende das três verificações anteriores e aguarda o Quality Gate.
+3. `API`, `Web`, `Mobile` e `GitHub Reviewer` executam após essa validação.
+4. `SonarQube` depende das quatro verificações anteriores e aguarda o Quality Gate.
 5. Com o CI aprovado, a orquestração confirma que o HEAD contém a `master` atual antes de chamar qualquer Agent. Depois executa Code Review, publicação formal, **QA quando o trilho é completo** e consolidação determinística do Quality Gate Coordinator.
 6. `Merge Readiness` consolida as evidências do HEAD atual e publica um status determinístico.
 7. O Product Manager só integra quando checks e revisão estão aprovados, mais o QA quando o trilho é completo.
@@ -19,9 +19,11 @@ flowchart LR
   PR[PR aberto] --> T[Título]
   T --> A[API]
   T --> W[Web]
+  T --> MO[Mobile]
   T --> R[Ferramentas de automação]
   A --> S[SonarQube]
   W --> S
+  MO --> S
   R --> S
   S --> CR[Code Review]
   CR -->|trilho completo| QA[QA]
@@ -57,7 +59,7 @@ flowchart LR
 - Falha exclusiva de publicação é recuperada com o artefato estruturado original, sem repetir a chamada de modelo; workflow, run, tentativa do job e ID do artefato são autenticados pela API do GitHub antes do download. Se houver reexecuções, somente o artefato correlacionado à tentativa bem-sucedida mais recente é selecionado.
 - Falha de infraestrutura antes da criação de um resultado estruturado deixa o job do Agent vermelho, permitindo reexecutar somente o job falho e seus dependentes. Decisões estruturadas continuam publicáveis antes do encerramento fail-closed da rodada.
 - O merge não é executado pelos workflows de agentes ou pelo Merge Readiness.
-- Mutantes declarados em `mutations/<CHAVE>.json` rodam no passo `Mutation check (declared mutants)`, o último dos jobs `API`, `Web` e `GitHub Reviewer`, só para os manifestos que o PR adicionou ou alterou (DEV-126). O passo falha se um mutante sobrevive, se a âncora não é única, se o comando não passa sem a mutação ou se o arquivo não volta ao original; o QA lê a conclusão do passo nos metadados do job. Sem manifesto no diff, o passo verde não prova mutação nenhuma. Formato e motivos em `docs/ci.md`.
+- Mutantes declarados em `mutations/<CHAVE>.json` rodam no passo `Mutation check (declared mutants)`, o último dos jobs `API`, `Web`, `Mobile` e `GitHub Reviewer`, só para os manifestos que o PR adicionou ou alterou (DEV-126). O passo falha se um mutante sobrevive, se a âncora não é única, se o comando não passa sem a mutação ou se o arquivo não volta ao original; o QA lê a conclusão do passo nos metadados do job. Sem manifesto no diff, o passo verde não prova mutação nenhuma. Formato e motivos em `docs/ci.md`.
 
 ## Economia de execução
 

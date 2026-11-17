@@ -32,6 +32,10 @@
       "documents": ["docs/knowledge/architecture/api.md"]
     },
     {
+      "paths": ["apps/mobile/**"],
+      "documents": ["docs/knowledge/architecture/mobile.md"]
+    },
+    {
       "paths": ["apps/web/**"],
       "documents": ["docs/knowledge/architecture/web.md"]
     },

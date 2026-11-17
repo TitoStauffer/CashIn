@@ -31,7 +31,10 @@ test('sequences PR metadata, implementation checks, SonarQube and agent orchestr
   assert.match(ciWorkflow, /^  automation-tools:\s*\r?\n(?:\s+#.*\r?\n)*\s+name: GitHub Reviewer\s*\r?\n\s+needs: pr-title/m);
   assert.match(ciWorkflow, /^  api:\s*\n\s+name: API\s*\n\s+needs: pr-title/m);
   assert.match(ciWorkflow, /^  web:\s*\n\s+name: Web\s*\n\s+needs: pr-title/m);
-  assert.match(ciWorkflow, /^  sonarqube:[\s\S]*?^\s+needs: \[api, web, automation-tools\]\s*$/m);
+  // DEV-141: the mobile app has its own job, gated by the PR metadata like API and Web, and SonarQube
+  // waits for its coverage too.
+  assert.match(ciWorkflow, /^  mobile:\s*\r?\n(?:\s+#.*\r?\n)*\s+name: Mobile\s*\r?\n\s+needs: pr-title/m);
+  assert.match(ciWorkflow, /^  sonarqube:[\s\S]*?^\s+needs: \[api, web, mobile, automation-tools\]\s*$/m);
   assert.match(orchestrationWorkflow, /^\s+workflows: \[CI\]\s*$/m);
   assert.doesNotMatch(orchestrationWorkflow, /workflows: \[[^\]]*PR title/);
   assert.doesNotMatch(orchestrationWorkflow, /workflow_run\.actor\.login != vars\.CASHIN_APP_BOT_LOGIN/);

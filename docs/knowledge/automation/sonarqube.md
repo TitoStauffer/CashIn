@@ -1,11 +1,11 @@
 # SonarQube Cloud
 
 **Status:** ativo no CI
-**Última revisão:** 11/11/2026
+**Última revisão:** 17/11/2026
 
 ## Escopo analisado
 
-O scanner analisa código de produção em `apps/api/src` e `apps/web/src`. Testes são identificados separadamente e os relatórios LCOV das duas aplicações alimentam a cobertura.
+O scanner analisa código de produção em `apps/api/src`, `apps/web/src` e `apps/mobile/src` (desde a [DEV-141](https://titostauffer.atlassian.net/browse/DEV-141)). Testes são identificados separadamente e os relatórios LCOV das três aplicações alimentam a cobertura. Os arquivos de rota do Expo Router (`apps/mobile/src/app/**`) só ligam uma tela a um caminho e ficam fora da cobertura (`sonar.coverage.exclusions`).
 
 ## Quality Gate atual
 

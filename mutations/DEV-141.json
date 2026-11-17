@@ -1,0 +1,161 @@
+{
+  "ticket": "DEV-141",
+  "mutations": [
+    {
+      "id": "release-build-requires-https",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/config/apiUrl.ts",
+      "find": "const allowedProtocols = isDevelopment ? ['https:', 'http:'] : ['https:']",
+      "replace": "const allowedProtocols = ['https:', 'http:']",
+      "command": [
+        "npx",
+        "jest",
+        "src/config/apiUrl.test.ts"
+      ],
+      "timeoutSeconds": 180
+    },
+    {
+      "id": "release-build-requires-a-configured-address",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/config/apiUrl.ts",
+      "find": "if (isDevelopment && devServerHostUri) {",
+      "replace": "if (devServerHostUri) {",
+      "command": [
+        "npx",
+        "jest",
+        "src/config/apiUrl.test.ts"
+      ],
+      "timeoutSeconds": 180
+    },
+    {
+      "id": "address-with-credentials-is-refused",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/config/apiUrl.ts",
+      "find": "if (url.search || url.hash || url.username || url.password) {",
+      "replace": "if (url.search || url.hash) {",
+      "command": [
+        "npx",
+        "jest",
+        "src/config/apiUrl.test.ts"
+      ],
+      "timeoutSeconds": 180
+    },
+    {
+      "id": "token-travels-as-bearer",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/api/client.ts",
+      "find": "if (token) headers.Authorization = `Bearer ${token}`",
+      "replace": "if (token) headers.Authorization = token",
+      "command": [
+        "npx",
+        "jest",
+        "src/api/client.test.ts"
+      ],
+      "timeoutSeconds": 180
+    },
+    {
+      "id": "wallet-only-on-scoped-routes",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/api/client.ts",
+      "find": "const walletId = scopeToActiveWallet ? getActiveWalletId() : null",
+      "replace": "const walletId = getActiveWalletId()",
+      "command": [
+        "npx",
+        "jest",
+        "src/api/client.test.ts"
+      ],
+      "timeoutSeconds": 180
+    },
+    {
+      "id": "unauthorized-callback-only-on-401",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/api/client.ts",
+      "find": "if (response.status === 401) onUnauthorized?.()",
+      "replace": "onUnauthorized?.()",
+      "command": [
+        "npx",
+        "jest",
+        "src/api/client.test.ts"
+      ],
+      "timeoutSeconds": 180
+    },
+    {
+      "id": "timeout-has-its-own-message",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/api/client.ts",
+      "find": "controller.signal.aborted ? TIMEOUT_MESSAGE : NETWORK_ERROR_MESSAGE",
+      "replace": "NETWORK_ERROR_MESSAGE",
+      "command": [
+        "npx",
+        "jest",
+        "src/api/client.test.ts"
+      ],
+      "timeoutSeconds": 180
+    },
+    {
+      "id": "api-message-is-preferred",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/api/client.ts",
+      "find": "if (typeof body?.message === 'string' && body.message.trim()) return body.message",
+      "replace": "void body",
+      "command": [
+        "npx",
+        "jest",
+        "src/api/client.test.ts"
+      ],
+      "timeoutSeconds": 180
+    },
+    {
+      "id": "encoded-dot-segments-are-refused",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/api/client.ts",
+      "find": "decoded = decodeURIComponent(pathname)",
+      "replace": "decoded = pathname",
+      "command": [
+        "npx",
+        "jest",
+        "src/api/client.test.ts"
+      ],
+      "timeoutSeconds": 180
+    },
+    {
+      "id": "token-readable-only-while-unlocked",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/auth/tokenStorage.ts",
+      "find": "keychainAccessible: SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY,",
+      "replace": "keychainAccessible: SecureStore.ALWAYS,",
+      "command": [
+        "npx",
+        "jest",
+        "src/auth/tokenStorage.test.ts"
+      ],
+      "timeoutSeconds": 180
+    },
+    {
+      "id": "unsafe-path-is-not-a-network-error",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/api/client.ts",
+      "find": "const url = `${baseUrl}${assertSafeApiPath(path)}`",
+      "replace": "const url = `${baseUrl}${path}`",
+      "command": [
+        "npx",
+        "jest",
+        "src/api/client.test.ts"
+      ],
+      "timeoutSeconds": 180
+    },
+    {
+      "id": "success-without-json-is-an-api-error",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/api/client.ts",
+      "find": "throw new ApiError(UNEXPECTED_RESPONSE_MESSAGE, response.status)",
+      "replace": "throw new Error('unexpected')",
+      "command": [
+        "npx",
+        "jest",
+        "src/api/client.test.ts"
+      ],
+      "timeoutSeconds": 180
+    }
+  ]
+}

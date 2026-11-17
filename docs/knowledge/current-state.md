@@ -26,7 +26,7 @@ A infraestrutura e a tela existem. O parser padrão da API interpreta extratos b
 
 ## Automação de entrega
 
-O fluxo ativo executa validação de título, API, Web, ferramentas de automação, SonarQube, Code Review, QA, Quality Gate Coordinator e Merge Readiness. Desde a DEV-116 cada rodada tem um trilho: o trilho leve dispensa o QA somente quando **todo** arquivo alterado é `*.md`, `*.test.*` ou `docs/knowledge/context-map.json`, e qualquer outro caminho exige o trilho completo. Todas as outras etapas continuam obrigatórias nos dois trilhos. Consulte [`automation/delivery-flow.md`](automation/delivery-flow.md). O merge permanece sob responsabilidade do Product Manager quando todas as evidências estão aprovadas. O pós-merge atualiza a issue Jira associada de forma idempotente.
+O fluxo ativo executa validação de título, API, Web, Mobile, ferramentas de automação, SonarQube, Code Review, QA, Quality Gate Coordinator e Merge Readiness. Desde a DEV-116 cada rodada tem um trilho: o trilho leve dispensa o QA somente quando **todo** arquivo alterado é `*.md`, `*.test.*` ou `docs/knowledge/context-map.json`, e qualquer outro caminho exige o trilho completo. Todas as outras etapas continuam obrigatórias nos dois trilhos. Consulte [`automation/delivery-flow.md`](automation/delivery-flow.md). O merge permanece sob responsabilidade do Product Manager quando todas as evidências estão aprovadas. O pós-merge atualiza a issue Jira associada de forma idempotente.
 
 ## Limitações conhecidas
 
@@ -37,7 +37,7 @@ O fluxo ativo executa validação de título, API, Web, ferramentas de automaç�
 - Transferências entre carteiras do mesmo usuário estão disponíveis de ponta a ponta: a prévia da importação concilia a linha com a carteira do outro lado ou com uma transferência já registrada, e o dashboard mostra o enviado e o recebido no fluxo de caixa, sem virar receita ou despesa.
 - A conciliação do pagamento da fatura está disponível de ponta a ponta: a prévia da importação deixa escolher a fatura que o pagamento liquida, e a tela do cartão mostra os pagamentos, o que falta pagar e aceita pagamento parcial.
 - Não existe papel somente-leitura em carteira compartilhada: todo membro pode importar. O e-mail de outro membro continua visível apenas ao proprietário.
-- O app mobile ainda não existe; ele está planejado nos épicos DEV-138 e DEV-139. A API já autentica clientes nativos por `Authorization: Bearer` (DEV-140). Deploy em nuvem continua fora do estado atual.
+- O app mobile (`apps/mobile`, Expo SDK 58) tem a fundação pronta: navegação, cliente da API com token no armazenamento seguro, endereço da API por ambiente e job `Mobile` no CI (DEV-141). As telas de produto chegam nas próximas Histórias dos épicos DEV-138 e DEV-139; ver [`architecture/mobile.md`](architecture/mobile.md). Deploy em nuvem continua fora do estado atual.
 
 ## Fontes verificáveis
 
