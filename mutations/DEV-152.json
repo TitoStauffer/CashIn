@@ -104,6 +104,58 @@
         "test:review-inputs"
       ],
       "timeoutSeconds": 180
+    },
+    {
+      "id": "lockfile-values-are-quoted",
+      "package": "tools/github-reviewer",
+      "file": "tools/github-reviewer/src/agent-review-inputs.ts",
+      "find": "return JSON.stringify(bounded);",
+      "replace": "return bounded;",
+      "command": [
+        "npm",
+        "run",
+        "test:review-inputs"
+      ],
+      "timeoutSeconds": 180
+    },
+    {
+      "id": "lockfile-version-must-be-an-integer",
+      "package": "tools/github-reviewer",
+      "file": "tools/github-reviewer/src/agent-review-inputs.ts",
+      "find": "Number.isSafeInteger(version) ? String(version) : 'invalid'",
+      "replace": "String(version)",
+      "command": [
+        "npm",
+        "run",
+        "test:review-inputs"
+      ],
+      "timeoutSeconds": 180
+    },
+    {
+      "id": "lockfile-values-are-bounded",
+      "package": "tools/github-reviewer",
+      "file": "tools/github-reviewer/src/agent-review-inputs.ts",
+      "find": "const MAX_LOCKFILE_VALUE_CHARS = 200;",
+      "replace": "const MAX_LOCKFILE_VALUE_CHARS = 100_000;",
+      "command": [
+        "npm",
+        "run",
+        "test:review-inputs"
+      ],
+      "timeoutSeconds": 180
+    },
+    {
+      "id": "raw-lockfile-read-is-bounded",
+      "package": "tools/github-reviewer",
+      "file": "tools/github-reviewer/src/agent-review-inputs.ts",
+      "find": "const MAX_RAW_LOCKFILE_BYTES = 20_000_000;",
+      "replace": "const MAX_RAW_LOCKFILE_BYTES = 100_000_000;",
+      "command": [
+        "npm",
+        "run",
+        "test:review-inputs"
+      ],
+      "timeoutSeconds": 180
     }
   ]
 }
