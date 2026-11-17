@@ -42,11 +42,27 @@
       "command": ["npx", "tsx", "--test", "src/auth/auth.routes.test.ts"]
     },
     {
-      "id": "logout-with-invalid-bearer-is-refused",
+      "id": "logout-with-header-acts-on-the-bearer-only",
       "package": "apps/api",
       "file": "apps/api/src/auth/auth.routes.ts",
-      "find": "if (request.headers.authorization !== undefined && token === null) {",
+      "find": "if (request.headers.authorization !== undefined) {",
       "replace": "if (false) {",
+      "command": ["npx", "tsx", "--test", "src/auth/auth.routes.test.ts"]
+    },
+    {
+      "id": "bearer-logout-requires-a-live-session",
+      "package": "apps/api",
+      "file": "apps/api/src/auth/auth.routes.ts",
+      "find": "if (token === null || !(await options.authService.getUserForSession(token))) {",
+      "replace": "if (token === null) {",
+      "command": ["npx", "tsx", "--test", "src/auth/auth.routes.test.ts"]
+    },
+    {
+      "id": "bearer-logout-never-clears-the-cookie",
+      "package": "apps/api",
+      "file": "apps/api/src/auth/auth.routes.ts",
+      "find": "if (token === null || !(await options.authService.getUserForSession(token))) {",
+      "replace": "reply.header(\"Set-Cookie\", clearSessionCookie(options.secureCookies)); if (token === null || !(await options.authService.getUserForSession(token))) {",
       "command": ["npx", "tsx", "--test", "src/auth/auth.routes.test.ts"]
     },
     {

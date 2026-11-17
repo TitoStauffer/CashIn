@@ -484,6 +484,24 @@ test("when the bearer header and the cookie arrive together, only the header is 
     assert.equal(invalidLogout.headers["set-cookie"], undefined);
     assert.equal((await app.inject({ method: "GET", url: "/auth/me", headers: { cookie } })).statusCode, 200);
 
+    // A well-formed bearer that resolves no session ends nothing either.
+    const unknownLogout = await app.inject({ method: "POST", url: "/auth/logout", headers: { cookie, authorization: `Bearer ${"c".repeat(43)}` } });
+    assert.equal(unknownLogout.statusCode, 401);
+    assert.equal(unknownLogout.headers["set-cookie"], undefined);
+    assert.equal((await app.inject({ method: "GET", url: "/auth/me", headers: { cookie } })).statusCode, 200);
+
+    // A valid bearer next to another session's cookie ends the bearer session only, and leaves the
+    // cookie alone: the browser was not told it logged out, and its session is still open.
+    const bearerLogout = await app.inject({ method: "POST", url: "/auth/logout", headers: { cookie, authorization: `Bearer ${token}` } });
+    assert.equal(bearerLogout.statusCode, 204);
+    assert.equal(bearerLogout.headers["set-cookie"], undefined);
+    assert.equal((await app.inject({ method: "GET", url: "/auth/me", headers: { authorization: `Bearer ${token}` } })).statusCode, 401);
+    assert.equal((await app.inject({ method: "GET", url: "/auth/me", headers: { cookie } })).statusCode, 200);
+
+    // Repeating the bearer logout finds the session already ended: 401, not a second success.
+    const repeated = await app.inject({ method: "POST", url: "/auth/logout", headers: { authorization: `Bearer ${token}` } });
+    assert.equal(repeated.statusCode, 401);
+
     // The browser logout without the header is unchanged: 204 and the cookie cleared, even with no session.
     const browserLogout = await app.inject({ method: "POST", url: "/auth/logout" });
     assert.equal(browserLogout.statusCode, 204);
