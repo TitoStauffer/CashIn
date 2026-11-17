@@ -22,6 +22,7 @@ O `context-map.json` seleciona automaticamente apenas as notas relacionadas aos 
 | --- | --- |
 | API ou regra de negócio | [`architecture/api.md`](architecture/api.md), depois a nota em `domain/` |
 | Interface Web | [`architecture/web.md`](architecture/web.md), contrato funcional relacionado e nota em `domain/` |
+| App mobile | [`architecture/mobile.md`](architecture/mobile.md) |
 | Banco ou migration | [`architecture/database.md`](architecture/database.md) e serviço/repositório do domínio |
 | Carteiras e compartilhamento | [`domain/wallets.md`](domain/wallets.md) |
 | Entradas, despesas, benefícios ou metas | [`domain/transactions.md`](domain/transactions.md) |

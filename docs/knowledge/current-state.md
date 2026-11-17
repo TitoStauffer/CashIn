@@ -37,7 +37,7 @@ O fluxo ativo executa validação de título, API, Web, ferramentas de automaç�
 - Transferências entre carteiras do mesmo usuário estão disponíveis de ponta a ponta: a prévia da importação concilia a linha com a carteira do outro lado ou com uma transferência já registrada, e o dashboard mostra o enviado e o recebido no fluxo de caixa, sem virar receita ou despesa.
 - A conciliação do pagamento da fatura está disponível de ponta a ponta: a prévia da importação deixa escolher a fatura que o pagamento liquida, e a tela do cartão mostra os pagamentos, o que falta pagar e aceita pagamento parcial.
 - Não existe papel somente-leitura em carteira compartilhada: todo membro pode importar. O e-mail de outro membro continua visível apenas ao proprietário.
-- O app mobile ainda não existe; ele está planejado nos épicos DEV-138 e DEV-139. A API já autentica clientes nativos por `Authorization: Bearer` (DEV-140). Deploy em nuvem continua fora do estado atual.
+- O app mobile (`apps/mobile`, Expo SDK 58) tem a fundação pronta: navegação, cliente da API com token no armazenamento seguro, endereço da API por ambiente e job `Mobile` no CI (DEV-141). As telas de produto chegam nas próximas Histórias dos épicos DEV-138 e DEV-139; ver [`architecture/mobile.md`](architecture/mobile.md). Deploy em nuvem continua fora do estado atual.
 
 ## Fontes verificáveis
 

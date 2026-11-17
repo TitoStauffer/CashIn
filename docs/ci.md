@@ -1,6 +1,6 @@
 # Integração contínua (GitHub Actions)
 
-O workflow `.github/workflows/ci.yml` valida metadados do PR, API, Web, ferramentas de automação e SonarQube em Pull Requests para `master` e em pushes para `master`. A ordem é determinística: `PR title` → `API`/`Web`/`GitHub Reviewer` → `SonarQube`. Somente a conclusão bem-sucedida do workflow completo aciona os agentes.
+O workflow `.github/workflows/ci.yml` valida metadados do PR, API, Web, Mobile, ferramentas de automação e SonarQube em Pull Requests para `master` e em pushes para `master`. A ordem é determinística: `PR title` → `API`/`Web`/`Mobile`/`GitHub Reviewer` → `SonarQube`. Somente a conclusão bem-sucedida do workflow completo aciona os agentes.
 
 Edições de título ou corpo executam o workflow confiável e leve `.github/workflows/pr-title.yml`. Ele revalida os metadados sem checkout do código do PR. Quando a edição é humana, solicita a repetição da execução de CI associada ao mesmo HEAD; o job de título do CI consulta os metadados atuais, permitindo recuperar um PR cujo título inicial era inválido. Edições de checklist feitas pelo GitHub App não repetem o CI, não criam checks de API/Web pulados e não cancelam a orquestração ativa.
 
@@ -10,7 +10,8 @@ Edições de título ou corpo executam o workflow confiável e leve `.github/wor
 | `GitHub Reviewer` | `tools/github-reviewer` | Depende de `PR title`; instala, compila e executa os testes da infraestrutura de publicação, agentes e Merge Readiness. O nome histórico é preservado durante o rollout dos consumidores privilegiados. Testa o executor de mutação e roda os mutantes declarados para `tools/*` (ver **Verificação por mutação**). |
 | `API` | `apps/api` | Depende de `PR title`; `docker compose config --quiet` (stack local) → validação e smoke test da stack de produção (`deploy/observability`; o smoke test só roda quando o commit altera esse diretório) → `npm ci` → `npm run typecheck` → espera do PostgreSQL → `npm run test:coverage` (unitários + integração, uma vez) → checagem de testes pulados → reescrita dos caminhos LCOV → upload do artefato `api-coverage` (7 dias) → `npm run build` → consultas do painel com dados (`dashboard-check.mjs`, só quando o commit altera `deploy/observability`) → mutantes declarados para `apps/api` |
 | `Web` | `apps/web` | Depende de `PR title`; `npm ci` → `npm run lint` → `npm run test:coverage` → reescrita dos caminhos LCOV → upload do artefato `web-coverage` (7 dias) → `npm run build` (o script roda `tsc -b` e depois `vite build`) → mutantes declarados para `apps/web` |
-| `SonarQube` | raiz do repositório | Depende de `API`, `Web` e `GitHub Reviewer`; baixa os dois LCOV; instala o SonarScanner CLI no tool cache com assinatura GPG verificada (`.github/scripts/prime-sonar-scanner.sh`); analisa PRs do próprio repositório e pushes em `master`; aguarda o Quality Gate e falha se ele reprovar |
+| `Mobile` | `apps/mobile` | Depende de `PR title`; `npm ci` → `npm run lint` (`expo lint`) → `npm run test:coverage` (Jest com `jest-expo`) → reescrita dos caminhos LCOV → upload do artefato `mobile-coverage` (7 dias) → `npm run typecheck` → `npm run build` (`expo export` dos bundles Android e iOS, sem toolchain nativo) → mutantes declarados para `apps/mobile` (DEV-141) |
+| `SonarQube` | raiz do repositório | Depende de `API`, `Web`, `Mobile` e `GitHub Reviewer`; baixa os três LCOV; instala o SonarScanner CLI no tool cache com assinatura GPG verificada (`.github/scripts/prime-sonar-scanner.sh`); analisa PRs do próprio repositório e pushes em `master`; aguarda o Quality Gate e falha se ele reprovar |
 
 ## Decisões
 
@@ -44,7 +45,7 @@ Edições de título ou corpo executam o workflow confiável e leve `.github/wor
 Em *Settings → Rules → Rulesets* (ou *Branches → Branch protection rules*), para a branch `master`:
 
 1. Exigir Pull Request antes do merge.
-2. Exigir os status checks **`PR title`**, **`API`**, **`Web`**, **`GitHub Reviewer`**, **`SonarQube`**, **`SonarCloud Code Analysis`** e **`Merge Readiness`**. Eles só aparecem para seleção depois da primeira execução do workflow no repositório.
+2. Exigir os status checks **`PR title`**, **`API`**, **`Web`**, **`Mobile`**, **`GitHub Reviewer`**, **`SonarQube`**, **`SonarCloud Code Analysis`** e **`Merge Readiness`**. Eles só aparecem para seleção depois da primeira execução do workflow no repositório.
 3. Marcar "Require branches to be up to date before merging" (recomendado).
 4. Bloquear force push e exclusão da branch (recomendado).
 
@@ -66,6 +67,13 @@ cd ../web
 npm ci
 npm run lint
 npm run test:coverage
+npm run build
+
+cd ../mobile
+npm ci
+npm run lint
+npm run test:coverage
+npm run typecheck
 npm run build
 ```
 
@@ -103,8 +111,8 @@ Toda guarda nova é provada por uma mutação que derruba o teste certo. Para es
 
 - Só manifestos `mutations/<CHAVE>.json` pertencem ao diretório: qualquer outro arquivo que o PR adicione ou altere ali faz o passo falhar, em vez de ser ignorado.
 - `package` é o diretório do pacote; `command` roda dentro dele e só pode começar por `node`, `npm` ou `npx`. Prefira o teste mais estreito que derruba o mutante, porque cada mutante é uma rodada do comando.
-- `file` fica dentro do pacote; `find` precisa aparecer **exatamente uma vez** no arquivo e é trocado por `replace`. `timeoutSeconds` é opcional (padrão 600), mas o passo vive dentro do job e morre com ele: o teto é de 10 minutos em `GitHub Reviewer` e `Web` e de 22 em `API`, contando o resto do job. Os 7 minutos extras do `API` cobrem as duas checagens de observabilidade que só rodam quando o commit altera `deploy/observability`: o smoke test da stack (cerca de 2 minutos, mais o download das imagens) e a checagem do painel (cerca de 2 minutos). Nos outros casos, conte com 15. Baseline e mutantes somados precisam caber aí, então prefira o teste mais estreito e um `timeoutSeconds` menor.
-- Pacotes aceitos: `apps/api` (job `API`, com o PostgreSQL do job disponível), `apps/web` (job `Web`) e `tools/github-reviewer`, `tools/jira-dispatcher` e `tools/mutation-check` (job `GitHub Reviewer`). Um mutante de outro pacote faz o job `GitHub Reviewer` falhar, em vez de ser pulado por todos.
+- `file` fica dentro do pacote; `find` precisa aparecer **exatamente uma vez** no arquivo e é trocado por `replace`. `timeoutSeconds` é opcional (padrão 600), mas o passo vive dentro do job e morre com ele: o teto é de 10 minutos em `GitHub Reviewer` e `Web`, de 12 em `Mobile` e de 22 em `API`, contando o resto do job. Os 7 minutos extras do `API` cobrem as duas checagens de observabilidade que só rodam quando o commit altera `deploy/observability`: o smoke test da stack (cerca de 2 minutos, mais o download das imagens) e a checagem do painel (cerca de 2 minutos). Nos outros casos, conte com 15. Baseline e mutantes somados precisam caber aí, então prefira o teste mais estreito e um `timeoutSeconds` menor.
+- Pacotes aceitos: `apps/api` (job `API`, com o PostgreSQL do job disponível), `apps/web` (job `Web`), `apps/mobile` (job `Mobile`) e `tools/github-reviewer`, `tools/jira-dispatcher` e `tools/mutation-check` (job `GitHub Reviewer`). Um mutante de outro pacote faz o job `GitHub Reviewer` falhar, em vez de ser pulado por todos.
 
 **O que o passo faz.** Em Pull Requests, o último passo de cada job (`Mutation check (declared mutants)`) compara o merge commit com a base (`HEAD^1`; o checkout usa `fetch-depth: 2`) e roda só os manifestos que o PR **adicionou ou alterou**. Manifestos antigos ficam como registro: reexecutá-los para sempre faria o custo crescer com o histórico e quebraria assim que uma entrega posterior reescrevesse uma âncora. Antes dos mutantes, cada comando roda uma vez sem mutação e precisa passar. O passo falha quando:
 
@@ -116,7 +124,7 @@ Toda guarda nova é provada por uma mutação que derruba o teste certo. Para es
 
 Só `KILLED` em todos os mutantes deixa o passo verde. A tabela de resultados vai para o log e para o resumo do job. O passo é o último do job para que um mutante nunca chegue ao build nem ao relatório de cobertura. Ele executa código do PR, então existe apenas no CI sem credenciais, nunca em job privilegiado.
 
-**Como o QA lê a evidência.** Os agentes recebem, para os jobs `API`, `Web` e `GitHub Reviewer` do SHA, o nome e a conclusão de cada passo. Com `mutations/<CHAVE>.json` no diff, `Mutation check (declared mutants)` concluído com sucesso significa que todos os mutantes daquele manifesto foram mortos no CI deste SHA. Sem manifesto no diff, o passo conclui com sucesso sem rodar nada, e isso não prova mutação alguma.
+**Como o QA lê a evidência.** Os agentes recebem, para os jobs `API`, `Web` e `GitHub Reviewer` do SHA, o nome e a conclusão de cada passo. O job `Mobile` ainda não entra nessa evidência nem na lista de checks do `Merge Readiness`: isso exige mudar a automação depois que o job existir na `master`, e fica registrado como pendência da DEV-141. Com `mutations/<CHAVE>.json` no diff, `Mutation check (declared mutants)` concluído com sucesso significa que todos os mutantes daquele manifesto foram mortos no CI deste SHA. Sem manifesto no diff, o passo conclui com sucesso sem rodar nada, e isso não prova mutação alguma.
 
 **Localmente,** depois de commitar o manifesto: `node tools/mutation-check/run.mjs --base master --package <pacote>`.
 
@@ -134,7 +142,7 @@ O workflow usa a organização `titostauffer` e o projeto `TitoStauffer_CashIn` 
 - **Automatic Analysis deve permanecer desligada.** Se estiver ligada, a execução do scanner pelo CI falha.
 - O token só é fornecido ao passo do scanner pelo secret `SONAR_TOKEN`; nunca o coloque no repositório ou em logs.
 - PRs de forks pulam a análise porque não recebem secrets.
-- A cobertura da API e da Web vem do LCOV gerado na execução de `npm run test:coverage` de cada job; o workflow reescreve `SF:src/...` para caminhos relativos à raiz (`SF:apps/api/src/...` e `SF:apps/web/src/...`) antes de enviar os artefatos `api-coverage` e `web-coverage`.
+- A cobertura da API, da Web e do Mobile vem do LCOV gerado na execução de `npm run test:coverage` de cada job; o workflow reescreve `SF:src/...` para caminhos relativos à raiz (`SF:apps/api/src/...`, `SF:apps/web/src/...` e `SF:apps/mobile/src/...`) antes de enviar os artefatos `api-coverage`, `web-coverage` e `mobile-coverage`. Os arquivos de rota do Expo Router (`apps/mobile/src/app/**`) só ligam uma tela a um caminho e ficam fora da cobertura.
 - Os testes `*.test.ts` e `*.test.tsx` são excluídos da análise de código de produção e classificados como testes no SonarQube. O mesmo vale para `*-test-fixture.ts`, que contém apenas fakes e helpers dos testes: medi-los como produção diluiria o sinal de cobertura com código que só existe para exercitar outro código. Esses arquivos também saem da cobertura da API pelo `--test-coverage-exclude`.
 - A análise CI-based aguarda o Quality Gate. O job `SonarQube` aparece no PR como verificação e falha se o Quality Gate reprovar. Quando o projeto está vinculado ao repositório GitHub, a decoração do SonarQube Cloud também pode exibir detalhes e o resultado da análise no PR.
 - O plano gratuito permite análise de PRs direcionada à branch principal e possui limite de linhas para projetos privados. O projeto precisa estar dentro desse limite e ter `master` configurada como branch principal.

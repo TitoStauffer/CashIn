@@ -6,7 +6,6 @@ coverage/
 !.env.example
 .dispatcher/
 .expo/
-apps/mobile/
 .idea/
 web-build/
 .DS_Store
