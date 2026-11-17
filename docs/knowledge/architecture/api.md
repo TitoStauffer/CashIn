@@ -1,7 +1,7 @@
 # Arquitetura da API
 
 **Status:** confirmado
-**Última revisão:** 15/11/2026
+**Última revisão:** 17/11/2026
 
 ## Organização
 
@@ -27,6 +27,15 @@ Autenticação, carteiras, convites, solicitações de acesso, categorias, forma
 - Dinheiro é validado e serializado como decimal, evitando ponto flutuante no contrato.
 - Testes de integração criam schemas temporários e aplicam as migrations oficiais.
 - Upload financeiro usa limite próprio e não persiste o arquivo bruto.
+
+## Autenticação (DEV-140)
+
+Implementada em `src/auth/auth.routes.ts`. A sessão é um token opaco com hash em `auth_sessions`, e `app.authenticate` o lê de um de dois lugares: o cookie `HttpOnly` da Web ou o header `Authorization: Bearer` dos clientes nativos (o app mobile).
+
+- **Precedência:** header presente é a única fonte considerada, mesmo malformado; não há recuo para o cookie. O formato do token é validado antes de qualquer consulta ao banco. Pela mesma regra, o logout com header age só sobre a sessão do bearer: `204` quando ela existia, `401` quando o token não resolve sessão nenhuma, e o cookie nunca é limpo nesse caminho.
+- **Emissão:** `POST /auth/login` define só o cookie; `POST /auth/token` devolve o token no corpo, com `Cache-Control: no-store` e sem cookie. As duas rotas usam o mesmo limitador por IP.
+- **Redação:** o header `Authorization` é coberto pela redação de `req.headers` nos logs (teste sobre a linha emitida em `src/app.test.ts`) e fica fora da lista de permissão dos traces (segredo `authorization` em `src/telemetry.test.ts`).
+- **Testes:** rotas em `src/auth/auth.routes.test.ts`; sessão real, escopo de `X-Wallet-Id` e logout em `src/auth/postgres-auth.integration.test.ts`. Contrato em [`docs/api.md`](../../api.md#sessão-cookie-na-web-token-nos-clientes-nativos).
 
 ## Logs
 
@@ -85,6 +94,9 @@ Os testes de integração exigem `TEST_DATABASE_URL`. Consulte [`docs/ci.md`](..
 - [`apps/api/src/telemetry.ts`](../../../apps/api/src/telemetry.ts)
 - [`apps/api/src/instrumentation.ts`](../../../apps/api/src/instrumentation.ts)
 - [`apps/api/src/telemetry.test.ts`](../../../apps/api/src/telemetry.test.ts)
+- [`apps/api/src/auth/auth.routes.ts`](../../../apps/api/src/auth/auth.routes.ts)
+- [`apps/api/src/auth/auth.routes.test.ts`](../../../apps/api/src/auth/auth.routes.test.ts)
+- [`apps/api/src/auth/postgres-auth.integration.test.ts`](../../../apps/api/src/auth/postgres-auth.integration.test.ts)
 - [`apps/api/src/server.ts`](../../../apps/api/src/server.ts)
 - [`apps/api/src/database.ts`](../../../apps/api/src/database.ts)
 - [`apps/api/package.json`](../../../apps/api/package.json)

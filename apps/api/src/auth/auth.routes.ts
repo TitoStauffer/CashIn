@@ -38,8 +38,26 @@ declare module "fastify" {
   }
 }
 
+const SESSION_TOKEN_PATTERN = /^[A-Za-z0-9_-]{40,}$/;
+const BEARER_PATTERN = /^Bearer ([^\s]+)$/i;
+
+// The session token travels in one of two places: the HttpOnly cookie, set for the browser, or the
+// `Authorization: Bearer` header, sent by native clients such as the mobile app, which keep the token
+// in the device's secure storage. When the header is present it is the only source considered, even
+// when it is malformed: falling back to a cookie would let a request authenticate as a session other
+// than the one it names.
 function getSessionToken(request: FastifyRequest): string | null {
-  const cookieHeader = request.headers.cookie;
+  const authorization = request.headers.authorization;
+  if (authorization !== undefined) return bearerToken(authorization);
+  return cookieToken(request.headers.cookie);
+}
+
+function bearerToken(authorization: string): string | null {
+  const token = BEARER_PATTERN.exec(authorization)?.[1];
+  return token !== undefined && SESSION_TOKEN_PATTERN.test(token) ? token : null;
+}
+
+function cookieToken(cookieHeader: string | undefined): string | null {
   if (!cookieHeader) return null;
 
   const sessionCookie = cookieHeader
@@ -49,7 +67,7 @@ function getSessionToken(request: FastifyRequest): string | null {
   if (!sessionCookie) return null;
 
   const token = sessionCookie.slice(SESSION_COOKIE_NAME.length + 1);
-  return /^[A-Za-z0-9_-]{40,}$/.test(token) ? token : null;
+  return SESSION_TOKEN_PATTERN.test(token) ? token : null;
 }
 
 function sessionCookie(token: string, maxAgeSeconds: number, secure: boolean): string {
@@ -143,30 +161,34 @@ export function registerAuthRoutes(app: FastifyInstance, options: AuthRouteOptio
     },
   );
 
-  app.post<{ Body: LoginBody }>(
-    "/auth/login",
-    {
-      preHandler: async (request, reply) => {
-        const decision = loginRateLimiter.consume(request.ip);
-        if (!decision.allowed) {
-          reply.header("Retry-After", decision.retryAfterSeconds);
-          return reply.code(429).send({
-            message: "Muitas tentativas de acesso. Aguarde alguns minutos e tente novamente.",
-          });
-        }
-      },
-      schema: {
-        body: {
-          type: "object",
-          additionalProperties: false,
-          required: ["email", "password"],
-          properties: {
-            email: { type: "string", format: "email", maxLength: 320 },
-            password: { type: "string", minLength: 1, maxLength: 128 },
-          },
+  // One budget per IP for both ways of logging in: a separate limiter for the token login would double
+  // the attempts an attacker gets against a password.
+  const loginRouteOptions = {
+    preHandler: async (request: FastifyRequest, reply: FastifyReply) => {
+      const decision = loginRateLimiter.consume(request.ip);
+      if (!decision.allowed) {
+        reply.header("Retry-After", decision.retryAfterSeconds);
+        return reply.code(429).send({
+          message: "Muitas tentativas de acesso. Aguarde alguns minutos e tente novamente.",
+        });
+      }
+    },
+    schema: {
+      body: {
+        type: "object",
+        additionalProperties: false,
+        required: ["email", "password"],
+        properties: {
+          email: { type: "string", format: "email", maxLength: 320 },
+          password: { type: "string", minLength: 1, maxLength: 128 },
         },
       },
     },
+  };
+
+  app.post<{ Body: LoginBody }>(
+    "/auth/login",
+    loginRouteOptions,
     async (request, reply) => {
       try {
         const session = await options.authService.login(request.body.email, request.body.password);
@@ -179,13 +201,46 @@ export function registerAuthRoutes(app: FastifyInstance, options: AuthRouteOptio
     },
   );
 
-  app.get("/auth/me", { preHandler: app.authenticate }, async (request) => ({
+  // The login for native clients: the same session as `/auth/login`, but the token comes back in the
+  // body, for the client to keep in secure storage and send as `Authorization: Bearer`. No cookie is
+  // set, and the browser login never returns the token in its body. `no-store` keeps the response,
+  // which is a credential, out of any cache between the client and the API.
+  app.post<{ Body: LoginBody }>("/auth/token", loginRouteOptions, async (request, reply) => {
+    try {
+      const session = await options.authService.login(request.body.email, request.body.password);
+      reply.header("Cache-Control", "no-store");
+      return reply.code(200).send({
+        user: session.user,
+        token: session.token,
+        expiresAt: session.expiresAt.toISOString(),
+      });
+    } catch (error) {
+      return handleAuthError(error, reply);
+    }
+  });
+
+  app.get("/auth/me",{ preHandler: app.authenticate }, async (request) => ({
     user: request.currentUser,
   }));
 
   app.post("/auth/logout", async (request, reply) => {
+    const token = getSessionToken(request);
     try {
-      await options.authService.logout(getSessionToken(request));
+      // With the header, the logout acts on the bearer session only, and a success means that session
+      // existed and is now gone. A header that resolves no session (malformed, unknown, expired or
+      // already ended) ends nothing, so it gets a 401. And the cookie is never cleared on this path: a
+      // cookie session next to the header is not the one being ended, and clearing it would tell the
+      // browser it logged out while that session stays open on the server.
+      if (request.headers.authorization !== undefined) {
+        if (token === null || !(await options.authService.getUserForSession(token))) {
+          return reply.code(401).send({ message: "Autenticação necessária." });
+        }
+        await options.authService.logout(token);
+        return reply.code(204).send();
+      }
+
+      // Without the header, the browser logout is unchanged: idempotent, and the cookie is cleared.
+      await options.authService.logout(token);
       reply.header("Set-Cookie", clearSessionCookie(options.secureCookies));
       return reply.code(204).send();
     } catch {

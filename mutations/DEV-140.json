@@ -1,0 +1,77 @@
+{
+  "ticket": "DEV-140",
+  "mutations": [
+    {
+      "id": "header-does-not-fall-back-to-cookie",
+      "package": "apps/api",
+      "file": "apps/api/src/auth/auth.routes.ts",
+      "find": "if (authorization !== undefined) return bearerToken(authorization);",
+      "replace": "if (authorization !== undefined && bearerToken(authorization) !== null) return bearerToken(authorization);",
+      "command": ["npx", "tsx", "--test", "src/auth/auth.routes.test.ts"]
+    },
+    {
+      "id": "bearer-scheme-is-required",
+      "package": "apps/api",
+      "file": "apps/api/src/auth/auth.routes.ts",
+      "find": "const BEARER_PATTERN = /^Bearer ([^\\s]+)$/i;",
+      "replace": "const BEARER_PATTERN = /^\\w+ ([^\\s]+)$/i;",
+      "command": ["npx", "tsx", "--test", "src/auth/auth.routes.test.ts"]
+    },
+    {
+      "id": "bearer-token-format-checked-before-lookup",
+      "package": "apps/api",
+      "file": "apps/api/src/auth/auth.routes.ts",
+      "find": "return token !== undefined && SESSION_TOKEN_PATTERN.test(token) ? token : null;",
+      "replace": "return token ?? null;",
+      "command": ["npx", "tsx", "--test", "src/auth/auth.routes.test.ts"]
+    },
+    {
+      "id": "token-login-sets-no-cookie",
+      "package": "apps/api",
+      "file": "apps/api/src/auth/auth.routes.ts",
+      "find": "reply.header(\"Cache-Control\", \"no-store\");",
+      "replace": "reply.header(\"Cache-Control\", \"no-store\"); reply.header(\"Set-Cookie\", sessionCookie(session.token, 60, options.secureCookies));",
+      "command": ["npx", "tsx", "--test", "src/auth/auth.routes.test.ts"]
+    },
+    {
+      "id": "token-response-is-not-cached",
+      "package": "apps/api",
+      "file": "apps/api/src/auth/auth.routes.ts",
+      "find": "reply.header(\"Cache-Control\", \"no-store\");",
+      "replace": "void reply;",
+      "command": ["npx", "tsx", "--test", "src/auth/auth.routes.test.ts"]
+    },
+    {
+      "id": "logout-with-header-acts-on-the-bearer-only",
+      "package": "apps/api",
+      "file": "apps/api/src/auth/auth.routes.ts",
+      "find": "if (request.headers.authorization !== undefined) {",
+      "replace": "if (false) {",
+      "command": ["npx", "tsx", "--test", "src/auth/auth.routes.test.ts"]
+    },
+    {
+      "id": "bearer-logout-requires-a-live-session",
+      "package": "apps/api",
+      "file": "apps/api/src/auth/auth.routes.ts",
+      "find": "if (token === null || !(await options.authService.getUserForSession(token))) {",
+      "replace": "if (token === null) {",
+      "command": ["npx", "tsx", "--test", "src/auth/auth.routes.test.ts"]
+    },
+    {
+      "id": "bearer-logout-never-clears-the-cookie",
+      "package": "apps/api",
+      "file": "apps/api/src/auth/auth.routes.ts",
+      "find": "if (token === null || !(await options.authService.getUserForSession(token))) {",
+      "replace": "reply.header(\"Set-Cookie\", clearSessionCookie(options.secureCookies)); if (token === null || !(await options.authService.getUserForSession(token))) {",
+      "command": ["npx", "tsx", "--test", "src/auth/auth.routes.test.ts"]
+    },
+    {
+      "id": "token-login-shares-the-login-limiter",
+      "package": "apps/api",
+      "file": "apps/api/src/auth/auth.routes.ts",
+      "find": "\"/auth/token\", loginRouteOptions,",
+      "replace": "\"/auth/token\", { schema: loginRouteOptions.schema },",
+      "command": ["npx", "tsx", "--test", "src/auth/auth.routes.test.ts"]
+    }
+  ]
+}
