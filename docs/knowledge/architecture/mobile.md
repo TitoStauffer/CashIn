@@ -30,7 +30,7 @@ O app fica em `apps/mobile`, com Expo SDK 58, React Native e TypeScript estrito,
 ## Qualidade
 
 - Job `Mobile` no CI: lint (`expo lint`), Jest com `jest-expo` e Testing Library, typecheck, `expo export` dos bundles Android e iOS e mutantes declarados para `apps/mobile`. A cobertura vai ao SonarQube, sem as rotas.
-- **Pendências da automação:** o job ainda não está na lista de checks do `Merge Readiness` nem na evidência de CI lida pelos agentes ([DEV-153](https://titostauffer.atlassian.net/browse/DEV-153)). Enquanto isso, o `SonarQube` depende do `Mobile`, então um job vermelho ainda segura o CI completo.
+- **Gate e evidência:** desde a [DEV-153](https://titostauffer.atlassian.net/browse/DEV-153), o `Mobile` é exigido pelo `Merge Readiness`, pelo resumo de checks dos agentes e pelo Coordinator, e o QA lê os passos dele, inclusive os mutantes de `apps/mobile`.
 - O lockfile chega aos agentes como resumo ([DEV-152](https://titostauffer.atlassian.net/browse/DEV-152)), porque passa do teto do contexto.
 - O app não tem assets binários: os agentes recusam binário, e ícone e splash entram com a publicação ([DEV-151](https://titostauffer.atlassian.net/browse/DEV-151)).
 

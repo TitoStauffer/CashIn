@@ -49,7 +49,7 @@ Em *Settings → Rules → Rulesets* (ou *Branches → Branch protection rules*)
 3. Marcar "Require branches to be up to date before merging" (recomendado).
 4. Bloquear force push e exclusão da branch (recomendado).
 
-O check `Mobile` (o app da DEV-141) entra na lista do item 2 quando o app chegar à `master`. Até lá, a exigência dele já passa pelo `Merge Readiness`, que é obrigatório e o exige desde a DEV-153.
+O check `Mobile` entrou na lista do item 2 com o app (DEV-141). O `Merge Readiness`, que é obrigatório, já o exige desde a DEV-153, então ele vale mesmo antes de o ruleset ser atualizado.
 
 O repositório público usa um ruleset ativo para `master`, sem atores de bypass. O contexto estável `Merge Readiness` é a decisão final; o job `Evaluate Merge Readiness` apenas registra que a avaliação e a publicação do contexto foram executadas.
 
