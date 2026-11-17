@@ -1,7 +1,7 @@
 # Merge Readiness
 
 **Status:** ativo e fail-closed
-**Última revisão:** 25/10/2026
+**Última revisão:** 17/11/2026
 
 ## Resultado
 
@@ -14,7 +14,7 @@ O gate retorna somente:
 ## Evidências avaliadas
 
 - Estado e HEAD do PR.
-- Checks configurados de CI e SonarQube.
+- Checks de qualidade exigidos no HEAD: `API`, `Web`, `Mobile` (desde a [DEV-153](https://titostauffer.atlassian.net/browse/DEV-153)), `GitHub Reviewer`, `SonarQube` e `SonarCloud Code Analysis`, além dos checks configurados na proteção da branch. O Coordinator e o resumo de checks dos agentes exigem a mesma lista.
 - Revisão formal de Code Review, considerando revisões posteriores.
 - Relatório estruturado do Quality Gate Coordinator, nos dois trilhos, e de QA quando o trilho é completo.
 - Conversas de revisão abertas, quando acessíveis.

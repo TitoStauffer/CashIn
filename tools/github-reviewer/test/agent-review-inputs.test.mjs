@@ -275,6 +275,10 @@ test('uses latest rerun results for summaries and exposes only current-SHA requi
 
   assert.equal(summarizeAgentChecks(runs, headSha).api, 'PASSED');
   assert.equal(summarizeAgentChecks(runs, headSha).web, 'MISSING');
+  // DEV-153: the Mobile job is part of the required summary; without it the stage never starts a model.
+  assert.equal(summarizeAgentChecks(runs, headSha).mobile, 'MISSING');
+  assert.equal(summarizeAgentChecks([{ name: 'CI / Mobile', head_sha: headSha, status: 'completed', conclusion: 'success' }], headSha).mobile, 'PASSED');
+  assert.equal(summarizeAgentChecks([{ name: 'Mobile', head_sha: headSha, status: 'completed', conclusion: 'failure' }], headSha).mobile, 'FAILED');
   assert.deepEqual(summarizeCheckRunEvidence(runs, headSha).map(({ name, conclusion }) => ({ name, conclusion })), [{ name: 'API', conclusion: 'success' }]);
 });
 

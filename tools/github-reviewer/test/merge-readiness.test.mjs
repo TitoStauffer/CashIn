@@ -6,7 +6,7 @@ import { summarizeAgentChecks, summarizeCheckRunEvidence } from '../dist/agent-r
 
 const sha = 'a'.repeat(40);
 const oldSha = 'b'.repeat(40);
-const checks = ['API', 'Web', 'Automation Tools', 'SonarQube', 'SonarCloud Code Analysis', 'PR title'].map((name) => ({ name, head_sha: sha, status: 'completed', conclusion: 'success', ...(name === 'Automation Tools' ? { app: { id: 15368 } } : {}) }));
+const checks = ['API', 'Web', 'Mobile', 'Automation Tools', 'SonarQube', 'SonarCloud Code Analysis', 'PR title'].map((name) => ({ name, head_sha: sha, status: 'completed', conclusion: 'success', ...(name === 'Automation Tools' ? { app: { id: 15368 } } : {}) }));
 const reviewInputs = { diff: 'diff contents', checks: summarizeAgentChecks(checks), checkRuns: summarizeCheckRunEvidence(checks, sha), repositoryInstructions: 'trusted instructions', sourceFiles: [] };
 const contextHash = computeAgentContextHash('owner/repo', 7, {
   title: 'Example PR', html_url: 'https://github.com/owner/repo/pull/7', body: '',
@@ -282,6 +282,19 @@ test('blocks when a required CI or Sonar check fails', async () => {
 
   assert.equal(result.status, 'BLOCKED');
   assert.match(result.reasons.join(' '), /SonarQube: FAILED/);
+});
+
+// DEV-153: the Mobile job (the Expo app, DEV-141) is required like API and Web. A PR whose HEAD has no
+// Mobile check, or a failed one, never reaches READY_TO_MERGE.
+test('blocks when the Mobile check is missing or failed', async () => {
+  const withoutMobile = fixture({ checks: fixture().data.checks.filter((check) => check.name !== 'Mobile') });
+  const missing = await withoutMobile.evaluate();
+  assert.notEqual(missing.status, 'READY_TO_MERGE');
+  assert.match(missing.reasons.join(' '), /Mobile/);
+
+  const failed = await fixture({ checks: fixture().data.checks.map((check) => check.name === 'Mobile' ? { ...check, conclusion: 'failure' } : check) }).evaluate();
+  assert.equal(failed.status, 'BLOCKED');
+  assert.match(failed.reasons.join(' '), /Mobile: FAILED/);
 });
 
 test('blocks when a required check is reported by a different GitHub App', async () => {

@@ -152,6 +152,7 @@ export interface PullRequestContext {
 export interface CheckSummary {
   api: string;
   web: string;
+  mobile: string;
   githubReviewer: string;
   sonarQube: string;
   sonarCloud: string;

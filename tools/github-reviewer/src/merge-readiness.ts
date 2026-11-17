@@ -4,7 +4,8 @@ import { loadAgentReviewInputs } from './agent-review-inputs.js';
 import { ACTIONS_APP_ID } from './agent-ci-evidence.js';
 import { classifyReviewTrack } from './review-track.js';
 
-const REQUIRED_QUALITY_CHECKS = ['API', 'Web', 'SonarQube', 'SonarCloud Code Analysis'];
+// DEV-153: `Mobile`, the Expo app job (DEV-141), is required like `API` and `Web`.
+const REQUIRED_QUALITY_CHECKS = ['API', 'Web', 'Mobile', 'SonarQube', 'SonarCloud Code Analysis'];
 const AUTOMATION_CHECK_CONTEXTS = ['Automation Tools', 'GitHub Reviewer'] as const;
 const GRAPHQL_REVIEW_THREADS_QUERY = `query($owner: String!, $name: String!, $number: Int!, $after: String) {
   repository(owner: $owner, name: $name) {
