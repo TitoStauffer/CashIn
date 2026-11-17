@@ -227,6 +227,21 @@ describe("processPostMergeEvent", () => {
     assert.equal((await processPostMergeEvent(makeEvent(), failed.dependencies)).status, "BLOCKED");
   });
 
+  // DEV-154: the fixture derives its checks from DEFAULT_REQUIRED_CHECKS, so removing Mobile from the list
+  // would go unnoticed there. This case names the check: a merged PR without a passing Mobile run on its
+  // HEAD never closes the issue.
+  it("blocks a merged PR whose HEAD has no passing Mobile check", async () => {
+    const missing = setup();
+    missing.github.checkRuns = missing.github.checkRuns.filter((run) => run.name !== "Mobile");
+    assert.equal((await processPostMergeEvent(makeEvent(), missing.dependencies)).status, "BLOCKED");
+    assert.equal(missing.jira.calls.some((call) => call.startsWith("transition:")), false);
+
+    const failed = setup();
+    failed.github.checkRuns.find((run) => run.name === "Mobile")!.conclusion = "failure";
+    assert.equal((await processPostMergeEvent(makeEvent(), failed.dependencies)).status, "BLOCKED");
+    assert.equal(failed.jira.calls.some((call) => call.startsWith("transition:")), false);
+  });
+
   it("blocks a passing check supplied by an unexpected GitHub App", async () => {
     const { github, dependencies } = setup();
     github.checkRuns[0]!.app = { slug: "untrusted-check-publisher" };

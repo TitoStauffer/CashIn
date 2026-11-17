@@ -1,0 +1,14 @@
+{
+  "ticket": "DEV-154",
+  "mutations": [
+    {
+      "id": "post-merge-requires-mobile",
+      "package": "tools/jira-dispatcher",
+      "file": "tools/jira-dispatcher/src/post-merge/service.ts",
+      "find": "export const DEFAULT_REQUIRED_CHECKS = [\"API\", \"Web\", \"Mobile\", \"PR title\", \"SonarQube\", \"SonarCloud Code Analysis\"] as const;",
+      "replace": "export const DEFAULT_REQUIRED_CHECKS = [\"API\", \"Web\", \"PR title\", \"SonarQube\", \"SonarCloud Code Analysis\"] as const;",
+      "command": ["npx", "tsx", "--test", "test/post-merge.test.ts"],
+      "timeoutSeconds": 180
+    }
+  ]
+}

@@ -10,7 +10,9 @@ import type {
   GitHubReview,
 } from "./github-client.js";
 
-export const DEFAULT_REQUIRED_CHECKS = ["API", "Web", "PR title", "SonarQube", "SonarCloud Code Analysis"] as const;
+// DEV-154: `Mobile` (the Expo app job, DEV-141) is revalidated before closing the issue, like `API` and `Web`;
+// the merge itself already requires it through Merge Readiness (DEV-153).
+export const DEFAULT_REQUIRED_CHECKS = ["API", "Web", "Mobile", "PR title", "SonarQube", "SonarCloud Code Analysis"] as const;
 export const POST_MERGE_PROPERTY_PREFIX = "cashin.post-merge";
 
 export interface PostMergeDependencies {
