@@ -32,7 +32,7 @@ Autenticação, carteiras, convites, solicitações de acesso, categorias, forma
 
 Implementada em `src/auth/auth.routes.ts`. A sessão é um token opaco com hash em `auth_sessions`, e `app.authenticate` o lê de um de dois lugares: o cookie `HttpOnly` da Web ou o header `Authorization: Bearer` dos clientes nativos (o app mobile).
 
-- **Precedência:** header presente é a única fonte considerada, mesmo malformado; não há recuo para o cookie. O formato do token é validado antes de qualquer consulta ao banco.
+- **Precedência:** header presente é a única fonte considerada, mesmo malformado; não há recuo para o cookie. O formato do token é validado antes de qualquer consulta ao banco. Pela mesma regra, o logout com header inválido responde `401`, em vez de um `204` que limparia o cookie sem encerrar a sessão dele.
 - **Emissão:** `POST /auth/login` define só o cookie; `POST /auth/token` devolve o token no corpo, com `Cache-Control: no-store` e sem cookie. As duas rotas usam o mesmo limitador por IP.
 - **Redação:** o header `Authorization` é coberto pela redação de `req.headers` nos logs (teste sobre a linha emitida em `src/app.test.ts`) e fica fora da lista de permissão dos traces (segredo `authorization` em `src/telemetry.test.ts`).
 - **Testes:** rotas em `src/auth/auth.routes.test.ts`; sessão real, escopo de `X-Wallet-Id` e logout em `src/auth/postgres-auth.integration.test.ts`. Contrato em [`docs/api.md`](../../api.md#sessão-cookie-na-web-token-nos-clientes-nativos).

@@ -42,6 +42,14 @@
       "command": ["npx", "tsx", "--test", "src/auth/auth.routes.test.ts"]
     },
     {
+      "id": "logout-with-invalid-bearer-is-refused",
+      "package": "apps/api",
+      "file": "apps/api/src/auth/auth.routes.ts",
+      "find": "if (request.headers.authorization !== undefined && token === null) {",
+      "replace": "if (false) {",
+      "command": ["npx", "tsx", "--test", "src/auth/auth.routes.test.ts"]
+    },
+    {
       "id": "token-login-shares-the-login-limiter",
       "package": "apps/api",
       "file": "apps/api/src/auth/auth.routes.ts",

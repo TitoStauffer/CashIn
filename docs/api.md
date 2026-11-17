@@ -30,7 +30,7 @@ A sessão é a mesma nos dois casos: um token opaco, do qual o banco guarda só 
 - **Clientes nativos (app mobile):** `POST /auth/token`, com o mesmo corpo, responde `200` com `{ "user": { "id", "email" }, "token": "<token>", "expiresAt": "<ISO 8601>" }` e `Cache-Control: no-store`, sem cookie. O cliente guarda o token no armazenamento seguro do aparelho e o envia em `Authorization: Bearer <token>` em toda rota autenticada, junto com `X-Wallet-Id` quando quiser outra carteira.
 - **Precedência:** quando o header `Authorization` está presente, só ele vale, mesmo malformado. A API não recorre ao cookie, para que a requisição nunca se autentique como uma sessão diferente da que ela nomeia. O esquema `Bearer` não diferencia maiúsculas; o token, sim.
 - **Erros:** token malformado, desconhecido, expirado ou de sessão encerrada responde `401` com `{ "message": "Autenticação necessária." }`. Conta não confirmada ou senha errada no `/auth/token` responde `401` com a mesma mensagem do login da Web.
-- **Logout:** `POST /auth/logout` com o header encerra a sessão no servidor, como com o cookie.
+- **Logout:** `POST /auth/logout` com o header encerra a sessão no servidor, como com o cookie. Com header presente mas inválido, o logout responde `401` e não limpa o cookie, porque não encerrou sessão nenhuma. Sem o header, o logout da Web continua respondendo `204` e limpando o cookie.
 - **Limite de tentativas:** `/auth/login` e `/auth/token` compartilham o mesmo orçamento por IP, para que o segundo caminho não dobre as tentativas contra uma senha.
 - **CSRF:** o token no header não é enviado sozinho pelo navegador, então a falsificação de requisição entre sites não se aplica a ele. O cookie da Web continua protegido pelo `SameSite=Lax`.
 

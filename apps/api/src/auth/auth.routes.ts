@@ -224,8 +224,15 @@ export function registerAuthRoutes(app: FastifyInstance, options: AuthRouteOptio
   }));
 
   app.post("/auth/logout", async (request, reply) => {
+    const token = getSessionToken(request);
+    // A header that names no valid session ends nothing, so it is not answered as a successful logout:
+    // with a valid cookie next to it, a 204 that clears the cookie would leave that session open on the
+    // server while the client believes it is gone. Without the header, the browser logout is unchanged.
+    if (request.headers.authorization !== undefined && token === null) {
+      return reply.code(401).send({ message: "Autenticação necessária." });
+    }
     try {
-      await options.authService.logout(getSessionToken(request));
+      await options.authService.logout(token);
       reply.header("Set-Cookie", clearSessionCookie(options.secureCookies));
       return reply.code(204).send();
     } catch {

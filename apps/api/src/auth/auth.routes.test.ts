@@ -475,6 +475,19 @@ test("when the bearer header and the cookie arrive together, only the header is 
     // Without the header, the cookie keeps working exactly as before.
     const cookieOnly = await app.inject({ method: "GET", url: "/auth/me", headers: { cookie } });
     assert.equal((cookieOnly.json() as { user: AuthUser }).user.email, "first@example.com");
+
+    // A logout naming an invalid bearer ends nothing, so it is refused: no 204, no cleared cookie, and
+    // the cookie session next to it is still open.
+    const invalidLogout = await app.inject({ method: "POST", url: "/auth/logout", headers: { cookie, authorization: "Bearer invalido" } });
+    assert.equal(invalidLogout.statusCode, 401);
+    assert.deepEqual(invalidLogout.json(), { message: "Autenticação necessária." });
+    assert.equal(invalidLogout.headers["set-cookie"], undefined);
+    assert.equal((await app.inject({ method: "GET", url: "/auth/me", headers: { cookie } })).statusCode, 200);
+
+    // The browser logout without the header is unchanged: 204 and the cookie cleared, even with no session.
+    const browserLogout = await app.inject({ method: "POST", url: "/auth/logout" });
+    assert.equal(browserLogout.statusCode, 204);
+    assert.match(String(browserLogout.headers["set-cookie"]), /Max-Age=0/);
   } finally {
     await app.close();
   }
