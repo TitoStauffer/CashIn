@@ -83,7 +83,7 @@ test('loads verified Actions steps and current-HEAD configuration through review
   assert.deepEqual(actions.steps, job.steps);
   assert.equal(actions.headSha, sha);
   assert.equal(actions.workflowPath, '.github/workflows/ci.yml');
-  assert.equal(inputs.ciConfiguration.length, 5);
+  assert.equal(inputs.ciConfiguration.length, 6);
   assert.equal(requests.some(({ url }) => url.pathname.endsWith('/logs')), false);
   assert.equal(requests.filter(({ url }) => url.pathname.includes('/actions/')).every(({ options }) => options.redirect === 'error' && options.signal), true);
 });
@@ -97,10 +97,13 @@ test('omits env values and package dependencies but preserves configured variabl
   assert.doesNotMatch(JSON.stringify(snapshots), /ci-placeholder|omitted-package/);
   assert.equal(snapshots[0].originalSha256, createHash('sha256').update(workflow).digest('hex'));
   assert.deepEqual(JSON.parse(snapshots[1].content), { scripts });
-  assert.equal(snapshots[3].path, 'tools/github-reviewer/package.json');
-  assert.deepEqual(JSON.parse(snapshots[3].content), { scripts: reviewerScripts });
-  assert.equal(snapshots[4].path, 'tools/jira-dispatcher/package.json');
-  assert.deepEqual(JSON.parse(snapshots[4].content), { scripts: dispatcherScripts });
+  // DEV-153: the mobile app scripts reach the agents too, with dependencies omitted like the others.
+  assert.equal(snapshots[3].path, 'apps/mobile/package.json');
+  assert.deepEqual(JSON.parse(snapshots[3].content), { scripts });
+  assert.equal(snapshots[4].path, 'tools/github-reviewer/package.json');
+  assert.deepEqual(JSON.parse(snapshots[4].content), { scripts: reviewerScripts });
+  assert.equal(snapshots[5].path, 'tools/jira-dispatcher/package.json');
+  assert.deepEqual(JSON.parse(snapshots[5].content), { scripts: dispatcherScripts });
 });
 
 test('also attaches verified job evidence to Web checks', async () => {
@@ -109,8 +112,8 @@ test('also attaches verified job evidence to Web checks', async () => {
   assert.equal(inputs.checkRuns[0].actions.availability, 'available');
 });
 
-test('verifies all three CI jobs and supplies Automation Tools test steps and five snapshots', async () => {
-  const checkValues = ['API', 'Web', 'Automation Tools'].map((name, index) => ({ ...check, name, id: 20 + index, details_url: `https://github.com/owner/repo/actions/runs/10/job/${20 + index}` }));
+test('verifies all four CI jobs and supplies Automation Tools test steps and six snapshots', async () => {
+  const checkValues = ['API', 'Web', 'Mobile', 'Automation Tools'].map((name, index) => ({ ...check, name, id: 20 + index, details_url: `https://github.com/owner/repo/actions/runs/10/job/${20 + index}` }));
   const jobValues = checkValues.map((entry) => ({ ...job, id: entry.id, name: entry.name, html_url: entry.details_url, check_run_url: `https://api.github.com/repos/owner/repo/check-runs/${entry.id}`,
     ...(entry.name === 'Automation Tools' ? { steps: [
       'Build and test GitHub integration tools',
@@ -120,9 +123,13 @@ test('verifies all three CI jobs and supplies Automation Tools test steps and fi
   }));
   const inputs = await loadAgentReviewInputs(fakeFetch({ checkValues, jobValues }), 'owner/repo', 7, { head: { sha }, base: { sha: baseSha } }, 'not-a-real-token');
   assert.equal(inputs.checks.githubReviewer, 'PASSED');
-  assert.equal(inputs.checkRuns.filter(({ actions }) => actions?.availability === 'available').length, 3);
-  assert.deepEqual(inputs.checkRuns.find(({ name }) => name === 'Automation Tools').actions.steps, jobValues[2].steps);
-  assert.equal(inputs.ciConfiguration.length, 5);
+  // DEV-153: the Mobile job is a CI job like API and Web: required, and its steps reach the agents.
+  assert.equal(inputs.checks.mobile, 'PASSED');
+  assert.equal(inputs.checkRuns.find(({ name }) => name === 'Mobile').actions.availability, 'available');
+  assert.equal(inputs.checkRuns.filter(({ actions }) => actions?.availability === 'available').length, 4);
+  assert.deepEqual(inputs.checkRuns.find(({ name }) => name === 'Automation Tools').actions.steps, jobValues[3].steps);
+  assert.equal(inputs.ciConfiguration.length, 6);
+  assert.ok(inputs.ciConfiguration.some(({ path }) => path === 'apps/mobile/package.json'));
   assert.deepEqual(
     inputs.checkRuns.find(({ name }) => name === 'Automation Tools').actions.steps.map(({ name }) => name),
     ['Build and test GitHub integration tools', 'Install Jira dispatcher dependencies', 'Verify Jira dispatcher'],
@@ -138,8 +145,8 @@ test('verifies all three CI jobs and supplies Automation Tools test steps and fi
   assert.notEqual(JSON.stringify(fingerprintAgentReviewInputs(inputs)), originalFingerprint);
 });
 
-test('limits the context to three CI jobs', async () => {
-  const checkValues = ['API', 'Web', 'Automation Tools', 'CI / API'].map((name) => ({ ...check, name }));
+test('limits the context to four CI jobs', async () => {
+  const checkValues = ['API', 'Web', 'Mobile', 'Automation Tools', 'CI / API'].map((name) => ({ ...check, name }));
   await assert.rejects(loadAgentReviewInputs(fakeFetch({ checkValues }), 'owner/repo', 7, { head: { sha }, base: { sha: baseSha } }, 'not-a-real-token'), /Too many CI checks/);
 });
 

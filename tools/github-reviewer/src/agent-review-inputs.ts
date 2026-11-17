@@ -7,6 +7,8 @@ import { loadVaultContext, type VaultContextSnapshot } from './vault-context.js'
 const REQUIRED_AGENT_CHECKS = {
   api: (name: string) => /(^|\/\s*)api(\s|$)/i.test(name),
   web: (name: string) => /(^|\/\s*)web(\s|$)/i.test(name),
+  // DEV-153: the Expo app job (DEV-141), required and read like API and Web.
+  mobile: (name: string) => /(^|\/\s*)mobile(\s|$)/i.test(name),
   githubReviewer: (name: string) => /(^|\/\s*)(?:automation tools|github reviewer)$/i.test(name),
   sonarQube: (name: string) => /sonarqube/i.test(name),
   sonarCloud: (name: string) => /sonarcloud code analysis/i.test(name),
@@ -69,7 +71,7 @@ export async function loadAgentReviewInputs(
   const sourceFiles = await loadChangedSourceFiles(fetchImpl, repository, filesPayload, headSha, baseSha, token, vaultPaths);
   const checkRuns = summarizeCheckRunEvidence(runs, headSha);
   const ciChecks = latestRunsByName(runs.filter((run) => run.head_sha === headSha && isTestCheck(String(run.name ?? ''))));
-  if (ciChecks.length > 3) throw new Error('Too many CI checks for the supported agent evidence context.');
+  if (ciChecks.length > 4) throw new Error('Too many CI checks for the supported agent evidence context.');
   for (const check of ciChecks) {
     const summary = checkRuns.find((candidate) => candidate.name === check.name && candidate.appId === (asRecord(check.app)?.id ?? null));
     if (summary) summary.actions = await loadActionsEvidence(fetchImpl, repository, pullRequestNumber, headSha, check, token);
@@ -274,6 +276,7 @@ export function summarizeAgentChecks(runs: Array<Record<string, unknown>>, expec
   return {
     api: status(REQUIRED_AGENT_CHECKS.api),
     web: status(REQUIRED_AGENT_CHECKS.web),
+    mobile: status(REQUIRED_AGENT_CHECKS.mobile),
     githubReviewer: status(REQUIRED_AGENT_CHECKS.githubReviewer, ACTIONS_APP_ID),
     sonarQube: status(REQUIRED_AGENT_CHECKS.sonarQube),
     sonarCloud: status(REQUIRED_AGENT_CHECKS.sonarCloud),
@@ -316,7 +319,7 @@ export function summarizeCheckRunEvidence(runs: Array<Record<string, unknown>>, 
 }
 
 function isTestCheck(name: string): boolean {
-  return REQUIRED_AGENT_CHECKS.api(name) || REQUIRED_AGENT_CHECKS.web(name) || REQUIRED_AGENT_CHECKS.githubReviewer(name);
+  return REQUIRED_AGENT_CHECKS.api(name) || REQUIRED_AGENT_CHECKS.web(name) || REQUIRED_AGENT_CHECKS.mobile(name) || REQUIRED_AGENT_CHECKS.githubReviewer(name);
 }
 
 function latestRunsByName(runs: Array<Record<string, unknown>>): Array<Record<string, unknown>> {

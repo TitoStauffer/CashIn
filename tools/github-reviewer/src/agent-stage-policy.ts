@@ -58,7 +58,7 @@ export function evaluateDeterministicQualityGate(input: StageEvidenceContext & {
   // taken from a previous report or from the Pull Request body.
   const reviewTrack = classifyReviewTrack(input.changedFiles);
   const requiredStages = reviewTrack === 'full' ? ['codeReview', 'qa'] as const : ['codeReview'] as const;
-  const checkNames: Array<keyof CheckSummary> = ['api', 'web', 'githubReviewer', 'sonarQube', 'sonarCloud'];
+  const checkNames: Array<keyof CheckSummary> = ['api', 'web', 'mobile', 'githubReviewer', 'sonarQube', 'sonarCloud'];
   for (const name of checkNames) {
     const state = input.checks[name];
     if (state !== 'PASSED') reasons.push(`Check ${name}: ${state ?? 'UNKNOWN'}.`);
