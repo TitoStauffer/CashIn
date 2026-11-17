@@ -52,6 +52,8 @@ export type ApiRequestOptions = {
    * auth routes and the wallet routes themselves, which cannot be scoped by the wallet being chosen.
    */
   scopeToActiveWallet?: boolean
+  /** Whether a 401 on this request ends the app session through `onUnauthorized`. True by default. */
+  reportUnauthorized?: boolean
 }
 
 export type ApiClient = <T>(path: string, options?: ApiRequestOptions) => Promise<T>
@@ -64,7 +66,7 @@ export function createApiClient({
   fetchImpl = fetch,
   timeoutMs = DEFAULT_TIMEOUT_MS,
 }: ApiClientOptions): ApiClient {
-  return async function request<T>(path: string, { method = 'GET', body, scopeToActiveWallet = true }: ApiRequestOptions = {}): Promise<T> {
+  return async function request<T>(path: string, { method = 'GET', body, scopeToActiveWallet = true, reportUnauthorized = true }: ApiRequestOptions = {}): Promise<T> {
     const headers: Record<string, string> = { Accept: 'application/json' }
     if (body !== undefined) headers['Content-Type'] = 'application/json'
     const token = await getToken()
@@ -92,7 +94,10 @@ export function createApiClient({
     }
 
     if (!response.ok) {
-      if (response.status === 401) onUnauthorized?.()
+      // A 401 ends the session only when the request carried one: a wrong password on the login is a
+      // 401 too, and is not an expired session. The logout opts out, since ending the session is what
+      // it was already doing.
+      if (response.status === 401 && token && reportUnauthorized) onUnauthorized?.()
       throw new ApiError(await errorMessage(response), response.status)
     }
     if (response.status === 204) return undefined as T

@@ -100,6 +100,19 @@ describe('createApiClient', () => {
     expect(onUnauthorized).toHaveBeenCalledTimes(1)
   })
 
+  // DEV-142: a 401 ends the app session only when the request carried one. A wrong password on the
+  // login is a 401 without a token, and the logout opts out of reporting its own 401.
+  it('does not end the session on a 401 that carried no session, nor on an opted-out request', async () => {
+    const onUnauthorized = jest.fn()
+    const anonymous = clientWith(() => jsonResponse(401, { message: 'E-mail ou senha inválidos.' }), { onUnauthorized, getToken: async () => null })
+    await expect(anonymous.request('/auth/token', { method: 'POST', body: {} })).rejects.toMatchObject({ status: 401, message: 'E-mail ou senha inválidos.' })
+    expect(onUnauthorized).not.toHaveBeenCalled()
+
+    const logout = clientWith(() => jsonResponse(401, { message: 'Autenticação necessária.' }), { onUnauthorized })
+    await logout.request('/auth/logout', { method: 'POST', reportUnauthorized: false }).catch(() => undefined)
+    expect(onUnauthorized).not.toHaveBeenCalled()
+  })
+
   it('reports a success without a JSON body as an ApiError in Portuguese', async () => {
     const { request } = clientWith(() => new Response('<html>ok</html>', { status: 200 }))
     await expect(request('/health')).rejects.toEqual(new ApiError('A API respondeu de forma inesperada. Tente novamente.', 200))
