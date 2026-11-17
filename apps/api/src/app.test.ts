@@ -190,6 +190,26 @@ test("the emitted request log line carries no cookie and no payload", async () =
   assert.equal(typeof response?.res?.statusCode, "number");
 });
 
+// DEV-140 — the mobile app sends its session as `Authorization: Bearer`. The header is as much a
+// credential as the cookie, so the emitted line is checked for it, on an authenticated route.
+test("the emitted request log line carries no bearer token", async () => {
+  const lines: string[] = [];
+  const app = createApp(createHealthDatabase(async () => ({ rows: [] })), {
+    logger: { write: (line) => { lines.push(line); } },
+  });
+  const bearerSecret = "segredoDoTokenMovel".padEnd(43, "x");
+
+  await app.inject({ method: "GET", url: "/auth/me", headers: { authorization: `Bearer ${bearerSecret}` } });
+  await app.close();
+
+  const emitted = lines.join("");
+  assert.ok(lines.length > 0, "the logger must emit at least one line");
+  assert.doesNotMatch(emitted, new RegExp(bearerSecret));
+  assert.doesNotMatch(emitted, /Bearer/i);
+  const request = lines.map((line) => JSON.parse(line) as { req?: Record<string, unknown> }).find((entry) => entry.req);
+  assert.equal(request?.req?.url, "/auth/me");
+});
+
 // DEV-130 — correlation id. Every response carries `X-Request-Id`, and the same value is the `reqId` of
 // every log line of that request, so an id quoted by a user leads straight to the right log lines.
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;

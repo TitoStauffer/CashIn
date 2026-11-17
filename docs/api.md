@@ -22,6 +22,18 @@ As senhas de novas contas devem ter pelo menos 8 caracteres e incluir uma letra 
 
 Cadastro e login têm limites temporários de tentativas por endereço IP para reduzir abuso. O controle é mantido em memória e atende ao MVP com uma única instância da API; para múltiplas instâncias, será necessário compartilhar o estado do limitador.
 
+## Sessão: cookie na Web, token nos clientes nativos
+
+A sessão é a mesma nos dois casos: um token opaco, do qual o banco guarda só o hash em `auth_sessions`. O que muda é por onde ele viaja (DEV-140).
+
+- **Web:** `POST /auth/login` com `{ "email", "password" }` responde `{ "user" }` e define o cookie `HttpOnly; SameSite=Lax` (`Secure` em produção). O token nunca aparece no corpo.
+- **Clientes nativos (app mobile):** `POST /auth/token`, com o mesmo corpo, responde `200` com `{ "user": { "id", "email" }, "token": "<token>", "expiresAt": "<ISO 8601>" }` e `Cache-Control: no-store`, sem cookie. O cliente guarda o token no armazenamento seguro do aparelho e o envia em `Authorization: Bearer <token>` em toda rota autenticada, junto com `X-Wallet-Id` quando quiser outra carteira.
+- **Precedência:** quando o header `Authorization` está presente, só ele vale, mesmo malformado. A API não recorre ao cookie, para que a requisição nunca se autentique como uma sessão diferente da que ela nomeia. O esquema `Bearer` não diferencia maiúsculas; o token, sim.
+- **Erros:** token malformado, desconhecido, expirado ou de sessão encerrada responde `401` com `{ "message": "Autenticação necessária." }`. Conta não confirmada ou senha errada no `/auth/token` responde `401` com a mesma mensagem do login da Web.
+- **Logout:** `POST /auth/logout` com o header encerra a sessão no servidor, como com o cookie.
+- **Limite de tentativas:** `/auth/login` e `/auth/token` compartilham o mesmo orçamento por IP, para que o segundo caminho não dobre as tentativas contra uma senha.
+- **CSRF:** o token no header não é enviado sozinho pelo navegador, então a falsificação de requisição entre sites não se aplica a ele. O cookie da Web continua protegido pelo `SameSite=Lax`.
+
 ## Carteiras e escopo dos dados
 
 Os dados financeiros são organizados por carteira. Toda conta possui uma carteira pessoal; um usuário também pode ter acesso a outras carteiras quando estiver cadastrado como membro.
@@ -126,6 +138,6 @@ Todas as operações de metas e aportes exigem autenticação e usam a carteira 
 
 O total aportado e o percentual são derivados na consulta, portanto criação, edição e exclusão de aportes atualizam o progresso sem duplicar valores. Aportes são registros financeiros separados das despesas de consumo.
 
-A API é independente do cliente. Hoje ela atende a Web, e o aplicativo Mobile poderá consumi-la quando essa etapa entrar no escopo.
+A API é independente do cliente. Hoje ela atende a Web, e o app mobile (épicos DEV-138 e DEV-139) a consome com o token de `POST /auth/token`, descrito em [Sessão](#sessão-cookie-na-web-token-nos-clientes-nativos).
 
 O contrato da importação financeira está em [financial-imports-contract.md](financial-imports-contract.md). Ele cobre extratos bancários OFX e CSV configurável, faturas de cartão, limites, estados, prévia, confirmação atômica e desfazer.
