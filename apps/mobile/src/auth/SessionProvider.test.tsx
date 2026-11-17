@@ -48,8 +48,8 @@ function Probe() {
 }
 
 async function mount(authApi: AuthApi, tokenStore: ReturnType<typeof memoryTokenStore>) {
-  let unauthorized: (() => void) | null = null
-  const registerUnauthorizedHandler = jest.fn((handler: () => void) => {
+  let unauthorized: ((rejectedToken: string) => void) | null = null
+  const registerUnauthorizedHandler = jest.fn((handler: (rejectedToken: string) => void) => {
     unauthorized = handler
     return () => { unauthorized = null }
   })
@@ -58,7 +58,11 @@ async function mount(authApi: AuthApi, tokenStore: ReturnType<typeof memoryToken
       <Probe />
     </SessionProvider>,
   )
-  return { reportUnauthorized: () => act(() => { unauthorized?.() }) }
+  return {
+    reportUnauthorized: async (rejectedToken = TOKEN) => {
+      await act(async () => { unauthorized?.(rejectedToken); await Promise.resolve() })
+    },
+  }
 }
 
 const stateText = () => screen.getByTestId('state').props.children as string
@@ -144,5 +148,26 @@ describe('SessionProvider', () => {
     await reportUnauthorized()
     expect(await screen.findByText(`signedOut:${SESSION_EXPIRED_NOTICE}`)).toBeTruthy()
     expect(tokenStore.current).toBeNull()
+  })
+
+  // A late 401 to a request made with the previous token must not end the session started after it.
+  it('ignores a 401 for a token that is no longer the stored one', async () => {
+    const tokenStore = memoryTokenStore(TOKEN)
+    const { reportUnauthorized } = await mount(fakeAuthApi(), tokenStore)
+    await screen.findByText('signedIn:pessoa@example.com')
+    await reportUnauthorized('tokenAntigoDeOutraSessao'.padEnd(43, 'y'))
+    expect(stateText()).toBe('signedIn:pessoa@example.com')
+    expect(tokenStore.current).toBe(TOKEN)
+  })
+
+  // A secure store that refuses to delete must not leave the person on a busy button with a rejection
+  // nobody handles: the app still signs out.
+  it('signs out even when the secure store refuses to delete the token', async () => {
+    const tokenStore = memoryTokenStore(TOKEN)
+    tokenStore.clear.mockRejectedValueOnce(new Error('keystore unavailable'))
+    await mount(fakeAuthApi(), tokenStore)
+    await screen.findByText('signedIn:pessoa@example.com')
+    await fireEvent.press(screen.getByLabelText('sair'))
+    expect(await screen.findByText('signedOut:')).toBeTruthy()
   })
 })

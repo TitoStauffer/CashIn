@@ -94,6 +94,8 @@ describe('createApiClient', () => {
 
     await expect(request('/auth/me')).rejects.toMatchObject({ status: 401, message: 'Autenticação necessária.' })
     expect(onUnauthorized).toHaveBeenCalledTimes(1)
+    // The refused token travels with the report, so the session can ignore a late 401 for an older one.
+    expect(onUnauthorized).toHaveBeenCalledWith(TOKEN)
 
     const other = clientWith(() => jsonResponse(403, {}), { onUnauthorized })
     await other.request('/auth/me').catch(() => undefined)

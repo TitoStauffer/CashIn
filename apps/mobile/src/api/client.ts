@@ -38,8 +38,8 @@ export type ApiClientOptions = {
   baseUrl: string
   getToken: () => Promise<string | null>
   getActiveWalletId: () => string | null
-  /** Called when the API answers 401, so the app can drop the session and return to the login. */
-  onUnauthorized?: () => void
+  /** Called when the API refuses the session (401), with the token that was refused. */
+  onUnauthorized?: (rejectedToken: string) => void
   fetchImpl?: typeof fetch
   timeoutMs?: number
 }
@@ -97,7 +97,7 @@ export function createApiClient({
       // A 401 ends the session only when the request carried one: a wrong password on the login is a
       // 401 too, and is not an expired session. The logout opts out, since ending the session is what
       // it was already doing.
-      if (response.status === 401 && token && reportUnauthorized) onUnauthorized?.()
+      if (response.status === 401 && token && reportUnauthorized) onUnauthorized?.(token)
       throw new ApiError(await errorMessage(response), response.status)
     }
     if (response.status === 204) return undefined as T

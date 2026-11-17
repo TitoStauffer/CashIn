@@ -5,8 +5,8 @@
       "id": "login-401-does-not-end-a-session",
       "package": "apps/mobile",
       "file": "apps/mobile/src/api/client.ts",
-      "find": "if (response.status === 401 && token && reportUnauthorized) onUnauthorized?.()",
-      "replace": "if (response.status === 401 && reportUnauthorized) onUnauthorized?.()",
+      "find": "if (response.status === 401 && token && reportUnauthorized) onUnauthorized?.(token)",
+      "replace": "if (response.status === 401 && reportUnauthorized) onUnauthorized?.(token ?? '')",
       "command": [
         "npx",
         "jest",
@@ -80,19 +80,6 @@
       "timeoutSeconds": 180
     },
     {
-      "id": "later-401-ends-the-session",
-      "package": "apps/mobile",
-      "file": "apps/mobile/src/auth/SessionProvider.tsx",
-      "find": "void tokenStore.clear().finally(() => setState({ status: 'signedOut', notice: SESSION_EXPIRED_NOTICE }))",
-      "replace": "void tokenStore",
-      "command": [
-        "npx",
-        "jest",
-        "src/auth/SessionProvider.test.tsx"
-      ],
-      "timeoutSeconds": 180
-    },
-    {
       "id": "login-requires-both-fields",
       "package": "apps/mobile",
       "file": "apps/mobile/src/screens/LoginScreen.tsx",
@@ -128,6 +115,45 @@
         "npx",
         "jest",
         "src/screens/LoginScreen.test.tsx"
+      ],
+      "timeoutSeconds": 180
+    },
+    {
+      "id": "later-401-ends-the-session",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/auth/SessionProvider.tsx",
+      "find": "setState({ status: 'signedOut', notice: SESSION_EXPIRED_NOTICE })",
+      "replace": "void SESSION_EXPIRED_NOTICE",
+      "command": [
+        "npx",
+        "jest",
+        "src/auth/SessionProvider.test.tsx"
+      ],
+      "timeoutSeconds": 180
+    },
+    {
+      "id": "late-401-for-an-older-token-is-ignored",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/auth/SessionProvider.tsx",
+      "find": "if (stored !== rejectedToken) return",
+      "replace": "void stored",
+      "command": [
+        "npx",
+        "jest",
+        "src/auth/SessionProvider.test.tsx"
+      ],
+      "timeoutSeconds": 180
+    },
+    {
+      "id": "sign-out-survives-a-store-failure",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/auth/SessionProvider.tsx",
+      "find": "await tokenStore.clear().catch(() => { /* still signs out */ })",
+      "replace": "await tokenStore.clear()",
+      "command": [
+        "npx",
+        "jest",
+        "src/auth/SessionProvider.test.tsx"
       ],
       "timeoutSeconds": 180
     }

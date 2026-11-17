@@ -45,8 +45,8 @@ export function SessionProvider({
 }: {
   authApi: AuthApi
   tokenStore: TokenStore
-  /** Lets the HTTP client report a `401` here; returns the function that removes the handler. */
-  registerUnauthorizedHandler(handler: () => void): () => void
+  /** Lets the HTTP client report a `401`, with the token it was sent with; returns the unregister function. */
+  registerUnauthorizedHandler(handler: (rejectedToken: string) => void): () => void
   children: ReactNode
 }) {
   const [state, setState] = useState<SessionState>({ status: 'restoring' })
@@ -74,8 +74,16 @@ export function SessionProvider({
     return () => { current = false }
   }, [authApi, tokenStore, attempt])
 
-  useEffect(() => registerUnauthorizedHandler(() => {
-    void tokenStore.clear().finally(() => setState({ status: 'signedOut', notice: SESSION_EXPIRED_NOTICE }))
+  useEffect(() => registerUnauthorizedHandler((rejectedToken) => {
+    void (async () => {
+      // A 401 names the token it was sent with. One that is no longer the stored token is a late answer
+      // to a request made before the person signed in again, and must not end the new session. When the
+      // store cannot be read, the session ends anyway: failing closed beats keeping a refused token.
+      const stored = await tokenStore.read().catch(() => rejectedToken)
+      if (stored !== rejectedToken) return
+      await tokenStore.clear().catch(() => undefined)
+      setState({ status: 'signedOut', notice: SESSION_EXPIRED_NOTICE })
+    })()
   }), [registerUnauthorizedHandler, tokenStore])
 
   const signIn = useCallback(async (email: string, password: string) => {
@@ -90,7 +98,9 @@ export function SessionProvider({
     } catch {
       // The server session may stay open until it expires, but the device never keeps the token.
     } finally {
-      await tokenStore.clear()
+      // A secure store that refuses the delete must not leave the person stuck on a busy button: the
+      // app still signs out, and the next launch checks whatever token remains against the API.
+      await tokenStore.clear().catch(() => { /* still signs out */ })
       setState({ status: 'signedOut' })
     }
   }, [authApi, tokenStore])

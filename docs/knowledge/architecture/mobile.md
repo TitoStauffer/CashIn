@@ -34,7 +34,7 @@ O app fica em `apps/mobile`, com Expo SDK 58, React Native e TypeScript estrito,
 - **Login:** `POST /auth/token`; o token vai só para o `expo-secure-store`. As recusas mostram a mensagem da API (senha errada e conta não confirmada respondem igual, de propósito; limite de tentativas).
 - **Cadastro:** `POST /auth/register`. A regra de senha é a da API, que responde a mensagem; o app só confere campos vazios e a repetição da senha. Um e-mail já usado recebe a mesma resposta de sucesso, porque a API não revela quem tem conta. O link de confirmação abre a Web, e a tela explica isso.
 - **Logout:** `POST /auth/logout` encerra a sessão no servidor e o token sempre sai do aparelho, mesmo sem conexão.
-- **`401` posterior:** qualquer requisição autenticada que receba `401` encerra a sessão. Um `401` sem token (senha errada no login) não conta, e o logout não reporta o próprio `401`.
+- **`401` posterior:** qualquer requisição autenticada que receba `401` encerra a sessão, desde que o token recusado seja o guardado; um `401` atrasado de antes de um novo login é ignorado. Um `401` sem token (senha errada no login) não conta, e o logout não reporta o próprio `401`. Se o armazenamento seguro recusar apagar o token, o app sai mesmo assim.
 - **Envio único:** os formulários desabilitam o botão enquanto enviam, com uma trava por `ref` para dois toques no mesmo quadro.
 
 ## Qualidade

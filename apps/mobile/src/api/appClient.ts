@@ -12,7 +12,7 @@ import { createApiClient, type ApiClient, type ApiRequestOptions } from './clien
  * the API falls back to the personal wallet.
  */
 let client: ApiClient | null = null
-let unauthorizedHandler: (() => void) | null = null
+let unauthorizedHandler: ((rejectedToken: string) => void) | null = null
 
 export function getApiClient(): ApiClient {
   client ??= createApiClient({
@@ -23,13 +23,13 @@ export function getApiClient(): ApiClient {
     }),
     getToken: () => tokenStorage.read(),
     getActiveWalletId: () => null,
-    onUnauthorized: () => unauthorizedHandler?.(),
+    onUnauthorized: (rejectedToken) => unauthorizedHandler?.(rejectedToken),
   })
   return client
 }
 
 /** The session registers here to hear about a `401`; the returned function unregisters it. */
-export function registerUnauthorizedHandler(handler: () => void): () => void {
+export function registerUnauthorizedHandler(handler: (rejectedToken: string) => void): () => void {
   unauthorizedHandler = handler
   return () => {
     if (unauthorizedHandler === handler) unauthorizedHandler = null
