@@ -54,7 +54,8 @@ export function SessionProvider({
 
   useEffect(() => {
     let current = true
-    tokenStore.read()
+    // Never rejects: every failure becomes a state before the last step, so the chain is ignored on purpose.
+    void tokenStore.read()
       .then(async (token) => {
         if (!token) return { status: 'signedOut' } as const
         try {
