@@ -171,7 +171,7 @@ npx expo start
 flowchart LR
     jira["Issue no Jira"] --> branch["Branch<br/>feature/fix/chore + chave"]
     branch --> pr["Pull Request"]
-    pr --> ci["CI: API, Web,<br/>GitHub Reviewer e SonarQube"]
+    pr --> ci["CI: API, Web, Mobile,<br/>GitHub Reviewer e SonarQube"]
     ci --> cr["Code Review<br/>(agente)"]
     cr --> qa["QA<br/>(agente, trilho completo)"]
     qa --> qg["Quality Gate<br/>Coordinator"]

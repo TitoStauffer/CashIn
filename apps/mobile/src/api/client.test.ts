@@ -100,6 +100,19 @@ describe('createApiClient', () => {
     expect(onUnauthorized).toHaveBeenCalledTimes(1)
   })
 
+  it('reports a success without a JSON body as an ApiError in Portuguese', async () => {
+    const { request } = clientWith(() => new Response('<html>ok</html>', { status: 200 }))
+    await expect(request('/health')).rejects.toEqual(new ApiError('A API respondeu de forma inesperada. Tente novamente.', 200))
+  })
+
+  it('refuses an unsafe path as a programming error, before any request', async () => {
+    const { request, calls } = clientWith(() => jsonResponse(200, {}))
+    const error = await request('/%2e%2e/admin').catch((caught: unknown) => caught)
+    expect(error).not.toBeInstanceOf(ApiError)
+    expect(error).toEqual(new Error('Unsafe API path: /%2e%2e/admin'))
+    expect(calls).toHaveLength(0)
+  })
+
   it('reports a connection failure in Portuguese', async () => {
     const { request } = clientWith(() => { throw new TypeError('Network request failed') })
     await expect(request('/health')).rejects.toEqual(new ApiError('Não foi possível conectar à API. Verifique sua conexão.', 0))

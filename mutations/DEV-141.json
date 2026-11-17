@@ -130,6 +130,32 @@
         "src/auth/tokenStorage.test.ts"
       ],
       "timeoutSeconds": 180
+    },
+    {
+      "id": "unsafe-path-is-not-a-network-error",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/api/client.ts",
+      "find": "const url = `${baseUrl}${assertSafeApiPath(path)}`",
+      "replace": "const url = `${baseUrl}${path}`",
+      "command": [
+        "npx",
+        "jest",
+        "src/api/client.test.ts"
+      ],
+      "timeoutSeconds": 180
+    },
+    {
+      "id": "success-without-json-is-an-api-error",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/api/client.ts",
+      "find": "throw new ApiError(UNEXPECTED_RESPONSE_MESSAGE, response.status)",
+      "replace": "throw new Error('unexpected')",
+      "command": [
+        "npx",
+        "jest",
+        "src/api/client.test.ts"
+      ],
+      "timeoutSeconds": 180
     }
   ]
 }

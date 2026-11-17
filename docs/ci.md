@@ -2,7 +2,7 @@
 
 O workflow `.github/workflows/ci.yml` valida metadados do PR, API, Web, Mobile, ferramentas de automação e SonarQube em Pull Requests para `master` e em pushes para `master`. A ordem é determinística: `PR title` → `API`/`Web`/`Mobile`/`GitHub Reviewer` → `SonarQube`. Somente a conclusão bem-sucedida do workflow completo aciona os agentes.
 
-Edições de título ou corpo executam o workflow confiável e leve `.github/workflows/pr-title.yml`. Ele revalida os metadados sem checkout do código do PR. Quando a edição é humana, solicita a repetição da execução de CI associada ao mesmo HEAD; o job de título do CI consulta os metadados atuais, permitindo recuperar um PR cujo título inicial era inválido. Edições de checklist feitas pelo GitHub App não repetem o CI, não criam checks de API/Web pulados e não cancelam a orquestração ativa.
+Edições de título ou corpo executam o workflow confiável e leve `.github/workflows/pr-title.yml`. Ele revalida os metadados sem checkout do código do PR. Quando a edição é humana, solicita a repetição da execução de CI associada ao mesmo HEAD; o job de título do CI consulta os metadados atuais, permitindo recuperar um PR cujo título inicial era inválido. Edições de checklist feitas pelo GitHub App não repetem o CI, não criam checks de API/Web/Mobile pulados e não cancelam a orquestração ativa.
 
 | Job | Diretório | Passos (comandos já existentes no projeto) |
 | --- | --- | --- |
@@ -124,7 +124,7 @@ Toda guarda nova é provada por uma mutação que derruba o teste certo. Para es
 
 Só `KILLED` em todos os mutantes deixa o passo verde. A tabela de resultados vai para o log e para o resumo do job. O passo é o último do job para que um mutante nunca chegue ao build nem ao relatório de cobertura. Ele executa código do PR, então existe apenas no CI sem credenciais, nunca em job privilegiado.
 
-**Como o QA lê a evidência.** Os agentes recebem, para os jobs `API`, `Web` e `GitHub Reviewer` do SHA, o nome e a conclusão de cada passo. O job `Mobile` ainda não entra nessa evidência nem na lista de checks do `Merge Readiness`: isso exige mudar a automação depois que o job existir na `master`, e fica registrado como pendência da DEV-141. Com `mutations/<CHAVE>.json` no diff, `Mutation check (declared mutants)` concluído com sucesso significa que todos os mutantes daquele manifesto foram mortos no CI deste SHA. Sem manifesto no diff, o passo conclui com sucesso sem rodar nada, e isso não prova mutação alguma.
+**Como o QA lê a evidência.** Os agentes recebem, para os jobs `API`, `Web` e `GitHub Reviewer` do SHA, o nome e a conclusão de cada passo. O job `Mobile` ainda não entra nessa evidência nem na lista de checks do `Merge Readiness`: isso exige mudar a automação depois que o job existir na `master`, e é a [DEV-153](https://titostauffer.atlassian.net/browse/DEV-153). Com `mutations/<CHAVE>.json` no diff, `Mutation check (declared mutants)` concluído com sucesso significa que todos os mutantes daquele manifesto foram mortos no CI deste SHA. Sem manifesto no diff, o passo conclui com sucesso sem rodar nada, e isso não prova mutação alguma.
 
 **Localmente,** depois de commitar o manifesto: `node tools/mutation-check/run.mjs --base master --package <pacote>`.
 

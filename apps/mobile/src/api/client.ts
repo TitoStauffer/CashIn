@@ -30,6 +30,7 @@ const SERVER_ERROR_MESSAGE = 'O servidor não conseguiu concluir a solicitação
 const GENERIC_ERROR_MESSAGE = 'Não foi possível concluir a solicitação.'
 const NETWORK_ERROR_MESSAGE = 'Não foi possível conectar à API. Verifique sua conexão.'
 const TIMEOUT_MESSAGE = 'A API demorou para responder. Tente novamente.'
+const UNEXPECTED_RESPONSE_MESSAGE = 'A API respondeu de forma inesperada. Tente novamente.'
 
 export type ApiClientOptions = {
   baseUrl: string
@@ -69,11 +70,14 @@ export function createApiClient({
     const walletId = scopeToActiveWallet ? getActiveWalletId() : null
     if (walletId) headers['X-Wallet-Id'] = walletId
 
+    // Checked before the request, outside the `try` below: an unsafe path is a programming error, and
+    // inside it the refusal would surface as a connection failure.
+    const url = `${baseUrl}${assertSafeApiPath(path)}`
     const controller = new AbortController()
     const timer = setTimeout(() => controller.abort(), timeoutMs)
     let response: Response
     try {
-      response = await fetchImpl(`${baseUrl}${assertSafeApiPath(path)}`, {
+      response = await fetchImpl(url, {
         method,
         headers,
         body: body === undefined ? undefined : JSON.stringify(body),
@@ -90,7 +94,13 @@ export function createApiClient({
       throw new ApiError(await errorMessage(response), response.status)
     }
     if (response.status === 204) return undefined as T
-    return (await response.json()) as T
+    try {
+      return (await response.json()) as T
+    } catch {
+      // A success without a JSON body is not what any route answers; it is reported like any other
+      // failure, in Portuguese, instead of as a parser error.
+      throw new ApiError(UNEXPECTED_RESPONSE_MESSAGE, response.status)
+    }
   }
 }
 
