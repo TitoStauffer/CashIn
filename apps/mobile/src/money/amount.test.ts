@@ -59,8 +59,8 @@ describe('compareAmounts and isZeroAmount', () => {
     expect(compareAmounts('100', '99.99')).toBe(1)
     expect(compareAmounts('10.5', '10.50')).toBe(0)
     expect(compareAmounts('-4.00', '0.00')).toBe(-1)
-    // As numbers these differ only past the 15th digit; as cents they are ordered exactly.
-    expect(compareAmounts('9007199254740993.01', '9007199254740993.00')).toBe(1)
+    // Both become the same JavaScript number (9007199254740994); as cents they are ordered exactly.
+    expect(compareAmounts('9007199254740993.02', '9007199254740993.01')).toBe(1)
   })
 
   it('knows a zero in any representation', () => {
