@@ -57,8 +57,8 @@
       "id": "format-change-keeps-the-same-columns",
       "package": "apps/mobile",
       "file": "apps/mobile/src/imports/CsvImportSetup.tsx",
-      "find": "inspect(next, keepColumns ? next.columns : undefined)",
-      "replace": "inspect(next, undefined)",
+      "find": "inspect(next, keepColumns)",
+      "replace": "inspect(next, false)",
       "command": [
         "npx",
         "jest",
@@ -155,7 +155,20 @@
       ],
       "timeoutSeconds": 180,
       "find": "onRetry={() => inspect(lastRequest.current.layout, lastRequest.current.keepColumns)}",
-      "replace": "onRetry={() => inspect(configuration ?? undefined, configuration?.columns)}"
+      "replace": "onRetry={() => inspect(lastRequest.current.layout, true)}"
+    },
+    {
+      "id": "kept-columns-are-the-ones-on-screen",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/imports/CsvImportSetup.tsx",
+      "find": "columns: keepColumns && current ? current.columns : result.suggestedMapping,",
+      "replace": "columns: keepColumns && layout ? layout.columns : result.suggestedMapping,",
+      "command": [
+        "npx",
+        "jest",
+        "src/imports/CsvImportSetup.test.tsx"
+      ],
+      "timeoutSeconds": 180
     }
   ]
 }

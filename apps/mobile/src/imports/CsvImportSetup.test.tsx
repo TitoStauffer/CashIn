@@ -72,6 +72,21 @@ describe('CsvImportSetup', () => {
     expect(selected('Descrição: não mapear')).toEqual({ selected: true })
   })
 
+  // Code Review of PR #130: the answer to a date or money format change brought back the columns of the
+  // moment it was asked, undoing a column fixed while it ran.
+  it('keeps a column fixed while a format inspection runs', async () => {
+    let release: (value: CsvInspection) => void = () => undefined
+    const inspectCsv = jest.fn()
+      .mockResolvedValueOnce(INSPECTION)
+      .mockReturnValueOnce(new Promise<CsvInspection>((resolve) => { release = resolve }))
+    await mount(fakeApi({ inspectCsv }))
+    await fireEvent.press(screen.getByRole('radio', { name: 'AAAA-MM-DD' }))
+    await fireEvent.press(screen.getByRole('radio', { name: 'Descrição: não mapear' }))
+    await act(async () => { release({ ...INSPECTION, detectedConfiguration: { ...INSPECTION.detectedConfiguration, dateFormat: 'yyyy-MM-dd' } }) })
+    expect(selected('Descrição: não mapear')).toEqual({ selected: true })
+    expect(selected('AAAA-MM-DD')).toEqual({ selected: true })
+  })
+
   it('applies only the latest inspection, never a slower earlier one', async () => {
     let releaseFirst: (value: CsvInspection) => void = () => undefined
     const slow = new Promise<CsvInspection>((resolve) => { releaseFirst = resolve })

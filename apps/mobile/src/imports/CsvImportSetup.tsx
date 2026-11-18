@@ -86,7 +86,7 @@ export function CsvImportSetup({
   const [amountSign, setAmountSign] = useState<CardAmountSign | null>(null)
   const latest = useRef(0)
   // The last inspection asked for, so a retry repeats exactly that request, columns policy included.
-  const lastRequest = useRef<{ layout?: CsvConfiguration; keepColumns?: CsvColumnMapping }>({})
+  const lastRequest = useRef<{ layout?: CsvConfiguration; keepColumns: boolean }>({ keepColumns: false })
   const mounted = useRef(true)
   useEffect(() => () => { mounted.current = false }, [])
 
@@ -94,16 +94,21 @@ export function CsvImportSetup({
   const { busy, feedback, setFeedback, run } = useActionRunner(noop)
 
   // Each inspection is numbered; an answer that is not the latest one is dropped, so a slow response to
-  // an earlier layout never replaces the columns and sample of the current one.
-  const requestInspection = useCallback((layout?: CsvConfiguration, keepColumns?: CsvColumnMapping) => {
+  // an earlier layout never replaces the columns and sample of the current one. When the columns are kept,
+  // they are the ones on screen when the answer arrives, so a column fixed meanwhile is not undone (Code
+  // Review of PR #130); otherwise the API's suggestion replaces them.
+  const requestInspection = useCallback((layout: CsvConfiguration | undefined, keepColumns: boolean) => {
     const request = ++latest.current
     void importApi.inspectCsv(file, layout)
       .then((result) => {
         if (!mounted.current || request !== latest.current) return
-        const next = { ...result.detectedConfiguration, columns: keepColumns ?? result.suggestedMapping }
-        setConfiguration(next)
+        setConfiguration((current) => ({
+          ...result.detectedConfiguration,
+          columns: keepColumns && current ? current.columns : result.suggestedMapping,
+        }))
+        // The first inspection, without a layout, never keeps columns: it is what the API detected.
+        if (!layout) setDetected({ ...result.detectedConfiguration, columns: result.suggestedMapping })
         setInspected({ columns: result.columns, sample: result.sample })
-        if (!layout) setDetected(next)
       })
       .catch((error: unknown) => {
         if (mounted.current && request === latest.current) setInspectError(messageOf(error, INSPECT_FAILED))
@@ -114,14 +119,14 @@ export function CsvImportSetup({
   }, [importApi, file])
 
   useEffect(() => {
-    requestInspection()
+    requestInspection(undefined, false)
     void importApi.listCsvMappings()
       .then(({ items }) => { if (mounted.current) setMappings(items) })
       // Without the models the file can still be set up by hand; the list is only a shortcut.
       .catch(() => undefined)
   }, [importApi, requestInspection])
 
-  const inspect = (layout?: CsvConfiguration, keepColumns?: CsvColumnMapping) => {
+  const inspect = (layout: CsvConfiguration | undefined, keepColumns: boolean) => {
     setInspecting(true)
     setInspectError(null)
     // A message about the previous layout no longer describes what is on screen.
@@ -137,7 +142,7 @@ export function CsvImportSetup({
     if (selectedId) setDirty(true)
     // The delimiter, the encoding and the header change the columns themselves; the date and money
     // formats only change how the same columns are read.
-    inspect(next, keepColumns ? next.columns : undefined)
+    inspect(next, keepColumns)
   }
 
   const changeColumn = (field: keyof CsvColumnMapping, value: string) => {
@@ -154,7 +159,7 @@ export function CsvImportSetup({
     setName(mapping?.name ?? '')
     if (!layout) return
     setConfiguration(layout)
-    inspect(layout, layout.columns)
+    inspect(layout, true)
   }
 
   // After a failed inspection the layout on screen may no longer match the sample (Code Review of PR #130),
