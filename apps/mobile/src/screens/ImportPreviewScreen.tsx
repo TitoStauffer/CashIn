@@ -33,10 +33,14 @@ export const SAVE_BEFORE_CONFIRMING = 'Salve ou cancele a edição da movimenta�
 
 type Loaded = { session: ImportSession; categories: Category[] }
 
-/** The message of a confirmation, from what the API answered: it returns to the preview on duplicates. */
+/**
+ * The message of a confirmation, from what the API answered. A return to the preview has more than one
+ * cause (a possible duplicate, a statement paid meanwhile, no valid line left), so none is named here:
+ * the lines carry the real one (Code Review of PR #129).
+ */
 function confirmationMessage(session: ImportSession): string {
   if (session.status === 'completed') return `Importação confirmada: ${session.summary.imported} movimentações importadas.`
-  if (session.status === 'preview') return 'A confirmação encontrou possíveis duplicidades e a prévia voltou para revisão.'
+  if (session.status === 'preview') return 'Nenhuma movimentação foi importada: a prévia voltou para revisão. Confira as movimentações sinalizadas.'
   return `Importação ${sessionStatusLabel(session).toLowerCase()}.`
 }
 

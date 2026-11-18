@@ -162,7 +162,7 @@ describe('ImportPreviewScreen', () => {
     await fireEvent.press(screen.getByRole('link', { name: 'Cancelar edição' }))
 
     await fireEvent.press(screen.getByRole('button', { name: 'Confirmar importação' }))
-    expect(await screen.findByText('A confirmação encontrou possíveis duplicidades e a prévia voltou para revisão.')).toBeTruthy()
+    expect(await screen.findByText('Nenhuma movimentação foi importada: a prévia voltou para revisão. Confira as movimentações sinalizadas.')).toBeTruthy()
     await fireEvent.press(screen.getByRole('button', { name: 'Confirmar importação' }))
     expect(await screen.findByText('Importação confirmada: 2 movimentações importadas.')).toBeTruthy()
   })

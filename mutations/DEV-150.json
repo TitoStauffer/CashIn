@@ -187,8 +187,8 @@
       "id": "confirmation-message-comes-from-the-response",
       "package": "apps/mobile",
       "file": "apps/mobile/src/screens/ImportPreviewScreen.tsx",
-      "find": "if (session.status === 'preview') return 'A confirmação encontrou",
-      "replace": "if (false) return 'A confirmação encontrou",
+      "find": "if (session.status === 'preview') return 'Nenhuma movimentação foi importada",
+      "replace": "if (false) return 'Nenhuma movimentação foi importada",
       "command": [
         "npx",
         "jest",
