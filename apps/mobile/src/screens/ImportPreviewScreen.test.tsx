@@ -18,7 +18,8 @@ const MARKET: ImportItem = {
 const DUPLICATE: ImportItem = {
   id: 't2', sequence: 2, date: '2026-11-06', description: 'Padaria', amount: '15.00', type: 'expense',
   categoryId: null, subcategoryId: null, validationStatus: 'duplicate', errorMessage: 'Possível duplicidade com uma importação anterior.',
-  canEdit: true, canIncludeDuplicate: true,
+  // As the API maps it: a duplicate is never edited, only imported anyway (postgres-financial-imports.session.ts).
+  canEdit: false, canIncludeDuplicate: true,
 }
 const PAYMENT: ImportItem = {
   id: 't3', sequence: 3, date: '2026-11-07', description: 'PGTO FATURA', amount: '300.00', type: 'transfer',
@@ -116,6 +117,7 @@ describe('ImportPreviewScreen', () => {
 
   it('imports a possible duplicate only when asked', async () => {
     const { importApi } = await mount()
+    expect(screen.queryByRole('link', { name: /^Editar movimentação 2/ })).toBeNull()
     await fireEvent.press(screen.getByRole('link', { name: 'Importar mesmo assim movimentação 2 de 06/11/2026, R$ 15,00 (Padaria)' }))
     expect(importApi.updateItem).toHaveBeenCalledWith('imp-1', 't2', expect.objectContaining({ includeDuplicate: true, description: 'Padaria' }))
     expect(await screen.findByText('A movimentação será importada mesmo sendo uma possível duplicidade.')).toBeTruthy()
@@ -178,7 +180,8 @@ describe('ImportPreviewScreen', () => {
 
   it('undoes a completed import after confirmation, or says why it cannot', async () => {
     const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => undefined)
-    const completed = { ...SESSION, status: 'completed' as const, canUndo: true }
+    // Outside the preview the API sends every item with canEdit false.
+    const completed = { ...SESSION, status: 'completed' as const, canUndo: true, items: SESSION.items?.map((item) => ({ ...item, canEdit: false })) }
     const { importApi } = await mount(fakeImportApi(completed))
     expect(screen.queryByRole('link', { name: /^Editar/ })).toBeNull()
     await fireEvent.press(screen.getByRole('link', { name: 'Desfazer importação' }))
