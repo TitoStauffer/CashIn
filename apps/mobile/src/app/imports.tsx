@@ -33,6 +33,7 @@ export default function Imports() {
       pickFile={() => pickImportFile()}
       refreshKey={refreshKey}
       onOpenImport={(importId) => router.push({ pathname: '/import-preview', params: { importId } })}
+      onOpenRules={() => router.push('/import-rules')}
     />
   )
 }

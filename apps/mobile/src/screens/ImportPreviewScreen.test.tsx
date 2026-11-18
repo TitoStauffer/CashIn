@@ -4,7 +4,7 @@ import { Alert } from 'react-native'
 import { ApiError } from '../api/client'
 import type { Category } from '../catalog/catalogApi'
 import type { ImportApi, ImportItem, ImportSession } from '../imports/importApi'
-import { ImportPreviewScreen, ITEMS_PER_PAGE, SAVE_BEFORE_CONFIRMING } from './ImportPreviewScreen'
+import { ImportPreviewScreen, ITEMS_PER_PAGE, RULE_CREATED, SAVE_BEFORE_CONFIRMING } from './ImportPreviewScreen'
 
 const FOOD: Category = { id: 'cat-food', name: 'Alimentação', nature: 'expense', subcategories: [{ id: 'sub-market', name: 'Mercado', categoryId: 'cat-food' }] }
 const HOME: Category = { id: 'cat-home', name: 'Casa', nature: 'expense', subcategories: [] }
@@ -52,6 +52,7 @@ function fakeImportApi(session: ImportSession = SESSION, overrides: Partial<Impo
     confirm: jest.fn(async () => ({ ...session, status: 'completed', summary: { ...session.summary, imported: 2 } })),
     discard: jest.fn(async () => ({ ...session, status: 'failed' })),
     undo: jest.fn(async () => ({ ...session, status: 'undone' })),
+    createRule: jest.fn(async () => ({})),
     ...overrides,
   } as unknown as ImportApi
 }
@@ -165,6 +166,27 @@ describe('ImportPreviewScreen', () => {
     expect(await screen.findByText('Nenhuma movimentação foi importada: a prévia voltou para revisão. Confira as movimentações sinalizadas.')).toBeTruthy()
     await fireEvent.press(screen.getByRole('button', { name: 'Confirmar importação' }))
     expect(await screen.findByText('Importação confirmada: 2 movimentações importadas.')).toBeTruthy()
+  })
+
+  // DEV-158: a rule is offered only from a line categorized by hand, and created only after confirmation.
+  it('creates a rule from a line categorized by hand, only after confirmation', async () => {
+    const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => undefined)
+    const manual: ImportItem = { ...MARKET, id: 't9', sequence: 9, description: ' Feira livre ', categorizationSource: 'manual' }
+    const { importApi } = await mount(fakeImportApi({ ...SESSION, items: [MARKET, manual, DUPLICATE] }))
+    expect(screen.queryByRole('link', { name: /^Criar regra a partir da movimentação 1/ })).toBeNull()
+    expect(screen.queryByRole('link', { name: /^Criar regra a partir da movimentação 2/ })).toBeNull()
+
+    await fireEvent.press(screen.getByRole('link', { name: 'Criar regra a partir da movimentação 9 de 05/11/2026, R$ 120,50 (Feira livre)' }))
+    expect(alert.mock.calls.at(-1)?.[1]).toBe('Classificar saídas com a descrição “Feira livre” como Alimentação › Mercado nas próximas importações desta carteira?')
+    expect(importApi.createRule).not.toHaveBeenCalled()
+    await pressAlertButton(alert, 'Cancelar')
+    expect(importApi.createRule).not.toHaveBeenCalled()
+
+    await fireEvent.press(screen.getByRole('link', { name: /^Criar regra a partir da movimentação 9/ }))
+    await pressAlertButton(alert, 'Criar regra')
+    expect(importApi.createRule).toHaveBeenCalledWith({ type: 'expense', description: 'Feira livre', categoryId: 'cat-food', subcategoryId: 'sub-market', isActive: true })
+    expect(await screen.findByText(RULE_CREATED)).toBeTruthy()
+    alert.mockRestore()
   })
 
   it('discards the preview only after confirmation', async () => {

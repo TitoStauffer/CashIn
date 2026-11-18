@@ -41,6 +41,7 @@ export default function RootLayout() {
           <Stack.Screen name="goal-contributions" options={{ title: 'Aportes' }} />
           <Stack.Screen name="imports" options={{ title: 'Importações' }} />
           <Stack.Screen name="import-preview" options={{ title: 'Prévia da importação' }} />
+          <Stack.Screen name="import-rules" options={{ title: 'Regras de categorização' }} />
         </Stack>
       </WalletProvider>
     </SessionProvider>
