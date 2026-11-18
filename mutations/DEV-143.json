@@ -149,7 +149,7 @@
       "package": "apps/mobile",
       "file": "apps/mobile/src/wallets/activeWallet.ts",
       "find": ".replace(/[^A-Za-z0-9._-]/g, '_')",
-      "replace": "",
+      "replace": ".slice(0)",
       "command": [
         "npx",
         "jest",
