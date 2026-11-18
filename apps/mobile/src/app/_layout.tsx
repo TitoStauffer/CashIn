@@ -35,6 +35,8 @@ export default function RootLayout() {
           <Stack.Screen name="incomes" options={{ title: 'Entradas' }} />
           <Stack.Screen name="expenses" options={{ title: 'Despesas' }} />
           <Stack.Screen name="quick-expense" options={{ title: 'Lançar despesa' }} />
+          <Stack.Screen name="cards" options={{ title: 'Cartões' }} />
+          <Stack.Screen name="card-statements" options={{ title: 'Faturas' }} />
         </Stack>
       </WalletProvider>
     </SessionProvider>

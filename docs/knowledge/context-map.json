@@ -16,7 +16,7 @@
       "documents": ["docs/knowledge/domain/transactions.md"]
     },
     {
-      "paths": ["apps/api/src/credit-cards/**", "apps/web/src/creditCards/**"],
+      "paths": ["apps/api/src/credit-cards/**", "apps/web/src/creditCards/**", "apps/mobile/src/cards/**"],
       "documents": ["docs/knowledge/domain/credit-cards.md", "docs/knowledge/domain/transactions.md"]
     },
     {

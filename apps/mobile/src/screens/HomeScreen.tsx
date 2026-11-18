@@ -8,10 +8,10 @@ import { colors, spacing, typography } from '../ui/theme'
 
 /**
  * The first screen after signing in. It names the account and the wallet in use, offers the quick
- * expense entry, opens the wallets, the expenses, the incomes, the categories and the payment methods,
- * and signs out. With the active wallet known, it heads the dashboard (DEV-147). Signing out always
- * ends on the login, even when the API cannot be reached (the session provider drops the token from the
- * device either way).
+ * expense entry, opens the wallets, the expenses, the incomes, the cards, the categories and the
+ * payment methods, and signs out. With the active wallet known, it heads the dashboard (DEV-147).
+ * Signing out always ends on the login, even when the API cannot be reached (the session provider drops
+ * the token from the device either way).
  */
 export function HomeScreen({
   user,
@@ -22,6 +22,7 @@ export function HomeScreen({
   onQuickExpense,
   onOpenExpenses,
   onOpenIncomes,
+  onOpenCards,
   onOpenCategories,
   onOpenPaymentMethods,
   onSignOut,
@@ -37,6 +38,7 @@ export function HomeScreen({
   onQuickExpense(): void
   onOpenExpenses(): void
   onOpenIncomes(): void
+  onOpenCards(): void
   onOpenCategories(): void
   onOpenPaymentMethods(): void
   onSignOut(): Promise<void>
@@ -61,6 +63,7 @@ export function HomeScreen({
       <LinkButton label="Carteiras" onPress={onOpenWallets} />
       <LinkButton label="Despesas" onPress={onOpenExpenses} />
       <LinkButton label="Entradas" onPress={onOpenIncomes} />
+      <LinkButton label="Cartões" onPress={onOpenCards} />
       <LinkButton label="Categorias" onPress={onOpenCategories} />
       <LinkButton label="Formas de pagamento" onPress={onOpenPaymentMethods} />
       <PrimaryButton label="Sair" onPress={signOut} busy={busy} />

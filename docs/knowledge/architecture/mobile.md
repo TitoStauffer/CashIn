@@ -65,7 +65,7 @@ O app fica em `apps/mobile`, com Expo SDK 58, React Native e TypeScript estrito,
 
 ## Despesas (DEV-146)
 
-- **Rotas:** `expenses` (lista do mês) e `quick-expense` (o caminho curto, aberto pelo botão "Lançar despesa" da Home), ambas pelo `activeWalletGate`. As chamadas ficam em `src/expenses/expenseApi.ts`, que também lista os cartões; a gestão de cartões e faturas fica no épico Mobile 2.
+- **Rotas:** `expenses` (lista do mês) e `quick-expense` (o caminho curto, aberto pelo botão "Lançar despesa" da Home), ambas pelo `activeWalletGate`. As chamadas ficam em `src/expenses/expenseApi.ts`, que também lista os cartões para a compra no crédito; o cadastro de cartões e as faturas ficam em `cards` (DEV-148).
 - **Formulário compartilhado:** `src/expenses/ExpenseForm.tsx` serve à lista e ao lançamento rápido. No modo compacto mostra só valor, categoria e forma de pagamento, e a data é a de hoje. Depois de lançar, o lançamento rápido começa vazio de novo, pronto para a próxima despesa.
 - **Forma de pagamento:** uma despesa nova só oferece formas e cartões ativos, como a API exige. A edição mantém a forma e o cartão que a despesa já tem, mesmo inativos. No crédito, o cartão é obrigatório antes de chamar a API (com a mesma mensagem dela). Ao trocar para outra forma, um cartão escolhido antes é descartado, porque a API recusa cartão fora do crédito.
 - **Saldo de benefício:** a API não recusa despesa por falta de saldo; ela atribui a despesa ao saldo da natureza da forma (dinheiro, VA/VR ou AHO). O formulário diz qual saldo a forma escolhida reduz, sem inventar um bloqueio que a API não tem.
@@ -78,6 +78,13 @@ O app fica em `apps/mobile`, com Expo SDK 58, React Native e TypeScript estrito,
 - **Transferências:** entre carteiras, ficam em linhas próprias ("Enviadas" e "Recebidas") e nunca entram em Entradas nem em Despesas, como na Web.
 - **Metas:** acumulado, alvo e percentual da meta vêm da API; o aporte do mês vem de `contributionsByGoal`, e meta sem item teve R$ 0,00 no mês.
 - **Vazio:** o mês sem nenhum total diferente de zero (estornos contam) diz "Nenhum lançamento".
+
+## Cartões e faturas (DEV-148)
+
+- **Rotas:** `cards` (lista, cadastro e edição) e `card-statements` (faturas de um cartão), pelo `activeWalletGate`. As chamadas ficam em `src/cards/creditCardApi.ts`.
+- **Cartão:** nunca é excluído, porque compras e faturas guardam o histórico. É desativado e pode ser ativado de novo. A edição manda só os campos alterados, e os dias são inteiros de 1 a 31.
+- **Fatura:** compras, estornos, total, pagamentos e o que falta pagar aparecem como a API calculou, sem recálculo. Os estornos entram pela importação; não há rota para lançá-los à mão, então o app só os mostra, e os sem compra identificada são marcados.
+- **Pagamento:** só em fatura em aberto. Sem valor, o app omite `amount` e a API quita o que falta; com valor, o pagamento é parcial e vai em decimal exato. Recusas como "os créditos cobrem as compras" aparecem como a mensagem da API.
 
 ## Qualidade
 
@@ -119,6 +126,7 @@ A API precisa estar acessível pelo celular. O `docker compose up` publica a por
 - [`apps/mobile/src/expenses/ExpenseForm.tsx`](../../../apps/mobile/src/expenses/ExpenseForm.tsx)
 - [`apps/mobile/src/dashboard/dashboardApi.ts`](../../../apps/mobile/src/dashboard/dashboardApi.ts)
 - [`apps/mobile/src/dashboard/dashboardView.ts`](../../../apps/mobile/src/dashboard/dashboardView.ts)
+- [`apps/mobile/src/cards/creditCardApi.ts`](../../../apps/mobile/src/cards/creditCardApi.ts)
 - [`docs/dashboard-summary-contract.md`](../../dashboard-summary-contract.md) — contrato do resumo que o dashboard mostra sem recalcular
 - [`apps/mobile/src/money/amount.ts`](../../../apps/mobile/src/money/amount.ts)
 - [`apps/mobile/src/wallets/activeWalletGate.ts`](../../../apps/mobile/src/wallets/activeWalletGate.ts)

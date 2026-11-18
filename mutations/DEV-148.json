@@ -1,0 +1,174 @@
+{
+  "ticket": "DEV-148",
+  "mutations": [
+    {
+      "id": "card-route-segments-are-encoded",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/cards/creditCardApi.ts",
+      "find": "const card = (creditCardId: string) => `/credit-cards/${encodeURIComponent(creditCardId)}`",
+      "replace": "const card = (creditCardId: string) => `/credit-cards/${creditCardId}`",
+      "command": [
+        "npx",
+        "jest",
+        "src/cards/creditCardApi.test.ts"
+      ],
+      "timeoutSeconds": 180
+    },
+    {
+      "id": "day-is-from-1-to-31",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/screens/CardsScreen.tsx",
+      "find": "return day >= 1 && day <= 31 ? day : null",
+      "replace": "return day",
+      "command": [
+        "npx",
+        "jest",
+        "src/screens/CardsScreen.test.tsx"
+      ],
+      "timeoutSeconds": 180
+    },
+    {
+      "id": "blank-nickname-is-refused-before-the-api",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/screens/CardsScreen.tsx",
+      "find": "if (!nickname) return setFeedback",
+      "replace": "if (false) return setFeedback",
+      "command": [
+        "npx",
+        "jest",
+        "src/screens/CardsScreen.test.tsx"
+      ],
+      "timeoutSeconds": 180
+    },
+    {
+      "id": "card-edit-sends-only-what-changed",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/screens/CardsScreen.tsx",
+      "find": "...(closingDay !== original.closingDay ? { closingDay } : {}),",
+      "replace": "...{ closingDay },",
+      "command": [
+        "npx",
+        "jest",
+        "src/screens/CardsScreen.test.tsx"
+      ],
+      "timeoutSeconds": 180
+    },
+    {
+      "id": "unchanged-card-edit-calls-nothing",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/screens/CardsScreen.tsx",
+      "find": "if (Object.keys(changes).length === 0) return setEditor(null)",
+      "replace": "if (false) return setEditor(null)",
+      "command": [
+        "npx",
+        "jest",
+        "src/screens/CardsScreen.test.tsx"
+      ],
+      "timeoutSeconds": 180
+    },
+    {
+      "id": "card-toggle-flips-the-active-state",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/screens/CardsScreen.tsx",
+      "find": "{ isActive: !card.isActive }",
+      "replace": "{ isActive: card.isActive }",
+      "command": [
+        "npx",
+        "jest",
+        "src/screens/CardsScreen.test.tsx"
+      ],
+      "timeoutSeconds": 180
+    },
+    {
+      "id": "old-wallet-cards-leave-the-screen",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/screens/CardsScreen.tsx",
+      "find": "const cards = loaded?.walletId === walletId ? loaded.cards : null",
+      "replace": "const cards = loaded ? loaded.cards : null",
+      "command": [
+        "npx",
+        "jest",
+        "src/screens/CardsScreen.test.tsx"
+      ],
+      "timeoutSeconds": 180
+    },
+    {
+      "id": "full-payment-leaves-the-amount-out",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/screens/CardStatementsScreen.tsx",
+      "find": "amount ? { date, amount } : { date }",
+      "replace": "{ date, amount: amount ?? '' }",
+      "command": [
+        "npx",
+        "jest",
+        "src/screens/CardStatementsScreen.test.tsx"
+      ],
+      "timeoutSeconds": 180
+    },
+    {
+      "id": "partial-payment-sends-the-exact-amount",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/screens/CardStatementsScreen.tsx",
+      "find": "amount = parsed.amount",
+      "replace": "amount = String(Number(parsed.amount))",
+      "command": [
+        "npx",
+        "jest",
+        "src/screens/CardStatementsScreen.test.tsx"
+      ],
+      "timeoutSeconds": 180
+    },
+    {
+      "id": "settled-statement-takes-no-payment",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/screens/CardStatementsScreen.tsx",
+      "find": "const settled = statement.paidDate !== null",
+      "replace": "const settled = false",
+      "command": [
+        "npx",
+        "jest",
+        "src/screens/CardStatementsScreen.test.tsx"
+      ],
+      "timeoutSeconds": 180
+    },
+    {
+      "id": "statement-total-is-the-api-one",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/screens/CardStatementsScreen.tsx",
+      "find": "<Line label=\"Total da fatura\" amount={statement.totalAmount} />",
+      "replace": "<Line label=\"Total da fatura\" amount={statement.purchasesAmount} />",
+      "command": [
+        "npx",
+        "jest",
+        "src/screens/CardStatementsScreen.test.tsx"
+      ],
+      "timeoutSeconds": 180
+    },
+    {
+      "id": "month-change-drops-the-payment-form",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/screens/CardStatementsScreen.tsx",
+      "find": "if (formKey !== key) {",
+      "replace": "if (false) {",
+      "command": [
+        "npx",
+        "jest",
+        "src/screens/CardStatementsScreen.test.tsx"
+      ],
+      "timeoutSeconds": 180
+    },
+    {
+      "id": "old-month-statements-leave-the-screen",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/screens/CardStatementsScreen.tsx",
+      "find": "const statements = loaded?.key === key ? loaded.statements : null",
+      "replace": "const statements = loaded ? loaded.statements : null",
+      "command": [
+        "npx",
+        "jest",
+        "src/screens/CardStatementsScreen.test.tsx"
+      ],
+      "timeoutSeconds": 180
+    }
+  ]
+}
