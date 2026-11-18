@@ -1,0 +1,130 @@
+# Production stack for the VPS (DEV-159): Caddy (HTTPS and the static Web), the API and PostgreSQL. NOT
+# deployed by this repository: applying it requires an explicit request (docs/knowledge/runbooks/production-vps.md).
+#
+# Only Caddy publishes ports, 80 and 443. The database lives on an internal network that only the API
+# joins; the API reaches the observability collector over the external network created by
+# deploy/observability, which must be up first. Rules checked by check-compose.mjs.
+#
+# Required environment, from deploy/production/.env kept outside version control (see .env.example).
+name: saldocerto
+
+x-logging: &logging
+  # Container logs rotate, so they never fill the disk; the API also ships its logs to Loki.
+  driver: json-file
+  options: { max-size: "10m", max-file: "3" }
+
+services:
+  proxy:
+    build:
+      context: ../../apps/web
+      dockerfile: Dockerfile.production
+    environment:
+      SITE_ADDRESS: ${SITE_ADDRESS:?set SITE_ADDRESS in deploy/production/.env}
+      ACME_EMAIL: ${ACME_EMAIL:?set ACME_EMAIL in deploy/production/.env}
+    # The host side is 80 and 443 on the VPS; the variables exist only so the smoke test can run on a machine
+    # where those ports are taken. The certificate authority reaches the VPS only on 80 and 443.
+    ports:
+      - "${HTTP_PORT:-80}:80"
+      - "${HTTPS_PORT:-443}:443"
+      - "${HTTPS_PORT:-443}:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      # Certificates and the ACME account: losing them means asking the authority again, which is rate limited.
+      - caddy_data:/data
+      - caddy_config:/config
+    networks:
+      edge:
+        # Fixed, so the API can trust exactly this address (TRUSTED_PROXIES below).
+        ipv4_address: 172.30.10.2
+    depends_on:
+      api:
+        condition: service_healthy
+    cap_drop: [ALL]
+    cap_add: [NET_BIND_SERVICE]
+    security_opt: ["no-new-privileges:true"]
+    restart: unless-stopped
+    logging: *logging
+    deploy:
+      resources:
+        limits: { cpus: "0.50", memory: 256M }
+
+  api:
+    build:
+      context: ../../apps/api
+      dockerfile: Dockerfile.production
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      DATABASE_URL: postgresql://${POSTGRES_USER:?set POSTGRES_USER}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in deploy/production/.env}@db:5432/${POSTGRES_DB:?set POSTGRES_DB}
+      WEB_BASE_URL: https://${SITE_ADDRESS:?set SITE_ADDRESS in deploy/production/.env}
+      TRUSTED_PROXIES: 172.30.10.2
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_SECURE: ${SMTP_SECURE:-false}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_FROM: ${SMTP_FROM:-}
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
+      OTEL_LOGS_EXPORTER: otlp
+      OTEL_METRICS_EXPORTER: otlp
+      OTEL_SERVICE_NAME: saldocerto-api
+    networks: [edge, data, observability]
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/health').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    restart: unless-stopped
+    logging: *logging
+    deploy:
+      resources:
+        limits: { cpus: "1.00", memory: 512M }
+
+  db:
+    image: postgres:17-alpine@sha256:a77aa70e641402a21411b92b721c58d10f23b50ae5fdd2333efd22d166e1e5f7
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:?set POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER:?set POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in deploy/production/.env}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks: [data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    security_opt: ["no-new-privileges:true"]
+    restart: unless-stopped
+    logging: *logging
+    deploy:
+      resources:
+        limits: { cpus: "1.00", memory: 1G }
+
+networks:
+  # Caddy and the API. Not internal: Caddy talks to the certificate authority and the API sends email.
+  edge:
+    ipam:
+      config:
+        - subnet: 172.30.10.0/24
+          # Containers without a fixed address take one from this upper half, so the proxy's fixed
+          # 172.30.10.2 is never handed to another container started before it.
+          ip_range: 172.30.10.128/25
+  # The database and the API only.
+  data:
+    internal: true
+  # Created by deploy/observability; only its collector and this API join it.
+  observability:
+    name: saldocerto-observability
+    external: true
+
+volumes:
+  postgres_data:
+  caddy_data:
+  caddy_config:

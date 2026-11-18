@@ -47,6 +47,7 @@ O `context-map.json` seleciona automaticamente apenas as notas relacionadas aos 
 - [`learnings/README.md`](learnings/README.md): aprendizados obtidos em reviews, incidentes e ciclos de correção.
 - [`evidence/README.md`](evidence/README.md): snapshots auditáveis, manifesto das fontes e relatório de validação.
 - [`runbooks/failed-ci.md`](runbooks/failed-ci.md): diagnóstico inicial; há runbooks específicos para falhas de Agents e Jira.
+- [`runbooks/production-vps.md`](runbooks/production-vps.md): stack de produção da VPS (Caddy, API e PostgreSQL), com primeiro deploy, verificação, atualização, rollback, backup e builds do app.
 - [`runbooks/observability-vps.md`](runbooks/observability-vps.md): stack de observabilidade da VPS, com aplicar, acessar, rotacionar a senha do Grafana e recuperar.
 
 ## Regra de manutenção
