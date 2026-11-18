@@ -2,6 +2,7 @@ import Constants from 'expo-constants'
 
 import { createAuthApi, type AuthApi } from '../auth/authApi'
 import { createCatalogApi, type CatalogApi } from '../catalog/catalogApi'
+import { createExpenseApi, type ExpenseApi } from '../expenses/expenseApi'
 import { createIncomeApi, type IncomeApi } from '../incomes/incomeApi'
 import { tokenStorage } from '../auth/tokenStorage'
 import { resolveApiBaseUrl } from '../config/apiUrl'
@@ -57,3 +58,4 @@ export const appAuthApi: AuthApi = createAuthApi(lazyClient)
 export const appWalletApi: WalletApi = createWalletApi(lazyClient)
 export const appCatalogApi: CatalogApi = createCatalogApi(lazyClient)
 export const appIncomeApi: IncomeApi = createIncomeApi(lazyClient)
+export const appExpenseApi: ExpenseApi = createExpenseApi(lazyClient)
