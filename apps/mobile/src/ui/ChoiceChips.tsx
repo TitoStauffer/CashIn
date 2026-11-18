@@ -2,13 +2,16 @@ import { Pressable, StyleSheet, Text, View } from 'react-native'
 
 import { colors, spacing, typography } from './theme'
 
-/** One choice among a few, shown as chips. Each chip is a radio whose label is its accessibility name. */
+/**
+ * One choice among a few, shown as chips. Each chip is a radio whose label is its accessibility name, unless
+ * the option names itself: several groups that offer the same labels need names that say which group.
+ */
 export function ChoiceChips<T extends string>({
   options,
   value,
   onChange,
 }: {
-  options: readonly { value: T; label: string }[]
+  options: readonly { value: T; label: string; accessibilityLabel?: string }[]
   value: T
   onChange(value: T): void
 }) {
@@ -21,7 +24,7 @@ export function ChoiceChips<T extends string>({
             key={option.value}
             accessibilityRole="radio"
             accessibilityState={{ selected }}
-            accessibilityLabel={option.label}
+            accessibilityLabel={option.accessibilityLabel ?? option.label}
             onPress={() => onChange(option.value)}
             style={[styles.chip, selected && styles.chipSelected]}
           >

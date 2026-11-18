@@ -2,6 +2,8 @@ import { formatAmount } from '../money/amount'
 import { formatDate } from '../period/period'
 import type {
   CounterpartWallet,
+  CsvColumnMapping,
+  CsvConfiguration,
   ImportItem,
   ImportItemInput,
   ImportItemStatus,
@@ -269,3 +271,32 @@ export function itemName(item: ImportItem): string {
 export function itemDate(item: Pick<ImportItem, 'date'>): string {
   return item.date ? formatDate(item.date) : 'data inválida'
 }
+
+// --- CSV layouts, as the Web's `isCsvConfigurationValid` checks them before an upload. ---
+
+export const CSV_COLUMN_FIELDS: { key: keyof CsvColumnMapping; label: string }[] = [
+  { key: 'date', label: 'Data' },
+  { key: 'description', label: 'Descrição' },
+  { key: 'amount', label: 'Valor único' },
+  { key: 'credit', label: 'Crédito' },
+  { key: 'debit', label: 'Débito' },
+  { key: 'externalId', label: 'Identificador externo' },
+]
+
+/**
+ * Whether a layout can be sent: every mapped column exists in this file and is used once, the date is
+ * mapped, and exactly one money layout is used — `amount` alone, or `credit` and `debit` together.
+ */
+export function isCsvConfigurationValid(configuration: CsvConfiguration | null, columns: { index: number }[]): boolean {
+  if (!configuration) return false
+  const available = new Set(columns.map((column) => column.index))
+  const mapped = Object.values(configuration.columns).filter((index): index is number => index !== null)
+  const { amount, credit, debit } = configuration.columns
+  const onlyAmount = amount !== null && credit === null && debit === null
+  const onlyCreditAndDebit = amount === null && credit !== null && debit !== null
+  return mapped.every((index) => available.has(index))
+    && new Set(mapped).size === mapped.length
+    && Number.isInteger(configuration.columns.date)
+    && (onlyAmount || onlyCreditAndDebit)
+}
+

@@ -95,10 +95,18 @@ O app fica em `apps/mobile`, com Expo SDK 58, React Native e TypeScript estrito,
 
 ## Importação OFX (DEV-150)
 
-- **Rotas:** `imports` (nova importação e histórico) e `import-preview` (uma importação), pelo `activeWalletGate`. As chamadas ficam em `src/imports/importApi.ts`, seguindo [`docs/financial-imports-contract.md`](../../financial-imports-contract.md). CSV com modelos (DEV-157) e regras de categorização (DEV-158) chegam em Histórias próprias.
+- **Rotas:** `imports` (nova importação e histórico) e `import-preview` (uma importação), pelo `activeWalletGate`. As chamadas ficam em `src/imports/importApi.ts`, seguindo [`docs/financial-imports-contract.md`](../../financial-imports-contract.md). O CSV entra pela mesma tela (DEV-157, abaixo), e as regras de categorização chegam na DEV-158.
 - **Arquivo:** escolhido pelo `expo-document-picker` em `src/imports/pickImportFile.ts` e enviado como veio, em `application/octet-stream`, com o nome em `X-File-Name` e `X-File-Format: ofx`. A fatura leva o cartão ativo em `X-Credit-Card-Id`. O cliente HTTP aceita esse corpo binário (`rawBody`), um prazo maior para o envio e, da rota, só cabeçalhos próprios `X-`, sem diferenciar maiúsculas e nunca o `X-Wallet-Id`; qualquer outro nome é recusado antes da requisição. Tamanho, formato e conteúdo são decididos pela API, e o app mostra a mensagem dela. O conteúdo nunca é lido, mostrado nem registrado em log, e um teste falha se o console for usado durante o envio.
 - **Prévia:** resumo, faturas e situação de cada linha são os da API, lidos de novo depois de cada ação. Cada linha editável corrige data, descrição, tipo, categoria e subcategoria; na fatura, a fatura de destino entre as três que a API aceita; no extrato, a conciliação de uma transferência, escolhida entre as candidatas que o próprio item traz. Trocar o tipo limpa categoria e conciliação, e trocar a data volta à fatura calculada por ela. Uma possível duplicidade só entra com "Importar mesmo assim". As linhas aparecem em páginas de 50.
 - **Confirmar, descartar e desfazer:** a confirmação fica indisponível enquanto uma linha está em edição. A mensagem vem da resposta. Quando a API devolve a sessão à prévia, o app diz que nada foi importado e manda conferir as linhas sinalizadas, sem nomear uma causa: pode ser duplicidade, fatura paga no meio-tempo ou nenhuma linha válida. Descartar e desfazer pedem confirmação, e o desfazer aparece só quando `canUndo` permite; senão, o app mostra `undoBlockedReason`.
+
+## Importação CSV (DEV-157)
+
+- **Fluxo:** na tela `imports`, o formato CSV abre a configuração (`src/imports/CsvImportSetup.tsx`) antes do envio. A API inspeciona o arquivo (`POST /financial-imports/csv/inspect`) e sugere delimitador, codificação, cabeçalho, formatos de data e valor e as colunas. A pessoa corrige o que precisar, e a amostra mostrada é sempre a que a API devolveu. A prévia, a confirmação e o desfazer são os da DEV-150.
+- **Nova inspeção:** mudar delimitador, codificação ou cabeçalho pede uma nova inspeção e adota as colunas sugeridas, porque as próprias colunas mudam. Mudar o formato da data ou do valor mantém o mapeamento que estiver na tela quando a resposta chegar, inclusive uma coluna corrigida durante a análise. Só a resposta da inspeção mais recente é aplicada, e o envio fica indisponível enquanto uma inspeção corre, para o arquivo seguir com o que a amostra mostra. Depois de uma inspeção que falhou, envio e salvamento de modelo ficam bloqueados até uma nova inspeção dar certo, e "Tentar novamente" repete exatamente o pedido que falhou, inclusive a regra de manter ou trocar as colunas.
+- **Mapeamento:** a data é obrigatória, e o valor usa exatamente um formato: `amount` sozinho, ou `credit` e `debit` juntos. Cada coluna é usada uma vez e precisa existir no arquivo, como na Web (`isCsvConfigurationValid`).
+- **Modelos da carteira:** um modelo escolhido e não alterado vai pelo id (`X-Csv-Mapping-Id`); qualquer ajuste manda o layout da tela (`X-Csv-Mapping`, nunca os dois). O modelo é criado ou atualizado pelo nome, e a mensagem de sucesso traz o nome devolvido pela API.
+- **Fatura:** um CSV de fatura exige dizer como o arquivo mostra as compras (`X-Card-Amount-Sign`); o OFX não manda esse cabeçalho.
 
 ## Qualidade
 
@@ -144,6 +152,7 @@ A API precisa estar acessível pelo celular. O `docker compose up` publica a por
 - [`apps/mobile/src/goals/goalApi.ts`](../../../apps/mobile/src/goals/goalApi.ts)
 - [`apps/mobile/src/imports/importApi.ts`](../../../apps/mobile/src/imports/importApi.ts)
 - [`apps/mobile/src/imports/importModel.ts`](../../../apps/mobile/src/imports/importModel.ts)
+- [`apps/mobile/src/imports/CsvImportSetup.tsx`](../../../apps/mobile/src/imports/CsvImportSetup.tsx)
 - [`docs/financial-imports-contract.md`](../../financial-imports-contract.md) — contrato da importação que o app segue
 - [`docs/dashboard-summary-contract.md`](../../dashboard-summary-contract.md) — contrato do resumo que o dashboard mostra sem recalcular
 - [`apps/mobile/src/money/amount.ts`](../../../apps/mobile/src/money/amount.ts)

@@ -1,0 +1,187 @@
+{
+  "ticket": "DEV-157",
+  "mutations": [
+    {
+      "id": "saved-model-goes-by-id",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/imports/importApi.ts",
+      "find": "if ('mappingId' in options.csvMapping) headers['X-Csv-Mapping-Id']",
+      "replace": "if (false) headers['X-Csv-Mapping-Id']",
+      "command": [
+        "npx",
+        "jest",
+        "src/imports/importApi.test.ts"
+      ],
+      "timeoutSeconds": 180
+    },
+    {
+      "id": "card-csv-says-how-it-writes-purchases",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/imports/importApi.ts",
+      "find": "headers['X-Card-Amount-Sign'] = options.card.amountSign",
+      "replace": "void 0",
+      "command": [
+        "npx",
+        "jest",
+        "src/imports/importApi.test.ts"
+      ],
+      "timeoutSeconds": 180
+    },
+    {
+      "id": "inspection-sends-the-layout",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/imports/importApi.ts",
+      "find": "...(configuration ? { 'X-Csv-Mapping': encodedJson(configuration) } : {}),",
+      "replace": "...({}),",
+      "command": [
+        "npx",
+        "jest",
+        "src/imports/importApi.test.ts"
+      ],
+      "timeoutSeconds": 180
+    },
+    {
+      "id": "only-the-latest-inspection-applies",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/imports/CsvImportSetup.tsx",
+      "find": "if (!mounted.current || request !== latest.current) return",
+      "replace": "if (!mounted.current) return",
+      "command": [
+        "npx",
+        "jest",
+        "src/imports/CsvImportSetup.test.tsx"
+      ],
+      "timeoutSeconds": 180
+    },
+    {
+      "id": "format-change-keeps-the-same-columns",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/imports/CsvImportSetup.tsx",
+      "find": "inspect(next, keepColumns)",
+      "replace": "inspect(next, false)",
+      "command": [
+        "npx",
+        "jest",
+        "src/imports/CsvImportSetup.test.tsx"
+      ],
+      "timeoutSeconds": 180
+    },
+    {
+      "id": "unchanged-model-is-sent-by-id",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/imports/CsvImportSetup.tsx",
+      "find": "const csvMapping = selectedId && !dirty ? { mappingId: selectedId } : { configuration }",
+      "replace": "const csvMapping = { configuration }",
+      "command": [
+        "npx",
+        "jest",
+        "src/imports/CsvImportSetup.test.tsx"
+      ],
+      "timeoutSeconds": 180
+    },
+    {
+      "id": "card-csv-requires-the-amount-sign",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/imports/CsvImportSetup.tsx",
+      "find": "if (card && !amountSign) return setFeedback",
+      "replace": "if (false) return setFeedback",
+      "command": [
+        "npx",
+        "jest",
+        "src/imports/CsvImportSetup.test.tsx"
+      ],
+      "timeoutSeconds": 180
+    },
+    {
+      "id": "incomplete-layout-is-not-sent",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/imports/CsvImportSetup.tsx",
+      "find": "!inspectError && isCsvConfigurationValid(configuration, inspected?.columns ?? [])",
+      "replace": "!inspectError && true",
+      "command": [
+        "npx",
+        "jest",
+        "src/imports/CsvImportSetup.test.tsx"
+      ],
+      "timeoutSeconds": 180
+    },
+    {
+      "id": "credit-and-debit-go-together",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/imports/importModel.ts",
+      "find": "const onlyCreditAndDebit = amount === null && credit !== null && debit !== null",
+      "replace": "const onlyCreditAndDebit = amount === null && (credit !== null || debit !== null)",
+      "command": [
+        "npx",
+        "jest",
+        "src/imports/importModel.test.ts"
+      ],
+      "timeoutSeconds": 180
+    },
+    {
+      "id": "csv-opens-its-setup-first",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/screens/ImportsScreen.tsx",
+      "find": "if (!picked || format === 'csv') return",
+      "replace": "if (!picked) return",
+      "command": [
+        "npx",
+        "jest",
+        "src/screens/ImportsScreen.test.tsx"
+      ],
+      "timeoutSeconds": 180
+    },
+    {
+      "id": "failed-inspection-blocks-sending",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/imports/CsvImportSetup.tsx",
+      "command": [
+        "npx",
+        "jest",
+        "src/imports/CsvImportSetup.test.tsx"
+      ],
+      "timeoutSeconds": 180,
+      "find": "const ready = !inspecting && !inspectError && isCsvConfigurationValid",
+      "replace": "const ready = !inspecting && isCsvConfigurationValid"
+    },
+    {
+      "id": "retry-repeats-the-failed-request",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/imports/CsvImportSetup.tsx",
+      "command": [
+        "npx",
+        "jest",
+        "src/imports/CsvImportSetup.test.tsx"
+      ],
+      "timeoutSeconds": 180,
+      "find": "onRetry={() => inspect(lastRequest.current.layout, lastRequest.current.keepColumns)}",
+      "replace": "onRetry={() => inspect(lastRequest.current.layout, true)}"
+    },
+    {
+      "id": "kept-columns-are-the-ones-on-screen",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/imports/CsvImportSetup.tsx",
+      "find": "columns: keepColumns && current ? current.columns : result.suggestedMapping,",
+      "replace": "columns: keepColumns && layout ? layout.columns : result.suggestedMapping,",
+      "command": [
+        "npx",
+        "jest",
+        "src/imports/CsvImportSetup.test.tsx"
+      ],
+      "timeoutSeconds": 180
+    },
+    {
+      "id": "repeated-header-names-its-position",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/imports/CsvImportSetup.tsx",
+      "find": "headers.indexOf(column.label) !== headers.lastIndexOf(column.label) ?",
+      "replace": "false ?",
+      "command": [
+        "npx",
+        "jest",
+        "src/imports/CsvImportSetup.test.tsx"
+      ],
+      "timeoutSeconds": 180
+    }
+  ]
+}
