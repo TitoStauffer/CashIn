@@ -46,10 +46,11 @@ async function mount({
   walletId = 'w1',
 }: { importApi?: ImportApi; cards?: CreditCard[]; pickFile?: jest.Mock; walletId?: string } = {}) {
   const onOpenImport = jest.fn()
+  const onOpenRules = jest.fn()
   const cardApi = { list: jest.fn(async () => ({ items: cards })) }
-  const view = await render(<ImportsScreen walletId={walletId} importApi={importApi} cardApi={cardApi} pickFile={pickFile} onOpenImport={onOpenImport} />)
+  const view = await render(<ImportsScreen walletId={walletId} importApi={importApi} cardApi={cardApi} pickFile={pickFile} onOpenImport={onOpenImport} onOpenRules={onOpenRules} />)
   await screen.findByText('extrato.ofx')
-  return { importApi, pickFile, onOpenImport, cardApi, view }
+  return { importApi, pickFile, onOpenImport, onOpenRules, cardApi, view }
 }
 
 describe('ImportsScreen', () => {
@@ -59,6 +60,12 @@ describe('ImportsScreen', () => {
     expect(screen.getByText('2 prontas · 1 sem categoria · 1 duplicadas · 0 inválidas · 0 importadas')).toBeTruthy()
     await fireEvent.press(screen.getByRole('link', { name: 'Abrir importação de extrato.ofx em 18/11/2026' }))
     expect(onOpenImport).toHaveBeenCalledWith('imp-1')
+  })
+
+  it('opens the categorization rules', async () => {
+    const { onOpenRules } = await mount()
+    await fireEvent.press(screen.getByRole('link', { name: 'Regras de categorização' }))
+    expect(onOpenRules).toHaveBeenCalledTimes(1)
   })
 
   it('sends a bank statement as chosen and opens its preview', async () => {
@@ -157,7 +164,7 @@ describe('ImportsScreen', () => {
       .mockResolvedValue({ items: [] })
     const { view } = await mount({ importApi: fakeImportApi({ list }) })
     await fireEvent.press(screen.getByRole('radio', { name: 'Fatura de cartão' }))
-    await view.rerender(<ImportsScreen walletId="w2" importApi={fakeImportApi({ list })} cardApi={{ list: async () => ({ items: [CARD] }) }} pickFile={async () => null} onOpenImport={() => undefined} />)
+    await view.rerender(<ImportsScreen walletId="w2" importApi={fakeImportApi({ list })} cardApi={{ list: async () => ({ items: [CARD] }) }} pickFile={async () => null} onOpenImport={() => undefined} onOpenRules={() => undefined} />)
     expect(await screen.findByText('Carteira não encontrada.')).toBeTruthy()
     await fireEvent.press(screen.getByRole('button', { name: 'Tentar novamente' }))
     expect(await screen.findByText('Nenhuma importação nesta carteira.')).toBeTruthy()

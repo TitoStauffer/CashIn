@@ -1,5 +1,5 @@
 import type { ApiClient, ApiRequestOptions } from '../api/client'
-import { createImportApi, type CsvConfiguration, type ImportApi, type ImportItemInput, UPLOAD_TIMEOUT_MS } from './importApi'
+import { type CategorizationRuleInput, createImportApi, type CsvConfiguration, type ImportApi, type ImportItemInput, UPLOAD_TIMEOUT_MS } from './importApi'
 
 function recordingClient() {
   const calls: { path: string; options?: ApiRequestOptions }[] = []
@@ -11,6 +11,7 @@ function recordingClient() {
 }
 
 const INPUT: ImportItemInput = { date: '2026-11-05', description: 'Mercado', type: 'expense', categoryId: 'cat-1', subcategoryId: null }
+const RULE: CategorizationRuleInput = { type: 'expense', description: 'Padaria', categoryId: 'cat-1', subcategoryId: null, isActive: false }
 const CSV: CsvConfiguration = {
   delimiter: ';', encoding: 'utf-8', hasHeader: true, dateFormat: 'dd/MM/yyyy', numberFormat: 'pt-BR',
   columns: { date: 0, description: 1, amount: 2, credit: null, debit: null, externalId: null },
@@ -25,6 +26,10 @@ describe('createImportApi', () => {
     ['confirm', (api: ImportApi) => api.confirm('i1'), '/financial-imports/i1/confirm', 'POST', undefined],
     ['undo', (api: ImportApi) => api.undo('i1'), '/financial-imports/i1/undo', 'POST', undefined],
     ['discard', (api: ImportApi) => api.discard('i1'), '/financial-imports/i1', 'DELETE', undefined],
+    ['listRules', (api: ImportApi) => api.listRules(), '/financial-imports/rules', undefined, undefined],
+    ['createRule', (api: ImportApi) => api.createRule(RULE), '/financial-imports/rules', 'POST', RULE],
+    ['updateRule', (api: ImportApi) => api.updateRule('r/1', RULE), '/financial-imports/rules/r%2F1', 'PATCH', RULE],
+    ['deleteRule', (api: ImportApi) => api.deleteRule('r?1'), '/financial-imports/rules/r%3F1', 'DELETE', undefined],
     ['listCsvMappings', (api: ImportApi) => api.listCsvMappings(), '/financial-imports/csv-mappings', undefined, undefined],
     ['createCsvMapping', (api: ImportApi) => api.createCsvMapping('Banco X', CSV), '/financial-imports/csv-mappings', 'POST', { name: 'Banco X', configuration: CSV }],
     ['updateCsvMapping', (api: ImportApi) => api.updateCsvMapping('m/1', 'Banco X', CSV), '/financial-imports/csv-mappings/m%2F1', 'PATCH', { name: 'Banco X', configuration: CSV }],

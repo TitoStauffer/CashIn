@@ -1,6 +1,7 @@
 import type { ImportItem } from './importApi'
 import {
   adjacentClosingDates,
+  canLearnRule,
   calculateClosingDate,
   createDraft,
   currentReconciliation,
@@ -126,6 +127,16 @@ describe('importModel', () => {
     expect(isCsvConfigurationValid({ ...layout, columns: { ...layout.columns, description: 2 } }, columns)).toBe(false)
     expect(isCsvConfigurationValid({ ...layout, columns: { ...layout.columns, amount: 3 } }, columns)).toBe(false)
     expect(isCsvConfigurationValid(null, columns)).toBe(false)
+  })
+
+  it('learns a rule only from a line categorized by hand, with a category and a description', () => {
+    const manual = { ...ITEM, categorizationSource: 'manual' as const }
+    expect(canLearnRule(manual)).toBe(true)
+    expect(canLearnRule({ ...manual, categorizationSource: 'rule' })).toBe(false)
+    expect(canLearnRule({ ...manual, categorizationSource: null })).toBe(false)
+    expect(canLearnRule({ ...manual, type: 'transfer' })).toBe(false)
+    expect(canLearnRule({ ...manual, categoryId: null })).toBe(false)
+    expect(canLearnRule({ ...manual, description: '  ' })).toBe(false)
   })
 
   it('names each import and item uniquely (rule 23)', () => {

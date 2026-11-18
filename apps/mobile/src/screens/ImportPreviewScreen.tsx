@@ -5,6 +5,7 @@ import type { CatalogApi, Category } from '../catalog/catalogApi'
 import type { ImportApi, ImportItem, ImportItemInput, ImportSession } from '../imports/importApi'
 import { ImportItemEditor } from '../imports/ImportItemEditor'
 import {
+  canLearnRule,
   createDraft,
   currentReconciliation,
   describeImporter,
@@ -29,6 +30,7 @@ import { messageOf, useActionRunner } from '../ui/useActionRunner'
 
 const LOAD_FAILED = 'Não foi possível carregar a importação. Tente novamente.'
 export const ITEMS_PER_PAGE = 50
+export const RULE_CREATED = 'Regra criada. Ela será aplicada às próximas importações desta carteira.'
 export const SAVE_BEFORE_CONFIRMING = 'Salve ou cancele a edição da movimentação antes de confirmar.'
 
 type Loaded = { session: ImportSession; categories: Category[] }
@@ -109,6 +111,29 @@ export function ImportPreviewScreen({
       await importApi.updateItem(session.id, item.id, { ...createDraft(item), includeDuplicate: true })
       return 'A movimentação será importada mesmo sendo uma possível duplicidade.'
     })
+
+  // A rule is never learned silently: the person confirms what will be classified and how (DEV-158).
+  const createRule = (item: ImportItem) => {
+    if (!canLearnRule(item) || !item.categoryId || (item.type !== 'income' && item.type !== 'expense')) return
+    const { type, categoryId, subcategoryId } = item
+    const description = (item.description ?? '').trim()
+    const target = [names.get(categoryId) ?? 'a categoria escolhida', subcategoryId ? names.get(subcategoryId) : null].filter(Boolean).join(' › ')
+    const kind = type === 'income' ? 'entradas' : 'saídas'
+    Alert.alert(
+      'Criar regra',
+      `Classificar ${kind} com a descrição “${description}” como ${target} nas próximas importações desta carteira?`,
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Criar regra',
+          onPress: () => void run(async () => {
+            await importApi.createRule({ type, description, categoryId, subcategoryId, isActive: true })
+            return RULE_CREATED
+          }),
+        },
+      ],
+    )
+  }
 
   const confirm = () => void run(async () => confirmationMessage(await importApi.confirm(session.id)))
   const discard = () => confirmThen('Descartar prévia', 'Nenhuma movimentação será importada. A importação fica no histórico como descartada.', 'Descartar', () => {
@@ -213,6 +238,7 @@ export function ImportPreviewScreen({
             {inPreview && editingId !== item.id ? (
               <View style={listStyles.actions}>
                 {item.canEdit ? <LinkButton label={`Editar ${name}`} onPress={() => setEditingId(item.id)} /> : null}
+                {canLearnRule(item) ? <LinkButton label={`Criar regra a partir da ${name}`} onPress={() => createRule(item)} /> : null}
                 {item.validationStatus === 'duplicate' && item.canIncludeDuplicate
                   ? <LinkButton label={`Importar mesmo assim ${name}`} onPress={() => includeDuplicate(item)} />
                   : null}

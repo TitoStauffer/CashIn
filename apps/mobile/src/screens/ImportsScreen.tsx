@@ -50,6 +50,7 @@ export function ImportsScreen({
   cardApi,
   pickFile,
   onOpenImport,
+  onOpenRules,
   refreshKey = 0,
 }: {
   walletId: string
@@ -58,6 +59,8 @@ export function ImportsScreen({
   /** Opens the device's file picker; null when the person gave up choosing. */
   pickFile(): Promise<ImportFile | null>
   onOpenImport(importId: string): void
+  /** The categorization rules of the wallet, applied to the next previews (DEV-158). */
+  onOpenRules(): void
   /** Bumped by the route when it is focused again, so a confirmed or undone import shows its new state. */
   refreshKey?: number
 }) {
@@ -130,6 +133,7 @@ export function ImportsScreen({
     <ScrollView contentContainerStyle={listStyles.screen} keyboardShouldPersistTaps="handled">
       <Text style={formStyles.title} accessibilityRole="header">Importações</Text>
       <ScreenMessages feedback={feedback} loadError={loadError} onRetry={refresh} />
+      <LinkButton label="Regras de categorização" onPress={onOpenRules} />
 
       {pendingCsv ? (
         <CsvImportSetup

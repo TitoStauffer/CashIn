@@ -264,7 +264,8 @@ export function importNames(sessions: Pick<ImportSession, 'fileName' | 'createdA
  * file, which is unique in a session (rule 23 of the vault).
  */
 export function itemName(item: ImportItem): string {
-  return `movimentação ${item.sequence} de ${itemDate(item)}, ${formatAmount(item.amount)}${item.description ? ` (${item.description})` : ''}`
+  const description = item.description?.trim()
+  return `movimentação ${item.sequence} de ${itemDate(item)}, ${formatAmount(item.amount)}${description ? ` (${description})` : ''}`
 }
 
 /** An invalid date in the file reaches the preview as an empty string, to be corrected by the person. */
@@ -300,3 +301,16 @@ export function isCsvConfigurationValid(configuration: CsvConfiguration | null, 
     && (onlyAmount || onlyCreditAndDebit)
 }
 
+
+// --- Categorization rules. ---
+
+/**
+ * A rule is offered only from a saved line whose category the person chose (`manual`), of an income or
+ * an expense, with a description to match: the API refuses a rule without one, and a category suggested
+ * by a rule or by nobody is not a choice to learn from.
+ */
+export function canLearnRule(item: ImportItem): boolean {
+  return item.categorizationSource === 'manual' && hasCategory(item.type) && Boolean(item.categoryId) && Boolean(item.description?.trim())
+}
+
+export const RULE_TYPE_LABELS: Record<'income' | 'expense', string> = { income: 'Entrada', expense: 'Saída' }

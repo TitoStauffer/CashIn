@@ -169,6 +169,34 @@ function uploadHeaders(file: ImportFile, options: UploadOptions): Record<string,
   return headers
 }
 
+/** A categorization rule of the wallet: an exact description of an income or expense and its category. */
+export type CategorizationRule = {
+  id: string
+  type: 'income' | 'expense'
+  description: string
+  categoryId: string
+  categoryName: string | null
+  subcategoryId: string | null
+  subcategoryName: string | null
+  isActive: boolean
+  /** The category or subcategory was removed: the rule no longer classifies until it is edited. */
+  isStale: boolean
+  createdAt: string
+  updatedAt: string
+}
+
+/**
+ * Every field of a rule. The update replaces all of them and an absent `isActive` becomes true, so it is
+ * always sent: an edit never reactivates a rule by leaving the field out.
+ */
+export type CategorizationRuleInput = {
+  type: 'income' | 'expense'
+  description: string
+  categoryId: string
+  subcategoryId: string | null
+  isActive: boolean
+}
+
 /** An upload of up to 10 MB on a phone connection takes longer than an ordinary request. */
 export const UPLOAD_TIMEOUT_MS = 120_000
 
@@ -181,6 +209,7 @@ export const UPLOAD_TIMEOUT_MS = 120_000
  */
 export function createImportApi(request: ApiClient) {
   const session = (importId: string) => `/financial-imports/${encodeURIComponent(importId)}`
+  const rule = (ruleId: string) => `/financial-imports/rules/${encodeURIComponent(ruleId)}`
   return {
     list: () => request<{ items: ImportSession[] }>('/financial-imports'),
     get: (importId: string) => request<ImportSession>(session(importId)),
@@ -202,6 +231,11 @@ export function createImportApi(request: ApiClient) {
           ...(configuration ? { 'X-Csv-Mapping': encodedJson(configuration) } : {}),
         },
       }),
+    listRules: () => request<{ items: CategorizationRule[] }>('/financial-imports/rules'),
+    createRule: (input: CategorizationRuleInput) => request<CategorizationRule>('/financial-imports/rules', { method: 'POST', body: input }),
+    updateRule: (ruleId: string, input: CategorizationRuleInput) =>
+      request<CategorizationRule>(rule(ruleId), { method: 'PATCH', body: input }),
+    deleteRule: (ruleId: string) => request<void>(rule(ruleId), { method: 'DELETE' }),
     listCsvMappings: () => request<{ items: CsvMappingTemplate[] }>('/financial-imports/csv-mappings'),
     createCsvMapping: (name: string, configuration: CsvConfiguration) =>
       request<CsvMappingTemplate>('/financial-imports/csv-mappings', { method: 'POST', body: { name, configuration } }),

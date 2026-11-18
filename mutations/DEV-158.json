@@ -1,0 +1,109 @@
+{
+  "ticket": "DEV-158",
+  "mutations": [
+    {
+      "id": "rule-edit-keeps-its-state",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/screens/ImportRulesScreen.tsx",
+      "find": "subcategoryId: rule.subcategoryId, isActive: rule.isActive }",
+      "replace": "subcategoryId: rule.subcategoryId, isActive: true }",
+      "command": [
+        "npx",
+        "jest",
+        "src/screens/ImportRulesScreen.test.tsx"
+      ],
+      "timeoutSeconds": 180
+    },
+    {
+      "id": "rule-toggle-flips-the-state",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/screens/ImportRulesScreen.tsx",
+      "find": "{ ...inputOf(rule), isActive: !rule.isActive }",
+      "replace": "{ ...inputOf(rule) }",
+      "command": [
+        "npx",
+        "jest",
+        "src/screens/ImportRulesScreen.test.tsx"
+      ],
+      "timeoutSeconds": 180
+    },
+    {
+      "id": "removed-category-is-not-offered-again",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/screens/ImportRulesScreen.tsx",
+      "find": "categoryId: category ? rule.categoryId : ''",
+      "replace": "categoryId: rule.categoryId",
+      "command": [
+        "npx",
+        "jest",
+        "src/screens/ImportRulesScreen.test.tsx"
+      ],
+      "timeoutSeconds": 180
+    },
+    {
+      "id": "rule-type-change-drops-the-category",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/screens/ImportRulesScreen.tsx",
+      "find": "onChange={(type) => update({ type, categoryId: '', subcategoryId: null })}",
+      "replace": "onChange={(type) => update({ type })}",
+      "command": [
+        "npx",
+        "jest",
+        "src/screens/ImportRulesScreen.test.tsx"
+      ],
+      "timeoutSeconds": 180
+    },
+    {
+      "id": "stale-rule-has-no-toggle",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/screens/ImportRulesScreen.tsx",
+      "find": "{rule.isStale ? null : <LinkButton",
+      "replace": "{false ? null : <LinkButton",
+      "command": [
+        "npx",
+        "jest",
+        "src/screens/ImportRulesScreen.test.tsx"
+      ],
+      "timeoutSeconds": 180
+    },
+    {
+      "id": "blank-rule-description-is-refused",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/screens/ImportRulesScreen.tsx",
+      "find": "if (!description) return setFormError(RULE_DESCRIPTION_REQUIRED)",
+      "replace": "if (false) return setFormError(RULE_DESCRIPTION_REQUIRED)",
+      "command": [
+        "npx",
+        "jest",
+        "src/screens/ImportRulesScreen.test.tsx"
+      ],
+      "timeoutSeconds": 180
+    },
+    {
+      "id": "rule-is-learned-only-from-a-manual-choice",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/imports/importModel.ts",
+      "find": "return item.categorizationSource === 'manual' && hasCategory(item.type)",
+      "replace": "return hasCategory(item.type)",
+      "command": [
+        "npx",
+        "jest",
+        "src/imports/importModel.test.ts"
+      ],
+      "timeoutSeconds": 180
+    },
+    {
+      "id": "rule-route-segments-are-encoded",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/imports/importApi.ts",
+      "find": "const rule = (ruleId: string) => `/financial-imports/rules/${encodeURIComponent(ruleId)}`",
+      "replace": "const rule = (ruleId: string) => `/financial-imports/rules/${ruleId}`",
+      "command": [
+        "npx",
+        "jest",
+        "src/imports/importApi.test.ts"
+      ],
+      "timeoutSeconds": 180
+    }
+  ]
+}

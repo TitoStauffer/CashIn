@@ -95,7 +95,7 @@ O app fica em `apps/mobile`, com Expo SDK 58, React Native e TypeScript estrito,
 
 ## Importação OFX (DEV-150)
 
-- **Rotas:** `imports` (nova importação e histórico) e `import-preview` (uma importação), pelo `activeWalletGate`. As chamadas ficam em `src/imports/importApi.ts`, seguindo [`docs/financial-imports-contract.md`](../../financial-imports-contract.md). O CSV entra pela mesma tela (DEV-157, abaixo), e as regras de categorização chegam na DEV-158.
+- **Rotas:** `imports` (nova importação e histórico) e `import-preview` (uma importação), pelo `activeWalletGate`. As chamadas ficam em `src/imports/importApi.ts`, seguindo [`docs/financial-imports-contract.md`](../../financial-imports-contract.md). O CSV entra pela mesma tela (DEV-157, abaixo), e as regras de categorização têm tela própria (DEV-158, abaixo).
 - **Arquivo:** escolhido pelo `expo-document-picker` em `src/imports/pickImportFile.ts` e enviado como veio, em `application/octet-stream`, com o nome em `X-File-Name` e `X-File-Format: ofx`. A fatura leva o cartão ativo em `X-Credit-Card-Id`. O cliente HTTP aceita esse corpo binário (`rawBody`), um prazo maior para o envio e, da rota, só cabeçalhos próprios `X-`, sem diferenciar maiúsculas e nunca o `X-Wallet-Id`; qualquer outro nome é recusado antes da requisição. Tamanho, formato e conteúdo são decididos pela API, e o app mostra a mensagem dela. O conteúdo nunca é lido, mostrado nem registrado em log, e um teste falha se o console for usado durante o envio.
 - **Prévia:** resumo, faturas e situação de cada linha são os da API, lidos de novo depois de cada ação. Cada linha editável corrige data, descrição, tipo, categoria e subcategoria; na fatura, a fatura de destino entre as três que a API aceita; no extrato, a conciliação de uma transferência, escolhida entre as candidatas que o próprio item traz. Trocar o tipo limpa categoria e conciliação, e trocar a data volta à fatura calculada por ela. Uma possível duplicidade só entra com "Importar mesmo assim". As linhas aparecem em páginas de 50.
 - **Confirmar, descartar e desfazer:** a confirmação fica indisponível enquanto uma linha está em edição. A mensagem vem da resposta. Quando a API devolve a sessão à prévia, o app diz que nada foi importado e manda conferir as linhas sinalizadas, sem nomear uma causa: pode ser duplicidade, fatura paga no meio-tempo ou nenhuma linha válida. Descartar e desfazer pedem confirmação, e o desfazer aparece só quando `canUndo` permite; senão, o app mostra `undoBlockedReason`.
@@ -107,6 +107,13 @@ O app fica em `apps/mobile`, com Expo SDK 58, React Native e TypeScript estrito,
 - **Mapeamento:** a data é obrigatória, e o valor usa exatamente um formato: `amount` sozinho, ou `credit` e `debit` juntos. Cada coluna é usada uma vez e precisa existir no arquivo, como na Web (`isCsvConfigurationValid`).
 - **Modelos da carteira:** um modelo escolhido e não alterado vai pelo id (`X-Csv-Mapping-Id`); qualquer ajuste manda o layout da tela (`X-Csv-Mapping`, nunca os dois). O modelo é criado ou atualizado pelo nome, e a mensagem de sucesso traz o nome devolvido pela API.
 - **Fatura:** um CSV de fatura exige dizer como o arquivo mostra as compras (`X-Card-Amount-Sign`); o OFX não manda esse cabeçalho.
+
+## Regras de categorização (DEV-158)
+
+- **Rota:** `import-rules`, aberta pela tela de importações e protegida pelo `activeWalletGate`. As chamadas `listRules`, `createRule`, `updateRule` e `deleteRule` ficam em `src/imports/importApi.ts`.
+- **Nenhuma regra silenciosa:** a prévia oferece "Criar regra" só numa linha salva cuja categoria a pessoa escolheu (`categorizationSource: manual`), de entrada ou saída, com descrição. A regra só é criada depois da confirmação, que mostra a descrição e a categoria. A prévia continua indicando as linhas categorizadas por regra.
+- **Edição:** o `PATCH` substitui todos os campos, e a API assume `isActive: true` quando o campo falta. Por isso toda edição e todo ativar/desativar enviam os cinco campos, e editar a descrição de uma regra desativada não a reativa (regra 1). Trocar o tipo limpa a categoria.
+- **Regra desatualizada:** quando a categoria ou a subcategoria foi removida (`isStale`), a regra aparece com aviso, sem ativar/desativar. Na edição, a categoria removida não volta a ser oferecida: a pessoa escolhe uma que exista. A regra repetida é recusada pela API (`409`), com a mensagem dela.
 
 ## Qualidade
 
@@ -153,6 +160,7 @@ A API precisa estar acessível pelo celular. O `docker compose up` publica a por
 - [`apps/mobile/src/imports/importApi.ts`](../../../apps/mobile/src/imports/importApi.ts)
 - [`apps/mobile/src/imports/importModel.ts`](../../../apps/mobile/src/imports/importModel.ts)
 - [`apps/mobile/src/imports/CsvImportSetup.tsx`](../../../apps/mobile/src/imports/CsvImportSetup.tsx)
+- [`apps/mobile/src/screens/ImportRulesScreen.tsx`](../../../apps/mobile/src/screens/ImportRulesScreen.tsx)
 - [`docs/financial-imports-contract.md`](../../financial-imports-contract.md) — contrato da importação que o app segue
 - [`docs/dashboard-summary-contract.md`](../../dashboard-summary-contract.md) — contrato do resumo que o dashboard mostra sem recalcular
 - [`apps/mobile/src/money/amount.ts`](../../../apps/mobile/src/money/amount.ts)
