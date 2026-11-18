@@ -90,16 +90,14 @@ export function PaymentMethodsScreen({ walletId, catalogApi }: { walletId: strin
       }
       void run(async () => {
         await catalogApi.updatePaymentMethod(original.id, changes)
-        setEditor(null)
         return 'Forma de pagamento atualizada.'
-      })
+      }, () => setEditor(null))
       return
     }
     void run(async () => {
       await catalogApi.createPaymentMethod(name, nature)
-      setEditor(null)
       return 'Forma de pagamento criada.'
-    })
+    }, () => setEditor(null))
   }
 
   const toggle = (method: PaymentMethod) => void run(async () => {

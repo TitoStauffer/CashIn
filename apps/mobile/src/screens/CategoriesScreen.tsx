@@ -71,9 +71,8 @@ export function CategoriesScreen({ walletId, catalogApi }: { walletId: string; c
     if (!required(newName, MISSING_CATEGORY_NAME)) return
     void run(async () => {
       await catalogApi.createCategory(newName.trim(), nature)
-      setNewName('')
       return 'Categoria criada.'
-    })
+    }, () => setNewName(''))
   }
 
   const saveEdit = () => {
@@ -83,9 +82,8 @@ export function CategoriesScreen({ walletId, catalogApi }: { walletId: string; c
     void run(async () => {
       if (subcategoryId) await catalogApi.renameSubcategory(categoryId, subcategoryId, name.trim())
       else await catalogApi.renameCategory(categoryId, name.trim())
-      setEditing(null)
       return subcategoryId ? 'Subcategoria renomeada.' : 'Categoria renomeada.'
-    })
+    }, () => setEditing(null))
   }
 
   const createSubcategory = (category: Category) => {
@@ -93,9 +91,8 @@ export function CategoriesScreen({ walletId, catalogApi }: { walletId: string; c
     if (!required(name, MISSING_SUBCATEGORY_NAME)) return
     void run(async () => {
       await catalogApi.createSubcategory(category.id, name.trim())
-      setNewSubcategory((previous) => ({ ...previous, [category.id]: '' }))
       return 'Subcategoria criada.'
-    })
+    }, () => setNewSubcategory((previous) => ({ ...previous, [category.id]: '' })))
   }
 
   const confirmRemoval = (category: Category, subcategory?: Subcategory) => {

@@ -148,6 +148,24 @@ describe('CategoriesScreen', () => {
     expect(screen.getByText('Aluguel recebido')).toBeTruthy()
   })
 
+  // Code Review of PR #123 (round 2): a create that ended after the nature changed cleared what the
+  // person was already typing in the new nature.
+  it('keeps what is typed in the new nature when an earlier create ends', async () => {
+    let finish: () => void = () => undefined
+    const createCategory = jest.fn(() => new Promise<Category>((resolve) => { finish = () => resolve(SALARY) }))
+    await mount(fakeCatalogApi({ createCategory }))
+    await screen.findByText('Salário')
+    await fireEvent.changeText(screen.getByLabelText('Nome da nova categoria'), 'Freelas')
+    await fireEvent.press(screen.getByRole('button', { name: 'Criar categoria' }))
+
+    await fireEvent.press(screen.getByRole('radio', { name: 'Saídas' }))
+    await screen.findByText('Mercado')
+    await fireEvent.changeText(screen.getByLabelText('Nome da nova categoria'), 'Farmácia')
+    await act(async () => { finish() })
+    expect(screen.getByLabelText('Nome da nova categoria').props.value).toBe('Farmácia')
+    expect(screen.queryByText('Categoria criada.')).toBeNull()
+  })
+
   // Code Review of PR #123: an error of the previous wallet used to show on the new one.
   it('does not carry a read error of the previous wallet into the new one', async () => {
     const listCategories = jest.fn()

@@ -247,6 +247,19 @@
         "src/screens/CategoriesScreen.test.tsx"
       ],
       "timeoutSeconds": 180
+    },
+    {
+      "id": "form-is-cleared-only-in-its-own-scope",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/ui/useActionRunner.ts",
+      "find": "onSuccess?.()",
+      "replace": "void onSuccess",
+      "command": [
+        "npx",
+        "jest",
+        "src/ui/useActionRunner.test.ts"
+      ],
+      "timeoutSeconds": 180
     }
   ]
 }

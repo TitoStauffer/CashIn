@@ -29,13 +29,22 @@ describe('useActionRunner', () => {
     let finish: () => void = () => undefined
     const { result, rerender } = await renderHook(({ scope }: { scope: string }) => useActionRunner(afterSuccess, scope), { initialProps: { scope: 'personal' } })
     let pending: Promise<void> = Promise.resolve()
-    await act(async () => { pending = result.current.run(() => new Promise<string>((resolve) => { finish = () => resolve('Salvo.') })) })
+    const onSuccess = jest.fn()
+    await act(async () => { pending = result.current.run(() => new Promise<string>((resolve) => { finish = () => resolve('Salvo.') }), onSuccess) })
 
     await rerender({ scope: 'house' })
     await act(async () => { finish(); await pending })
     expect(result.current.feedback).toBeNull()
     expect(afterSuccess).not.toHaveBeenCalled()
+    expect(onSuccess).not.toHaveBeenCalled()
     expect(result.current.busy).toBe(false)
+  })
+
+  it('clears the form through onSuccess while the scope is unchanged', async () => {
+    const onSuccess = jest.fn()
+    const { result } = await renderHook(() => useActionRunner(jest.fn(), 'personal'))
+    await act(async () => { await result.current.run(async () => 'Salvo.', onSuccess) })
+    expect(onSuccess).toHaveBeenCalledTimes(1)
   })
 
   it('shows the API refusal and does not read the data again', async () => {
