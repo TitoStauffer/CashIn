@@ -220,7 +220,7 @@
       ],
       "timeoutSeconds": 180,
       "find": "${item.description ? ` (${item.description})` : ''}",
-      "replace": ""
+      "replace": "${''}"
     }
   ]
 }
