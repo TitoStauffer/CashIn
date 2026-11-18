@@ -127,7 +127,7 @@ describe('IncomesScreen', () => {
   it('edits an income, replacing every field as the API expects', async () => {
     const { incomeApi } = await mount()
     await screen.findByText('R$ 1.250,50')
-    await fireEvent.press(screen.getByRole('link', { name: 'Editar entrada de 05/11/2026' }))
+    await fireEvent.press(screen.getByRole('link', { name: 'Editar entrada de R$ 1.250,50 em 05/11/2026 (Salário)' }))
     expect(screen.getByLabelText('Valor (R$)').props.value).toBe('1250,50')
     await fireEvent.changeText(screen.getByLabelText('Valor (R$)'), '1300')
     await fireEvent.press(screen.getByRole('button', { name: 'Salvar entrada' }))
@@ -145,13 +145,13 @@ describe('IncomesScreen', () => {
   it('says that saving an old VA or VR income moves it to the unified benefit balance', async () => {
     const { incomeApi } = await mount()
     await screen.findByText('R$ 600,00')
-    await fireEvent.press(screen.getByRole('link', { name: 'Editar entrada de 01/11/2026' }))
+    await fireEvent.press(screen.getByRole('link', { name: 'Editar entrada de R$ 600,00 em 01/11/2026 (Salário)' }))
     expect(screen.getByText(LEGACY_BALANCE_NOTICE)).toBeTruthy()
     expect(screen.getByRole('radio', { name: 'Cartão de benefícios (VA/VR)' })).toBeSelected()
     await fireEvent.press(screen.getByRole('button', { name: 'Salvar entrada' }))
     expect(incomeApi.update).toHaveBeenCalledWith('i-2', expect.objectContaining({ balanceType: 'food_meal_benefit' }))
 
-    await fireEvent.press(await screen.findByRole('link', { name: 'Editar entrada de 05/11/2026' }))
+    await fireEvent.press(await screen.findByRole('link', { name: 'Editar entrada de R$ 1.250,50 em 05/11/2026 (Salário)' }))
     expect(screen.queryByText(LEGACY_BALANCE_NOTICE)).toBeNull()
   })
 
@@ -159,13 +159,43 @@ describe('IncomesScreen', () => {
     const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => undefined)
     const { incomeApi } = await mount()
     await screen.findByText('R$ 1.250,50')
-    await fireEvent.press(screen.getByRole('link', { name: 'Excluir entrada de 05/11/2026' }))
+    await fireEvent.press(screen.getByRole('link', { name: 'Excluir entrada de R$ 1.250,50 em 05/11/2026 (Salário)' }))
     expect(incomeApi.remove).not.toHaveBeenCalled()
     const buttons = (alert.mock.calls.at(-1)?.[2] ?? []) as { text: string; onPress?: () => void }[]
     await act(async () => { buttons.find((button) => button.text === 'Excluir')?.onPress?.() })
     expect(incomeApi.remove).toHaveBeenCalledWith('i-1')
     expect(await screen.findByText('Entrada excluída.')).toBeTruthy()
     alert.mockRestore()
+  })
+
+  // Code Review of PR #124: removing the income open in the editor left the form on screen, and saving
+  // it only met a 404.
+  it('closes the editor of the income it removes, and keeps the editor of another one', async () => {
+    const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => undefined)
+    await mount()
+    await screen.findByText('R$ 1.250,50')
+    const confirm = async () => {
+      const buttons = (alert.mock.calls.at(-1)?.[2] ?? []) as { text: string; onPress?: () => void }[]
+      await act(async () => { buttons.find((button) => button.text === 'Excluir')?.onPress?.() })
+    }
+
+    await fireEvent.press(screen.getByRole('link', { name: 'Editar entrada de R$ 600,00 em 01/11/2026 (Salário)' }))
+    await fireEvent.press(screen.getByRole('link', { name: 'Excluir entrada de R$ 1.250,50 em 05/11/2026 (Salário)' }))
+    await confirm()
+    expect(await screen.findByText('Entrada excluída.')).toBeTruthy()
+    expect(screen.getByLabelText('Valor (R$)').props.value).toBe('600,00')
+
+    await fireEvent.press(screen.getByRole('link', { name: 'Excluir entrada de R$ 600,00 em 01/11/2026 (Salário)' }))
+    await confirm()
+    expect(screen.queryByLabelText('Valor (R$)')).toBeNull()
+    alert.mockRestore()
+  })
+
+  it('names each income by amount, date and category, so two incomes of one day differ', async () => {
+    const sameDay = { ...PAYCHECK, id: 'i-3', amount: '40.00', categoryName: 'Presente' }
+    await mount(fakeIncomeApi({ list: jest.fn(async () => ({ items: [PAYCHECK, sameDay] })) }))
+    expect(await screen.findByRole('link', { name: 'Editar entrada de R$ 1.250,50 em 05/11/2026 (Salário)' })).toBeTruthy()
+    expect(screen.getByRole('link', { name: 'Editar entrada de R$ 40,00 em 05/11/2026 (Presente)' })).toBeTruthy()
   })
 
   it('reads the new wallet without showing the old list, and drops the open form', async () => {

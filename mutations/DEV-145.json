@@ -169,6 +169,45 @@
         "src/screens/IncomesScreen.test.tsx"
       ],
       "timeoutSeconds": 180
+    },
+    {
+      "id": "removed-income-closes-its-editor",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/screens/IncomesScreen.tsx",
+      "find": "open?.original?.id === income.id ? null : open",
+      "replace": "open",
+      "command": [
+        "npx",
+        "jest",
+        "src/screens/IncomesScreen.test.tsx"
+      ],
+      "timeoutSeconds": 180
+    },
+    {
+      "id": "removing-another-income-keeps-the-editor",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/screens/IncomesScreen.tsx",
+      "find": "open?.original?.id === income.id ? null : open",
+      "replace": "null",
+      "command": [
+        "npx",
+        "jest",
+        "src/screens/IncomesScreen.test.tsx"
+      ],
+      "timeoutSeconds": 180
+    },
+    {
+      "id": "income-actions-name-amount-and-category",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/screens/IncomesScreen.tsx",
+      "find": "`entrada de ${formatAmount(income.amount)} em ${formatDate(income.date)} (${income.categoryName})`",
+      "replace": "`entrada de ${formatDate(income.date)}`",
+      "command": [
+        "npx",
+        "jest",
+        "src/screens/IncomesScreen.test.tsx"
+      ],
+      "timeoutSeconds": 180
     }
   ]
 }

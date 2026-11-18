@@ -36,6 +36,11 @@ type Editor = {
   balanceType: IncomeBalanceType
 }
 
+/** How an income is named in its actions: amount, date and category, so two incomes of one day differ. */
+export function incomeName(income: Income): string {
+  return `entrada de ${formatAmount(income.amount)} em ${formatDate(income.date)} (${income.categoryName})`
+}
+
 function editorFor(income: Income | null, today: string): Editor {
   if (!income) return { original: null, amount: '', date: formatDate(today), description: '', categoryId: '', subcategoryId: '', balanceType: 'cash' }
   return {
@@ -135,7 +140,7 @@ export function IncomesScreen({
         onPress: () => void run(async () => {
           await incomeApi.remove(income.id)
           return 'Entrada excluída.'
-        }),
+        }, () => setEditor((open) => (open?.original?.id === income.id ? null : open))),
       },
     ])
   }
@@ -202,8 +207,8 @@ export function IncomesScreen({
           </Text>
           {income.description ? <Text style={formStyles.body}>{income.description}</Text> : null}
           <View style={styles.actions}>
-            <LinkButton label={`Editar entrada de ${formatDate(income.date)}`} onPress={() => setEditor(editorFor(income, todayIso(now)))} />
-            <LinkButton label={`Excluir entrada de ${formatDate(income.date)}`} onPress={() => confirmRemoval(income)} />
+            <LinkButton label={`Editar ${incomeName(income)}`} onPress={() => setEditor(editorFor(income, todayIso(now)))} />
+            <LinkButton label={`Excluir ${incomeName(income)}`} onPress={() => confirmRemoval(income)} />
           </View>
         </View>
       ))}
