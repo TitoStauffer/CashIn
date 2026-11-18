@@ -1,0 +1,226 @@
+{
+  "ticket": "DEV-149",
+  "mutations": [
+    {
+      "id": "goal-route-segments-are-encoded",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/goals/goalApi.ts",
+      "find": "const goal = (goalId: string) => `/investment-goals/${encodeURIComponent(goalId)}`",
+      "replace": "const goal = (goalId: string) => `/investment-goals/${goalId}`",
+      "command": [
+        "npx",
+        "jest",
+        "src/goals/goalApi.test.ts"
+      ],
+      "timeoutSeconds": 180
+    },
+    {
+      "id": "goal-progress-is-the-api-one",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/screens/GoalsScreen.tsx",
+      "find": "formatPercentage(goal.progressPercentage)",
+      "replace": "formatPercentage(Number(goal.contributedAmount) / Number(goal.targetAmount) * 100)",
+      "command": [
+        "npx",
+        "jest",
+        "src/screens/GoalsScreen.test.tsx"
+      ],
+      "timeoutSeconds": 180
+    },
+    {
+      "id": "edit-keeps-the-subcategory",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/screens/GoalsScreen.tsx",
+      "find": "subcategoryId: original && original.categoryId === categoryId ? original.subcategoryId : null,",
+      "replace": "subcategoryId: null,",
+      "command": [
+        "npx",
+        "jest",
+        "src/screens/GoalsScreen.test.tsx"
+      ],
+      "timeoutSeconds": 180
+    },
+    {
+      "id": "category-change-drops-the-subcategory",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/screens/GoalsScreen.tsx",
+      "find": "subcategoryId: original && original.categoryId === categoryId ? original.subcategoryId : null,",
+      "replace": "subcategoryId: original ? original.subcategoryId : null,",
+      "command": [
+        "npx",
+        "jest",
+        "src/screens/GoalsScreen.test.tsx"
+      ],
+      "timeoutSeconds": 180
+    },
+    {
+      "id": "old-category-stays-selectable",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/screens/GoalsScreen.tsx",
+      "find": "if (current?.categoryId && !options.some((option) => option.value === current.categoryId)) {",
+      "replace": "if (false) {",
+      "command": [
+        "npx",
+        "jest",
+        "src/screens/GoalsScreen.test.tsx"
+      ],
+      "timeoutSeconds": 180
+    },
+    {
+      "id": "closed-goal-takes-no-change",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/screens/GoalsScreen.tsx",
+      "find": "{closed ? null : <LinkButton label={`Editar ${goal.title}`}",
+      "replace": "{false ? null : <LinkButton label={`Editar ${goal.title}`}",
+      "command": [
+        "npx",
+        "jest",
+        "src/screens/GoalsScreen.test.tsx"
+      ],
+      "timeoutSeconds": 180
+    },
+    {
+      "id": "blank-description-is-refused-before-the-api",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/screens/GoalsScreen.tsx",
+      "find": "if (!description) return setFeedback",
+      "replace": "if (false) return setFeedback",
+      "command": [
+        "npx",
+        "jest",
+        "src/screens/GoalsScreen.test.tsx"
+      ],
+      "timeoutSeconds": 180
+    },
+    {
+      "id": "blank-due-date-is-sent-as-null",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/screens/GoalsScreen.tsx",
+      "find": "if (editor.dueDate.trim()) {",
+      "replace": "if (true) {",
+      "command": [
+        "npx",
+        "jest",
+        "src/screens/GoalsScreen.test.tsx"
+      ],
+      "timeoutSeconds": 180
+    },
+    {
+      "id": "goals-are-read-again-on-return",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/screens/GoalsScreen.tsx",
+      "find": "}, [goalApi, catalogApi, key, attempt, refreshKey])",
+      "replace": "}, [goalApi, catalogApi, key, attempt])",
+      "command": [
+        "npx",
+        "jest",
+        "src/screens/GoalsScreen.test.tsx"
+      ],
+      "timeoutSeconds": 180
+    },
+    {
+      "id": "old-wallet-goals-leave-the-screen",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/screens/GoalsScreen.tsx",
+      "find": "const data = loaded?.key === key ? loaded : null",
+      "replace": "const data = loaded",
+      "command": [
+        "npx",
+        "jest",
+        "src/screens/GoalsScreen.test.tsx"
+      ],
+      "timeoutSeconds": 180
+    },
+    {
+      "id": "wallet-change-drops-the-goal-form",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/screens/GoalsScreen.tsx",
+      "find": "if (formKey !== key) {",
+      "replace": "if (false) {",
+      "command": [
+        "npx",
+        "jest",
+        "src/screens/GoalsScreen.test.tsx"
+      ],
+      "timeoutSeconds": 180
+    },
+    {
+      "id": "contribution-sends-the-exact-amount",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/screens/GoalContributionsScreen.tsx",
+      "find": "amount: amount.amount, date, description",
+      "replace": "amount: String(Number(amount.amount)), date, description",
+      "command": [
+        "npx",
+        "jest",
+        "src/screens/GoalContributionsScreen.test.tsx"
+      ],
+      "timeoutSeconds": 180
+    },
+    {
+      "id": "closed-goal-takes-no-contribution",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/screens/GoalContributionsScreen.tsx",
+      "find": "const active = goal.status === 'active'",
+      "replace": "const active = true",
+      "command": [
+        "npx",
+        "jest",
+        "src/screens/GoalContributionsScreen.test.tsx"
+      ],
+      "timeoutSeconds": 180
+    },
+    {
+      "id": "contribution-form-clears-after-saving",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/screens/GoalContributionsScreen.tsx",
+      "find": "() => setDraft({ amount: '', date: draft.date, description: '' })",
+      "replace": "() => undefined",
+      "command": [
+        "npx",
+        "jest",
+        "src/screens/GoalContributionsScreen.test.tsx"
+      ],
+      "timeoutSeconds": 180
+    },
+    {
+      "id": "legacy-goal-categories-are-offered",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/screens/GoalsScreen.tsx",
+      "find": "categories: [...investment.items, ...legacy.items]",
+      "replace": "categories: investment.items",
+      "command": [
+        "npx",
+        "jest",
+        "src/screens/GoalsScreen.test.tsx"
+      ],
+      "timeoutSeconds": 180
+    },
+    {
+      "id": "equal-contributions-get-their-position",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/screens/GoalContributionsScreen.tsx",
+      "command": [
+        "npx",
+        "jest",
+        "src/screens/GoalContributionsScreen.test.tsx"
+      ],
+      "timeoutSeconds": 180,
+      "find": "base.indexOf(name) !== base.lastIndexOf(name)",
+      "replace": "false"
+    },
+    {
+      "id": "contribution-name-has-its-description",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/screens/GoalContributionsScreen.tsx",
+      "command": [
+        "npx",
+        "jest",
+        "src/screens/GoalContributionsScreen.test.tsx"
+      ],
+      "timeoutSeconds": 180,
+      "find": "${item.description ? ` (${item.description})` : ''}",
+      "replace": "${''}"
+    }
+  ]
+}
