@@ -28,6 +28,13 @@ function fakeImportApi(overrides: Partial<ImportApi> = {}): ImportApi {
   return {
     list: jest.fn(async () => ({ items: [SESSION] })),
     upload: jest.fn(async () => ({ ...SESSION, id: 'imp-new' })),
+    inspectCsv: jest.fn(async () => ({
+      detectedConfiguration: { delimiter: ';', encoding: 'utf-8', hasHeader: true, dateFormat: 'dd/MM/yyyy', numberFormat: 'pt-BR' },
+      suggestedMapping: { date: 0, description: 1, amount: 2, credit: null, debit: null, externalId: null },
+      columns: [{ index: 0, label: 'Data' }, { index: 1, label: 'Descrição' }, { index: 2, label: 'Valor' }],
+      sample: [{ lineNumber: 2, values: ['05/11/2026', 'Mercado', '-120,50'] }],
+    })),
+    listCsvMappings: jest.fn(async () => ({ items: [] })),
     ...overrides,
   } as unknown as ImportApi
 }
@@ -57,7 +64,7 @@ describe('ImportsScreen', () => {
   it('sends a bank statement as chosen and opens its preview', async () => {
     const { importApi, onOpenImport } = await mount()
     await fireEvent.press(screen.getByRole('button', { name: 'Escolher arquivo OFX' }))
-    expect(importApi.upload).toHaveBeenCalledWith(FILE, null)
+    expect(importApi.upload).toHaveBeenCalledWith(FILE, { format: 'ofx', creditCardId: null })
     expect(onOpenImport).toHaveBeenCalledWith('imp-new')
   })
 
@@ -71,7 +78,32 @@ describe('ImportsScreen', () => {
 
     await fireEvent.press(screen.getByRole('radio', { name: 'Roxo' }))
     await fireEvent.press(screen.getByRole('button', { name: 'Escolher arquivo OFX' }))
-    expect(importApi.upload).toHaveBeenCalledWith(FILE, 'card-1')
+    expect(importApi.upload).toHaveBeenCalledWith(FILE, { format: 'ofx', creditCardId: 'card-1' })
+  })
+
+  it('opens the setup of a chosen CSV, for the chosen card, before sending it', async () => {
+    const csv: ImportFile = { name: 'fatura.csv', content: new Blob(['data;valor']) }
+    const { importApi, onOpenImport } = await mount({ pickFile: jest.fn(async () => csv) })
+    await fireEvent.press(screen.getByRole('radio', { name: 'CSV' }))
+    await fireEvent.press(screen.getByRole('radio', { name: 'Fatura de cartão' }))
+    await fireEvent.press(screen.getByRole('radio', { name: 'Roxo' }))
+    await fireEvent.press(screen.getByRole('button', { name: 'Escolher arquivo CSV' }))
+    expect(importApi.upload).not.toHaveBeenCalled()
+    expect(await screen.findByText('Configurar fatura.csv')).toBeTruthy()
+    expect(importApi.inspectCsv).toHaveBeenCalledWith(csv, undefined)
+    await screen.findByText('Linha 2: 05/11/2026 · Mercado · -120,50')
+    await fireEvent.press(screen.getByRole('radio', { name: 'Compras com valor positivo' }))
+    await fireEvent.press(screen.getByRole('button', { name: 'Enviar CSV' }))
+    expect(importApi.upload).toHaveBeenCalledWith(csv, expect.objectContaining({ format: 'csv', card: { creditCardId: 'card-1', amountSign: 'purchases_positive' } }))
+    expect(onOpenImport).toHaveBeenCalledWith('imp-new')
+  })
+
+  it('goes back to a new import when the CSV setup is cancelled', async () => {
+    await mount({ pickFile: jest.fn(async () => ({ name: 'extrato.csv', content: new Blob(['x']) })) })
+    await fireEvent.press(screen.getByRole('radio', { name: 'CSV' }))
+    await fireEvent.press(screen.getByRole('button', { name: 'Escolher arquivo CSV' }))
+    await fireEvent.press(await screen.findByRole('link', { name: 'Cancelar importação do CSV' }))
+    expect(screen.getByRole('button', { name: 'Escolher arquivo CSV' })).toBeTruthy()
   })
 
   it('points to the cards when the wallet has no active card', async () => {

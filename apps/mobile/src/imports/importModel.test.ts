@@ -10,6 +10,7 @@ import {
   formatFileSize,
   effectiveClosingDate,
   importNames,
+  isCsvConfigurationValid,
   itemDate,
   itemName,
   reconciliationOptions,
@@ -109,6 +110,22 @@ describe('importModel', () => {
     expect(formatFileSize(512)).toBe('512 B')
     expect(formatFileSize(2048)).toBe('2,0 KB')
     expect(formatFileSize(3 * 1024 * 1024)).toBe('3,0 MB')
+  })
+
+  it('accepts a CSV layout only with the date and exactly one money layout, on columns of this file', () => {
+    const columns = [{ index: 0 }, { index: 1 }, { index: 2 }]
+    const layout = {
+      delimiter: ';' as const, encoding: 'utf-8' as const, hasHeader: true, dateFormat: 'dd/MM/yyyy' as const, numberFormat: 'pt-BR' as const,
+      columns: { date: 0, description: 1, amount: 2, credit: null, debit: null, externalId: null },
+    }
+    expect(isCsvConfigurationValid(layout, columns)).toBe(true)
+    expect(isCsvConfigurationValid({ ...layout, columns: { ...layout.columns, amount: null, credit: 2, debit: 1, description: null } }, columns)).toBe(true)
+    expect(isCsvConfigurationValid({ ...layout, columns: { ...layout.columns, amount: null } }, columns)).toBe(false)
+    expect(isCsvConfigurationValid({ ...layout, columns: { ...layout.columns, credit: 1 } }, columns)).toBe(false)
+    expect(isCsvConfigurationValid({ ...layout, columns: { ...layout.columns, amount: null, credit: 2, debit: null } }, columns)).toBe(false)
+    expect(isCsvConfigurationValid({ ...layout, columns: { ...layout.columns, description: 2 } }, columns)).toBe(false)
+    expect(isCsvConfigurationValid({ ...layout, columns: { ...layout.columns, amount: 3 } }, columns)).toBe(false)
+    expect(isCsvConfigurationValid(null, columns)).toBe(false)
   })
 
   it('names each import and item uniquely (rule 23)', () => {
