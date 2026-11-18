@@ -169,6 +169,19 @@
         "src/imports/CsvImportSetup.test.tsx"
       ],
       "timeoutSeconds": 180
+    },
+    {
+      "id": "repeated-header-names-its-position",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/imports/CsvImportSetup.tsx",
+      "find": "headers.indexOf(column.label) !== headers.lastIndexOf(column.label) ?",
+      "replace": "false ?",
+      "command": [
+        "npx",
+        "jest",
+        "src/imports/CsvImportSetup.test.tsx"
+      ],
+      "timeoutSeconds": 180
     }
   ]
 }

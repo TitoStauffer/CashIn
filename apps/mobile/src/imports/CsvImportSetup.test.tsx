@@ -201,6 +201,19 @@ describe('CsvImportSetup', () => {
     expect(importApi.upload).toHaveBeenCalled()
   })
 
+  // Code Review of PR #130: two equal headers gave two radios of the same group the same name.
+  it('names a repeated header by its position too', async () => {
+    const inspectCsv = jest.fn(async () => ({
+      ...INSPECTION,
+      columns: [{ index: 0, label: 'Data' }, { index: 1, label: 'Valor' }, { index: 2, label: 'Valor' }],
+      suggestedMapping: { ...INSPECTION.suggestedMapping, description: null },
+    }))
+    await mount(fakeApi({ inspectCsv }))
+    expect(screen.getByRole('radio', { name: 'Valor único: coluna 2 (Valor)' })).toBeTruthy()
+    expect(selected('Valor único: coluna 3 (Valor)')).toEqual({ selected: true })
+    expect(screen.getByRole('radio', { name: 'Valor único: coluna Data' })).toBeTruthy()
+  })
+
   // Acceptance criterion of DEV-157: the content of the file never reaches a log or the console.
   it('never writes to the console while inspecting and sending, on success or on refusal', async () => {
     const spies = (['log', 'info', 'warn', 'error', 'debug'] as const).map((method) => jest.spyOn(console, method))

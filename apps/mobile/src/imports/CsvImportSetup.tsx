@@ -201,12 +201,17 @@ export function CsvImportSetup({
     })
   }
 
+  // A file may repeat a header ("Valor" twice), so a repeated label also names the column's position, on
+  // screen and to screen readers (rule 23; Code Review of PR #130).
+  const headers = (inspected?.columns ?? []).map((column) => column.label)
+  const columnName = (column: { index: number; label: string }) =>
+    headers.indexOf(column.label) !== headers.lastIndexOf(column.label) ? `${column.index + 1} (${column.label})` : column.label
   const columnOptions = (field: { key: keyof CsvColumnMapping; label: string }) => [
     ...(field.key === 'date' ? [] : [{ value: NONE, label: 'Não mapear', accessibilityLabel: `${field.label}: não mapear` }]),
     ...(inspected?.columns ?? []).map((column) => ({
       value: String(column.index),
-      label: column.label,
-      accessibilityLabel: `${field.label}: coluna ${column.label}`,
+      label: columnName(column),
+      accessibilityLabel: `${field.label}: coluna ${columnName(column)}`,
     })),
   ]
 
