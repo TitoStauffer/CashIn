@@ -1,0 +1,174 @@
+{
+  "ticket": "DEV-147",
+  "mutations": [
+    {
+      "id": "cash-balance-is-the-api-one",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/screens/DashboardScreen.tsx",
+      "find": "<Line label=\"Fluxo em dinheiro\" amount={current.cashBalance}",
+      "replace": "<Line label=\"Fluxo em dinheiro\" amount={current.cashIncomeTotal}",
+      "command": [
+        "npx",
+        "jest",
+        "src/screens/DashboardScreen.test.tsx"
+      ],
+      "timeoutSeconds": 180
+    },
+    {
+      "id": "transfers-have-their-own-lines",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/screens/DashboardScreen.tsx",
+      "find": "{!isZeroAmount(transferOut) || !isZeroAmount(transferIn) ? (",
+      "replace": "{false ? (",
+      "command": [
+        "npx",
+        "jest",
+        "src/screens/DashboardScreen.test.tsx"
+      ],
+      "timeoutSeconds": 180
+    },
+    {
+      "id": "comparison-reads-the-previous-month",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/screens/DashboardScreen.tsx",
+      "find": "const previousRange = monthRange(shiftMonth(month, -1))",
+      "replace": "const previousRange = monthRange(month)",
+      "command": [
+        "npx",
+        "jest",
+        "src/screens/DashboardScreen.test.tsx"
+      ],
+      "timeoutSeconds": 180
+    },
+    {
+      "id": "empty-month-is-told",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/screens/DashboardScreen.tsx",
+      "find": "{active ? (",
+      "replace": "{true ? (",
+      "command": [
+        "npx",
+        "jest",
+        "src/screens/DashboardScreen.test.tsx"
+      ],
+      "timeoutSeconds": 180
+    },
+    {
+      "id": "old-wallet-summary-leaves-the-screen",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/screens/DashboardScreen.tsx",
+      "find": "const data = loaded?.key === key ? loaded : null",
+      "replace": "const data = loaded",
+      "command": [
+        "npx",
+        "jest",
+        "src/screens/DashboardScreen.test.tsx"
+      ],
+      "timeoutSeconds": 180
+    },
+    {
+      "id": "wallet-change-reads-the-summary-again",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/screens/DashboardScreen.tsx",
+      "find": "}, [dashboardApi, key, month, attempt])",
+      "replace": "}, [dashboardApi, month, attempt])",
+      "command": [
+        "npx",
+        "jest",
+        "src/screens/DashboardScreen.test.tsx"
+      ],
+      "timeoutSeconds": 180
+    },
+    {
+      "id": "pull-to-refresh-reads-again",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/screens/DashboardScreen.tsx",
+      "find": "setAttempt((value) => value + 1)",
+      "replace": "setAttempt((value) => value)",
+      "command": [
+        "npx",
+        "jest",
+        "src/screens/DashboardScreen.test.tsx"
+      ],
+      "timeoutSeconds": 180
+    },
+    {
+      "id": "refresh-indicator-is-shown",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/screens/DashboardScreen.tsx",
+      "find": "setRefreshing(true)",
+      "replace": "setRefreshing(false)",
+      "command": [
+        "npx",
+        "jest",
+        "src/screens/DashboardScreen.test.tsx"
+      ],
+      "timeoutSeconds": 180
+    },
+    {
+      "id": "only-the-top-five-categories",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/dashboard/dashboardView.ts",
+      "find": ".slice(0, limit)",
+      "replace": ".slice(0)",
+      "command": [
+        "npx",
+        "jest",
+        "src/dashboard/dashboardView.test.ts"
+      ],
+      "timeoutSeconds": 180
+    },
+    {
+      "id": "categories-ranked-by-largest-amount",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/dashboard/dashboardView.ts",
+      "find": "compareAmounts(b.amount, a.amount)",
+      "replace": "compareAmounts(a.amount, b.amount)",
+      "command": [
+        "npx",
+        "jest",
+        "src/dashboard/dashboardView.test.ts"
+      ],
+      "timeoutSeconds": 180
+    },
+    {
+      "id": "refunds-count-as-activity",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/dashboard/dashboardView.ts",
+      "find": "summary.cardCreditTotal ?? '0.00',",
+      "replace": "'0.00',",
+      "command": [
+        "npx",
+        "jest",
+        "src/dashboard/dashboardView.test.ts"
+      ],
+      "timeoutSeconds": 180
+    },
+    {
+      "id": "goal-contribution-comes-from-the-summary",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/dashboard/dashboardView.ts",
+      "find": "return summary.contributionsByGoal.find((item) => item.goalId === goalId)?.amount ?? '0.00'",
+      "replace": "return '0.00'",
+      "command": [
+        "npx",
+        "jest",
+        "src/dashboard/dashboardView.test.ts"
+      ],
+      "timeoutSeconds": 180
+    },
+    {
+      "id": "amounts-are-compared-in-cents",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/money/amount.ts",
+      "find": "const difference = toCents(a) - toCents(b)",
+      "replace": "const difference = BigInt(Math.round((Number(a) - Number(b)) * 100))",
+      "command": [
+        "npx",
+        "jest",
+        "src/money/amount.test.ts"
+      ],
+      "timeoutSeconds": 180
+    }
+  ]
+}

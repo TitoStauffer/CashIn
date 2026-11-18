@@ -9,13 +9,15 @@ import { colors, spacing, typography } from '../ui/theme'
 /**
  * The first screen after signing in. It names the account and the wallet in use, offers the quick
  * expense entry, opens the wallets, the expenses, the incomes, the categories and the payment methods,
- * and signs out; the dashboard replaces it in DEV-147. Signing out always ends on the login, even when
- * the API cannot be reached (the session provider drops the token from the device either way).
+ * and signs out. With the active wallet known, it heads the dashboard (DEV-147). Signing out always
+ * ends on the login, even when the API cannot be reached (the session provider drops the token from the
+ * device either way).
  */
 export function HomeScreen({
   user,
   activeWallet,
   walletError = null,
+  embedded = false,
   onOpenWallets,
   onQuickExpense,
   onOpenExpenses,
@@ -28,6 +30,8 @@ export function HomeScreen({
   activeWallet: Wallet | null
   /** The wallets failed to load: the line says so instead of claiming they are still loading. */
   walletError?: string | null
+  /** Shown at the top of the dashboard, which already provides the screen padding and scroll. */
+  embedded?: boolean
   onOpenWallets(): void
   /** The short path: an expense in a few taps, dated today. */
   onQuickExpense(): void
@@ -49,7 +53,7 @@ export function HomeScreen({
   }
 
   return (
-    <View style={styles.container}>
+    <View style={embedded ? styles.embedded : styles.container}>
       <Text style={styles.title} accessibilityRole="header">Saldo Certo</Text>
       <Text style={styles.account}>Você entrou como {user.email}</Text>
       <Text style={styles.account}>{walletLine(activeWallet, walletError)}</Text>
@@ -71,6 +75,7 @@ function walletLine(activeWallet: Wallet | null, walletError: string | null): st
 }
 
 const styles = StyleSheet.create({
+  embedded: { gap: spacing.md },
   container: {
     flex: 1,
     justifyContent: 'center',

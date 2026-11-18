@@ -1,4 +1,4 @@
-import { AMOUNT_INVALID, AMOUNT_NOT_POSITIVE, AMOUNT_REQUIRED, amountToInput, formatAmount, parseAmountInput } from './amount'
+import { AMOUNT_INVALID, AMOUNT_NOT_POSITIVE, AMOUNT_REQUIRED, amountToInput, compareAmounts, formatAmount, isZeroAmount, parseAmountInput } from './amount'
 
 describe('parseAmountInput', () => {
   it.each([
@@ -51,5 +51,22 @@ describe('formatAmount', () => {
 
   it('puts the amount back in the field the way it is typed', () => {
     expect(amountToInput('1250.50')).toBe('1250,50')
+  })
+})
+
+describe('compareAmounts and isZeroAmount', () => {
+  it('orders API amounts by value, negatives and loose scales included', () => {
+    expect(compareAmounts('100', '99.99')).toBe(1)
+    expect(compareAmounts('10.5', '10.50')).toBe(0)
+    expect(compareAmounts('-4.00', '0.00')).toBe(-1)
+    // As numbers these differ only past the 15th digit; as cents they are ordered exactly.
+    expect(compareAmounts('9007199254740993.01', '9007199254740993.00')).toBe(1)
+  })
+
+  it('knows a zero in any representation', () => {
+    expect(isZeroAmount('0.00')).toBe(true)
+    expect(isZeroAmount('0')).toBe(true)
+    expect(isZeroAmount('-0.00')).toBe(true)
+    expect(isZeroAmount('0.01')).toBe(false)
   })
 })

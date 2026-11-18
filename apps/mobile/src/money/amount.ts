@@ -49,3 +49,20 @@ export function formatAmount(amount: string): string {
 export function amountToInput(amount: string): string {
   return amount.replace('.', ',')
 }
+
+function toCents(amount: string): bigint {
+  const match = /^(-?)(\d+)(?:\.(\d{1,2}))?$/.exec(amount)
+  if (!match) return 0n
+  const cents = BigInt(match[2] ?? '0') * 100n + BigInt((match[3] ?? '').padEnd(2, '0'))
+  return match[1] ? -cents : cents
+}
+
+/** Orders two API amounts without a floating point number: negative, zero or positive like `a - b`. */
+export function compareAmounts(a: string, b: string): number {
+  const difference = toCents(a) - toCents(b)
+  return difference === 0n ? 0 : difference > 0n ? 1 : -1
+}
+
+export function isZeroAmount(amount: string): boolean {
+  return toCents(amount) === 0n
+}
