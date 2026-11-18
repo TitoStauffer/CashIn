@@ -12,7 +12,7 @@
       "documents": ["docs/knowledge/domain/wallets.md", "docs/knowledge/decisions/ADR-001-wallet-model.md"]
     },
     {
-      "paths": ["apps/api/src/incomes/**", "apps/api/src/expenses/**", "apps/api/src/investment-goals/**", "apps/api/src/payment-methods/**", "apps/web/src/incomes/**", "apps/web/src/expenses/**", "apps/web/src/goals/**"],
+      "paths": ["apps/api/src/incomes/**", "apps/api/src/expenses/**", "apps/api/src/investment-goals/**", "apps/api/src/payment-methods/**", "apps/web/src/incomes/**", "apps/web/src/expenses/**", "apps/web/src/goals/**", "apps/mobile/src/catalog/**"],
       "documents": ["docs/knowledge/domain/transactions.md"]
     },
     {

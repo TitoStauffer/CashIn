@@ -1,0 +1,265 @@
+{
+  "ticket": "DEV-144",
+  "mutations": [
+    {
+      "id": "catalog-routes-stay-in-the-active-wallet",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/catalog/catalogApi.ts",
+      "find": "listPaymentMethods: () => request<{ items: PaymentMethod[] }>('/payment-methods'),",
+      "replace": "listPaymentMethods: () => request<{ items: PaymentMethod[] }>('/payment-methods', { scopeToActiveWallet: false }),",
+      "command": [
+        "npx",
+        "jest",
+        "src/catalog/catalogApi.test.ts"
+      ],
+      "timeoutSeconds": 180
+    },
+    {
+      "id": "catalog-route-segments-are-encoded",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/catalog/catalogApi.ts",
+      "find": "index % 2 === 0 ? segment : encodeURIComponent(segment)",
+      "replace": "index % 2 === 0 ? segment : segment",
+      "command": [
+        "npx",
+        "jest",
+        "src/catalog/catalogApi.test.ts"
+      ],
+      "timeoutSeconds": 180
+    },
+    {
+      "id": "old-wallet-categories-leave-the-screen",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/screens/CategoriesScreen.tsx",
+      "find": "const categories = loaded?.key === key ? loaded.categories : null",
+      "replace": "const categories = loaded ? loaded.categories : null",
+      "command": [
+        "npx",
+        "jest",
+        "src/screens/CategoriesScreen.test.tsx"
+      ],
+      "timeoutSeconds": 180
+    },
+    {
+      "id": "wallet-change-reads-the-categories-again",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/screens/CategoriesScreen.tsx",
+      "find": "}, [catalogApi, key, nature, attempt])",
+      "replace": "}, [catalogApi, nature, attempt])",
+      "command": [
+        "npx",
+        "jest",
+        "src/screens/CategoriesScreen.test.tsx"
+      ],
+      "timeoutSeconds": 180
+    },
+    {
+      "id": "wallet-change-clears-the-category-form",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/screens/CategoriesScreen.tsx",
+      "find": "if (formKey !== key) {",
+      "replace": "if (false) {",
+      "command": [
+        "npx",
+        "jest",
+        "src/screens/CategoriesScreen.test.tsx"
+      ],
+      "timeoutSeconds": 180
+    },
+    {
+      "id": "blank-category-name-is-refused-before-the-api",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/screens/CategoriesScreen.tsx",
+      "find": "if (value.trim()) return true",
+      "replace": "if (true) return true",
+      "command": [
+        "npx",
+        "jest",
+        "src/screens/CategoriesScreen.test.tsx"
+      ],
+      "timeoutSeconds": 180
+    },
+    {
+      "id": "old-wallet-payment-methods-leave-the-screen",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/screens/PaymentMethodsScreen.tsx",
+      "find": "const methods = loaded?.walletId === walletId ? loaded.methods : null",
+      "replace": "const methods = loaded ? loaded.methods : null",
+      "command": [
+        "npx",
+        "jest",
+        "src/screens/PaymentMethodsScreen.test.tsx"
+      ],
+      "timeoutSeconds": 180
+    },
+    {
+      "id": "wallet-change-reads-the-payment-methods-again",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/screens/PaymentMethodsScreen.tsx",
+      "find": "}, [catalogApi, walletId, attempt])",
+      "replace": "}, [catalogApi, attempt])",
+      "command": [
+        "npx",
+        "jest",
+        "src/screens/PaymentMethodsScreen.test.tsx"
+      ],
+      "timeoutSeconds": 180
+    },
+    {
+      "id": "wallet-change-closes-the-payment-method-editor",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/screens/PaymentMethodsScreen.tsx",
+      "find": "if (formWalletId !== walletId) {",
+      "replace": "if (false) {",
+      "command": [
+        "npx",
+        "jest",
+        "src/screens/PaymentMethodsScreen.test.tsx"
+      ],
+      "timeoutSeconds": 180
+    },
+    {
+      "id": "blank-payment-method-name-is-refused-before-the-api",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/screens/PaymentMethodsScreen.tsx",
+      "find": "if (!editor.name.trim()) {",
+      "replace": "if (false) {",
+      "command": [
+        "npx",
+        "jest",
+        "src/screens/PaymentMethodsScreen.test.tsx"
+      ],
+      "timeoutSeconds": 180
+    },
+    {
+      "id": "historical-nature-is-kept-while-editing",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/screens/PaymentMethodsScreen.tsx",
+      "find": "const natureOptions = editor && isLegacy(editor.nature)",
+      "replace": "const natureOptions = false",
+      "command": [
+        "npx",
+        "jest",
+        "src/screens/PaymentMethodsScreen.test.tsx"
+      ],
+      "timeoutSeconds": 180
+    },
+    {
+      "id": "toggle-flips-the-active-state",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/screens/PaymentMethodsScreen.tsx",
+      "find": "{ isActive: !method.isActive }",
+      "replace": "{ isActive: method.isActive }",
+      "command": [
+        "npx",
+        "jest",
+        "src/screens/PaymentMethodsScreen.test.tsx"
+      ],
+      "timeoutSeconds": 180
+    },
+    {
+      "id": "one-action-at-a-time",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/ui/useActionRunner.ts",
+      "find": "if (inFlight.current) return",
+      "replace": "if (false) return",
+      "command": [
+        "npx",
+        "jest",
+        "src/ui/useActionRunner.test.ts"
+      ],
+      "timeoutSeconds": 180
+    },
+    {
+      "id": "no-scoped-screen-before-the-active-wallet",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/wallets/activeWalletGate.ts",
+      "find": "if (!activeWallet) return { kind: 'loading' }",
+      "replace": "if (false) return { kind: 'loading' }",
+      "command": [
+        "npx",
+        "jest",
+        "src/wallets/activeWalletGate.test.ts"
+      ],
+      "timeoutSeconds": 180
+    },
+    {
+      "id": "session-redirect-comes-first",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/wallets/activeWalletGate.ts",
+      "find": "if (href) return { kind: 'redirect', href }",
+      "replace": "if (false) return { kind: 'redirect', href }",
+      "command": [
+        "npx",
+        "jest",
+        "src/wallets/activeWalletGate.test.ts"
+      ],
+      "timeoutSeconds": 180
+    },
+    {
+      "id": "edit-sends-only-the-changed-nature",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/screens/PaymentMethodsScreen.tsx",
+      "find": "...(nature !== original.nature ? { nature } : {}),",
+      "replace": "...{ nature },",
+      "command": [
+        "npx",
+        "jest",
+        "src/screens/PaymentMethodsScreen.test.tsx"
+      ],
+      "timeoutSeconds": 180
+    },
+    {
+      "id": "unchanged-edit-calls-nothing",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/screens/PaymentMethodsScreen.tsx",
+      "find": "if (Object.keys(changes).length === 0) {",
+      "replace": "if (false) {",
+      "command": [
+        "npx",
+        "jest",
+        "src/screens/PaymentMethodsScreen.test.tsx"
+      ],
+      "timeoutSeconds": 180
+    },
+    {
+      "id": "stale-action-is-not-reported",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/ui/useActionRunner.ts",
+      "find": "if (scopeRef.current !== startedIn) return",
+      "replace": "if (false) return",
+      "command": [
+        "npx",
+        "jest",
+        "src/ui/useActionRunner.test.ts"
+      ],
+      "timeoutSeconds": 180
+    },
+    {
+      "id": "wallet-change-clears-the-category-read-error",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/screens/CategoriesScreen.tsx",
+      "find": "setLoadError(null) // the previous wallet's read error is not this one's",
+      "replace": "void 0 // the previous wallet's read error is not this one's",
+      "command": [
+        "npx",
+        "jest",
+        "src/screens/CategoriesScreen.test.tsx"
+      ],
+      "timeoutSeconds": 180
+    },
+    {
+      "id": "form-is-cleared-only-in-its-own-scope",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/ui/useActionRunner.ts",
+      "find": "onSuccess?.()",
+      "replace": "void onSuccess",
+      "command": [
+        "npx",
+        "jest",
+        "src/ui/useActionRunner.test.ts"
+      ],
+      "timeoutSeconds": 180
+    }
+  ]
+}
