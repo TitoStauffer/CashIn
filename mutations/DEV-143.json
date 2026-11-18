@@ -1,0 +1,161 @@
+{
+  "ticket": "DEV-143",
+  "mutations": [
+    {
+      "id": "wallet-404-reported-only-when-a-wallet-was-sent",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/api/client.ts",
+      "find": "if (response.status === 404 && walletId) onWalletNotFound?.(walletId)",
+      "replace": "if (response.status === 404) onWalletNotFound?.(walletId ?? '')",
+      "command": [
+        "npx",
+        "jest",
+        "src/api/client.test.ts"
+      ],
+      "timeoutSeconds": 180
+    },
+    {
+      "id": "wallet-routes-never-carry-x-wallet-id",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/wallets/walletApi.ts",
+      "find": "const unscoped = { scopeToActiveWallet: false } as const",
+      "replace": "const unscoped = { scopeToActiveWallet: true } as const",
+      "command": [
+        "npx",
+        "jest",
+        "src/wallets/walletApi.test.ts"
+      ],
+      "timeoutSeconds": 180
+    },
+    {
+      "id": "wallet-route-segments-are-encoded",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/wallets/walletApi.ts",
+      "find": "(index === 0 ? segment : encodeURIComponent(segment))",
+      "replace": "(index === 0 ? segment : segment)",
+      "command": [
+        "npx",
+        "jest",
+        "src/wallets/walletApi.test.ts"
+      ],
+      "timeoutSeconds": 180
+    },
+    {
+      "id": "personal-wallet-is-not-shared",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/screens/WalletsScreen.tsx",
+      "find": "return wallet.role === 'owner' && !wallet.isPersonal",
+      "replace": "return wallet.role === 'owner'",
+      "command": [
+        "npx",
+        "jest",
+        "src/screens/WalletsScreen.test.tsx"
+      ],
+      "timeoutSeconds": 180
+    },
+    {
+      "id": "only-the-owner-manages-sharing",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/screens/WalletsScreen.tsx",
+      "find": "return wallet.role === 'owner' && !wallet.isPersonal",
+      "replace": "return !wallet.isPersonal",
+      "command": [
+        "npx",
+        "jest",
+        "src/screens/WalletSharingScreen.test.tsx"
+      ],
+      "timeoutSeconds": 180
+    },
+    {
+      "id": "lost-stored-wallet-shows-the-notice",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/wallets/WalletProvider.tsx",
+      "find": "lostStored: storedId !== null }",
+      "replace": "lostStored: false }",
+      "command": [
+        "npx",
+        "jest",
+        "src/wallets/WalletProvider.test.tsx"
+      ],
+      "timeoutSeconds": 180
+    },
+    {
+      "id": "stored-wallet-survives-relaunch",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/wallets/WalletProvider.tsx",
+      "find": "if (stored) return { wallet: stored, lostStored: false }",
+      "replace": "if (false) return { wallet: stored, lostStored: false }",
+      "command": [
+        "npx",
+        "jest",
+        "src/wallets/WalletProvider.test.tsx"
+      ],
+      "timeoutSeconds": 180
+    },
+    {
+      "id": "only-a-404-for-the-active-wallet-reloads",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/wallets/WalletProvider.tsx",
+      "find": "if (walletId === activeWalletIdRef.current) reload()",
+      "replace": "reload()",
+      "command": [
+        "npx",
+        "jest",
+        "src/wallets/WalletProvider.test.tsx"
+      ],
+      "timeoutSeconds": 180
+    },
+    {
+      "id": "unknown-wallet-is-never-activated",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/wallets/WalletProvider.tsx",
+      "find": "|| !loaded.state.wallets.some((wallet) => wallet.id === walletId)) return",
+      "replace": ") return",
+      "command": [
+        "npx",
+        "jest",
+        "src/wallets/WalletProvider.test.tsx"
+      ],
+      "timeoutSeconds": 180
+    },
+    {
+      "id": "signed-out-clears-the-active-wallet",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/wallets/WalletProvider.tsx",
+      "find": "setActiveWalletId(null)",
+      "replace": "void 0",
+      "command": [
+        "npx",
+        "jest",
+        "src/wallets/WalletProvider.test.tsx"
+      ],
+      "timeoutSeconds": 180
+    },
+    {
+      "id": "only-pending-invitations-are-listed",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/screens/WalletSharingScreen.tsx",
+      "find": "sharing.invitations.filter((invitation) => invitation.status === 'pending')",
+      "replace": "sharing.invitations.filter(() => true)",
+      "command": [
+        "npx",
+        "jest",
+        "src/screens/WalletSharingScreen.test.tsx"
+      ],
+      "timeoutSeconds": 180
+    },
+    {
+      "id": "active-wallet-key-is-sanitized",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/wallets/activeWallet.ts",
+      "find": ".replace(/[^A-Za-z0-9._-]/g, '_')",
+      "replace": "",
+      "command": [
+        "npx",
+        "jest",
+        "src/wallets/activeWallet.test.ts"
+      ],
+      "timeoutSeconds": 180
+    }
+  ]
+}
