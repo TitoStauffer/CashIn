@@ -96,8 +96,8 @@
       "id": "incomplete-layout-is-not-sent",
       "package": "apps/mobile",
       "file": "apps/mobile/src/imports/CsvImportSetup.tsx",
-      "find": "if (!configuration || !ready) return setFeedback({ tone: 'error', message: MAPPING_INCOMPLETE })",
-      "replace": "if (!configuration) return setFeedback({ tone: 'error', message: MAPPING_INCOMPLETE })",
+      "find": "!inspectError && isCsvConfigurationValid(configuration, inspected?.columns ?? [])",
+      "replace": "!inspectError && true",
       "command": [
         "npx",
         "jest",
@@ -130,6 +130,32 @@
         "src/screens/ImportsScreen.test.tsx"
       ],
       "timeoutSeconds": 180
+    },
+    {
+      "id": "failed-inspection-blocks-sending",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/imports/CsvImportSetup.tsx",
+      "command": [
+        "npx",
+        "jest",
+        "src/imports/CsvImportSetup.test.tsx"
+      ],
+      "timeoutSeconds": 180,
+      "find": "const ready = !inspecting && !inspectError && isCsvConfigurationValid",
+      "replace": "const ready = !inspecting && isCsvConfigurationValid"
+    },
+    {
+      "id": "retry-repeats-the-failed-request",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/imports/CsvImportSetup.tsx",
+      "command": [
+        "npx",
+        "jest",
+        "src/imports/CsvImportSetup.test.tsx"
+      ],
+      "timeoutSeconds": 180,
+      "find": "onRetry={() => inspect(lastRequest.current.layout, lastRequest.current.keepColumns)}",
+      "replace": "onRetry={() => inspect(configuration ?? undefined, configuration?.columns)}"
     }
   ]
 }

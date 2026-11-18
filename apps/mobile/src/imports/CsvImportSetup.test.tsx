@@ -2,7 +2,7 @@ import { act, fireEvent, render, screen } from '@testing-library/react-native'
 
 import { ApiError } from '../api/client'
 import type { CsvConfiguration, CsvInspection, CsvMappingTemplate, ImportApi, ImportFile } from './importApi'
-import { AMOUNT_SIGN_REQUIRED, CsvImportSetup, MAPPING_INCOMPLETE, MAPPING_NAME_REQUIRED } from './CsvImportSetup'
+import { AMOUNT_SIGN_REQUIRED, CsvImportSetup, INSPECT_AGAIN, MAPPING_INCOMPLETE, MAPPING_NAME_REQUIRED } from './CsvImportSetup'
 
 const FILE: ImportFile = { name: 'extrato.csv', content: new Blob(['data;descricao;valor']) }
 const COLUMNS = [{ index: 0, label: 'Data' }, { index: 1, label: 'Descrição' }, { index: 2, label: 'Valor' }]
@@ -156,6 +156,34 @@ describe('CsvImportSetup', () => {
     expect(screen.queryByRole('radio', { name: 'Vírgula (,)' })).toBeNull()
     await fireEvent.press(screen.getByRole('link', { name: 'Tentar novamente' }))
     expect(await screen.findByText('Linha 2: 05/11/2026 · Mercado · -120,50')).toBeTruthy()
+  })
+
+  // Code Review of PR #130: after a failed inspection the new format was on screen with the old sample,
+  // and the file could be sent with it; a retry also kept the columns a delimiter change replaces.
+  it('sends nothing after a failed inspection, and retries exactly the request that failed', async () => {
+    const inspectCsv = jest.fn()
+      .mockResolvedValueOnce(INSPECTION)
+      .mockRejectedValueOnce(new ApiError('A API demorou para responder. Tente novamente.', 0))
+      .mockResolvedValue(INSPECTION)
+    const importApi = fakeApi({ inspectCsv })
+    await mount(importApi)
+    await fireEvent.press(screen.getByRole('radio', { name: 'Descrição: não mapear' }))
+    await fireEvent.press(screen.getByRole('radio', { name: 'Vírgula (,)' }))
+    expect(await screen.findByText('A API demorou para responder. Tente novamente.')).toBeTruthy()
+    expect(screen.getByText(INSPECT_AGAIN)).toBeTruthy()
+    await fireEvent.press(screen.getByRole('button', { name: 'Enviar CSV' }))
+    await fireEvent.press(screen.getByRole('link', { name: 'Salvar novo modelo' }))
+    expect(importApi.upload).not.toHaveBeenCalled()
+    expect(importApi.createCsvMapping).not.toHaveBeenCalled()
+
+    await fireEvent.press(screen.getByRole('link', { name: 'Tentar novamente' }))
+    expect(inspectCsv).toHaveBeenLastCalledWith(FILE, { ...DETECTED, delimiter: ',', columns: { ...DETECTED.columns, description: null } })
+    await screen.findByText('Linha 2: 05/11/2026 · Mercado · -120,50')
+    expect(screen.queryByText(INSPECT_AGAIN)).toBeNull()
+    // The failed request was a delimiter change, so the retry adopts the columns the API suggests.
+    expect(selected('Descrição: coluna Descrição')).toEqual({ selected: true })
+    await fireEvent.press(screen.getByRole('button', { name: 'Enviar CSV' }))
+    expect(importApi.upload).toHaveBeenCalled()
   })
 
   // Acceptance criterion of DEV-157: the content of the file never reaches a log or the console.

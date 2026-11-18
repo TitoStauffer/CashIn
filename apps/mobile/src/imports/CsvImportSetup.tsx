@@ -23,6 +23,7 @@ export const MAPPING_INCOMPLETE = 'Mapeie a data e o valor — ou as colunas de 
 export const AMOUNT_SIGN_REQUIRED = 'Informe como o CSV da fatura representa as compras.'
 export const WAIT_INSPECTION = 'Aguarde a análise do arquivo.'
 export const MAPPING_NAME_REQUIRED = 'Informe um nome para salvar este modelo de CSV.'
+export const INSPECT_AGAIN = 'A última análise do arquivo falhou. Tente analisar de novo antes de continuar.'
 
 const NONE = ''
 const DETECTED = ''
@@ -84,6 +85,8 @@ export function CsvImportSetup({
   const [dirty, setDirty] = useState(false)
   const [amountSign, setAmountSign] = useState<CardAmountSign | null>(null)
   const latest = useRef(0)
+  // The last inspection asked for, so a retry repeats exactly that request, columns policy included.
+  const lastRequest = useRef<{ layout?: CsvConfiguration; keepColumns?: CsvColumnMapping }>({})
   const mounted = useRef(true)
   useEffect(() => () => { mounted.current = false }, [])
 
@@ -121,6 +124,9 @@ export function CsvImportSetup({
   const inspect = (layout?: CsvConfiguration, keepColumns?: CsvColumnMapping) => {
     setInspecting(true)
     setInspectError(null)
+    // A message about the previous layout no longer describes what is on screen.
+    setFeedback(null)
+    lastRequest.current = { layout, keepColumns }
     requestInspection(layout, keepColumns)
   }
 
@@ -151,10 +157,13 @@ export function CsvImportSetup({
     inspect(layout, layout.columns)
   }
 
-  const ready = !inspecting && isCsvConfigurationValid(configuration, inspected?.columns ?? [])
+  // After a failed inspection the layout on screen may no longer match the sample (Code Review of PR #130),
+  // so nothing is sent or saved until an inspection succeeds again.
+  const ready = !inspecting && !inspectError && isCsvConfigurationValid(configuration, inspected?.columns ?? [])
+  const blockedMessage = inspecting ? WAIT_INSPECTION : inspectError ? INSPECT_AGAIN : MAPPING_INCOMPLETE
 
   const saveMapping = () => {
-    if (!configuration || !ready) return setFeedback({ tone: 'error', message: inspecting ? WAIT_INSPECTION : MAPPING_INCOMPLETE })
+    if (!configuration || !ready) return setFeedback({ tone: 'error', message: blockedMessage })
     const trimmed = name.trim()
     if (!trimmed) return setFeedback({ tone: 'error', message: MAPPING_NAME_REQUIRED })
     const layout = configuration
@@ -173,8 +182,7 @@ export function CsvImportSetup({
   }
 
   const send = () => {
-    if (inspecting) return setFeedback({ tone: 'error', message: WAIT_INSPECTION })
-    if (!configuration || !ready) return setFeedback({ tone: 'error', message: MAPPING_INCOMPLETE })
+    if (!configuration || !ready) return setFeedback({ tone: 'error', message: blockedMessage })
     if (card && !amountSign) return setFeedback({ tone: 'error', message: AMOUNT_SIGN_REQUIRED })
     // A saved model unchanged goes by its id; anything edited goes as the layout on screen.
     const csvMapping = selectedId && !dirty ? { mappingId: selectedId } : { configuration }
@@ -203,7 +211,7 @@ export function CsvImportSetup({
       <Text style={listStyles.detail}>
         {card ? `Fatura de ${card.nickname}. ` : 'Extrato bancário. '}A detecção é só uma sugestão: confira a amostra antes de enviar.
       </Text>
-      <ScreenMessages feedback={feedback} loadError={inspectError} onRetry={() => inspect(configuration ?? undefined, configuration?.columns)} />
+      <ScreenMessages feedback={feedback} loadError={inspectError} onRetry={() => inspect(lastRequest.current.layout, lastRequest.current.keepColumns)} />
       {inspecting ? <Text style={listStyles.detail}>Analisando o arquivo…</Text> : null}
 
       {mappings.length > 0 ? (
@@ -240,7 +248,7 @@ export function CsvImportSetup({
             </Group>
           ))}
           <Text style={listStyles.detail}>Mapeie “Valor único” ou use “Crédito” e “Débito” em conjunto.</Text>
-          {!inspecting && !ready ? <Text style={styles.warning}>{MAPPING_INCOMPLETE}</Text> : null}
+          {!inspecting && !ready ? <Text style={styles.warning}>{blockedMessage}</Text> : null}
 
           {card ? (
             <Group label="Como o arquivo mostra as compras">
