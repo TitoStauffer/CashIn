@@ -69,4 +69,16 @@ describe('compareAmounts and isZeroAmount', () => {
     expect(isZeroAmount('-0.00')).toBe(true)
     expect(isZeroAmount('0.01')).toBe(false)
   })
+
+  // Code Review of PR #126: an amount with more than two places used to read as zero.
+  it('reads an amount with more places whole, and never takes text that is not a decimal for zero', () => {
+    expect(isZeroAmount('0.001')).toBe(false)
+    expect(isZeroAmount('0.000')).toBe(true)
+    expect(compareAmounts('0.005', '0.004')).toBe(1)
+    expect(compareAmounts('1.5', '1.499')).toBe(1)
+    expect(isZeroAmount('abc')).toBe(false)
+    expect(compareAmounts('abc', '-1.00')).toBe(-1)
+    expect(compareAmounts('-1.00', 'abc')).toBe(1)
+    expect(compareAmounts('abc', 'xyz')).toBe(0)
+  })
 })

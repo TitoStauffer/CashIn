@@ -161,7 +161,7 @@
       "id": "amounts-are-compared-in-cents",
       "package": "apps/mobile",
       "file": "apps/mobile/src/money/amount.ts",
-      "find": "const difference = toCents(a) - toCents(b)",
+      "find": "const difference = atScale(first, scale) - atScale(second, scale)",
       "replace": "const difference = BigInt(Math.round((Number(a) - Number(b)) * 100))",
       "command": [
         "npx",
@@ -169,6 +169,32 @@
         "src/money/amount.test.ts"
       ],
       "timeoutSeconds": 180
+    },
+    {
+      "id": "amount-with-more-places-is-read-whole",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/money/amount.ts",
+      "command": [
+        "npx",
+        "jest",
+        "src/money/amount.test.ts"
+      ],
+      "timeoutSeconds": 180,
+      "find": "/^(-?)(\\d+)(?:\\.(\\d+))?$/.exec(amount.trim())",
+      "replace": "/^(-?)(\\d+)(?:\\.(\\d{1,2}))?$/.exec(amount.trim())"
+    },
+    {
+      "id": "text-that-is-not-a-decimal-is-not-zero",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/money/amount.ts",
+      "command": [
+        "npx",
+        "jest",
+        "src/money/amount.test.ts"
+      ],
+      "timeoutSeconds": 180,
+      "find": "return decimal !== null && decimal.units === 0n",
+      "replace": "return decimal === null || decimal.units === 0n"
     }
   ]
 }

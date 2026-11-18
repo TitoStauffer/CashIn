@@ -50,19 +50,38 @@ export function amountToInput(amount: string): string {
   return amount.replace('.', ',')
 }
 
-function toCents(amount: string): bigint {
-  const match = /^(-?)(\d+)(?:\.(\d{1,2}))?$/.exec(amount)
-  if (!match) return 0n
-  const cents = BigInt(match[2] ?? '0') * 100n + BigInt((match[3] ?? '').padEnd(2, '0'))
-  return match[1] ? -cents : cents
+type Decimal = { units: bigint; scale: number }
+
+/**
+ * Any decimal the API may send, kept at its own scale, or null when the text is not a decimal. The
+ * contract promises cents, but an amount with more places is read whole instead of being taken for zero
+ * (Code Review of PR #126).
+ */
+function parseDecimal(amount: string): Decimal | null {
+  const match = /^(-?)(\d+)(?:\.(\d+))?$/.exec(amount.trim())
+  if (!match) return null
+  const fraction = match[3] ?? ''
+  const units = BigInt(`${match[2] ?? '0'}${fraction}`)
+  return { units: match[1] ? -units : units, scale: fraction.length }
 }
 
-/** Orders two API amounts without a floating point number: negative, zero or positive like `a - b`. */
+const atScale = (decimal: Decimal, scale: number) => decimal.units * 10n ** BigInt(scale - decimal.scale)
+
+/**
+ * Orders two API amounts without a floating point number: negative, zero or positive like `a - b`.
+ * Text that is not a decimal sorts below every amount.
+ */
 export function compareAmounts(a: string, b: string): number {
-  const difference = toCents(a) - toCents(b)
+  const first = parseDecimal(a)
+  const second = parseDecimal(b)
+  if (!first || !second) return first ? 1 : second ? -1 : 0
+  const scale = Math.max(first.scale, second.scale)
+  const difference = atScale(first, scale) - atScale(second, scale)
   return difference === 0n ? 0 : difference > 0n ? 1 : -1
 }
 
+/** Only a real zero is zero: text that is not a decimal never counts as an empty amount. */
 export function isZeroAmount(amount: string): boolean {
-  return toCents(amount) === 0n
+  const decimal = parseDecimal(amount)
+  return decimal !== null && decimal.units === 0n
 }
