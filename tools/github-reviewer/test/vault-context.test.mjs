@@ -798,13 +798,16 @@ test('still aborts when evidence a changed note cites does not fit', async () =>
 
 test('keeps the body of evidence cited by both a changed and an unchanged note', async () => {
   // The unchanged note (the index) is read first, so its citation arrives before the changed note's.
+  // The two bodies do not fit together: if evidence 2 were optional it would arrive after evidence 1 and
+  // become the marker, so keeping its body only holds when the changed note's citation makes it required.
   const files = evidenceVault({ changedNoteCites: [2], unchangedNoteCites: [1, 2] });
-  const evidence = { ...reviewEvidence(1, 300_000), ...reviewEvidence(2, 300_000) };
+  const evidence = { ...reviewEvidence(1, 340_000), ...reviewEvidence(2, 340_000) };
 
   const result = await loadVaultContext(fakeFetch(files, evidence), repository, changedFiles, headSha, baseSha, 'token');
 
+  assert.equal(evidenceOf(result, 1)?.contentOmitted, true);
   assert.equal(evidenceOf(result, 2)?.contentOmitted, undefined);
-  assert.match(evidenceOf(result, 2).content, /E{300000}/);
+  assert.match(evidenceOf(result, 2).content, /E{340000}/);
 });
 
 test('gives up an optional evidence body admitted earlier so required evidence still fits', async () => {

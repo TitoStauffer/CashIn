@@ -15,6 +15,19 @@
       "timeoutSeconds": 240
     },
     {
+      "id": "later-changed-note-citation-makes-evidence-required",
+      "package": "tools/github-reviewer",
+      "file": "tools/github-reviewer/src/vault-context.ts",
+      "find": "remoteReferences.set(`${remote.kind}:${remote.pullRequestNumber}:${remote.evidenceId}`, remote);",
+      "replace": "if (remoteReferences.has(`${remote.kind}:${remote.pullRequestNumber}:${remote.evidenceId}`)) continue; remoteReferences.set(`${remote.kind}:${remote.pullRequestNumber}:${remote.evidenceId}`, remote);",
+      "command": [
+        "npm",
+        "run",
+        "test:vault-context"
+      ],
+      "timeoutSeconds": 240
+    },
+    {
       "id": "evidence-of-unchanged-notes-is-optional",
       "package": "tools/github-reviewer",
       "file": "tools/github-reviewer/src/vault-context.ts",
