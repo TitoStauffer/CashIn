@@ -1,7 +1,7 @@
 # Arquitetura do Mobile
 
 **Status:** confirmado
-**Última revisão:** 17/11/2026
+**Última revisão:** 18/11/2026
 
 ## Organização
 
@@ -46,6 +46,15 @@ O app fica em `apps/mobile`, com Expo SDK 58, React Native e TypeScript estrito,
 - **Compartilhamento:** só o proprietário de uma carteira compartilhada vê a opção; a tela também recusa sozinha quem não é proprietário, antes de chamar a API, que continua sendo a fonte da autorização. O proprietário vê membros (remover pede confirmação), convida por e-mail, cancela convites pendentes, gera o link de acesso e o envia pela folha de compartilhamento do sistema, e aprova, recusa ou cancela solicitações. As respostas mostram a mensagem da API.
 - **Fora do app, por ora:** aceitar convite e pedir acesso por link continuam na Web, porque o app ainda não abre deep links.
 
+## Categorias e formas de pagamento (DEV-144)
+
+- **Rotas:** `categories` e `payment-methods`. As chamadas ficam em `src/catalog/catalogApi.ts`, e todas levam o `X-Wallet-Id` da carteira ativa.
+- **Rotas dentro da carteira ativa:** `src/wallets/activeWalletGate.ts` decide o que uma rota escopada mostra: primeiro o redirecionamento da sessão, depois o erro das carteiras com nova tentativa, depois a espera, e só então a tela, já com a carteira. Nenhuma requisição escopada sai antes de a carteira ativa ser conhecida. As telas de lançamentos e o dashboard reutilizam esse gate.
+- **Troca de carteira:** a tela recebe o id da carteira e relê a lista quando ele muda. A lista antiga sai da tela antes de chegar a nova, e formulário, editor e mensagem da carteira anterior são descartados.
+- **Categorias:** uma natureza por vez (entradas, saídas, metas de investimento e a natureza legada), com subcategorias. A tela só recusa nome em branco; nome duplicado e exclusão de item em uso são recusados pela API, e a mensagem dela aparece. Excluir pede confirmação.
+- **Formas de pagamento:** a API não exclui forma de pagamento, para preservar o histórico das despesas, então o app desativa e reativa. Uma forma com natureza histórica de VA ou VR mantém essa opção enquanto é editada.
+- **Ações:** `src/ui/useActionRunner.ts` executa uma ação por vez, mostra a mensagem e relê a lista depois.
+
 ## Qualidade
 
 - Job `Mobile` no CI: lint (`expo lint`), Jest com `jest-expo` e Testing Library, typecheck, `expo export` dos bundles Android e iOS e mutantes declarados para `apps/mobile`. A cobertura vai ao SonarQube, sem as rotas.
@@ -80,7 +89,9 @@ A API precisa estar acessível pelo celular. O `docker compose up` publica a por
 - [`apps/mobile/src/wallets/walletApi.ts`](../../../apps/mobile/src/wallets/walletApi.ts)
 - [`apps/mobile/src/wallets/activeWallet.ts`](../../../apps/mobile/src/wallets/activeWallet.ts)
 - [`apps/mobile/src/screens/WalletSharingScreen.tsx`](../../../apps/mobile/src/screens/WalletSharingScreen.tsx)
-- [`docs/api.md`](../../api.md) — contrato das rotas de carteira, convites, membros, link de acesso e solicitações que `walletApi.ts` segue
+- [`apps/mobile/src/catalog/catalogApi.ts`](../../../apps/mobile/src/catalog/catalogApi.ts)
+- [`apps/mobile/src/wallets/activeWalletGate.ts`](../../../apps/mobile/src/wallets/activeWalletGate.ts)
+- [`docs/api.md`](../../api.md) — contrato das rotas de carteira, convites, membros, link de acesso e solicitações que `walletApi.ts` segue, e das categorias e formas de pagamento que `catalogApi.ts` segue
 - [`apps/api/src/wallets/wallets.routes.ts`](../../../apps/api/src/wallets/wallets.routes.ts)
 - [`apps/api/src/wallet-invitations/wallet-invitations.routes.ts`](../../../apps/api/src/wallet-invitations/wallet-invitations.routes.ts)
 - [`apps/api/src/wallet-access-requests/wallet-access-requests.routes.ts`](../../../apps/api/src/wallet-access-requests/wallet-access-requests.routes.ts)

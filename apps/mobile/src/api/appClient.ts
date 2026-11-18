@@ -1,6 +1,7 @@
 import Constants from 'expo-constants'
 
 import { createAuthApi, type AuthApi } from '../auth/authApi'
+import { createCatalogApi, type CatalogApi } from '../catalog/catalogApi'
 import { tokenStorage } from '../auth/tokenStorage'
 import { resolveApiBaseUrl } from '../config/apiUrl'
 import { getActiveWalletId } from '../wallets/activeWallet'
@@ -53,3 +54,4 @@ const lazyClient: ApiClient = <T,>(path: string, options?: ApiRequestOptions) =>
 
 export const appAuthApi: AuthApi = createAuthApi(lazyClient)
 export const appWalletApi: WalletApi = createWalletApi(lazyClient)
+export const appCatalogApi: CatalogApi = createCatalogApi(lazyClient)
