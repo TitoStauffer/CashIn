@@ -1,4 +1,4 @@
-import { AMOUNT_INVALID, AMOUNT_NOT_POSITIVE, AMOUNT_REQUIRED, amountToInput, formatAmount, parseAmountInput } from './amount'
+import { AMOUNT_INVALID, AMOUNT_NOT_POSITIVE, AMOUNT_REQUIRED, amountToInput, compareAmounts, formatAmount, isZeroAmount, parseAmountInput } from './amount'
 
 describe('parseAmountInput', () => {
   it.each([
@@ -51,5 +51,34 @@ describe('formatAmount', () => {
 
   it('puts the amount back in the field the way it is typed', () => {
     expect(amountToInput('1250.50')).toBe('1250,50')
+  })
+})
+
+describe('compareAmounts and isZeroAmount', () => {
+  it('orders API amounts by value, negatives and loose scales included', () => {
+    expect(compareAmounts('100', '99.99')).toBe(1)
+    expect(compareAmounts('10.5', '10.50')).toBe(0)
+    expect(compareAmounts('-4.00', '0.00')).toBe(-1)
+    // Both become the same JavaScript number (9007199254740994); as cents they are ordered exactly.
+    expect(compareAmounts('9007199254740993.02', '9007199254740993.01')).toBe(1)
+  })
+
+  it('knows a zero in any representation', () => {
+    expect(isZeroAmount('0.00')).toBe(true)
+    expect(isZeroAmount('0')).toBe(true)
+    expect(isZeroAmount('-0.00')).toBe(true)
+    expect(isZeroAmount('0.01')).toBe(false)
+  })
+
+  // Code Review of PR #126: an amount with more than two places used to read as zero.
+  it('reads an amount with more places whole, and never takes text that is not a decimal for zero', () => {
+    expect(isZeroAmount('0.001')).toBe(false)
+    expect(isZeroAmount('0.000')).toBe(true)
+    expect(compareAmounts('0.005', '0.004')).toBe(1)
+    expect(compareAmounts('1.5', '1.499')).toBe(1)
+    expect(isZeroAmount('abc')).toBe(false)
+    expect(compareAmounts('abc', '-1.00')).toBe(-1)
+    expect(compareAmounts('-1.00', 'abc')).toBe(1)
+    expect(compareAmounts('abc', 'xyz')).toBe(0)
   })
 })

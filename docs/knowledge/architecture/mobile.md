@@ -70,6 +70,15 @@ O app fica em `apps/mobile`, com Expo SDK 58, React Native e TypeScript estrito,
 - **Forma de pagamento:** uma despesa nova só oferece formas e cartões ativos, como a API exige. A edição mantém a forma e o cartão que a despesa já tem, mesmo inativos. No crédito, o cartão é obrigatório antes de chamar a API (com a mesma mensagem dela). Ao trocar para outra forma, um cartão escolhido antes é descartado, porque a API recusa cartão fora do crédito.
 - **Saldo de benefício:** a API não recusa despesa por falta de saldo; ela atribui a despesa ao saldo da natureza da forma (dinheiro, VA/VR ou AHO). O formulário diz qual saldo a forma escolhida reduz, sem inventar um bloqueio que a API não tem.
 
+## Dashboard (DEV-147)
+
+- **Tela inicial:** com a carteira ativa conhecida, a rota inicial mostra `DashboardScreen` com a Home (conta, atalhos e sair) no topo. Antes disso, a Home sozinha mostra a espera ou o erro das carteiras.
+- **Dados:** `src/dashboard/dashboardApi.ts` lê `GET /financial-summary` do mês e do mês anterior (`docs/dashboard-summary-contract.md`) e `GET /investment-goals`. A lista pertence à carteira e ao mês; puxar a tela para baixo lê de novo, mantendo o resumo na tela enquanto isso.
+- **Sem recálculo:** todo número mostrado é um que a API enviou. `src/dashboard/dashboardView.ts` só ordena (Top 5 por valor, em centavos, sem ponto flutuante), escolhe e formata. A comparação põe os dois meses lado a lado em vez de calcular a variação que a Web calcula.
+- **Transferências:** entre carteiras, ficam em linhas próprias ("Enviadas" e "Recebidas") e nunca entram em Entradas nem em Despesas, como na Web.
+- **Metas:** acumulado, alvo e percentual da meta vêm da API; o aporte do mês vem de `contributionsByGoal`, e meta sem item teve R$ 0,00 no mês.
+- **Vazio:** o mês sem nenhum total diferente de zero (estornos contam) diz "Nenhum lançamento".
+
 ## Qualidade
 
 - Job `Mobile` no CI: lint (`expo lint`), Jest com `jest-expo` e Testing Library, typecheck, `expo export` dos bundles Android e iOS e mutantes declarados para `apps/mobile`. A cobertura vai ao SonarQube, sem as rotas.
@@ -108,6 +117,9 @@ A API precisa estar acessível pelo celular. O `docker compose up` publica a por
 - [`apps/mobile/src/incomes/incomeApi.ts`](../../../apps/mobile/src/incomes/incomeApi.ts)
 - [`apps/mobile/src/expenses/expenseApi.ts`](../../../apps/mobile/src/expenses/expenseApi.ts)
 - [`apps/mobile/src/expenses/ExpenseForm.tsx`](../../../apps/mobile/src/expenses/ExpenseForm.tsx)
+- [`apps/mobile/src/dashboard/dashboardApi.ts`](../../../apps/mobile/src/dashboard/dashboardApi.ts)
+- [`apps/mobile/src/dashboard/dashboardView.ts`](../../../apps/mobile/src/dashboard/dashboardView.ts)
+- [`docs/dashboard-summary-contract.md`](../../dashboard-summary-contract.md) — contrato do resumo que o dashboard mostra sem recalcular
 - [`apps/mobile/src/money/amount.ts`](../../../apps/mobile/src/money/amount.ts)
 - [`apps/mobile/src/wallets/activeWalletGate.ts`](../../../apps/mobile/src/wallets/activeWalletGate.ts)
 - [`docs/api.md`](../../api.md) — contrato das rotas de carteira, convites, membros, link de acesso e solicitações que `walletApi.ts` segue, das categorias e formas de pagamento que `catalogApi.ts` segue, das entradas que `incomeApi.ts` segue, e das despesas e cartões que `expenseApi.ts` segue
