@@ -93,6 +93,13 @@ O app fica em `apps/mobile`, com Expo SDK 58, React Native e TypeScript estrito,
 - **Edição:** o `PUT` substitui todos os campos. O formulário não edita a subcategoria, então a mantém enquanto a categoria for a mesma e a descarta quando a categoria muda. As categorias oferecidas são as de natureza `investment` e as da natureza legada `investment_goal`, como na Web; uma categoria da meta fora dessas continua aparecendo como opção.
 - **Meta encerrada:** continua visível, mas não oferece edição, encerramento nem aporte; a API responde `409` a qualquer alteração nela.
 
+## Importação OFX (DEV-150)
+
+- **Rotas:** `imports` (nova importação e histórico) e `import-preview` (uma importação), pelo `activeWalletGate`. As chamadas ficam em `src/imports/importApi.ts`, seguindo [`docs/financial-imports-contract.md`](../../financial-imports-contract.md). CSV com modelos (DEV-157) e regras de categorização (DEV-158) chegam em Histórias próprias.
+- **Arquivo:** escolhido pelo `expo-document-picker` em `src/imports/pickImportFile.ts` e enviado como veio, em `application/octet-stream`, com o nome em `X-File-Name` e `X-File-Format: ofx`. A fatura leva o cartão ativo em `X-Credit-Card-Id`. O cliente HTTP aceita esse corpo binário (`rawBody`), um prazo maior para o envio e, da rota, só cabeçalhos próprios `X-`, sem diferenciar maiúsculas e nunca o `X-Wallet-Id`; qualquer outro nome é recusado antes da requisição. Tamanho, formato e conteúdo são decididos pela API, e o app mostra a mensagem dela. O conteúdo nunca é lido, mostrado nem registrado em log, e um teste falha se o console for usado durante o envio.
+- **Prévia:** resumo, faturas e situação de cada linha são os da API, lidos de novo depois de cada ação. Cada linha editável corrige data, descrição, tipo, categoria e subcategoria; na fatura, a fatura de destino entre as três que a API aceita; no extrato, a conciliação de uma transferência, escolhida entre as candidatas que o próprio item traz. Trocar o tipo limpa categoria e conciliação, e trocar a data volta à fatura calculada por ela. Uma possível duplicidade só entra com "Importar mesmo assim". As linhas aparecem em páginas de 50.
+- **Confirmar, descartar e desfazer:** a confirmação fica indisponível enquanto uma linha está em edição. A mensagem vem da resposta. Quando a API devolve a sessão à prévia, o app diz que nada foi importado e manda conferir as linhas sinalizadas, sem nomear uma causa: pode ser duplicidade, fatura paga no meio-tempo ou nenhuma linha válida. Descartar e desfazer pedem confirmação, e o desfazer aparece só quando `canUndo` permite; senão, o app mostra `undoBlockedReason`.
+
 ## Qualidade
 
 - Job `Mobile` no CI: lint (`expo lint`), Jest com `jest-expo` e Testing Library, typecheck, `expo export` dos bundles Android e iOS e mutantes declarados para `apps/mobile`. A cobertura vai ao SonarQube, sem as rotas.
@@ -135,6 +142,9 @@ A API precisa estar acessível pelo celular. O `docker compose up` publica a por
 - [`apps/mobile/src/dashboard/dashboardView.ts`](../../../apps/mobile/src/dashboard/dashboardView.ts)
 - [`apps/mobile/src/cards/creditCardApi.ts`](../../../apps/mobile/src/cards/creditCardApi.ts)
 - [`apps/mobile/src/goals/goalApi.ts`](../../../apps/mobile/src/goals/goalApi.ts)
+- [`apps/mobile/src/imports/importApi.ts`](../../../apps/mobile/src/imports/importApi.ts)
+- [`apps/mobile/src/imports/importModel.ts`](../../../apps/mobile/src/imports/importModel.ts)
+- [`docs/financial-imports-contract.md`](../../financial-imports-contract.md) — contrato da importação que o app segue
 - [`docs/dashboard-summary-contract.md`](../../dashboard-summary-contract.md) — contrato do resumo que o dashboard mostra sem recalcular
 - [`apps/mobile/src/money/amount.ts`](../../../apps/mobile/src/money/amount.ts)
 - [`apps/mobile/src/wallets/activeWalletGate.ts`](../../../apps/mobile/src/wallets/activeWalletGate.ts)

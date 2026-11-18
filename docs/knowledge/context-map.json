@@ -24,7 +24,7 @@
       "documents": ["docs/knowledge/domain/transactions.md", "docs/knowledge/domain/credit-cards.md"]
     },
     {
-      "paths": ["apps/api/src/financial-imports/**", "apps/web/src/imports/**", "docs/financial-imports-contract.md"],
+      "paths": ["apps/api/src/financial-imports/**", "apps/web/src/imports/**", "apps/mobile/src/imports/**", "docs/financial-imports-contract.md"],
       "documents": ["docs/knowledge/domain/imports.md"]
     },
     {
