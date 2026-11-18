@@ -129,6 +129,24 @@ describe('CardStatementsScreen', () => {
     expect(screen.getByText('Nenhuma fatura fecha neste mês.')).toBeTruthy()
   })
 
+  it('starts each month clean: no old message and no payment form reopening on the way back', async () => {
+    const { cardApi } = await mount()
+    await screen.findByText('Em aberto')
+    await openPayment()
+    await fireEvent.changeText(screen.getByLabelText('Data do pagamento (DD/MM/AAAA)'), '31/11/2026')
+    await fireEvent.press(screen.getByRole('button', { name: 'Registrar pagamento' }))
+    expect(await screen.findByText('Informe a data no formato DD/MM/AAAA.')).toBeTruthy()
+
+    await fireEvent.press(screen.getByRole('link', { name: 'Mês anterior' }))
+    expect(await screen.findByText('Liquidada em 19/10/2026')).toBeTruthy()
+    expect(screen.queryByText('Informe a data no formato DD/MM/AAAA.')).toBeNull()
+
+    await fireEvent.press(screen.getByRole('link', { name: 'Próximo mês' }))
+    expect(await screen.findByText('Em aberto')).toBeTruthy()
+    expect(screen.queryByLabelText('Valor pago (R$)')).toBeNull()
+    expect(cardApi.payStatement).not.toHaveBeenCalled()
+  })
+
   it('shows a retryable error when the statements cannot be read', async () => {
     const listStatements = jest.fn()
       .mockRejectedValueOnce(new ApiError('Cartão não encontrado.', 404))
