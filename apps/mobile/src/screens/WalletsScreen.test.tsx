@@ -51,7 +51,7 @@ describe('WalletsScreen', () => {
   })
 
   it('asks for a name before calling the API and shows the API refusal', async () => {
-    const onCreate = jest.fn(async () => { throw new ApiError('Os dados enviados são inválidos.', 400) })
+    const onCreate = jest.fn(async () => { throw new ApiError('Já existe uma carteira com esse nome.', 409) })
     await renderScreen(ready(), { onCreate })
     await fireEvent.press(screen.getByRole('button', { name: 'Criar carteira' }))
     expect(await screen.findByText('Informe o nome da carteira.')).toBeTruthy()
@@ -59,7 +59,7 @@ describe('WalletsScreen', () => {
 
     await fireEvent.changeText(screen.getByLabelText('Nome da nova carteira'), 'Reforma')
     await fireEvent.press(screen.getByRole('button', { name: 'Criar carteira' }))
-    expect(await screen.findByText('Os dados enviados são inválidos.')).toBeTruthy()
+    expect(await screen.findByText('Já existe uma carteira com esse nome.')).toBeTruthy()
   })
 
   it('shows the fallback notice and lets the person dismiss it', async () => {
