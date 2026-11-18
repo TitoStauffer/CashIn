@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { ScrollView, StyleSheet, Text, View } from 'react-native'
+import { ScrollView, Text, View } from 'react-native'
 
 import {
   PAYMENT_METHOD_NATURES,
@@ -9,9 +9,10 @@ import {
   type PaymentMethodNature,
 } from '../catalog/catalogApi'
 import { ChoiceChips } from '../ui/ChoiceChips'
-import { FormMessage, formStyles, LinkButton, PrimaryButton, TextField } from '../ui/Form'
+import { formStyles, LinkButton, PrimaryButton, TextField } from '../ui/Form'
+import { listStyles } from '../ui/listStyles'
+import { ScreenMessages } from '../ui/ScreenMessages'
 import { ErrorState, LoadingState } from '../ui/StateViews'
-import { colors, spacing, typography } from '../ui/theme'
 import { messageOf, useActionRunner } from '../ui/useActionRunner'
 
 const LOAD_FAILED = 'Não foi possível carregar as formas de pagamento. Tente novamente.'
@@ -112,13 +113,7 @@ export function PaymentMethodsScreen({ walletId, catalogApi }: { walletId: strin
   return (
     <ScrollView contentContainerStyle={styles.screen} keyboardShouldPersistTaps="handled">
       <Text style={formStyles.title} accessibilityRole="header">Formas de pagamento</Text>
-      {feedback ? <FormMessage tone={feedback.tone} message={feedback.message} /> : null}
-      {loadError ? (
-        <View style={styles.card}>
-          <FormMessage tone="error" message={loadError} />
-          <LinkButton label="Tentar novamente" onPress={refresh} />
-        </View>
-      ) : null}
+      <ScreenMessages feedback={feedback} loadError={loadError} onRetry={refresh} />
 
       {editor ? (
         <View style={styles.card}>
@@ -150,11 +145,4 @@ export function PaymentMethodsScreen({ walletId, catalogApi }: { walletId: strin
   )
 }
 
-const styles = StyleSheet.create({
-  screen: { gap: spacing.md, padding: spacing.lg, backgroundColor: colors.background },
-  card: { borderWidth: 1, borderColor: colors.border, borderRadius: 8, backgroundColor: colors.surface, padding: spacing.md, gap: spacing.xs },
-  inactive: { opacity: 0.7 },
-  actions: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.md },
-  primary: { fontSize: typography.body, fontWeight: '600', color: colors.text },
-  detail: { fontSize: typography.caption, color: colors.textMuted },
-})
+const styles = listStyles

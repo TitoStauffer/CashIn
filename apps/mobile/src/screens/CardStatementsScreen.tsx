@@ -4,7 +4,9 @@ import { ScrollView, StyleSheet, Text, View } from 'react-native'
 import type { CreditCard, CreditCardApi, CreditCardStatement } from '../cards/creditCardApi'
 import { formatAmount, parseAmountInput } from '../money/amount'
 import { DATE_INVALID, formatDate, monthOf, monthRange, parseDateInput, todayIso } from '../period/period'
-import { FormMessage, formStyles, LinkButton, PrimaryButton, TextField } from '../ui/Form'
+import { formStyles, LinkButton, PrimaryButton, TextField } from '../ui/Form'
+import { listStyles } from '../ui/listStyles'
+import { ScreenMessages } from '../ui/ScreenMessages'
 import { MonthSelector } from '../ui/MonthSelector'
 import { ErrorState, LoadingState } from '../ui/StateViews'
 import { colors, spacing, typography } from '../ui/theme'
@@ -98,13 +100,7 @@ export function CardStatementsScreen({
       <Text style={formStyles.title} accessibilityRole="header">Faturas de {card.nickname}</Text>
       <Text style={styles.detail}>Faturas que fecham no mês escolhido.</Text>
       <MonthSelector month={month} onChange={setMonth} />
-      {feedback ? <FormMessage tone={feedback.tone} message={feedback.message} /> : null}
-      {loadError ? (
-        <View style={styles.card}>
-          <FormMessage tone="error" message={loadError} />
-          <LinkButton label="Tentar novamente" onPress={refresh} />
-        </View>
-      ) : null}
+      <ScreenMessages feedback={feedback} loadError={loadError} onRetry={refresh} />
 
       {!statements ? <LoadingState label="Carregando faturas…" /> : null}
       {statements && statements.length === 0 ? <Text style={formStyles.body}>Nenhuma fatura fecha neste mês.</Text> : null}
@@ -162,14 +158,13 @@ export function CardStatementsScreen({
   )
 }
 
-const styles = StyleSheet.create({
-  screen: { gap: spacing.md, padding: spacing.lg, backgroundColor: colors.background },
-  card: { borderWidth: 1, borderColor: colors.border, borderRadius: 8, backgroundColor: colors.surface, padding: spacing.md, gap: spacing.xs },
-  form: { gap: spacing.xs, marginTop: spacing.sm },
-  section: { fontSize: typography.body, fontWeight: '600', color: colors.text, marginTop: spacing.sm },
-  line: { flexDirection: 'row', justifyContent: 'space-between', gap: spacing.sm },
-  lineLabel: { fontSize: typography.body, color: colors.text },
-  amount: { fontSize: typography.body, fontWeight: '600', color: colors.text },
-  primary: { fontSize: typography.body, fontWeight: '600', color: colors.text },
-  detail: { fontSize: typography.caption, color: colors.textMuted },
-})
+const styles = {
+  ...listStyles,
+  ...StyleSheet.create({
+    form: { gap: spacing.xs, marginTop: spacing.sm },
+    section: { fontSize: typography.body, fontWeight: '600', color: colors.text, marginTop: spacing.sm },
+    line: { flexDirection: 'row', justifyContent: 'space-between', gap: spacing.sm },
+    lineLabel: { fontSize: typography.body, color: colors.text },
+    amount: { fontSize: typography.body, fontWeight: '600', color: colors.text },
+  }),
+}
