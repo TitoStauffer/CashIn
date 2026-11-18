@@ -8,7 +8,7 @@
   ],
   "routes": [
     {
-      "paths": ["apps/api/src/wallets/**", "apps/api/src/wallet-invitations/**", "apps/api/src/wallet-access-requests/**", "apps/web/src/wallets/**"],
+      "paths": ["apps/api/src/wallets/**", "apps/api/src/wallet-invitations/**", "apps/api/src/wallet-access-requests/**", "apps/web/src/wallets/**", "apps/mobile/src/wallets/**"],
       "documents": ["docs/knowledge/domain/wallets.md", "docs/knowledge/decisions/ADR-001-wallet-model.md"]
     },
     {

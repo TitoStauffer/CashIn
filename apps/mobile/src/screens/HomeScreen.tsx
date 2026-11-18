@@ -2,15 +2,29 @@ import { useRef, useState } from 'react'
 import { StyleSheet, Text, View } from 'react-native'
 
 import type { User } from '../auth/authApi'
-import { PrimaryButton } from '../ui/Form'
+import type { Wallet } from '../wallets/walletApi'
+import { LinkButton, PrimaryButton } from '../ui/Form'
 import { colors, spacing, typography } from '../ui/theme'
 
 /**
- * The first screen after signing in. It names the account and signs out; the dashboard replaces it in
- * DEV-147. Signing out always ends on the login, even when the API cannot be reached (the session
- * provider drops the token from the device either way).
+ * The first screen after signing in. It names the account and the wallet in use, opens the wallets and
+ * signs out; the dashboard replaces it in DEV-147. Signing out always ends on the login, even when the
+ * API cannot be reached (the session provider drops the token from the device either way).
  */
-export function HomeScreen({ user, onSignOut }: { user: User; onSignOut(): Promise<void> }) {
+export function HomeScreen({
+  user,
+  activeWallet,
+  walletError = null,
+  onOpenWallets,
+  onSignOut,
+}: {
+  user: User
+  activeWallet: Wallet | null
+  /** The wallets failed to load: the line says so instead of claiming they are still loading. */
+  walletError?: string | null
+  onOpenWallets(): void
+  onSignOut(): Promise<void>
+}) {
   const [busy, setBusy] = useState(false)
   // Signing out happens once: the ref holds between two taps in the same frame, before `busy` renders.
   const inFlight = useRef(false)
@@ -26,9 +40,17 @@ export function HomeScreen({ user, onSignOut }: { user: User; onSignOut(): Promi
     <View style={styles.container}>
       <Text style={styles.title} accessibilityRole="header">Saldo Certo</Text>
       <Text style={styles.account}>Você entrou como {user.email}</Text>
+      <Text style={styles.account}>{walletLine(activeWallet, walletError)}</Text>
+      <LinkButton label="Carteiras" onPress={onOpenWallets} />
       <PrimaryButton label="Sair" onPress={signOut} busy={busy} />
     </View>
   )
+}
+
+function walletLine(activeWallet: Wallet | null, walletError: string | null): string {
+  if (activeWallet) return `Carteira em uso: ${activeWallet.name}`
+  if (walletError) return walletError
+  return 'Carregando carteiras…'
 }
 
 const styles = StyleSheet.create({

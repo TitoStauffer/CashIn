@@ -115,6 +115,23 @@ describe('createApiClient', () => {
     expect(onUnauthorized).not.toHaveBeenCalled()
   })
 
+  // DEV-143: the API answers 404 for a wallet the person no longer has. Only a request that sent
+  // X-Wallet-Id reports it, naming the wallet it sent; a 404 elsewhere is just a missing resource.
+  it('reports a 404 on a wallet-scoped request with the wallet it sent', async () => {
+    const onWalletNotFound = jest.fn()
+    const scoped = clientWith(() => jsonResponse(404, { message: 'Carteira não encontrada.' }), { onWalletNotFound })
+    await expect(scoped.request('/incomes')).rejects.toMatchObject({ status: 404, message: 'Carteira não encontrada.' })
+    expect(onWalletNotFound).toHaveBeenCalledWith('wallet-1')
+
+    onWalletNotFound.mockClear()
+    await scoped.request('/wallets/w9/members', { scopeToActiveWallet: false }).catch(() => undefined)
+    const noWallet = clientWith(() => jsonResponse(404, {}), { onWalletNotFound, getActiveWalletId: () => null })
+    await noWallet.request('/incomes').catch(() => undefined)
+    const otherStatus = clientWith(() => jsonResponse(403, {}), { onWalletNotFound })
+    await otherStatus.request('/incomes').catch(() => undefined)
+    expect(onWalletNotFound).not.toHaveBeenCalled()
+  })
+
   it('reports a success without a JSON body as an ApiError in Portuguese', async () => {
     const { request } = clientWith(() => new Response('<html>ok</html>', { status: 200 }))
     await expect(request('/health')).rejects.toEqual(new ApiError('A API respondeu de forma inesperada. Tente novamente.', 200))

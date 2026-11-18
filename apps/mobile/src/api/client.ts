@@ -40,6 +40,8 @@ export type ApiClientOptions = {
   getActiveWalletId: () => string | null
   /** Called when the API refuses the session (401), with the token that was refused. */
   onUnauthorized?: (rejectedToken: string) => void
+  /** Called when a request scoped to a wallet answers 404, with that wallet: it may have been removed. */
+  onWalletNotFound?: (walletId: string) => void
   fetchImpl?: typeof fetch
   timeoutMs?: number
 }
@@ -63,6 +65,7 @@ export function createApiClient({
   getToken,
   getActiveWalletId,
   onUnauthorized,
+  onWalletNotFound,
   fetchImpl = fetch,
   timeoutMs = DEFAULT_TIMEOUT_MS,
 }: ApiClientOptions): ApiClient {
@@ -98,6 +101,8 @@ export function createApiClient({
       // 401 too, and is not an expired session. The logout opts out, since ending the session is what
       // it was already doing.
       if (response.status === 401 && token && reportUnauthorized) onUnauthorized?.(token)
+      // The API answers 404 for a wallet the person no longer has; the wallets are then checked again.
+      if (response.status === 404 && walletId) onWalletNotFound?.(walletId)
       throw new ApiError(await errorMessage(response), response.status)
     }
     if (response.status === 204) return undefined as T
