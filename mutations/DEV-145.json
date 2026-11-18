@@ -1,0 +1,213 @@
+{
+  "ticket": "DEV-145",
+  "mutations": [
+    {
+      "id": "amount-is-never-a-number",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/money/amount.ts",
+      "find": "const amount = `${integer}.${(match[2] ?? '').padEnd(2, '0')}`",
+      "replace": "const amount = String(Number(`${integer}.${match[2] ?? '0'}`))",
+      "command": [
+        "npx",
+        "jest",
+        "src/money/amount.test.ts"
+      ],
+      "timeoutSeconds": 180
+    },
+    {
+      "id": "comma-is-a-decimal-separator",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/money/amount.ts",
+      "find": "/^(\\d+)(?:[.,](\\d{1,2}))?$/",
+      "replace": "/^(\\d+)(?:[.](\\d{1,2}))?$/",
+      "command": [
+        "npx",
+        "jest",
+        "src/money/amount.test.ts"
+      ],
+      "timeoutSeconds": 180
+    },
+    {
+      "id": "negative-amount-is-refused",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/money/amount.ts",
+      "find": "if (value.startsWith('-')) return { ok: false, message: AMOUNT_NOT_POSITIVE }",
+      "replace": "if (false) return { ok: false, message: AMOUNT_NOT_POSITIVE }",
+      "command": [
+        "npx",
+        "jest",
+        "src/money/amount.test.ts"
+      ],
+      "timeoutSeconds": 180
+    },
+    {
+      "id": "zero-amount-is-refused",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/money/amount.ts",
+      "find": "if (/^0\\.00$/.test(amount))",
+      "replace": "if (false)",
+      "command": [
+        "npx",
+        "jest",
+        "src/money/amount.test.ts"
+      ],
+      "timeoutSeconds": 180
+    },
+    {
+      "id": "typed-date-is-a-real-day",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/period/period.ts",
+      "find": "if (date.getFullYear() !== year || date.getMonth() !== month - 1 || date.getDate() !== day) return null",
+      "replace": "if (false) return null",
+      "command": [
+        "npx",
+        "jest",
+        "src/period/period.test.ts"
+      ],
+      "timeoutSeconds": 180
+    },
+    {
+      "id": "month-filter-ends-on-its-last-day",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/period/period.ts",
+      "find": "const lastDay = new Date(year, monthNumber, 0).getDate()",
+      "replace": "const lastDay = 31",
+      "command": [
+        "npx",
+        "jest",
+        "src/period/period.test.ts"
+      ],
+      "timeoutSeconds": 180
+    },
+    {
+      "id": "old-wallet-incomes-leave-the-screen",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/screens/IncomesScreen.tsx",
+      "find": "const data = loaded?.key === key ? loaded : null",
+      "replace": "const data = loaded",
+      "command": [
+        "npx",
+        "jest",
+        "src/screens/IncomesScreen.test.tsx"
+      ],
+      "timeoutSeconds": 180
+    },
+    {
+      "id": "wallet-change-reads-the-incomes-again",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/screens/IncomesScreen.tsx",
+      "find": "}, [incomeApi, catalogApi, key, month, attempt])",
+      "replace": "}, [incomeApi, catalogApi, month, attempt])",
+      "command": [
+        "npx",
+        "jest",
+        "src/screens/IncomesScreen.test.tsx"
+      ],
+      "timeoutSeconds": 180
+    },
+    {
+      "id": "wallet-change-drops-the-income-form",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/screens/IncomesScreen.tsx",
+      "find": "if (formKey !== key) {",
+      "replace": "if (false) {",
+      "command": [
+        "npx",
+        "jest",
+        "src/screens/IncomesScreen.test.tsx"
+      ],
+      "timeoutSeconds": 180
+    },
+    {
+      "id": "legacy-balance-opens-as-the-unified-one",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/screens/IncomesScreen.tsx",
+      "find": "balanceType: isLegacyBalanceType(income.balanceType) ? 'food_meal_benefit' : income.balanceType ?? 'cash',",
+      "replace": "balanceType: income.balanceType ?? 'cash',",
+      "command": [
+        "npx",
+        "jest",
+        "src/screens/IncomesScreen.test.tsx"
+      ],
+      "timeoutSeconds": 180
+    },
+    {
+      "id": "legacy-balance-notice-is-shown",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/screens/IncomesScreen.tsx",
+      "find": "{editor.original && isLegacyBalanceType(editor.original.balanceType) ? <Text",
+      "replace": "{false ? <Text",
+      "command": [
+        "npx",
+        "jest",
+        "src/screens/IncomesScreen.test.tsx"
+      ],
+      "timeoutSeconds": 180
+    },
+    {
+      "id": "blank-description-is-sent-as-null",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/screens/IncomesScreen.tsx",
+      "find": "description: editor.description.trim() || null,",
+      "replace": "description: editor.description,",
+      "command": [
+        "npx",
+        "jest",
+        "src/screens/IncomesScreen.test.tsx"
+      ],
+      "timeoutSeconds": 180
+    },
+    {
+      "id": "missing-category-is-refused-before-the-api",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/screens/IncomesScreen.tsx",
+      "find": "if (!editor.categoryId) return",
+      "replace": "if (false) return",
+      "command": [
+        "npx",
+        "jest",
+        "src/screens/IncomesScreen.test.tsx"
+      ],
+      "timeoutSeconds": 180
+    },
+    {
+      "id": "removed-income-closes-its-editor",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/screens/IncomesScreen.tsx",
+      "find": "open?.original?.id === income.id ? null : open",
+      "replace": "open",
+      "command": [
+        "npx",
+        "jest",
+        "src/screens/IncomesScreen.test.tsx"
+      ],
+      "timeoutSeconds": 180
+    },
+    {
+      "id": "removing-another-income-keeps-the-editor",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/screens/IncomesScreen.tsx",
+      "find": "open?.original?.id === income.id ? null : open",
+      "replace": "null",
+      "command": [
+        "npx",
+        "jest",
+        "src/screens/IncomesScreen.test.tsx"
+      ],
+      "timeoutSeconds": 180
+    },
+    {
+      "id": "income-actions-name-amount-and-category",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/screens/IncomesScreen.tsx",
+      "find": "`entrada de ${formatAmount(income.amount)} em ${formatDate(income.date)} (${income.categoryName})`",
+      "replace": "`entrada de ${formatDate(income.date)}`",
+      "command": [
+        "npx",
+        "jest",
+        "src/screens/IncomesScreen.test.tsx"
+      ],
+      "timeoutSeconds": 180
+    }
+  ]
+}

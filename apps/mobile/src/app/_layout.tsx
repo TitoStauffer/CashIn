@@ -32,6 +32,7 @@ export default function RootLayout() {
           <Stack.Screen name="wallet-sharing" options={{ title: 'Compartilhar carteira' }} />
           <Stack.Screen name="categories" options={{ title: 'Categorias' }} />
           <Stack.Screen name="payment-methods" options={{ title: 'Formas de pagamento' }} />
+          <Stack.Screen name="incomes" options={{ title: 'Entradas' }} />
         </Stack>
       </WalletProvider>
     </SessionProvider>

@@ -8,7 +8,7 @@ import { colors, spacing, typography } from '../ui/theme'
 
 /**
  * The first screen after signing in. It names the account and the wallet in use, opens the wallets, the
- * categories and the payment methods, and signs out; the dashboard replaces it in DEV-147. Signing out
+ * incomes, the categories and the payment methods, and signs out; the dashboard replaces it in DEV-147. Signing out
  * always ends on the login, even when the API cannot be reached (the session provider drops the token
  * from the device either way).
  */
@@ -17,6 +17,7 @@ export function HomeScreen({
   activeWallet,
   walletError = null,
   onOpenWallets,
+  onOpenIncomes,
   onOpenCategories,
   onOpenPaymentMethods,
   onSignOut,
@@ -26,6 +27,7 @@ export function HomeScreen({
   /** The wallets failed to load: the line says so instead of claiming they are still loading. */
   walletError?: string | null
   onOpenWallets(): void
+  onOpenIncomes(): void
   onOpenCategories(): void
   onOpenPaymentMethods(): void
   onSignOut(): Promise<void>
@@ -47,6 +49,7 @@ export function HomeScreen({
       <Text style={styles.account}>Você entrou como {user.email}</Text>
       <Text style={styles.account}>{walletLine(activeWallet, walletError)}</Text>
       <LinkButton label="Carteiras" onPress={onOpenWallets} />
+      <LinkButton label="Entradas" onPress={onOpenIncomes} />
       <LinkButton label="Categorias" onPress={onOpenCategories} />
       <LinkButton label="Formas de pagamento" onPress={onOpenPaymentMethods} />
       <PrimaryButton label="Sair" onPress={signOut} busy={busy} />
