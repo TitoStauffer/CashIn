@@ -47,7 +47,9 @@ export function WalletSharingScreen({
     let current = true
     void Promise.all([walletApi.listMembers(wallet.id), walletApi.listInvitations(wallet.id), walletApi.listAccessRequests(wallet.id)])
       .then(([members, invitations, requests]) => {
-        if (current) setSharing({ members: members.items, invitations: invitations.items, requests: requests.items })
+        if (!current) return
+        setSharing({ members: members.items, invitations: invitations.items, requests: requests.items })
+        setLoadError(null)
       })
       .catch((error: unknown) => { if (current) setLoadError(error instanceof Error && error.message ? error.message : LOAD_FAILED) })
     return () => { current = false }
@@ -105,6 +107,13 @@ export function WalletSharingScreen({
     <ScrollView contentContainerStyle={styles.screen} keyboardShouldPersistTaps="handled">
       <Text style={formStyles.title} accessibilityRole="header">Compartilhar {wallet.name}</Text>
       {feedback ? <FormMessage tone={feedback.tone} message={feedback.message} /> : null}
+      {/* A failed re-read after an action keeps the last lists on screen, but never silently. */}
+      {loadError ? (
+        <View style={styles.row}>
+          <FormMessage tone="error" message={loadError} />
+          <LinkButton label="Tentar novamente" onPress={refresh} />
+        </View>
+      ) : null}
 
       <Text style={styles.section} accessibilityRole="header">Membros</Text>
       {sharing.members.map((member) => (

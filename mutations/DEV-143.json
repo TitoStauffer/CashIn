@@ -156,6 +156,58 @@
         "src/wallets/activeWallet.test.ts"
       ],
       "timeoutSeconds": 180
+    },
+    {
+      "id": "failed-re-read-is-shown",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/screens/WalletSharingScreen.tsx",
+      "find": "{loadError ? (",
+      "replace": "{false ? (",
+      "command": [
+        "npx",
+        "jest",
+        "src/screens/WalletSharingScreen.test.tsx"
+      ],
+      "timeoutSeconds": 180
+    },
+    {
+      "id": "successful-read-clears-the-error",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/screens/WalletSharingScreen.tsx",
+      "find": "        setLoadError(null)",
+      "replace": "        void 0",
+      "command": [
+        "npx",
+        "jest",
+        "src/screens/WalletSharingScreen.test.tsx"
+      ],
+      "timeoutSeconds": 180
+    },
+    {
+      "id": "unavailable-session-leaves-the-wallet-routes",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/auth/sessionRedirect.ts",
+      "find": "return session.status === 'signedOut' ? '/login' : '/'",
+      "replace": "return session.status === 'signedOut' ? '/login' : null",
+      "command": [
+        "npx",
+        "jest",
+        "src/auth/sessionRedirect.test.ts"
+      ],
+      "timeoutSeconds": 180
+    },
+    {
+      "id": "signed-in-person-stays-on-the-route",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/auth/sessionRedirect.ts",
+      "find": "if (session.status === 'signedIn') return null",
+      "replace": "if (false) return null",
+      "command": [
+        "npx",
+        "jest",
+        "src/auth/sessionRedirect.test.ts"
+      ],
+      "timeoutSeconds": 180
     }
   ]
 }

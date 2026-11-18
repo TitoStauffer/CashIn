@@ -1,6 +1,7 @@
 import { Redirect, useRouter } from 'expo-router'
 
 import { useSession } from '../auth/SessionProvider'
+import { sessionRedirect } from '../auth/sessionRedirect'
 import { WalletsScreen } from '../screens/WalletsScreen'
 import { useWallets } from '../wallets/WalletProvider'
 
@@ -8,7 +9,8 @@ export default function Wallets() {
   const router = useRouter()
   const { state: session } = useSession()
   const { state, selectWallet, createWallet, reload, dismissNotice } = useWallets()
-  if (session.status === 'signedOut') return <Redirect href="/login" />
+  const redirect = sessionRedirect(session)
+  if (redirect) return <Redirect href={redirect} />
   return (
     <WalletsScreen
       state={state}

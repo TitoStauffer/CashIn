@@ -131,4 +131,25 @@ describe('WalletSharingScreen', () => {
     expect(await screen.findByText('pedido@example.com')).toBeTruthy()
     expect(listMembers).toHaveBeenCalledTimes(2)
   })
+
+  // Code Review of PR #122: a failed re-read after an action used to leave the old lists on screen
+  // without any sign that they might be stale.
+  it('says so when the lists cannot be read again after an action, and clears it once they are', async () => {
+    const listInvitations = jest.fn()
+      .mockResolvedValueOnce({ items: [] })
+      .mockRejectedValueOnce(new ApiError('Não foi possível conectar à API. Verifique sua conexão.', 0))
+      .mockResolvedValue({ items: [] })
+    await mount(fakeWalletApi({ listInvitations }))
+    await screen.findByText('membro@example.com')
+
+    await fireEvent.changeText(screen.getByLabelText('E-mail para convidar'), 'nova@example.com')
+    await fireEvent.press(screen.getByRole('button', { name: 'Enviar convite' }))
+    expect(await screen.findByText('Não foi possível conectar à API. Verifique sua conexão.')).toBeTruthy()
+    expect(screen.getByText('membro@example.com')).toBeTruthy()
+
+    await fireEvent.press(screen.getByRole('link', { name: 'Tentar novamente' }))
+    await screen.findByText('membro@example.com')
+    expect(listInvitations).toHaveBeenCalledTimes(3)
+    expect(screen.queryByText('Não foi possível conectar à API. Verifique sua conexão.')).toBeNull()
+  })
 })
