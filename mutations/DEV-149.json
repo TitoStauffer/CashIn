@@ -195,6 +195,32 @@
         "src/screens/GoalsScreen.test.tsx"
       ],
       "timeoutSeconds": 180
+    },
+    {
+      "id": "equal-contributions-get-their-position",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/screens/GoalContributionsScreen.tsx",
+      "command": [
+        "npx",
+        "jest",
+        "src/screens/GoalContributionsScreen.test.tsx"
+      ],
+      "timeoutSeconds": 180,
+      "find": "base.indexOf(name) !== base.lastIndexOf(name)",
+      "replace": "false"
+    },
+    {
+      "id": "contribution-name-has-its-description",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/screens/GoalContributionsScreen.tsx",
+      "command": [
+        "npx",
+        "jest",
+        "src/screens/GoalContributionsScreen.test.tsx"
+      ],
+      "timeoutSeconds": 180,
+      "find": "${item.description ? ` (${item.description})` : ''}",
+      "replace": ""
     }
   ]
 }

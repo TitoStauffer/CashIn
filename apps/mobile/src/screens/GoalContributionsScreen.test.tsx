@@ -3,7 +3,7 @@ import { Alert } from 'react-native'
 
 import { ApiError } from '../api/client'
 import type { Contribution, GoalApi } from '../goals/goalApi'
-import { GoalContributionsScreen } from './GoalContributionsScreen'
+import { contributionNames, GoalContributionsScreen } from './GoalContributionsScreen'
 
 const NOW = new Date(2026, 10, 18)
 const MONTHLY: Contribution = { id: 'c1', amount: '250.00', date: '2026-11-05', description: 'Aporte mensal' }
@@ -63,13 +63,24 @@ describe('GoalContributionsScreen', () => {
     const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => undefined)
     const { goalApi } = await mount()
     await screen.findByText('R$ 250,00')
-    await fireEvent.press(screen.getByRole('link', { name: 'Excluir aporte de R$ 250,00 em 05/11/2026' }))
+    await fireEvent.press(screen.getByRole('link', { name: 'Excluir aporte de R$ 250,00 em 05/11/2026 (Aporte mensal)' }))
     expect(goalApi.removeContribution).not.toHaveBeenCalled()
     const buttons = (alert.mock.calls.at(-1)?.[2] ?? []) as { text: string; onPress?: () => void }[]
     await act(async () => { buttons.find((button) => button.text === 'Excluir')?.onPress?.() })
     expect(goalApi.removeContribution).toHaveBeenCalledWith('g-trip', 'c1')
     expect(await screen.findByText('Aporte excluído.')).toBeTruthy()
     alert.mockRestore()
+  })
+
+  // Code Review of PR #128: two equal contributions on one day had the same accessible name.
+  it('names each remove action uniquely, with the description and, if still needed, the position', () => {
+    const same = { ...MONTHLY, id: 'c2' }
+    const other = { ...MONTHLY, id: 'c3', description: null }
+    expect(contributionNames([MONTHLY, same, other])).toEqual([
+      'aporte de R$ 250,00 em 05/11/2026 (Aporte mensal), 1º da lista',
+      'aporte de R$ 250,00 em 05/11/2026 (Aporte mensal), 2º da lista',
+      'aporte de R$ 250,00 em 05/11/2026',
+    ])
   })
 
   it('only shows the history of a closed goal', async () => {

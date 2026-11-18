@@ -15,6 +15,16 @@ const LOAD_FAILED = 'Não foi possível carregar os aportes. Tente novamente.'
 type Draft = { amount: string; date: string; description: string }
 
 /**
+ * The accessible names of the contributions' remove actions: amount, date and description, plus the
+ * position in the list when two contributions still coincide in all of them (rule 23 of the vault).
+ */
+export function contributionNames(contributions: Contribution[]): string[] {
+  const base = contributions.map((item) =>
+    `aporte de ${formatAmount(item.amount)} em ${formatDate(item.date)}${item.description ? ` (${item.description})` : ''}`)
+  return base.map((name, index) => (base.indexOf(name) !== base.lastIndexOf(name) ? `${name}, ${index + 1}º da lista` : name))
+}
+
+/**
  * The contributions of one goal. An active goal takes new contributions, in the exact decimal typed,
  * and lets a wrong one be removed; the API keeps the goal's progress in step. A closed goal only shows
  * its history, because the API refuses any change to it.
@@ -48,6 +58,8 @@ export function GoalContributionsScreen({
 
   const refresh = useCallback(() => setAttempt((value) => value + 1), [])
   const { busy, feedback, setFeedback, run } = useActionRunner(refresh, goal.id)
+
+  const names = contributionNames(contributions ?? [])
 
   if (loadError && !contributions) return <ErrorState message={loadError} onRetry={() => { setLoadError(null); refresh() }} />
 
@@ -95,13 +107,13 @@ export function GoalContributionsScreen({
 
       {!contributions ? <LoadingState label="Carregando aportes…" /> : null}
       {contributions && contributions.length === 0 ? <Text style={formStyles.body}>Nenhum aporte nesta meta.</Text> : null}
-      {contributions?.map((contribution) => (
+      {contributions?.map((contribution, index) => (
         <View key={contribution.id} style={styles.card}>
           <Text style={styles.primary}>{formatAmount(contribution.amount)}</Text>
           <Text style={styles.detail}>{formatDate(contribution.date)}{contribution.description ? ` · ${contribution.description}` : ''}</Text>
           {active ? (
             <LinkButton
-              label={`Excluir aporte de ${formatAmount(contribution.amount)} em ${formatDate(contribution.date)}`}
+              label={`Excluir ${names[index]}`}
               onPress={() => confirmRemoval(contribution)}
             />
           ) : null}
