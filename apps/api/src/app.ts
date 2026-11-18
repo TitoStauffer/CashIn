@@ -108,6 +108,15 @@ export interface AppOptions {
   walletInvitationTokenTtlHours?: number;
   walletAccessLinkTtlHours?: number;
   secureCookies?: boolean;
+  /**
+   * Addresses (or CIDR ranges) of the reverse proxies allowed to say who the client is. Unset, the socket
+   * address is the client, as when the API is reached directly. A request whose socket is one of them is
+   * attributed to the address that proxy appended to `X-Forwarded-For`; whatever the client wrote before
+   * it is ignored, and a client that reaches the API directly is never believed. So a forged header cannot
+   * move a request out of its per-IP attempt budget. A hop count is not offered: Fastify refuses it, since
+   * it cannot tell the proxy from a direct client.
+   */
+  trustedProxies?: string[];
 }
 
 function requestLoggerConfiguration(logger: AppOptions["logger"]) {
@@ -121,6 +130,7 @@ export function createApp(
 ): FastifyInstance {
   const app = Fastify({
     logger: requestLoggerConfiguration(options.logger),
+    trustProxy: options.trustedProxies?.length ? options.trustedProxies : false,
     // The correlation id is decided by `resolveRequestId`, never taken raw from a header: Fastify's own
     // `requestIdHeader` would trust whatever the client sent, so it stays off.
     requestIdHeader: false,

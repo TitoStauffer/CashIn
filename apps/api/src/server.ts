@@ -17,6 +17,13 @@ function positiveIntegerFromEnvironment(name: string, fallback: number): number 
   return Number.isSafeInteger(value) && value > 0 ? value : fallback;
 }
 
+// Set only where a reverse proxy is the sole way in (deploy/production): a comma-separated list of the
+// proxy addresses. An invalid address stops the start (Fastify compiles the list) instead of being ignored.
+function trustedProxiesFromEnvironment(): string[] | undefined {
+  const values = (process.env.TRUSTED_PROXIES ?? "").split(",").map((value) => value.trim()).filter(Boolean);
+  return values.length > 0 ? values : undefined;
+}
+
 const app = createApp(database, {
   logger: true,
   emailSender: createEmailSenderFromEnvironment(),
@@ -28,6 +35,7 @@ const app = createApp(database, {
   walletInvitationTokenTtlHours: positiveIntegerFromEnvironment("WALLET_INVITATION_TOKEN_TTL_HOURS", 168),
   walletAccessLinkTtlHours: positiveIntegerFromEnvironment("WALLET_ACCESS_LINK_TTL_HOURS", 168),
   secureCookies: process.env.NODE_ENV === "production",
+  trustedProxies: trustedProxiesFromEnvironment(),
 });
 
 const port = Number(process.env.PORT ?? 3000);
