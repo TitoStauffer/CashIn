@@ -13,7 +13,7 @@ export const MISSING_CATEGORY = 'Escolha a categoria da despesa.'
 /** The API's own message for a credit purchase without a card. */
 export const MISSING_CARD = 'Selecione o cartão de crédito da compra.'
 const NO_CATEGORIES = 'Cadastre uma categoria de saída em Categorias antes de lançar.'
-const NO_CARDS = 'Nenhum cartão ativo nesta carteira. Os cartões são cadastrados na Web por enquanto.'
+const NO_CARDS = 'Nenhum cartão ativo nesta carteira. Cadastre um em Cartões, na tela inicial.'
 const NO_METHOD = ''
 
 export type ExpenseOptions = { categories: Category[]; paymentMethods: PaymentMethod[]; creditCards: CreditCard[] }
