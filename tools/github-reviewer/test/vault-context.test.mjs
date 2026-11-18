@@ -757,12 +757,13 @@ test('fails closed when not even the marker fits the item limit', async () => {
 
 // DEV-160: a evidencia citada so por notas que o PR nao altera e orientacao. Ela vira marcador quando
 // nao cabe, em vez de abortar a revisao; a das notas alteradas continua obrigatoria.
+// As citacoes da nota nao alterada ficam no indice, que e lido antes de qualquer nota alterada: assim a
+// evidencia opcional chega primeiro, o caso em que a ordem de chegada importa.
 function evidenceVault({ changedNoteCites = [], unchangedNoteCites = [] }) {
   const link = (id) => `[Review ${id}](https://github.com/owner/repo/pull/44#pullrequestreview-${id})`;
   return baseVault({
-    'docs/knowledge/context-map.json': { value: JSON.stringify({ version: 1, routes: [{ paths: ['apps/api/src/**'], documents: ['docs/knowledge/domains/backend.md'] }] }) },
+    'docs/knowledge/README.md': { value: `# Index\n${unchangedNoteCites.map(link).join('\n')}\n` },
     'docs/knowledge/domains/changed.md': { value: `# Changed\n${changedNoteCites.map(link).join('\n')}\n` },
-    'docs/knowledge/domains/backend.md': { value: `# Backend\n${unchangedNoteCites.map(link).join('\n')}\n` },
   });
 }
 const reviewEvidence = (id, bytes) => ({
@@ -794,7 +795,7 @@ test('still aborts when evidence a changed note cites does not fit', async () =>
 });
 
 test('keeps the body of evidence cited by both a changed and an unchanged note', async () => {
-  // The unchanged note is routed and read first, so its citation arrives before the changed note's.
+  // The unchanged note (the index) is read first, so its citation arrives before the changed note's.
   const files = evidenceVault({ changedNoteCites: [2], unchangedNoteCites: [1, 2] });
   const evidence = { ...reviewEvidence(1, 300_000), ...reviewEvidence(2, 300_000) };
 
