@@ -778,9 +778,11 @@ test('drops evidence that only unchanged notes cite for a marker instead of abor
 
   const result = await loadVaultContext(fakeFetch(files, evidence), repository, changedFiles, headSha, baseSha, 'token');
 
+  // The one that does not fit becomes the marker; treating it as required would instead take the body of
+  // an optional evidence admitted earlier and keep its own.
   const omitted = [1, 2, 3].map((id) => evidenceOf(result, id)).filter((snapshot) => snapshot?.contentOmitted);
   assert.equal(omitted.length, 1);
-  assert.match(omitted[0].content, /^\[vault evidence omitted from model context for the vault context budget; cited only by notes this pull request does not change; path=github-evidence:\/\/repos\/owner\/repo\/pulls\/44\/reviews\/\d; evidenceBytes=\d+; evidenceSha256=[0-9a-f]{64}\]$/);
+  assert.match(omitted[0].content, /^\[vault evidence omitted from model context for the vault context budget; cited only by notes this pull request does not change; path=github-evidence:\/\/repos\/owner\/repo\/pulls\/44\/reviews\/3; evidenceBytes=\d+; evidenceSha256=[0-9a-f]{64}\]$/);
   assert.ok(result.reduce((total, { content }) => total + Buffer.byteLength(content, 'utf8'), 0) <= 650_000);
 });
 
