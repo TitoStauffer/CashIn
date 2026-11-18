@@ -39,6 +39,8 @@ export default function RootLayout() {
           <Stack.Screen name="card-statements" options={{ title: 'Faturas' }} />
           <Stack.Screen name="goals" options={{ title: 'Metas' }} />
           <Stack.Screen name="goal-contributions" options={{ title: 'Aportes' }} />
+          <Stack.Screen name="imports" options={{ title: 'Importações' }} />
+          <Stack.Screen name="import-preview" options={{ title: 'Prévia da importação' }} />
         </Stack>
       </WalletProvider>
     </SessionProvider>

@@ -1,0 +1,213 @@
+{
+  "ticket": "DEV-150",
+  "mutations": [
+    {
+      "id": "upload-body-is-the-file-as-is",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/api/client.ts",
+      "find": "body: rawBody ?? (body === undefined ? undefined : JSON.stringify(body)),",
+      "replace": "body: body === undefined ? undefined : JSON.stringify(body),",
+      "command": [
+        "npx",
+        "jest",
+        "src/api/client.test.ts"
+      ],
+      "timeoutSeconds": 180
+    },
+    {
+      "id": "upload-waits-longer",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/api/client.ts",
+      "find": "setTimeout(() => controller.abort(), routeTimeoutMs ?? timeoutMs)",
+      "replace": "setTimeout(() => controller.abort(), timeoutMs)",
+      "command": [
+        "npx",
+        "jest",
+        "src/api/client.test.ts"
+      ],
+      "timeoutSeconds": 180
+    },
+    {
+      "id": "file-name-is-encoded",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/imports/importApi.ts",
+      "find": "'X-File-Name': encodeURIComponent(file.name),",
+      "replace": "'X-File-Name': file.name,",
+      "command": [
+        "npx",
+        "jest",
+        "src/imports/importApi.test.ts"
+      ],
+      "timeoutSeconds": 180
+    },
+    {
+      "id": "card-statement-names-the-card",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/imports/importApi.ts",
+      "find": "...(creditCardId ? { 'X-Credit-Card-Id': creditCardId } : {}),",
+      "replace": "...({}),",
+      "command": [
+        "npx",
+        "jest",
+        "src/imports/importApi.test.ts"
+      ],
+      "timeoutSeconds": 180
+    },
+    {
+      "id": "import-route-segments-are-encoded",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/imports/importApi.ts",
+      "find": "const session = (importId: string) => `/financial-imports/${encodeURIComponent(importId)}`",
+      "replace": "const session = (importId: string) => `/financial-imports/${importId}`",
+      "command": [
+        "npx",
+        "jest",
+        "src/imports/importApi.test.ts"
+      ],
+      "timeoutSeconds": 180
+    },
+    {
+      "id": "only-active-cards-are-offered",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/screens/ImportsScreen.tsx",
+      "find": "cards: cards.items.filter((card) => card.isActive)",
+      "replace": "cards: cards.items",
+      "command": [
+        "npx",
+        "jest",
+        "src/screens/ImportsScreen.test.tsx"
+      ],
+      "timeoutSeconds": 180
+    },
+    {
+      "id": "new-date-goes-back-to-the-calculated-statement",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/imports/importModel.ts",
+      "find": "return { ...draft, date, statementClosingDate: null }",
+      "replace": "return { ...draft, date }",
+      "command": [
+        "npx",
+        "jest",
+        "src/imports/importModel.test.ts"
+      ],
+      "timeoutSeconds": 180
+    },
+    {
+      "id": "purchase-on-closing-day-stays-in-that-statement",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/imports/importModel.ts",
+      "find": "return purchaseDate <= current ? current",
+      "replace": "return purchaseDate < current ? current",
+      "command": [
+        "npx",
+        "jest",
+        "src/imports/importModel.test.ts"
+      ],
+      "timeoutSeconds": 180
+    },
+    {
+      "id": "statement-reconciliation-clears-the-others",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/imports/importModel.ts",
+      "find": "changes: { ...CLEAR_RECONCILIATION, creditCardStatementId: candidate.statementId },",
+      "replace": "changes: { creditCardStatementId: candidate.statementId },",
+      "command": [
+        "npx",
+        "jest",
+        "src/imports/importModel.test.ts"
+      ],
+      "timeoutSeconds": 180
+    },
+    {
+      "id": "equal-imports-get-their-position",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/imports/importModel.ts",
+      "find": "base.indexOf(name) !== base.lastIndexOf(name) ? `${name}, ${index + 1}ª da lista`",
+      "replace": "false ? `${name}, ${index + 1}ª da lista`",
+      "command": [
+        "npx",
+        "jest",
+        "src/imports/importModel.test.ts"
+      ],
+      "timeoutSeconds": 180
+    },
+    {
+      "id": "type-change-drops-the-category",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/imports/ImportItemEditor.tsx",
+      "find": "onChange={(type) => setDraft((current) => withType(current, type))}",
+      "replace": "onChange={(type) => update({ type })}",
+      "command": [
+        "npx",
+        "jest",
+        "src/screens/ImportPreviewScreen.test.tsx"
+      ],
+      "timeoutSeconds": 180
+    },
+    {
+      "id": "typed-date-resets-the-statement",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/imports/ImportItemEditor.tsx",
+      "find": "if (date) setDraft((current) => (date === current.date ? current : withDate(current, date)))",
+      "replace": "if (date) setDraft((current) => current)",
+      "command": [
+        "npx",
+        "jest",
+        "src/screens/ImportPreviewScreen.test.tsx"
+      ],
+      "timeoutSeconds": 180
+    },
+    {
+      "id": "blank-description-is-refused-before-the-api",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/imports/ImportItemEditor.tsx",
+      "find": "if (!draft.description.trim()) return setError(DESCRIPTION_REQUIRED)",
+      "replace": "if (false) return setError(DESCRIPTION_REQUIRED)",
+      "command": [
+        "npx",
+        "jest",
+        "src/screens/ImportPreviewScreen.test.tsx"
+      ],
+      "timeoutSeconds": 180
+    },
+    {
+      "id": "no-confirmation-while-editing",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/screens/ImportPreviewScreen.tsx",
+      "find": "          {editingId",
+      "replace": "          {false",
+      "command": [
+        "npx",
+        "jest",
+        "src/screens/ImportPreviewScreen.test.tsx"
+      ],
+      "timeoutSeconds": 180
+    },
+    {
+      "id": "confirmation-message-comes-from-the-response",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/screens/ImportPreviewScreen.tsx",
+      "find": "if (session.status === 'preview') return 'A confirmação encontrou",
+      "replace": "if (false) return 'A confirmação encontrou",
+      "command": [
+        "npx",
+        "jest",
+        "src/screens/ImportPreviewScreen.test.tsx"
+      ],
+      "timeoutSeconds": 180
+    },
+    {
+      "id": "undo-only-when-the-api-allows",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/screens/ImportPreviewScreen.tsx",
+      "find": "{session.canUndo",
+      "replace": "{true",
+      "command": [
+        "npx",
+        "jest",
+        "src/screens/ImportPreviewScreen.test.tsx"
+      ],
+      "timeoutSeconds": 180
+    }
+  ]
+}

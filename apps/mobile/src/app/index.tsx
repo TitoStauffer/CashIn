@@ -28,6 +28,7 @@ export default function Index() {
       onOpenIncomes={() => router.push('/incomes')}
       onOpenCards={() => router.push('/cards')}
       onOpenGoals={() => router.push('/goals')}
+      onOpenImports={() => router.push('/imports')}
       onOpenCategories={() => router.push('/categories')}
       onOpenPaymentMethods={() => router.push('/payment-methods')}
       onSignOut={signOut}

@@ -50,6 +50,15 @@ export type ApiRequestOptions = {
   method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'
   body?: unknown
   /**
+   * A file sent as is, in `application/octet-stream`, instead of a JSON `body` (the imports). Its
+   * content is never read, logged or kept here.
+   */
+  rawBody?: Blob
+  /** Extra headers of the route, such as the file name of an upload. They cannot replace the ones set here. */
+  headers?: Record<string, string>
+  /** A longer wait for a slow route, such as an upload of up to 10 MB. */
+  timeoutMs?: number
+  /**
    * Whether the request carries the active wallet. True for every financial route; false for the
    * auth routes and the wallet routes themselves, which cannot be scoped by the wallet being chosen.
    */
@@ -69,9 +78,14 @@ export function createApiClient({
   fetchImpl = fetch,
   timeoutMs = DEFAULT_TIMEOUT_MS,
 }: ApiClientOptions): ApiClient {
-  return async function request<T>(path: string, { method = 'GET', body, scopeToActiveWallet = true, reportUnauthorized = true }: ApiRequestOptions = {}): Promise<T> {
-    const headers: Record<string, string> = { Accept: 'application/json' }
-    if (body !== undefined) headers['Content-Type'] = 'application/json'
+  return async function request<T>(path: string, {
+    method = 'GET', body, rawBody, headers: routeHeaders = {}, timeoutMs: routeTimeoutMs,
+    scopeToActiveWallet = true, reportUnauthorized = true,
+  }: ApiRequestOptions = {}): Promise<T> {
+    // The route's headers come first, so the session, the wallet and the content type set below win.
+    const headers: Record<string, string> = { ...routeHeaders, Accept: 'application/json' }
+    if (rawBody !== undefined) headers['Content-Type'] = 'application/octet-stream'
+    else if (body !== undefined) headers['Content-Type'] = 'application/json'
     const token = await getToken()
     if (token) headers.Authorization = `Bearer ${token}`
     const walletId = scopeToActiveWallet ? getActiveWalletId() : null
@@ -81,13 +95,13 @@ export function createApiClient({
     // inside it the refusal would surface as a connection failure.
     const url = `${baseUrl}${assertSafeApiPath(path)}`
     const controller = new AbortController()
-    const timer = setTimeout(() => controller.abort(), timeoutMs)
+    const timer = setTimeout(() => controller.abort(), routeTimeoutMs ?? timeoutMs)
     let response: Response
     try {
       response = await fetchImpl(url, {
         method,
         headers,
-        body: body === undefined ? undefined : JSON.stringify(body),
+        body: rawBody ?? (body === undefined ? undefined : JSON.stringify(body)),
         signal: controller.signal,
       })
     } catch {
