@@ -5,6 +5,7 @@ import { createCatalogApi, type CatalogApi } from '../catalog/catalogApi'
 import { createCreditCardApi, type CreditCardApi } from '../cards/creditCardApi'
 import { createDashboardApi, type DashboardApi } from '../dashboard/dashboardApi'
 import { createExpenseApi, type ExpenseApi } from '../expenses/expenseApi'
+import { createGoalApi, type GoalApi } from '../goals/goalApi'
 import { createIncomeApi, type IncomeApi } from '../incomes/incomeApi'
 import { tokenStorage } from '../auth/tokenStorage'
 import { resolveApiBaseUrl } from '../config/apiUrl'
@@ -63,3 +64,4 @@ export const appIncomeApi: IncomeApi = createIncomeApi(lazyClient)
 export const appExpenseApi: ExpenseApi = createExpenseApi(lazyClient)
 export const appDashboardApi: DashboardApi = createDashboardApi(lazyClient)
 export const appCreditCardApi: CreditCardApi = createCreditCardApi(lazyClient)
+export const appGoalApi: GoalApi = createGoalApi(lazyClient)

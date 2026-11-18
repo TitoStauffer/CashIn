@@ -86,6 +86,13 @@ O app fica em `apps/mobile`, com Expo SDK 58, React Native e TypeScript estrito,
 - **Fatura:** compras, estornos, total, pagamentos e o que falta pagar aparecem como a API calculou, sem recálculo. Os estornos entram pela importação; não há rota para lançá-los à mão, então o app só os mostra, e os sem compra identificada são marcados.
 - **Pagamento:** só em fatura em aberto. Sem valor, o app omite `amount` e a API quita o que falta; com valor, o pagamento é parcial e vai em decimal exato. Recusas como "os créditos cobrem as compras" aparecem como a mensagem da API.
 
+## Metas e aportes (DEV-149)
+
+- **Rotas:** `goals` (lista, criação, edição e encerramento) e `goal-contributions` (aportes de uma meta), pelo `activeWalletGate`. As chamadas ficam em `src/goals/goalApi.ts`.
+- **Progresso:** acumulado e percentual são os que a API deriva dos aportes; o app nunca soma aportes nem calcula percentual. A rota de metas lê de novo quando volta a ficar em foco, porque os aportes mudam o progresso.
+- **Edição:** o `PUT` substitui todos os campos. O formulário não edita a subcategoria, então a mantém enquanto a categoria for a mesma e a descarta quando a categoria muda. Uma categoria antiga, fora das de investimento, continua aparecendo como opção.
+- **Meta encerrada:** continua visível, mas não oferece edição, encerramento nem aporte; a API responde `409` a qualquer alteração nela.
+
 ## Qualidade
 
 - Job `Mobile` no CI: lint (`expo lint`), Jest com `jest-expo` e Testing Library, typecheck, `expo export` dos bundles Android e iOS e mutantes declarados para `apps/mobile`. A cobertura vai ao SonarQube, sem as rotas.
@@ -127,6 +134,7 @@ A API precisa estar acessível pelo celular. O `docker compose up` publica a por
 - [`apps/mobile/src/dashboard/dashboardApi.ts`](../../../apps/mobile/src/dashboard/dashboardApi.ts)
 - [`apps/mobile/src/dashboard/dashboardView.ts`](../../../apps/mobile/src/dashboard/dashboardView.ts)
 - [`apps/mobile/src/cards/creditCardApi.ts`](../../../apps/mobile/src/cards/creditCardApi.ts)
+- [`apps/mobile/src/goals/goalApi.ts`](../../../apps/mobile/src/goals/goalApi.ts)
 - [`docs/dashboard-summary-contract.md`](../../dashboard-summary-contract.md) — contrato do resumo que o dashboard mostra sem recalcular
 - [`apps/mobile/src/money/amount.ts`](../../../apps/mobile/src/money/amount.ts)
 - [`apps/mobile/src/wallets/activeWalletGate.ts`](../../../apps/mobile/src/wallets/activeWalletGate.ts)
