@@ -104,9 +104,11 @@ Somando o teto da observabilidade (2,5 CPUs e cerca de 2,2 GB), a VPS precisa de
 
   As migrations são compatíveis com a versão anterior, então o código antigo roda sobre o banco novo.
 - **Migration incompatível ou dado corrompido:**
-  1. Pare a API: `docker compose -f deploy/production/compose.yaml stop api proxy`.
-  2. Restaure o backup tirado antes da atualização (seção abaixo).
-  3. Volte o código como no item anterior.
+  1. Pare a API e o proxy: `docker compose -f deploy/production/compose.yaml stop api proxy`. Daqui até o passo 4, **não suba a API**: a imagem atual roda `runMigrations` ao iniciar e reaplicaria a migration sobre o banco restaurado, ou o código defeituoso voltaria a escrever nele.
+  2. Restaure o backup tirado antes da atualização (comando da seção abaixo). A API continua parada.
+  3. Volte o código para o commit anotado antes da atualização: `git checkout <commit anterior>`.
+  4. Só agora suba a stack, que reconstrói a API com o código compatível com o backup: `docker compose -f deploy/production/compose.yaml up -d --build --wait`.
+  5. Faça a verificação pós-deploy (passos 1, 3, 6 e 7).
 
   Tudo o que foi gravado depois do backup se perde. Registre o incidente.
 - **Certificado:** o volume `caddy_data` guarda certificado e conta ACME. Nunca o apague sem necessidade: a Let's Encrypt limita as emissões por domínio.
@@ -121,12 +123,13 @@ docker compose -f deploy/production/compose.yaml exec -T db sh -c 'pg_dump -U "$
 find /var/backups/saldocerto -name '*.dump' -mtime +14 -delete
 ```
 
-Restauração, com a API parada:
+Restauração, com a API e o proxy parados (`stop api proxy`):
 
 ```bash
 docker compose -f deploy/production/compose.yaml exec -T db sh -c 'pg_restore -U "$POSTGRES_USER" -d "$POSTGRES_DB" --clean --if-exists' < /var/backups/saldocerto/<arquivo>.dump
-docker compose -f deploy/production/compose.yaml start api proxy
 ```
+
+Este comando **não** religa a API. A API só volta depois que o código no checkout for o da época do backup, com `up -d --build --wait`, como no rollback acima. Um `start api` logo depois da restauração subiria a imagem atual, que aplica as migrations ao iniciar.
 
 O backup fica na própria VPS. Uma cópia fora dela (outro provedor ou armazenamento de objetos) é decisão do Tito e deve ser feita antes de haver dados reais.
 
@@ -147,7 +150,7 @@ Na DEV-151, depois da verificação pós-deploy:
 
 ## Validação local (sem VPS)
 
-Na raiz do repositório, com as portas 80 e 443 livres, `node deploy/production/smoke/smoke-test.mjs` constrói e sobe a stack com `SITE_ADDRESS=localhost`. Nesse modo, o Caddy usa a autoridade local dele, e o teste confia só nela. Ele verifica, por HTTPS de verdade:
+Na raiz do repositório, com as portas 80 e 443 livres (ou com outras em `HTTP_PORT` e `HTTPS_PORT`), `node deploy/production/smoke/smoke-test.mjs` constrói e sobe a stack com `SITE_ADDRESS=localhost`. Nesse modo, o Caddy usa a autoridade local dele, e o teste confia só nela. Ele verifica, por HTTPS de verdade:
 - `/api/health`;
 - a Web e o fallback de rotas;
 - o redirecionamento de HTTP;

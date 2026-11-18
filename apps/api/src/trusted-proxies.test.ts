@@ -16,5 +16,8 @@ test("TRUSTED_PROXIES is read as a trimmed list of addresses", () => {
 });
 
 test("an invalid proxy address stops the API instead of being ignored", () => {
-  assert.throws(() => createApp({} as never, { trustedProxies: trustedProxiesFromEnvironment("not-an-address") }));
+  assert.throws(
+    () => createApp({} as never, { trustedProxies: trustedProxiesFromEnvironment("not-an-address") }),
+    { name: "TypeError", message: "invalid IP address: not-an-address" },
+  );
 });
