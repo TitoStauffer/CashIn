@@ -90,8 +90,10 @@ export function CardStatementsScreen({
     const { statementId } = payment
     void run(async () => {
       // Without an amount the API pays what is owed; the key is left out instead of sent empty.
-      await cardApi.payStatement(card.id, statementId, amount ? { date, amount } : { date })
-      return amount ? 'Pagamento parcial registrado.' : 'Fatura paga.'
+      const statement = await cardApi.payStatement(card.id, statementId, amount ? { date, amount } : { date })
+      // The message states what the API did: a typed amount that covers what is owed settles the
+      // statement too (Code Review of PR #127).
+      return statement.paidDate ? 'Fatura paga.' : 'Pagamento parcial registrado.'
     }, () => setPayment(null))
   }
 

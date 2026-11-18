@@ -169,6 +169,19 @@
         "src/screens/CardStatementsScreen.test.tsx"
       ],
       "timeoutSeconds": 180
+    },
+    {
+      "id": "payment-message-states-what-the-api-did",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/screens/CardStatementsScreen.tsx",
+      "find": "return statement.paidDate ? 'Fatura paga.' : 'Pagamento parcial registrado.'",
+      "replace": "return amount ? 'Pagamento parcial registrado.' : 'Fatura paga.'",
+      "command": [
+        "npx",
+        "jest",
+        "src/screens/CardStatementsScreen.test.tsx"
+      ],
+      "timeoutSeconds": 180
     }
   ]
 }

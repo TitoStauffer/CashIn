@@ -34,7 +34,8 @@ const PAID: CreditCardStatement = { ...OPEN, id: 's-oct', closingDate: '2026-10-
 function fakeCardApi(overrides: Partial<CreditCardApi> = {}): CreditCardApi {
   return {
     listStatements: jest.fn(async (_id: string, from: string) => ({ items: from.startsWith('2026-10') ? [PAID] : [OPEN] })),
-    payStatement: jest.fn(async () => OPEN),
+    // Like the API: no amount settles the statement; an amount below what is owed leaves it open.
+    payStatement: jest.fn(async (_card: string, _statement: string, payment: { amount?: string }) => (payment.amount ? OPEN : { ...OPEN, paidDate: '2026-11-18', outstandingAmount: '0.00' })),
     ...overrides,
   } as unknown as CreditCardApi
 }
@@ -80,6 +81,20 @@ describe('CardStatementsScreen', () => {
     await fireEvent.press(screen.getByRole('button', { name: 'Registrar pagamento' }))
     expect(await screen.findByText('Pagamento parcial registrado.')).toBeTruthy()
     expect(cardApi.payStatement).toHaveBeenCalledWith('k-gold', 's-nov', { date: '2026-11-18', amount: '300.10' })
+  })
+
+  // Code Review of PR #127: typing exactly what is owed settled the statement, and the screen still
+  // called it partial.
+  it('says the statement was paid when a typed amount settles it', async () => {
+    const payStatement = jest.fn(async () => ({ ...OPEN, paidDate: '2026-11-18', outstandingAmount: '0.00' }))
+    await mount(fakeCardApi({ payStatement }))
+    await screen.findByText('Em aberto')
+    await openPayment()
+    await fireEvent.changeText(screen.getByLabelText('Valor pago (R$)'), '355,55')
+    await fireEvent.press(screen.getByRole('button', { name: 'Registrar pagamento' }))
+    expect(await screen.findByText('Fatura paga.')).toBeTruthy()
+    expect(screen.queryByText('Pagamento parcial registrado.')).toBeNull()
+    expect(payStatement).toHaveBeenCalledWith('k-gold', 's-nov', { date: '2026-11-18', amount: '355.55' })
   })
 
   it('shows the API refusal in Portuguese and keeps the payment form', async () => {
