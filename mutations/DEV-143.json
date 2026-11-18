@@ -208,6 +208,19 @@
         "src/auth/sessionRedirect.test.ts"
       ],
       "timeoutSeconds": 180
+    },
+    {
+      "id": "home-shows-the-wallet-load-error",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/screens/HomeScreen.tsx",
+      "find": "if (walletError) return walletError",
+      "replace": "if (false) return walletError",
+      "command": [
+        "npx",
+        "jest",
+        "src/screens/HomeScreen.test.tsx"
+      ],
+      "timeoutSeconds": 180
     }
   ]
 }

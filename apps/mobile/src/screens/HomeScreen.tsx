@@ -14,11 +14,14 @@ import { colors, spacing, typography } from '../ui/theme'
 export function HomeScreen({
   user,
   activeWallet,
+  walletError = null,
   onOpenWallets,
   onSignOut,
 }: {
   user: User
   activeWallet: Wallet | null
+  /** The wallets failed to load: the line says so instead of claiming they are still loading. */
+  walletError?: string | null
   onOpenWallets(): void
   onSignOut(): Promise<void>
 }) {
@@ -37,11 +40,17 @@ export function HomeScreen({
     <View style={styles.container}>
       <Text style={styles.title} accessibilityRole="header">Saldo Certo</Text>
       <Text style={styles.account}>Você entrou como {user.email}</Text>
-      <Text style={styles.account}>{activeWallet ? `Carteira em uso: ${activeWallet.name}` : 'Carregando carteiras…'}</Text>
+      <Text style={styles.account}>{walletLine(activeWallet, walletError)}</Text>
       <LinkButton label="Carteiras" onPress={onOpenWallets} />
       <PrimaryButton label="Sair" onPress={signOut} busy={busy} />
     </View>
   )
+}
+
+function walletLine(activeWallet: Wallet | null, walletError: string | null): string {
+  if (activeWallet) return `Carteira em uso: ${activeWallet.name}`
+  if (walletError) return walletError
+  return 'Carregando carteiras…'
 }
 
 const styles = StyleSheet.create({

@@ -80,4 +80,8 @@ A API precisa estar acessível pelo celular. O `docker compose up` publica a por
 - [`apps/mobile/src/wallets/walletApi.ts`](../../../apps/mobile/src/wallets/walletApi.ts)
 - [`apps/mobile/src/wallets/activeWallet.ts`](../../../apps/mobile/src/wallets/activeWallet.ts)
 - [`apps/mobile/src/screens/WalletSharingScreen.tsx`](../../../apps/mobile/src/screens/WalletSharingScreen.tsx)
+- [`docs/api.md`](../../api.md) — contrato das rotas de carteira, convites, membros, link de acesso e solicitações que `walletApi.ts` segue
+- [`apps/api/src/wallets/wallets.routes.ts`](../../../apps/api/src/wallets/wallets.routes.ts)
+- [`apps/api/src/wallet-invitations/wallet-invitations.routes.ts`](../../../apps/api/src/wallet-invitations/wallet-invitations.routes.ts)
+- [`apps/api/src/wallet-access-requests/wallet-access-requests.routes.ts`](../../../apps/api/src/wallet-access-requests/wallet-access-requests.routes.ts)
 - [`.github/workflows/ci.yml`](../../../.github/workflows/ci.yml)

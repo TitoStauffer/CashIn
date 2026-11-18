@@ -14,6 +14,13 @@ describe('HomeScreen', () => {
     expect(onOpenWallets).toHaveBeenCalledTimes(1)
   })
 
+  // Code Review of PR #122 (round 2): a failed load used to keep saying the wallets were loading.
+  it('says the wallets could not be loaded instead of claiming they are still loading', async () => {
+    await render(<HomeScreen user={USER} activeWallet={null} walletError="Não foi possível carregar suas carteiras. Tente novamente." onOpenWallets={jest.fn()} onSignOut={jest.fn()} />)
+    expect(screen.getByText('Não foi possível carregar suas carteiras. Tente novamente.')).toBeTruthy()
+    expect(screen.queryByText('Carregando carteiras…')).toBeNull()
+  })
+
   it('signs out once', async () => {
     const onSignOut = jest.fn(() => new Promise<void>(() => undefined))
     await render(<HomeScreen user={USER} activeWallet={null} onOpenWallets={jest.fn()} onSignOut={onSignOut} />)

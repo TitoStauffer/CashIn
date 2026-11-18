@@ -9,9 +9,9 @@ import { useWallets } from '../wallets/WalletProvider'
 export default function Index() {
   const router = useRouter()
   const { state, signOut, retryRestore } = useSession()
-  const { activeWallet } = useWallets()
+  const { activeWallet, state: walletState } = useWallets()
   if (state.status === 'restoring') return <LoadingState label="Verificando sua sessão…" />
   if (state.status === 'unavailable') return <ErrorState message={state.message} onRetry={retryRestore} />
   if (state.status === 'signedOut') return <Redirect href="/login" />
-  return <HomeScreen user={state.user} activeWallet={activeWallet} onOpenWallets={() => router.push('/wallets')} onSignOut={signOut} />
+  return <HomeScreen user={state.user} activeWallet={activeWallet} walletError={walletState.status === 'error' ? walletState.message : null} onOpenWallets={() => router.push('/wallets')} onSignOut={signOut} />
 }
