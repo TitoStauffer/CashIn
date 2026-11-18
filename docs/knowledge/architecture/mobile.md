@@ -19,9 +19,10 @@ O app fica em `apps/mobile`, com Expo SDK 58, React Native e TypeScript estrito,
   - recusa caminho inseguro (`..` em qualquer grafia, protocolo-relativo, esquema próprio);
   - aplica timeout de 15 s;
   - transforma toda falha da requisição ou da resposta em `ApiError`, com a mensagem da API ou um texto fixo em português por status. A exceção é o caminho inseguro, que lança `Error` antes de qualquer requisição porque é erro de programação, e não algo a mostrar à pessoa;
-  - chama `onUnauthorized` no `401`.
+  - chama `onUnauthorized` no `401`;
+  - chama `onWalletNotFound` no `404` de uma requisição que enviou `X-Wallet-Id`, com a carteira enviada.
 
-  Nada nele registra em log ou console, e há teste para isso. A carteira ativa entra com a DEV-143; até lá, a API usa a carteira pessoal.
+  Nada nele registra em log ou console, e há teste para isso.
 - **Endereço da API** em `src/config/apiUrl.ts`:
   - `EXPO_PUBLIC_API_URL` vence quando definido;
   - em desenvolvimento, sem ele, o app usa o host do servidor do Expo na porta 3000, o que funciona no celular da mesma rede;
@@ -36,6 +37,14 @@ O app fica em `apps/mobile`, com Expo SDK 58, React Native e TypeScript estrito,
 - **Logout:** `POST /auth/logout` encerra a sessão no servidor e o token sempre sai do aparelho, mesmo sem conexão.
 - **`401` posterior:** qualquer requisição autenticada que receba `401` encerra a sessão, desde que o token recusado seja o guardado; um `401` atrasado de antes de um novo login é ignorado. Um `401` sem token (senha errada no login) não conta, e o logout não reporta o próprio `401`. Se o armazenamento seguro recusar apagar o token, o app sai mesmo assim.
 - **Envio único:** os formulários desabilitam o botão enquanto enviam, com uma trava por `ref` para dois toques no mesmo quadro.
+
+## Carteiras (DEV-143)
+
+- **Rotas:** `wallets` (lista, troca e criação) e `wallet-sharing` (compartilhamento de uma carteira). O estado vive em `src/wallets/WalletProvider.tsx`, dentro do `SessionProvider`; as chamadas ficam em `src/wallets/walletApi.ts`.
+- **Carteira ativa:** a escolha fica em memória para o cliente HTTP mandar no `X-Wallet-Id` e é lembrada por conta no `expo-secure-store` (`saldocerto.active-wallet.<userId>`). Na abertura vale a lembrada, depois a pessoal, depois a primeira. As rotas de carteira nunca levam `X-Wallet-Id`: o compartilhamento nomeia a carteira no caminho.
+- **Carteira perdida:** se a lembrada não volta na lista, ou se uma requisição da carteira ativa recebe `404`, o app relê as carteiras, volta para a pessoal e avisa "A carteira escolhida não está mais disponível". Um `404` de outra carteira não relê nada. Ao sair da conta, a carteira ativa é limpa.
+- **Compartilhamento:** só o proprietário de uma carteira compartilhada vê a opção; a tela também recusa sozinha quem não é proprietário, antes de chamar a API, que continua sendo a fonte da autorização. O proprietário vê membros (remover pede confirmação), convida por e-mail, cancela convites pendentes, gera o link de acesso e o envia pela folha de compartilhamento do sistema, e aprova, recusa ou cancela solicitações. As respostas mostram a mensagem da API.
+- **Fora do app, por ora:** aceitar convite e pedir acesso por link continuam na Web, porque o app ainda não abre deep links.
 
 ## Qualidade
 
@@ -67,4 +76,8 @@ A API precisa estar acessível pelo celular. O `docker compose up` publica a por
 - [`apps/mobile/src/auth/tokenStorage.ts`](../../../apps/mobile/src/auth/tokenStorage.ts)
 - [`apps/mobile/src/auth/SessionProvider.tsx`](../../../apps/mobile/src/auth/SessionProvider.tsx)
 - [`apps/mobile/src/auth/authApi.ts`](../../../apps/mobile/src/auth/authApi.ts)
+- [`apps/mobile/src/wallets/WalletProvider.tsx`](../../../apps/mobile/src/wallets/WalletProvider.tsx)
+- [`apps/mobile/src/wallets/walletApi.ts`](../../../apps/mobile/src/wallets/walletApi.ts)
+- [`apps/mobile/src/wallets/activeWallet.ts`](../../../apps/mobile/src/wallets/activeWallet.ts)
+- [`apps/mobile/src/screens/WalletSharingScreen.tsx`](../../../apps/mobile/src/screens/WalletSharingScreen.tsx)
 - [`.github/workflows/ci.yml`](../../../.github/workflows/ci.yml)
