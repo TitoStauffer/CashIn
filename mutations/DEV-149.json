@@ -182,6 +182,19 @@
         "src/screens/GoalContributionsScreen.test.tsx"
       ],
       "timeoutSeconds": 180
+    },
+    {
+      "id": "legacy-goal-categories-are-offered",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/screens/GoalsScreen.tsx",
+      "find": "categories: [...investment.items, ...legacy.items]",
+      "replace": "categories: investment.items",
+      "command": [
+        "npx",
+        "jest",
+        "src/screens/GoalsScreen.test.tsx"
+      ],
+      "timeoutSeconds": 180
     }
   ]
 }

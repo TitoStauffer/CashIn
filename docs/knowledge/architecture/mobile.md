@@ -90,7 +90,7 @@ O app fica em `apps/mobile`, com Expo SDK 58, React Native e TypeScript estrito,
 
 - **Rotas:** `goals` (lista, criação, edição e encerramento) e `goal-contributions` (aportes de uma meta), pelo `activeWalletGate`. As chamadas ficam em `src/goals/goalApi.ts`.
 - **Progresso:** acumulado e percentual são os que a API deriva dos aportes; o app nunca soma aportes nem calcula percentual. A rota de metas lê de novo quando volta a ficar em foco, porque os aportes mudam o progresso.
-- **Edição:** o `PUT` substitui todos os campos. O formulário não edita a subcategoria, então a mantém enquanto a categoria for a mesma e a descarta quando a categoria muda. Uma categoria antiga, fora das de investimento, continua aparecendo como opção.
+- **Edição:** o `PUT` substitui todos os campos. O formulário não edita a subcategoria, então a mantém enquanto a categoria for a mesma e a descarta quando a categoria muda. As categorias oferecidas são as de natureza `investment` e as da natureza legada `investment_goal`, como na Web; uma categoria da meta fora dessas continua aparecendo como opção.
 - **Meta encerrada:** continua visível, mas não oferece edição, encerramento nem aporte; a API responde `409` a qualquer alteração nela.
 
 ## Qualidade

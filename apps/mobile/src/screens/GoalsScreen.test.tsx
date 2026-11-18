@@ -35,7 +35,8 @@ function fakeGoalApi(overrides: Partial<GoalApi> = {}): GoalApi {
   } as unknown as GoalApi
 }
 
-const catalogApi = () => ({ listCategories: jest.fn(async () => ({ items: [RESERVE_CATEGORY] })) })
+const LEGACY_CATEGORY: Category = { id: 'cat-legacy', name: 'Poupança', nature: 'investment_goal', subcategories: [] }
+const catalogApi = () => ({ listCategories: jest.fn(async (nature: string) => ({ items: nature === 'investment' ? [RESERVE_CATEGORY] : [LEGACY_CATEGORY] })) })
 
 async function mount(goalApi = fakeGoalApi(), walletId = 'personal', refreshKey = 0, catalog = catalogApi()) {
   const onOpenContributions = jest.fn()
@@ -51,6 +52,21 @@ describe('GoalsScreen', () => {
     expect(screen.getByText('Prazo: 01/07/2027')).toBeTruthy()
     expect(screen.getByText('Carro · encerrada')).toBeTruthy()
     expect(catalog.listCategories).toHaveBeenCalledWith('investment')
+    expect(catalog.listCategories).toHaveBeenCalledWith('investment_goal')
+  })
+
+  // Code Review of PR #128: only `investment` categories were offered, while the API and the Web still
+  // accept the legacy `investment_goal` nature for goals.
+  it('offers the legacy investment_goal categories too, as the Web does', async () => {
+    const { goalApi } = await mount()
+    await screen.findByText('Viagem')
+    await fireEvent.press(screen.getByRole('button', { name: 'Nova meta' }))
+    await fireEvent.changeText(screen.getByLabelText('Nome da meta'), 'Poupar')
+    await fireEvent.changeText(screen.getByLabelText('Descrição'), 'Guardar todo mês')
+    await fireEvent.changeText(screen.getByLabelText('Valor-alvo (R$)'), '500')
+    await fireEvent.press(screen.getByRole('radio', { name: 'Poupança' }))
+    await fireEvent.press(screen.getByRole('button', { name: 'Salvar meta' }))
+    expect(goalApi.create).toHaveBeenCalledWith(expect.objectContaining({ categoryId: 'cat-legacy' }))
   })
 
   it('creates a goal with the exact target and an optional due date', async () => {

@@ -65,10 +65,11 @@ export function GoalsScreen({
 
   useEffect(() => {
     let current = true
-    void Promise.all([goalApi.list(), catalogApi.listCategories('investment')])
-      .then(([goals, categories]) => {
+    // `investment_goal` is the legacy nature, still valid for goals (docs/api.md), as on the Web.
+    void Promise.all([goalApi.list(), catalogApi.listCategories('investment'), catalogApi.listCategories('investment_goal')])
+      .then(([goals, investment, legacy]) => {
         if (!current) return
-        setLoaded({ key, goals: goals.items, categories: categories.items })
+        setLoaded({ key, goals: goals.items, categories: [...investment.items, ...legacy.items] })
         setLoadError(null)
       })
       .catch((error: unknown) => { if (current) setLoadError(messageOf(error, LOAD_FAILED)) })
