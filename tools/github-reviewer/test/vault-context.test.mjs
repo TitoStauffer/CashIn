@@ -537,7 +537,8 @@ test('gives up an already admitted cited body so the required GitHub evidence st
   const result = await loadVaultContext(
     fakeFetch(files, { [reviewPath]: review }),
     repository,
-    [{ filename: 'apps/api/src/route.ts', status: 'modified' }],
+    // The note that cites the review is changed by the PR, so its evidence is required (DEV-160).
+    [{ filename: 'apps/api/src/route.ts', status: 'modified' }, { filename: 'docs/knowledge/domains/backend.md', status: 'modified' }],
     headSha,
     baseSha,
     'token',
@@ -752,4 +753,65 @@ test('fails closed when not even the marker fits the item limit', async () => {
     loadVaultContext(fakeFetch(files), repository, [{ filename: 'apps/api/src/route.ts', status: 'modified' }], headSha, baseSha, 'token'),
     /^Error: Vault context exceeds the supported item limit: apps\/api\/src\/source-\d+\.ts\.$/,
   );
+});
+
+// DEV-160: a evidencia citada so por notas que o PR nao altera e orientacao. Ela vira marcador quando
+// nao cabe, em vez de abortar a revisao; a das notas alteradas continua obrigatoria.
+function evidenceVault({ changedNoteCites = [], unchangedNoteCites = [] }) {
+  const link = (id) => `[Review ${id}](https://github.com/owner/repo/pull/44#pullrequestreview-${id})`;
+  return baseVault({
+    'docs/knowledge/context-map.json': { value: JSON.stringify({ version: 1, routes: [{ paths: ['apps/api/src/**'], documents: ['docs/knowledge/domains/backend.md'] }] }) },
+    'docs/knowledge/domains/changed.md': { value: `# Changed\n${changedNoteCites.map(link).join('\n')}\n` },
+    'docs/knowledge/domains/backend.md': { value: `# Backend\n${unchangedNoteCites.map(link).join('\n')}\n` },
+  });
+}
+const reviewEvidence = (id, bytes) => ({
+  [`/repos/owner/repo/pulls/44/reviews/${id}`]: { id, state: 'COMMENTED', body: 'E'.repeat(bytes), html_url: `https://github.com/owner/repo/pull/44#pullrequestreview-${id}` },
+});
+const changedFiles = [{ filename: 'apps/api/src/route.ts', status: 'modified' }, { filename: 'docs/knowledge/domains/changed.md', status: 'modified' }];
+const evidenceOf = (result, id) => result.find(({ path }) => path === `github-evidence://repos/owner/repo/pulls/44/reviews/${id}`);
+
+test('drops evidence that only unchanged notes cite for a marker instead of aborting the review', async () => {
+  const files = evidenceVault({ unchangedNoteCites: [1, 2, 3] });
+  const evidence = { ...reviewEvidence(1, 250_000), ...reviewEvidence(2, 250_000), ...reviewEvidence(3, 250_000) };
+
+  const result = await loadVaultContext(fakeFetch(files, evidence), repository, changedFiles, headSha, baseSha, 'token');
+
+  const omitted = [1, 2, 3].map((id) => evidenceOf(result, id)).filter((snapshot) => snapshot?.contentOmitted);
+  assert.equal(omitted.length, 1);
+  assert.match(omitted[0].content, /^\[vault evidence omitted from model context for the vault context budget; cited only by notes this pull request does not change; path=github-evidence:\/\/repos\/owner\/repo\/pulls\/44\/reviews\/\d; evidenceBytes=\d+; evidenceSha256=[0-9a-f]{64}\]$/);
+  assert.ok(result.reduce((total, { content }) => total + Buffer.byteLength(content, 'utf8'), 0) <= 650_000);
+});
+
+test('still aborts when evidence a changed note cites does not fit', async () => {
+  const files = evidenceVault({ changedNoteCites: [1, 2, 3] });
+  const evidence = { ...reviewEvidence(1, 250_000), ...reviewEvidence(2, 250_000), ...reviewEvidence(3, 250_000) };
+
+  await assert.rejects(
+    loadVaultContext(fakeFetch(files, evidence), repository, changedFiles, headSha, baseSha, 'token'),
+    /^Error: Vault context documents and evidence exceed the supported byte limit: github-evidence:\/\/repos\/owner\/repo\/pulls\/44\/reviews\/3\.$/,
+  );
+});
+
+test('keeps the body of evidence cited by both a changed and an unchanged note', async () => {
+  // The unchanged note is routed and read first, so its citation arrives before the changed note's.
+  const files = evidenceVault({ changedNoteCites: [2], unchangedNoteCites: [1, 2] });
+  const evidence = { ...reviewEvidence(1, 300_000), ...reviewEvidence(2, 300_000) };
+
+  const result = await loadVaultContext(fakeFetch(files, evidence), repository, changedFiles, headSha, baseSha, 'token');
+
+  assert.equal(evidenceOf(result, 2)?.contentOmitted, undefined);
+  assert.match(evidenceOf(result, 2).content, /E{300000}/);
+});
+
+test('gives up an optional evidence body admitted earlier so required evidence still fits', async () => {
+  // Evidence 1 (unchanged note) arrives first and takes its body; evidence 2 (changed note) needs the room.
+  const files = evidenceVault({ changedNoteCites: [2], unchangedNoteCites: [1] });
+  const evidence = { ...reviewEvidence(1, 340_000), ...reviewEvidence(2, 340_000) };
+
+  const result = await loadVaultContext(fakeFetch(files, evidence), repository, changedFiles, headSha, baseSha, 'token');
+
+  assert.equal(evidenceOf(result, 1)?.contentOmitted, true);
+  assert.equal(evidenceOf(result, 2)?.contentOmitted, undefined);
+  assert.ok(result.reduce((total, { content }) => total + Buffer.byteLength(content, 'utf8'), 0) <= 650_000);
 });
