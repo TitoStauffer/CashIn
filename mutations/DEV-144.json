@@ -195,6 +195,58 @@
         "src/wallets/activeWalletGate.test.ts"
       ],
       "timeoutSeconds": 180
+    },
+    {
+      "id": "edit-sends-only-the-changed-nature",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/screens/PaymentMethodsScreen.tsx",
+      "find": "...(nature !== original.nature ? { nature } : {}),",
+      "replace": "...{ nature },",
+      "command": [
+        "npx",
+        "jest",
+        "src/screens/PaymentMethodsScreen.test.tsx"
+      ],
+      "timeoutSeconds": 180
+    },
+    {
+      "id": "unchanged-edit-calls-nothing",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/screens/PaymentMethodsScreen.tsx",
+      "find": "if (Object.keys(changes).length === 0) {",
+      "replace": "if (false) {",
+      "command": [
+        "npx",
+        "jest",
+        "src/screens/PaymentMethodsScreen.test.tsx"
+      ],
+      "timeoutSeconds": 180
+    },
+    {
+      "id": "stale-action-is-not-reported",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/ui/useActionRunner.ts",
+      "find": "if (scopeRef.current !== startedIn) return",
+      "replace": "if (false) return",
+      "command": [
+        "npx",
+        "jest",
+        "src/ui/useActionRunner.test.ts"
+      ],
+      "timeoutSeconds": 180
+    },
+    {
+      "id": "wallet-change-clears-the-category-read-error",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/screens/CategoriesScreen.tsx",
+      "find": "setLoadError(null) // the previous wallet's read error is not this one's",
+      "replace": "void 0 // the previous wallet's read error is not this one's",
+      "command": [
+        "npx",
+        "jest",
+        "src/screens/CategoriesScreen.test.tsx"
+      ],
+      "timeoutSeconds": 180
     }
   ]
 }

@@ -24,6 +24,20 @@ describe('useActionRunner', () => {
     expect(afterSuccess).toHaveBeenCalledTimes(1)
   })
 
+  it('does not report an action that ends after the scope changed', async () => {
+    const afterSuccess = jest.fn()
+    let finish: () => void = () => undefined
+    const { result, rerender } = await renderHook(({ scope }: { scope: string }) => useActionRunner(afterSuccess, scope), { initialProps: { scope: 'personal' } })
+    let pending: Promise<void> = Promise.resolve()
+    await act(async () => { pending = result.current.run(() => new Promise<string>((resolve) => { finish = () => resolve('Salvo.') })) })
+
+    await rerender({ scope: 'house' })
+    await act(async () => { finish(); await pending })
+    expect(result.current.feedback).toBeNull()
+    expect(afterSuccess).not.toHaveBeenCalled()
+    expect(result.current.busy).toBe(false)
+  })
+
   it('shows the API refusal and does not read the data again', async () => {
     const afterSuccess = jest.fn()
     const { result } = await renderHook(() => useActionRunner(afterSuccess))

@@ -148,6 +148,24 @@ describe('CategoriesScreen', () => {
     expect(screen.getByText('Aluguel recebido')).toBeTruthy()
   })
 
+  // Code Review of PR #123: an error of the previous wallet used to show on the new one.
+  it('does not carry a read error of the previous wallet into the new one', async () => {
+    const listCategories = jest.fn()
+      .mockResolvedValueOnce({ items: [SALARY] })
+      .mockRejectedValueOnce(new ApiError('Não foi possível conectar à API. Verifique sua conexão.', 0))
+      .mockImplementationOnce(() => new Promise(() => undefined))
+    const catalogApi = fakeCatalogApi({ listCategories })
+    const { view } = await mount(catalogApi, 'personal')
+    await screen.findByText('Salário')
+    await fireEvent.changeText(screen.getByLabelText('Nome da nova categoria'), 'Freelas')
+    await fireEvent.press(screen.getByRole('button', { name: 'Criar categoria' }))
+    expect(await screen.findByText('Não foi possível conectar à API. Verifique sua conexão.')).toBeTruthy()
+
+    await view.rerender(<CategoriesScreen walletId="house" catalogApi={catalogApi} />)
+    expect(screen.queryByText('Não foi possível conectar à API. Verifique sua conexão.')).toBeNull()
+    expect(screen.getByText('Carregando categorias…')).toBeTruthy()
+  })
+
   it('shows a retryable error when the list cannot be read', async () => {
     const listCategories = jest.fn()
       .mockRejectedValueOnce(new ApiError('Não foi possível conectar à API. Verifique sua conexão.', 0))

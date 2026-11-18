@@ -2,7 +2,7 @@ import { act, fireEvent, render, screen } from '@testing-library/react-native'
 
 import { ApiError } from '../api/client'
 import type { CatalogApi, PaymentMethod } from '../catalog/catalogApi'
-import { PaymentMethodsScreen } from './PaymentMethodsScreen'
+import { paymentMethodChanges, PaymentMethodsScreen } from './PaymentMethodsScreen'
 
 const PIX: PaymentMethod = { id: 'p-pix', name: 'Pix', nature: 'immediate', isActive: true }
 const OLD_VR: PaymentMethod = { id: 'p-vr', name: 'VR antigo', nature: 'meal_benefit', isActive: false }
@@ -55,7 +55,9 @@ describe('PaymentMethodsScreen', () => {
     expect(await screen.findByText('Já existe uma forma de pagamento com esse nome nesta carteira.')).toBeTruthy()
   })
 
-  it('edits a historical VR method without forcing a new nature', async () => {
+  // Code Review of PR #123: the API normalizes every nature it receives, so sending the unchanged VR
+  // nature with a new name reclassified the method as the unified VA/VR benefit.
+  it('renames a historical VR method without sending its nature', async () => {
     const { catalogApi } = await mount()
     await screen.findByText('VR antigo')
     await fireEvent.press(screen.getByRole('link', { name: 'Editar VR antigo' }))
@@ -63,7 +65,28 @@ describe('PaymentMethodsScreen', () => {
     await fireEvent.changeText(screen.getByLabelText('Nome da forma de pagamento'), 'VR 2025')
     await fireEvent.press(screen.getByRole('button', { name: 'Salvar forma de pagamento' }))
     expect(await screen.findByText('Forma de pagamento atualizada.')).toBeTruthy()
-    expect(catalogApi.updatePaymentMethod).toHaveBeenCalledWith('p-vr', { name: 'VR 2025', nature: 'meal_benefit' })
+    expect(catalogApi.updatePaymentMethod).toHaveBeenCalledWith('p-vr', { name: 'VR 2025' })
+  })
+
+  it('sends only the nature when only the nature changed, and nothing when nothing changed', async () => {
+    const { catalogApi } = await mount()
+    await screen.findByText('Pix')
+    await fireEvent.press(screen.getByRole('link', { name: 'Editar Pix' }))
+    await fireEvent.changeText(screen.getByLabelText('Nome da forma de pagamento'), ' Pix ')
+    await fireEvent.press(screen.getByRole('button', { name: 'Salvar forma de pagamento' }))
+    expect(catalogApi.updatePaymentMethod).not.toHaveBeenCalled()
+    expect(screen.queryByLabelText('Nome da forma de pagamento')).toBeNull()
+
+    await fireEvent.press(screen.getByRole('link', { name: 'Editar Pix' }))
+    await fireEvent.press(screen.getByRole('radio', { name: 'Cartão de crédito' }))
+    await fireEvent.press(screen.getByRole('button', { name: 'Salvar forma de pagamento' }))
+    expect(await screen.findByText('Forma de pagamento atualizada.')).toBeTruthy()
+    expect(catalogApi.updatePaymentMethod).toHaveBeenCalledWith('p-pix', { nature: 'credit_card' })
+  })
+
+  it('compares the edit with the original method', () => {
+    expect(paymentMethodChanges(OLD_VR, 'VR antigo', 'meal_benefit')).toEqual({})
+    expect(paymentMethodChanges(OLD_VR, 'VR 2025', 'food_meal_benefit')).toEqual({ name: 'VR 2025', nature: 'food_meal_benefit' })
   })
 
   it('deactivates and activates a method instead of deleting it', async () => {

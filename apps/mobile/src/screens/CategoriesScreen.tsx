@@ -44,7 +44,7 @@ export function CategoriesScreen({ walletId, catalogApi }: { walletId: string; c
   }, [catalogApi, key, nature, attempt])
 
   const refresh = useCallback(() => setAttempt((value) => value + 1), [])
-  const { busy, feedback, setFeedback, run } = useActionRunner(refresh)
+  const { busy, feedback, setFeedback, run } = useActionRunner(refresh, key)
   const categories = loaded?.key === key ? loaded.categories : null
 
   // A new wallet or nature starts clean: no half-typed name, open editor or old message carries over.
@@ -56,6 +56,7 @@ export function CategoriesScreen({ walletId, catalogApi }: { walletId: string; c
     setNewName('')
     setNewSubcategory({})
     setFeedback(null)
+    setLoadError(null) // the previous wallet's read error is not this one's
   }
 
   if (loadError && !categories) return <ErrorState message={loadError} onRetry={() => { setLoadError(null); refresh() }} />

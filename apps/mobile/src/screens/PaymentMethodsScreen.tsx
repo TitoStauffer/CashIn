@@ -18,15 +18,27 @@ const LOAD_FAILED = 'Não foi possível carregar as formas de pagamento. Tente n
 const MISSING_NAME = 'Informe o nome da forma de pagamento.'
 
 type Loaded = { walletId: string; methods: PaymentMethod[] }
-type Editor = { id: string | null; name: string; nature: PaymentMethodNature } | null
+type Editor = { original: PaymentMethod | null; name: string; nature: PaymentMethodNature } | null
 
 const isLegacy = (nature: PaymentMethodNature) => nature === 'food_benefit' || nature === 'meal_benefit'
 
 /**
+ * Only what the person changed. The API normalizes every `nature` it receives, turning a historical VA or
+ * VR into the unified benefit, so sending an unchanged nature along with a new name would reclassify the
+ * method behind the person's back (Code Review of PR #123).
+ */
+export function paymentMethodChanges(original: PaymentMethod, name: string, nature: PaymentMethodNature) {
+  return {
+    ...(name !== original.name ? { name } : {}),
+    ...(nature !== original.nature ? { nature } : {}),
+  }
+}
+
+/**
  * The payment methods of the active wallet. The API never deletes one, so the history of the expenses
  * that used it survives: a method is deactivated instead, and can be activated again. A method kept with
- * a historical VA or VR nature still offers that nature while being edited, so editing its name does
- * not force a reclassification.
+ * a historical VA or VR nature still offers that nature while being edited, and an edit sends only the
+ * fields that changed, so renaming it does not reclassify it.
  */
 export function PaymentMethodsScreen({ walletId, catalogApi }: { walletId: string; catalogApi: CatalogApi }) {
   const [loaded, setLoaded] = useState<Loaded | null>(null)
@@ -47,7 +59,7 @@ export function PaymentMethodsScreen({ walletId, catalogApi }: { walletId: strin
   }, [catalogApi, walletId, attempt])
 
   const refresh = useCallback(() => setAttempt((value) => value + 1), [])
-  const { busy, feedback, setFeedback, run } = useActionRunner(refresh)
+  const { busy, feedback, setFeedback, run } = useActionRunner(refresh, walletId)
   const methods = loaded?.walletId === walletId ? loaded.methods : null
 
   // Another wallet starts clean: no open editor or old message carries over (adjusted while rendering).
@@ -56,6 +68,7 @@ export function PaymentMethodsScreen({ walletId, catalogApi }: { walletId: strin
     setFormWalletId(walletId)
     setEditor(null)
     setFeedback(null)
+    setLoadError(null) // the previous wallet's read error is not this one's
   }
 
   if (loadError && !methods) return <ErrorState message={loadError} onRetry={() => { setLoadError(null); refresh() }} />
@@ -66,12 +79,26 @@ export function PaymentMethodsScreen({ walletId, catalogApi }: { walletId: strin
       setFeedback({ tone: 'error', message: MISSING_NAME })
       return
     }
-    const { id, name, nature } = editor
+    const { original, nature } = editor
+    const name = editor.name.trim()
+    if (original) {
+      const changes = paymentMethodChanges(original, name, nature)
+      // Nothing changed: the API would refuse an empty update, and there is nothing to save.
+      if (Object.keys(changes).length === 0) {
+        setEditor(null)
+        return
+      }
+      void run(async () => {
+        await catalogApi.updatePaymentMethod(original.id, changes)
+        setEditor(null)
+        return 'Forma de pagamento atualizada.'
+      })
+      return
+    }
     void run(async () => {
-      if (id) await catalogApi.updatePaymentMethod(id, { name: name.trim(), nature })
-      else await catalogApi.createPaymentMethod(name.trim(), nature)
+      await catalogApi.createPaymentMethod(name, nature)
       setEditor(null)
-      return id ? 'Forma de pagamento atualizada.' : 'Forma de pagamento criada.'
+      return 'Forma de pagamento criada.'
     })
   }
 
@@ -97,7 +124,7 @@ export function PaymentMethodsScreen({ walletId, catalogApi }: { walletId: strin
 
       {editor ? (
         <View style={styles.card}>
-          <Text style={styles.primary} accessibilityRole="header">{editor.id ? 'Editar forma de pagamento' : 'Nova forma de pagamento'}</Text>
+          <Text style={styles.primary} accessibilityRole="header">{editor.original ? 'Editar forma de pagamento' : 'Nova forma de pagamento'}</Text>
           <TextField label="Nome da forma de pagamento" value={editor.name} onChangeText={(name) => setEditor({ ...editor, name })} />
           <Text style={styles.detail}>Natureza</Text>
           <ChoiceChips options={natureOptions} value={editor.nature} onChange={(nature) => setEditor({ ...editor, nature })} />
@@ -106,7 +133,7 @@ export function PaymentMethodsScreen({ walletId, catalogApi }: { walletId: strin
           <LinkButton label="Cancelar edição" onPress={() => setEditor(null)} />
         </View>
       ) : (
-        <PrimaryButton label="Nova forma de pagamento" onPress={() => setEditor({ id: null, name: '', nature: 'immediate' })} />
+        <PrimaryButton label="Nova forma de pagamento" onPress={() => setEditor({ original: null, name: '', nature: 'immediate' })} />
       )}
 
       {!methods ? <LoadingState label="Carregando formas de pagamento…" /> : null}
@@ -116,7 +143,7 @@ export function PaymentMethodsScreen({ walletId, catalogApi }: { walletId: strin
           <Text style={styles.primary}>{method.name}</Text>
           <Text style={styles.detail}>{paymentMethodNatureLabel(method.nature)} · {method.isActive ? 'Ativa' : 'Inativa'}</Text>
           <View style={styles.actions}>
-            <LinkButton label={`Editar ${method.name}`} onPress={() => setEditor({ id: method.id, name: method.name, nature: method.nature })} />
+            <LinkButton label={`Editar ${method.name}`} onPress={() => setEditor({ original: method, name: method.name, nature: method.nature })} />
             <LinkButton label={`${method.isActive ? 'Desativar' : 'Ativar'} ${method.name}`} onPress={() => toggle(method)} />
           </View>
         </View>
