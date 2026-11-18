@@ -7,16 +7,18 @@ import { LinkButton, PrimaryButton } from '../ui/Form'
 import { colors, spacing, typography } from '../ui/theme'
 
 /**
- * The first screen after signing in. It names the account and the wallet in use, opens the wallets, the
- * incomes, the categories and the payment methods, and signs out; the dashboard replaces it in DEV-147. Signing out
- * always ends on the login, even when the API cannot be reached (the session provider drops the token
- * from the device either way).
+ * The first screen after signing in. It names the account and the wallet in use, offers the quick
+ * expense entry, opens the wallets, the expenses, the incomes, the categories and the payment methods,
+ * and signs out; the dashboard replaces it in DEV-147. Signing out always ends on the login, even when
+ * the API cannot be reached (the session provider drops the token from the device either way).
  */
 export function HomeScreen({
   user,
   activeWallet,
   walletError = null,
   onOpenWallets,
+  onQuickExpense,
+  onOpenExpenses,
   onOpenIncomes,
   onOpenCategories,
   onOpenPaymentMethods,
@@ -27,6 +29,9 @@ export function HomeScreen({
   /** The wallets failed to load: the line says so instead of claiming they are still loading. */
   walletError?: string | null
   onOpenWallets(): void
+  /** The short path: an expense in a few taps, dated today. */
+  onQuickExpense(): void
+  onOpenExpenses(): void
   onOpenIncomes(): void
   onOpenCategories(): void
   onOpenPaymentMethods(): void
@@ -48,7 +53,9 @@ export function HomeScreen({
       <Text style={styles.title} accessibilityRole="header">Saldo Certo</Text>
       <Text style={styles.account}>Você entrou como {user.email}</Text>
       <Text style={styles.account}>{walletLine(activeWallet, walletError)}</Text>
+      <PrimaryButton label="Lançar despesa" onPress={onQuickExpense} />
       <LinkButton label="Carteiras" onPress={onOpenWallets} />
+      <LinkButton label="Despesas" onPress={onOpenExpenses} />
       <LinkButton label="Entradas" onPress={onOpenIncomes} />
       <LinkButton label="Categorias" onPress={onOpenCategories} />
       <LinkButton label="Formas de pagamento" onPress={onOpenPaymentMethods} />

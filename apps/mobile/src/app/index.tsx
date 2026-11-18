@@ -13,5 +13,5 @@ export default function Index() {
   if (state.status === 'restoring') return <LoadingState label="Verificando sua sessão…" />
   if (state.status === 'unavailable') return <ErrorState message={state.message} onRetry={retryRestore} />
   if (state.status === 'signedOut') return <Redirect href="/login" />
-  return <HomeScreen user={state.user} activeWallet={activeWallet} walletError={walletState.status === 'error' ? walletState.message : null} onOpenWallets={() => router.push('/wallets')} onOpenIncomes={() => router.push('/incomes')} onOpenCategories={() => router.push('/categories')} onOpenPaymentMethods={() => router.push('/payment-methods')} onSignOut={signOut} />
+  return <HomeScreen user={state.user} activeWallet={activeWallet} walletError={walletState.status === 'error' ? walletState.message : null} onOpenWallets={() => router.push('/wallets')} onQuickExpense={() => router.push('/quick-expense')} onOpenExpenses={() => router.push('/expenses')} onOpenIncomes={() => router.push('/incomes')} onOpenCategories={() => router.push('/categories')} onOpenPaymentMethods={() => router.push('/payment-methods')} onSignOut={signOut} />
 }

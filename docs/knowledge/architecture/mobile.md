@@ -63,6 +63,13 @@ O app fica em `apps/mobile`, com Expo SDK 58, React Native e TypeScript estrito,
 - **Data:** digitada como DD/MM/AAAA e aceita só quando é um dia real do calendário; a data de hoje vem preenchida.
 - **Saldo de destino:** dinheiro, Cartão de benefícios (VA/VR) ou AHO. O `PUT` substitui todos os campos, e a API normaliza VA ou VR antigo para o saldo unificado em qualquer escrita. Por isso, editar uma entrada antiga abre com o saldo unificado marcado e um aviso de que salvar a move para ele, em vez de oferecer uma escolha que o salvamento não manteria.
 
+## Despesas (DEV-146)
+
+- **Rotas:** `expenses` (lista do mês) e `quick-expense` (o caminho curto, aberto pelo botão "Lançar despesa" da Home), ambas pelo `activeWalletGate`. As chamadas ficam em `src/expenses/expenseApi.ts`, que também lista os cartões; a gestão de cartões e faturas fica no épico Mobile 2.
+- **Formulário compartilhado:** `src/expenses/ExpenseForm.tsx` serve à lista e ao lançamento rápido. No modo compacto mostra só valor, categoria e forma de pagamento, e a data é a de hoje. Depois de lançar, o lançamento rápido começa vazio de novo, pronto para a próxima despesa.
+- **Forma de pagamento:** uma despesa nova só oferece formas e cartões ativos, como a API exige. A edição mantém a forma e o cartão que a despesa já tem, mesmo inativos. No crédito, o cartão é obrigatório antes de chamar a API (com a mesma mensagem dela). Ao trocar para outra forma, um cartão escolhido antes é descartado, porque a API recusa cartão fora do crédito.
+- **Saldo de benefício:** a API não recusa despesa por falta de saldo; ela atribui a despesa ao saldo da natureza da forma (dinheiro, VA/VR ou AHO). O formulário diz qual saldo a forma escolhida reduz, sem inventar um bloqueio que a API não tem.
+
 ## Qualidade
 
 - Job `Mobile` no CI: lint (`expo lint`), Jest com `jest-expo` e Testing Library, typecheck, `expo export` dos bundles Android e iOS e mutantes declarados para `apps/mobile`. A cobertura vai ao SonarQube, sem as rotas.
@@ -99,9 +106,11 @@ A API precisa estar acessível pelo celular. O `docker compose up` publica a por
 - [`apps/mobile/src/screens/WalletSharingScreen.tsx`](../../../apps/mobile/src/screens/WalletSharingScreen.tsx)
 - [`apps/mobile/src/catalog/catalogApi.ts`](../../../apps/mobile/src/catalog/catalogApi.ts)
 - [`apps/mobile/src/incomes/incomeApi.ts`](../../../apps/mobile/src/incomes/incomeApi.ts)
+- [`apps/mobile/src/expenses/expenseApi.ts`](../../../apps/mobile/src/expenses/expenseApi.ts)
+- [`apps/mobile/src/expenses/ExpenseForm.tsx`](../../../apps/mobile/src/expenses/ExpenseForm.tsx)
 - [`apps/mobile/src/money/amount.ts`](../../../apps/mobile/src/money/amount.ts)
 - [`apps/mobile/src/wallets/activeWalletGate.ts`](../../../apps/mobile/src/wallets/activeWalletGate.ts)
-- [`docs/api.md`](../../api.md) — contrato das rotas de carteira, convites, membros, link de acesso e solicitações que `walletApi.ts` segue, das categorias e formas de pagamento que `catalogApi.ts` segue, e das entradas que `incomeApi.ts` segue
+- [`docs/api.md`](../../api.md) — contrato das rotas de carteira, convites, membros, link de acesso e solicitações que `walletApi.ts` segue, das categorias e formas de pagamento que `catalogApi.ts` segue, das entradas que `incomeApi.ts` segue, e das despesas e cartões que `expenseApi.ts` segue
 - [`apps/api/src/wallets/wallets.routes.ts`](../../../apps/api/src/wallets/wallets.routes.ts)
 - [`apps/api/src/wallet-invitations/wallet-invitations.routes.ts`](../../../apps/api/src/wallet-invitations/wallet-invitations.routes.ts)
 - [`apps/api/src/wallet-access-requests/wallet-access-requests.routes.ts`](../../../apps/api/src/wallet-access-requests/wallet-access-requests.routes.ts)

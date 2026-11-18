@@ -1,0 +1,187 @@
+{
+  "ticket": "DEV-146",
+  "mutations": [
+    {
+      "id": "credit-purchase-requires-the-card",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/expenses/ExpenseForm.tsx",
+      "find": "if (isCredit && !draft.creditCardId) return onInvalid(MISSING_CARD)",
+      "replace": "if (false) return onInvalid(MISSING_CARD)",
+      "command": [
+        "npx",
+        "jest",
+        "src/expenses/ExpenseForm.test.tsx"
+      ],
+      "timeoutSeconds": 180
+    },
+    {
+      "id": "card-is-dropped-off-credit",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/expenses/ExpenseForm.tsx",
+      "find": "creditCardId: isCredit ? draft.creditCardId : null,",
+      "replace": "creditCardId: draft.creditCardId || null,",
+      "command": [
+        "npx",
+        "jest",
+        "src/expenses/ExpenseForm.test.tsx"
+      ],
+      "timeoutSeconds": 180
+    },
+    {
+      "id": "new-expense-offers-only-active-methods",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/expenses/ExpenseForm.tsx",
+      "find": "method.isActive || method.id === expense?.paymentMethodId",
+      "replace": "true",
+      "command": [
+        "npx",
+        "jest",
+        "src/expenses/ExpenseForm.test.tsx"
+      ],
+      "timeoutSeconds": 180
+    },
+    {
+      "id": "edited-expense-keeps-its-inactive-method",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/expenses/ExpenseForm.tsx",
+      "find": "method.isActive || method.id === expense?.paymentMethodId",
+      "replace": "method.isActive",
+      "command": [
+        "npx",
+        "jest",
+        "src/expenses/ExpenseForm.test.tsx"
+      ],
+      "timeoutSeconds": 180
+    },
+    {
+      "id": "new-expense-offers-only-active-cards",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/expenses/ExpenseForm.tsx",
+      "find": "card.isActive || card.id === expense?.creditCardId",
+      "replace": "true",
+      "command": [
+        "npx",
+        "jest",
+        "src/expenses/ExpenseForm.test.tsx"
+      ],
+      "timeoutSeconds": 180
+    },
+    {
+      "id": "edited-expense-keeps-its-inactive-card",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/expenses/ExpenseForm.tsx",
+      "find": "card.isActive || card.id === expense?.creditCardId",
+      "replace": "card.isActive",
+      "command": [
+        "npx",
+        "jest",
+        "src/expenses/ExpenseForm.test.tsx"
+      ],
+      "timeoutSeconds": 180
+    },
+    {
+      "id": "quick-entry-hides-date-and-description",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/expenses/ExpenseForm.tsx",
+      "find": "{compact ? null : (",
+      "replace": "{false ? null : (",
+      "command": [
+        "npx",
+        "jest",
+        "src/expenses/ExpenseForm.test.tsx"
+      ],
+      "timeoutSeconds": 180
+    },
+    {
+      "id": "benefit-expense-names-its-balance",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/expenses/expenseApi.ts",
+      "find": "if (nature === 'food_meal_benefit' || nature === 'food_benefit' || nature === 'meal_benefit') return",
+      "replace": "if (false) return",
+      "command": [
+        "npx",
+        "jest",
+        "src/expenses/expenseApi.test.ts"
+      ],
+      "timeoutSeconds": 180
+    },
+    {
+      "id": "old-wallet-expenses-leave-the-screen",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/screens/ExpensesScreen.tsx",
+      "find": "const data = loaded?.key === key ? loaded : null",
+      "replace": "const data = loaded",
+      "command": [
+        "npx",
+        "jest",
+        "src/screens/ExpensesScreen.test.tsx"
+      ],
+      "timeoutSeconds": 180
+    },
+    {
+      "id": "wallet-change-reads-the-expenses-again",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/screens/ExpensesScreen.tsx",
+      "find": "}, [expenseApi, catalogApi, key, month, attempt])",
+      "replace": "}, [expenseApi, catalogApi, month, attempt])",
+      "command": [
+        "npx",
+        "jest",
+        "src/screens/ExpensesScreen.test.tsx"
+      ],
+      "timeoutSeconds": 180
+    },
+    {
+      "id": "wallet-change-drops-the-expense-form",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/screens/ExpensesScreen.tsx",
+      "find": "if (formKey !== key) {",
+      "replace": "if (false) {",
+      "command": [
+        "npx",
+        "jest",
+        "src/screens/ExpensesScreen.test.tsx"
+      ],
+      "timeoutSeconds": 180
+    },
+    {
+      "id": "removed-expense-closes-its-editor",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/screens/ExpensesScreen.tsx",
+      "find": "open?.expense?.id === expense.id ? null : open",
+      "replace": "open",
+      "command": [
+        "npx",
+        "jest",
+        "src/screens/ExpensesScreen.test.tsx"
+      ],
+      "timeoutSeconds": 180
+    },
+    {
+      "id": "quick-entry-starts-empty-after-saving",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/screens/QuickExpenseScreen.tsx",
+      "find": "() => setFormVersion((value) => value + 1)",
+      "replace": "() => undefined",
+      "command": [
+        "npx",
+        "jest",
+        "src/screens/QuickExpenseScreen.test.tsx"
+      ],
+      "timeoutSeconds": 180
+    },
+    {
+      "id": "quick-entry-uses-the-new-wallet-options",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/screens/QuickExpenseScreen.tsx",
+      "find": "const options = loaded?.walletId === walletId ? loaded.options : null",
+      "replace": "const options = loaded ? loaded.options : null",
+      "command": [
+        "npx",
+        "jest",
+        "src/screens/QuickExpenseScreen.test.tsx"
+      ],
+      "timeoutSeconds": 180
+    }
+  ]
+}
