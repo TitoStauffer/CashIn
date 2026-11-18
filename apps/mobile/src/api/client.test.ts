@@ -157,13 +157,13 @@ describe('createApiClient', () => {
     await expect(request('/health')).rejects.toEqual(new ApiError('A API demorou para responder. Tente novamente.', 0))
   })
 
-  it('sends a file as is, in octet-stream, with the route headers and without replacing its own', async () => {
+  it('sends a file as is, in octet-stream, with the route headers', async () => {
     const { request, calls } = clientWith(() => jsonResponse(201, { id: 'imp-1' }))
     const file = new Blob(['OFXHEADER:100'])
     await request('/financial-imports', {
       method: 'POST',
       rawBody: file,
-      headers: { 'X-File-Name': 'extrato.ofx', Authorization: 'Bearer forjado', 'X-Wallet-Id': 'outra' },
+      headers: { 'X-File-Name': 'extrato.ofx' },
     })
     expect(calls[0]?.init.body).toBe(file)
     expect(headersOf(calls[0])).toEqual({
@@ -173,6 +173,14 @@ describe('createApiClient', () => {
       'X-Wallet-Id': 'wallet-1',
       'X-File-Name': 'extrato.ofx',
     })
+  })
+
+  // Code Review of PR #129: header names are case-insensitive, so a route header spelled differently
+  // could replace the session, the wallet or the content type set by the client.
+  it.each(['authorization', 'Content-Type', 'accept', 'x-wallet-id', 'X-WALLET-ID'])('refuses the reserved route header %s before any request', async (name) => {
+    const { request, calls } = clientWith(() => jsonResponse(200, {}))
+    await expect(request('/financial-imports', { headers: { [name]: 'forjado' } })).rejects.toThrow(`Reserved API header: ${name}`)
+    expect(calls).toHaveLength(0)
   })
 
   it('waits longer on a route that asks for it', async () => {

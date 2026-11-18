@@ -208,6 +208,32 @@
         "src/screens/ImportPreviewScreen.test.tsx"
       ],
       "timeoutSeconds": 180
+    },
+    {
+      "id": "route-headers-are-only-custom",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/api/client.ts",
+      "command": [
+        "npx",
+        "jest",
+        "src/api/client.test.ts"
+      ],
+      "timeoutSeconds": 180,
+      "find": "if (!lower.startsWith('x-') || lower === 'x-wallet-id') throw",
+      "replace": "if (lower === 'x-wallet-id') throw"
+    },
+    {
+      "id": "route-never-sets-the-wallet",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/api/client.ts",
+      "command": [
+        "npx",
+        "jest",
+        "src/api/client.test.ts"
+      ],
+      "timeoutSeconds": 180,
+      "find": "if (!lower.startsWith('x-') || lower === 'x-wallet-id') throw",
+      "replace": "if (!lower.startsWith('x-')) throw"
     }
   ]
 }

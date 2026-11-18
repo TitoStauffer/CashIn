@@ -54,7 +54,10 @@ export type ApiRequestOptions = {
    * content is never read, logged or kept here.
    */
   rawBody?: Blob
-  /** Extra headers of the route, such as the file name of an upload. They cannot replace the ones set here. */
+  /**
+   * Extra headers of the route, such as the file name of an upload: only custom `X-` headers, never
+   * `X-Wallet-Id`. Any other name throws before the request (see `assertRouteHeaders`).
+   */
   headers?: Record<string, string>
   /** A longer wait for a slow route, such as an upload of up to 10 MB. */
   timeoutMs?: number
@@ -82,8 +85,8 @@ export function createApiClient({
     method = 'GET', body, rawBody, headers: routeHeaders = {}, timeoutMs: routeTimeoutMs,
     scopeToActiveWallet = true, reportUnauthorized = true,
   }: ApiRequestOptions = {}): Promise<T> {
-    // The route's headers come first, so the session, the wallet and the content type set below win.
-    const headers: Record<string, string> = { ...routeHeaders, Accept: 'application/json' }
+    // Only the route's own `X-` headers pass (Code Review of PR #129), checked before any request.
+    const headers: Record<string, string> = { ...assertRouteHeaders(routeHeaders), Accept: 'application/json' }
     if (rawBody !== undefined) headers['Content-Type'] = 'application/octet-stream'
     else if (body !== undefined) headers['Content-Type'] = 'application/json'
     const token = await getToken()
@@ -159,4 +162,18 @@ export function assertSafeApiPath(path: string): string {
     || /^\/[a-z][a-z0-9+.-]*:/i.test(decoded)
   if (unsafe) throw new Error(`Unsafe API path: ${path}`)
   return path
+}
+
+/**
+ * The headers a route may add: its own `X-` headers, such as the file name of an upload. Header names
+ * are case-insensitive, so a list of forbidden names would miss `authorization` or `content-type` spelled
+ * differently; instead only the inert class passes, and `X-Wallet-Id`, which this client owns, never
+ * does. Anything else is a programming error and throws before the request, like an unsafe path.
+ */
+export function assertRouteHeaders(headers: Record<string, string>): Record<string, string> {
+  for (const name of Object.keys(headers)) {
+    const lower = name.toLowerCase()
+    if (!lower.startsWith('x-') || lower === 'x-wallet-id') throw new Error(`Reserved API header: ${name}`)
+  }
+  return headers
 }
