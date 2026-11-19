@@ -35,6 +35,17 @@ export function getPaymentMethodNatureLabel(nature: PaymentMethodNature | null) 
   return paymentMethodNatures.find((item) => item.value === nature)?.label ?? ''
 }
 
+/**
+ * The fields of an edit that differ from the original method. The API normalizes every nature it
+ * receives, so sending an unchanged historical VA or VR nature would reclassify the method.
+ */
+export function paymentMethodChanges(original: PaymentMethod, name: string, nature: PaymentMethodNature): Partial<PaymentMethodInput> {
+  return {
+    ...(name !== original.name ? { name } : {}),
+    ...(nature !== original.nature ? { nature } : {}),
+  }
+}
+
 export class PaymentMethodApiError extends Error {
   readonly status: number
 

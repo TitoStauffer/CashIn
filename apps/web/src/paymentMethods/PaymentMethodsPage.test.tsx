@@ -68,7 +68,7 @@ describe('PaymentMethodsPage', () => {
     await user.type(screen.getByLabelText('Nome *'), 'Pix pessoal')
     await user.click(screen.getByRole('button', { name: 'Salvar forma' }))
 
-    await waitFor(() => expect(paymentMethodsApi.update).toHaveBeenCalledWith('pix', { name: 'Pix pessoal', nature: 'immediate' }))
+    await waitFor(() => expect(paymentMethodsApi.update).toHaveBeenCalledWith('pix', { name: 'Pix pessoal' }))
     await screen.findByRole('status')
     await user.click(screen.getByRole('button', { name: 'Desativar Pix' }))
     await waitFor(() => expect(paymentMethodsApi.update).toHaveBeenCalledWith('pix', { isActive: false }))
@@ -120,6 +120,41 @@ describe('PaymentMethodsPage', () => {
     await user.click(await screen.findByRole('button', { name: 'Editar Pix' }))
     expect(screen.getByLabelText('Natureza *')).toHaveValue('food_benefit')
     expect(screen.getByLabelText('Natureza *')).toHaveAccessibleDescription(/Esta forma mantém sua natureza histórica/)
+  })
+
+  it('renames a historical VA method without sending its nature, so it keeps the historical nature', async () => {
+    vi.mocked(paymentMethodsApi.list).mockResolvedValueOnce({ items: [{ ...paymentMethod, nature: 'food_benefit' }] })
+    const user = userEvent.setup()
+    await renderPage()
+    await user.click(await screen.findByRole('button', { name: 'Editar Pix' }))
+    await user.clear(screen.getByLabelText('Nome *'))
+    await user.type(screen.getByLabelText('Nome *'), 'VA da empresa')
+    await user.click(screen.getByRole('button', { name: 'Salvar forma' }))
+
+    await waitFor(() => expect(paymentMethodsApi.update).toHaveBeenCalledTimes(1))
+    expect(paymentMethodsApi.update).toHaveBeenCalledWith('pix', { name: 'VA da empresa' })
+  })
+
+  it('sends only the nature when only the nature changes', async () => {
+    const user = userEvent.setup()
+    await renderPage()
+    await user.click(await screen.findByRole('button', { name: 'Editar Pix' }))
+    await user.selectOptions(screen.getByLabelText('Natureza *'), 'credit_card')
+    await user.click(screen.getByRole('button', { name: 'Salvar forma' }))
+
+    await waitFor(() => expect(paymentMethodsApi.update).toHaveBeenCalledTimes(1))
+    expect(paymentMethodsApi.update).toHaveBeenCalledWith('pix', { nature: 'credit_card' })
+  })
+
+  it('closes an edit without changes and does not call the API', async () => {
+    const user = userEvent.setup()
+    await renderPage()
+    await user.click(await screen.findByRole('button', { name: 'Editar Pix' }))
+    await user.click(screen.getByRole('button', { name: 'Salvar forma' }))
+
+    expect(screen.queryByRole('heading', { name: 'Editar forma de pagamento' })).not.toBeInTheDocument()
+    expect(paymentMethodsApi.update).not.toHaveBeenCalled()
+    expect(screen.queryByRole('status')).not.toBeInTheDocument()
   })
 
   it('shows safe load feedback without exposing a server message', async () => {

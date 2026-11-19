@@ -1,0 +1,32 @@
+{
+  "ticket": "DEV-155",
+  "mutations": [
+    {
+      "id": "edit-sends-unchanged-nature",
+      "package": "apps/web",
+      "file": "apps/web/src/paymentMethods/paymentMethodsApi.ts",
+      "find": "...(nature !== original.nature ? { nature } : {}),",
+      "replace": "nature,",
+      "command": ["npx", "vitest", "run", "src/paymentMethods/PaymentMethodsPage.test.tsx"],
+      "timeoutSeconds": 240
+    },
+    {
+      "id": "edit-sends-unchanged-name",
+      "package": "apps/web",
+      "file": "apps/web/src/paymentMethods/paymentMethodsApi.ts",
+      "find": "...(name !== original.name ? { name } : {}),",
+      "replace": "name,",
+      "command": ["npx", "vitest", "run", "src/paymentMethods/PaymentMethodsPage.test.tsx"],
+      "timeoutSeconds": 240
+    },
+    {
+      "id": "edit-without-changes-skips-api",
+      "package": "apps/web",
+      "file": "apps/web/src/paymentMethods/PaymentMethodsPage.tsx",
+      "find": "if (changes && Object.keys(changes).length === 0) {",
+      "replace": "if (false) {",
+      "command": ["npx", "vitest", "run", "src/paymentMethods/PaymentMethodsPage.test.tsx"],
+      "timeoutSeconds": 240
+    }
+  ]
+}
