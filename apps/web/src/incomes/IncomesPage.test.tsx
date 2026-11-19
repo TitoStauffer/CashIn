@@ -167,13 +167,42 @@ describe('IncomesPage currency input', () => {
     expect(incomesApi.update).toHaveBeenCalledWith('income-1', expect.objectContaining({ balanceType: 'cash' }))
   })
 
-  it('explains the historical destination without changing a legacy benefit income', async () => {
-    vi.mocked(incomesApi.list).mockResolvedValueOnce({ items: [{ ...income, balanceType: 'meal_benefit' }] })
+  it.each(['food_benefit', 'meal_benefit'] as const)('edits a %s income in the unified benefit balance and says saving moves it there', async (balanceType) => {
+    vi.mocked(incomesApi.list).mockResolvedValueOnce({ items: [{ ...income, balanceType }] })
     const user = userEvent.setup()
     await renderPage()
     await user.click(await screen.findByRole('button', { name: 'Editar entrada Salário mensal' }))
-    expect(screen.getByLabelText('Destino do valor *')).toHaveValue('meal_benefit')
-    expect(screen.getByLabelText('Destino do valor *')).toHaveAccessibleDescription(/Este registro mantém seu destino histórico/)
+
+    const destination = screen.getByLabelText('Destino do valor *')
+    expect(destination).toHaveValue('food_meal_benefit')
+    expect(destination).toHaveAccessibleDescription('Esta entrada usa um saldo antigo de VA ou VR. Ao salvar, ela passa para o Cartão de benefícios (VA/VR), que reúne os dois.')
+    expect(destination).not.toHaveAccessibleDescription(/mantém seu destino histórico/)
+    expect(screen.queryByRole('option', { name: /histórico/ })).not.toBeInTheDocument()
+    expect(screen.getAllByRole('option').map((option) => (option as HTMLOptionElement).value)).not.toContain(balanceType)
+
+    await user.click(screen.getByRole('button', { name: 'Salvar alterações' }))
+    await waitFor(() => expect(incomesApi.update).toHaveBeenCalledWith('income-1', expect.objectContaining({ balanceType: 'food_meal_benefit' })))
+  })
+
+  it('drops the move notice when a historical benefit income is given another destination', async () => {
+    vi.mocked(incomesApi.list).mockResolvedValueOnce({ items: [{ ...income, balanceType: 'food_benefit' }] })
+    const user = userEvent.setup()
+    await renderPage()
+    await user.click(await screen.findByRole('button', { name: 'Editar entrada Salário mensal' }))
+    await user.selectOptions(screen.getByLabelText('Destino do valor *'), 'cash')
+
+    const destination = screen.getByLabelText('Destino do valor *')
+    expect(destination).toHaveAccessibleDescription(/VA e VR usam um único saldo no cartão de benefícios/)
+    expect(destination).not.toHaveAccessibleDescription(/passa para o Cartão de benefícios/)
+  })
+
+  it('keeps the regular hint when editing an income already in the unified benefit balance', async () => {
+    vi.mocked(incomesApi.list).mockResolvedValueOnce({ items: [{ ...income, balanceType: 'food_meal_benefit' }] })
+    const user = userEvent.setup()
+    await renderPage()
+    await user.click(await screen.findByRole('button', { name: 'Editar entrada Salário mensal' }))
+
+    expect(screen.getByLabelText('Destino do valor *')).toHaveAccessibleDescription(/VA e VR usam um único saldo no cartão de benefícios/)
   })
 
   it('shows a recoverable error when incomes cannot be loaded', async () => {

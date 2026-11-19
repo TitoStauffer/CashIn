@@ -1,0 +1,75 @@
+{
+  "ticket": "DEV-156",
+  "mutations": [
+    {
+      "id": "legacy-income-opens-in-unified-balance",
+      "package": "apps/web",
+      "file": "apps/web/src/incomes/IncomesPage.tsx",
+      "find": "balanceType: isLegacyBalanceType(income.balanceType) ? 'food_meal_benefit' : income.balanceType ?? 'cash',",
+      "replace": "balanceType: income.balanceType ?? 'cash',",
+      "command": [
+        "npx",
+        "vitest",
+        "run",
+        "src/incomes/IncomesPage.test.tsx"
+      ],
+      "timeoutSeconds": 240
+    },
+    {
+      "id": "legacy-income-shows-move-notice",
+      "package": "apps/web",
+      "file": "apps/web/src/incomes/IncomesPage.tsx",
+      "find": "hasLegacyBalanceType: isLegacyBalanceType(income.balanceType),",
+      "replace": "hasLegacyBalanceType: false,",
+      "command": [
+        "npx",
+        "vitest",
+        "run",
+        "src/incomes/IncomesPage.test.tsx"
+      ],
+      "timeoutSeconds": 240
+    },
+    {
+      "id": "meal-benefit-is-legacy",
+      "package": "apps/web",
+      "file": "apps/web/src/incomes/IncomesPage.tsx",
+      "find": "return balanceType === 'food_benefit' || balanceType === 'meal_benefit'",
+      "replace": "return balanceType === 'food_benefit'",
+      "command": [
+        "npx",
+        "vitest",
+        "run",
+        "src/incomes/IncomesPage.test.tsx"
+      ],
+      "timeoutSeconds": 240
+    },
+    {
+      "id": "regular-income-keeps-regular-hint",
+      "package": "apps/web",
+      "file": "apps/web/src/incomes/IncomesPage.tsx",
+      "find": "{editor.hasLegacyBalanceType && editor.balanceType === 'food_meal_benefit' ? 'Esta entrada usa um saldo antigo",
+      "replace": "{true ? 'Esta entrada usa um saldo antigo",
+      "command": [
+        "npx",
+        "vitest",
+        "run",
+        "src/incomes/IncomesPage.test.tsx"
+      ],
+      "timeoutSeconds": 240
+    },
+    {
+      "id": "move-notice-follows-chosen-destination",
+      "package": "apps/web",
+      "file": "apps/web/src/incomes/IncomesPage.tsx",
+      "find": "editor.hasLegacyBalanceType && editor.balanceType === 'food_meal_benefit' ?",
+      "replace": "editor.hasLegacyBalanceType ?",
+      "command": [
+        "npx",
+        "vitest",
+        "run",
+        "src/incomes/IncomesPage.test.tsx"
+      ],
+      "timeoutSeconds": 240
+    }
+  ]
+}

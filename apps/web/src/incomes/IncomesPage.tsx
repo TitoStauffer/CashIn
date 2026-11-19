@@ -21,6 +21,9 @@ type IncomeEditor = {
   categoryId: string
   subcategoryId: string
   balanceType: IncomeBalanceType
+  // The income was saved with a historical VA or VR balance, which the API moves to the unified one on any write.
+  // The move notice shows only while the unified balance is the chosen destination.
+  hasLegacyBalanceType: boolean
 } | null
 
 const balanceTypeLabels: Record<IncomeBalanceType, string> = {
@@ -32,6 +35,10 @@ const balanceTypeLabels: Record<IncomeBalanceType, string> = {
 }
 
 const selectableBalanceTypes: IncomeBalanceType[] = ['cash', 'food_meal_benefit', 'home_office_benefit']
+
+function isLegacyBalanceType(balanceType: IncomeBalanceType | null | undefined) {
+  return balanceType === 'food_benefit' || balanceType === 'meal_benefit'
+}
 
 function formatDate(date: string) {
   const [year, month, day] = date.split('-')
@@ -136,6 +143,7 @@ export function IncomesPage({ userEmail, isLoggingOut, onLogout }: IncomesPagePr
       categoryId: categories[0]?.id ?? '',
       subcategoryId: '',
       balanceType: 'cash',
+      hasLegacyBalanceType: false,
     })
   }
 
@@ -150,7 +158,9 @@ export function IncomesPage({ userEmail, isLoggingOut, onLogout }: IncomesPagePr
       description: income.description ?? '',
       categoryId: income.categoryId,
       subcategoryId: income.subcategoryId ?? '',
-      balanceType: income.balanceType ?? 'cash',
+      // Saving moves a historical VA or VR income to the unified benefit balance, so the editor shows that destination.
+      balanceType: isLegacyBalanceType(income.balanceType) ? 'food_meal_benefit' : income.balanceType ?? 'cash',
+      hasLegacyBalanceType: isLegacyBalanceType(income.balanceType),
     })
   }
 
@@ -364,11 +374,8 @@ export function IncomesPage({ userEmail, isLoggingOut, onLogout }: IncomesPagePr
                     {selectableBalanceTypes.map((value) => (
                       <option key={value} value={value}>{balanceTypeLabels[value]}</option>
                     ))}
-                    {(editor.balanceType === 'food_benefit' || editor.balanceType === 'meal_benefit') && (
-                      <option value={editor.balanceType}>{balanceTypeLabels[editor.balanceType]} (histórico)</option>
-                    )}
                   </select>
-                  <small id="income-balance-type-hint">{editor.balanceType === 'food_benefit' || editor.balanceType === 'meal_benefit' ? 'Este registro mantém seu destino histórico. Para novas entradas de VA ou VR, use Cartão de benefícios (VA/VR).' : 'VA e VR usam um único saldo no cartão de benefícios. Benefícios ficam separados do saldo em dinheiro.'}</small>
+                  <small id="income-balance-type-hint">{editor.hasLegacyBalanceType && editor.balanceType === 'food_meal_benefit' ? 'Esta entrada usa um saldo antigo de VA ou VR. Ao salvar, ela passa para o Cartão de benefícios (VA/VR), que reúne os dois.' : 'VA e VR usam um único saldo no cartão de benefícios. Benefícios ficam separados do saldo em dinheiro.'}</small>
                 </div>
                 <div className="income-field income-field--wide">
                   <label htmlFor="income-description">Descrição <span>(opcional)</span></label>

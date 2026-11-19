@@ -26,6 +26,7 @@ A Web usa React e Vite. `App.tsx` resolve a página pelo caminho atual, restaura
 - **Caminho recusado tem mensagem própria** em `feedback/apiErrorFeedback.ts`: o erro não tem status, então cairia no texto de conexão de cada tela e mandaria a pessoa tentar de novo algo que não pode dar certo.
 - Feedbacks de API passam pelas funções em `feedback/` para mensagens acionáveis.
 - **A edição de forma de pagamento manda só os campos alterados** (`paymentMethodChanges`, em `paymentMethods/paymentMethodsApi.ts`), como o app: a API normaliza toda natureza recebida, então reenviar uma natureza histórica de VA ou VR a reclassificaria. Sem alteração, o editor fecha sem chamar a API ([DEV-155](https://titostauffer.atlassian.net/browse/DEV-155)).
+- **A edição de entrada com destino histórico de VA ou VR abre no Cartão de benefícios (VA/VR)** e avisa que salvar move a entrada para ele, como o app: o `PUT /incomes/:id` substitui todos os campos e a API normaliza VA e VR históricos em qualquer escrita, então a tela não oferece nem promete manter o destino antigo ([DEV-156](https://titostauffer.atlassian.net/browse/DEV-156)).
 - Período mensal é compartilhado por utilitários em `period/`.
 - Não há biblioteca externa de roteamento; `App.tsx` usa `window.location` e caminhos conhecidos.
 
@@ -44,6 +45,7 @@ npm run build
 - [`apps/web/src/App.tsx`](../../../apps/web/src/App.tsx)
 - [`apps/web/src/authApi.ts`](../../../apps/web/src/authApi.ts)
 - [`apps/web/src/api/request.ts`](../../../apps/web/src/api/request.ts)
+- [`apps/web/src/incomes/IncomesPage.tsx`](../../../apps/web/src/incomes/IncomesPage.tsx)
 - [`apps/web/src/layout/FinancialSidebar.tsx`](../../../apps/web/src/layout/FinancialSidebar.tsx)
 - [`apps/web/src/paymentMethods/paymentMethodsApi.ts`](../../../apps/web/src/paymentMethods/paymentMethodsApi.ts)
 - [`apps/web/src/wallets/WalletContext.tsx`](../../../apps/web/src/wallets/WalletContext.tsx)
