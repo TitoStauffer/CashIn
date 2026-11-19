@@ -7,7 +7,8 @@ export interface VaultContextSnapshot {
   revision: 'head' | 'base';
   content: string;
   // Set when the citation was kept but its body was left out for the context budget: `content` is
-  // then the marker, not the file. Only a source a note merely cites can carry it.
+  // then the marker, not the file. Only a source a note merely cites, or evidence that only notes this
+  // PR does not change cite, can carry it.
   contentOmitted?: true;
 }
 
@@ -156,11 +157,13 @@ export async function loadVaultContext(
   // A body smaller than its own marker is never demotable either way: releasing it would add bytes
   // instead of freeing them, because the marker spells out path, size and digest. That only surfaces
   // once the smallest bodies are the ones picked first.
+  // Evidence admitted as optional (cited only by unchanged notes) can give up its body like a cited source.
+  const optionalEvidence = new Set<string>();
   const demoteOptionalBodies = (required: VaultContextSnapshot, prefer: 'largest' | 'smallest' = 'largest'): boolean => {
     const bytesOf = (candidate: VaultContextSnapshot) => Buffer.byteLength(candidate.content, 'utf8');
     const demotable = snapshots
       .map((snapshot, index) => ({ snapshot, index }))
-      .filter(({ snapshot }) => !snapshot.contentOmitted && isOptionalBody(snapshot.path))
+      .filter(({ snapshot }) => !snapshot.contentOmitted && (isOptionalBody(snapshot.path) || optionalEvidence.has(snapshot.path)))
       .filter(({ snapshot }) => bytesOf(snapshot) > bytesOf(omittedSourceSnapshot(snapshot)))
       .sort((first, second) => (prefer === 'largest'
         ? bytesOf(second.snapshot) - bytesOf(first.snapshot)
@@ -175,8 +178,11 @@ export async function loadVaultContext(
     return fits(required);
   };
 
-  // The vault's own documents and the GitHub evidence are what makes a note's claim checkable, so a
-  // budget they do not fit still aborts the review. A source file a note merely cites is orientation:
+  // The vault's own documents and the GitHub evidence of the notes this PR changes are what makes the
+  // claims under review checkable, so a budget they do not fit still aborts the review. Evidence that only
+  // unchanged notes cite is orientation for claims this PR does not make (DEV-160: 26 such items, 451 KB,
+  // reached by links from routed notes, aborted a review whose changed notes cited nothing), and is
+  // dropped for a marker the same way. A source file a note merely cites is orientation too:
   // every changed file reaches the prompt through the changed-source snapshots anyway, and the
   // closure of cited sources grows with the codebase instead of with the vault, which is what made
   // the abort inevitable here. Such a body is dropped for a marker, the shape the changed-source
@@ -283,6 +289,9 @@ export async function loadVaultContext(
   }
 
   const remoteReferences = new Map<string, GitHubEvidenceReference>();
+  // Evidence a note changed by this PR cites backs a claim the PR makes, so its body is required. Evidence
+  // only unchanged notes cite was reached by following links and is orientation, like a cited source.
+  const requiredEvidence = new Set<string>();
   for (let documentIndex = 0; documentIndex < documentsToInspect.length; documentIndex += 1) {
     const document = documentsToInspect[documentIndex];
     if (!document) continue;
@@ -299,7 +308,10 @@ export async function loadVaultContext(
         }
       }
       const remote = resolveGitHubEvidenceReference(target, owner, repositoryName);
-      if (remote) remoteReferences.set(`${remote.kind}:${remote.pullRequestNumber}:${remote.evidenceId}`, remote);
+      if (remote) {
+        remoteReferences.set(`${remote.kind}:${remote.pullRequestNumber}:${remote.evidenceId}`, remote);
+        if (changed.has(document.path)) requiredEvidence.add(remote.apiPath);
+      }
     }
   }
 
@@ -316,8 +328,11 @@ export async function loadVaultContext(
   }
 
   const evidenceResponses = new Map<string, Record<string, unknown>>();
+  // Arrival order is enough: an optional evidence body admitted ahead of a required one is demotable
+  // (`optionalEvidence`), so the required body takes its bytes instead of aborting the review.
   for (const reference of remoteReferences.values()) {
     const { apiPath, sourceUrl } = reference;
+    const required = requiredEvidence.has(apiPath);
     let payload = evidenceResponses.get(apiPath);
     if (!payload) {
       const response = await requestGitHubApi<unknown>(fetchImpl, apiPath, token, { maxResponseBytes: MAX_SINGLE_RESPONSE_BYTES });
@@ -327,11 +342,9 @@ export async function loadVaultContext(
     }
     assertGitHubEvidenceAssociation(payload, reference, owner, repositoryName);
     const evidence = normalizeGitHubEvidence(payload, sourceUrl);
-    addSnapshot({
-      path: `github-evidence://${apiPath.replace(/^\//, '')}`,
-      revision: 'head',
-      content: `${JSON.stringify(evidence, null, 2)}\n`,
-    }, true);
+    const path = `github-evidence://${apiPath.replace(/^\//, '')}`;
+    if (!required) optionalEvidence.add(path);
+    addSnapshot({ path, revision: 'head', content: `${JSON.stringify(evidence, null, 2)}\n` }, required);
   }
 
   return snapshots;
@@ -340,15 +353,15 @@ export async function loadVaultContext(
 // Mirrors the changed-source loader's fixture marker: the citation keeps its path and revision, and
 // the body is replaced by a statement naming its size and hash, so the reviewer can tell an omitted
 // source from an empty one.
+// Evidence gets its own wording: it was fetched and its association checked, and only unchanged notes
+// cite it, which is what the reviewer needs to know to weigh the claims that rest on it.
 function omittedSourceSnapshot(snapshot: VaultContextSnapshot): VaultContextSnapshot {
   const bytes = Buffer.byteLength(snapshot.content, 'utf8');
   const sha256 = createHash('sha256').update(snapshot.content).digest('hex');
-  return {
-    path: snapshot.path,
-    revision: snapshot.revision,
-    content: `[vault-cited source omitted from model context for the vault context budget; path=${snapshot.path}; sourceBytes=${bytes}; sourceSha256=${sha256}]`,
-    contentOmitted: true,
-  };
+  const content = snapshot.path.startsWith('github-evidence://')
+    ? `[vault evidence omitted from model context for the vault context budget; cited only by notes this pull request does not change; path=${snapshot.path}; evidenceBytes=${bytes}; evidenceSha256=${sha256}]`
+    : `[vault-cited source omitted from model context for the vault context budget; path=${snapshot.path}; sourceBytes=${bytes}; sourceSha256=${sha256}]`;
+  return { path: snapshot.path, revision: snapshot.revision, content, contentOmitted: true };
 }
 
 function parseContextMap(content: string): ContextMap {
@@ -680,8 +693,9 @@ function assertKnowledgeDocument(path: string): void {
   }
 }
 
-// Only a source a note merely cites may lose its body. The vault's own documents, the context map
-// and the GitHub evidence never can, which is what keeps a note's claim checkable.
+// A source a note merely cites may lose its body. The vault's own documents and the context map never
+// can. GitHub evidence is not decided by its path: the loader marks as optional only the evidence that no
+// note changed by this PR cites (`optionalEvidence`), which keeps the claims under review checkable.
 function isOptionalBody(path: string): boolean {
   return !isKnowledgeDocument(path) && path !== VAULT_CONTEXT_MAP && !path.startsWith('github-evidence://');
 }

@@ -1,0 +1,83 @@
+{
+  "ticket": "DEV-160",
+  "mutations": [
+    {
+      "id": "evidence-of-changed-notes-is-required",
+      "package": "tools/github-reviewer",
+      "file": "tools/github-reviewer/src/vault-context.ts",
+      "find": "if (changed.has(document.path)) requiredEvidence.add(remote.apiPath);",
+      "replace": "if (false) requiredEvidence.add(remote.apiPath);",
+      "command": [
+        "npm",
+        "run",
+        "test:vault-context"
+      ],
+      "timeoutSeconds": 240
+    },
+    {
+      "id": "later-changed-note-citation-makes-evidence-required",
+      "package": "tools/github-reviewer",
+      "file": "tools/github-reviewer/src/vault-context.ts",
+      "find": "remoteReferences.set(`${remote.kind}:${remote.pullRequestNumber}:${remote.evidenceId}`, remote);",
+      "replace": "if (remoteReferences.has(`${remote.kind}:${remote.pullRequestNumber}:${remote.evidenceId}`)) continue; remoteReferences.set(`${remote.kind}:${remote.pullRequestNumber}:${remote.evidenceId}`, remote);",
+      "command": [
+        "npm",
+        "run",
+        "test:vault-context"
+      ],
+      "timeoutSeconds": 240
+    },
+    {
+      "id": "evidence-of-unchanged-notes-is-optional",
+      "package": "tools/github-reviewer",
+      "file": "tools/github-reviewer/src/vault-context.ts",
+      "find": "}, required);",
+      "replace": "}, true);",
+      "command": [
+        "npm",
+        "run",
+        "test:vault-context"
+      ],
+      "timeoutSeconds": 240
+    },
+    {
+      "id": "optional-evidence-is-registered",
+      "package": "tools/github-reviewer",
+      "file": "tools/github-reviewer/src/vault-context.ts",
+      "find": "if (!required) optionalEvidence.add(path);",
+      "replace": "if (false) optionalEvidence.add(path);",
+      "command": [
+        "npm",
+        "run",
+        "test:vault-context"
+      ],
+      "timeoutSeconds": 240
+    },
+    {
+      "id": "optional-evidence-body-is-demotable",
+      "package": "tools/github-reviewer",
+      "file": "tools/github-reviewer/src/vault-context.ts",
+      "find": "(isOptionalBody(snapshot.path) || optionalEvidence.has(snapshot.path))",
+      "replace": "(isOptionalBody(snapshot.path))",
+      "command": [
+        "npm",
+        "run",
+        "test:vault-context"
+      ],
+      "timeoutSeconds": 240
+    },
+    {
+      "id": "evidence-marker-says-what-was-omitted",
+      "package": "tools/github-reviewer",
+      "file": "tools/github-reviewer/src/vault-context.ts",
+      "find": "const content = snapshot.path.startsWith('github-evidence://')",
+      "replace": "const content = false",
+      "command": [
+        "npm",
+        "run",
+        "test:vault-context"
+      ],
+      "timeoutSeconds": 240
+    }
+  ]
+}
