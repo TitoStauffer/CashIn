@@ -189,7 +189,7 @@ export function IncomesScreen({
             value={editor.balanceType}
             onChange={(balanceType) => setEditor({ ...editor, balanceType })}
           />
-          {editor.original && isLegacyBalanceType(editor.original.balanceType) ? <Text style={styles.detail}>{LEGACY_BALANCE_NOTICE}</Text> : null}
+          {editor.original && isLegacyBalanceType(editor.original.balanceType) && editor.balanceType === 'food_meal_benefit' ? <Text style={styles.detail}>{LEGACY_BALANCE_NOTICE}</Text> : null}
           <PrimaryButton label="Salvar entrada" onPress={save} busy={busy} />
           <LinkButton label="Cancelar edição" onPress={() => setEditor(null)} />
         </View>

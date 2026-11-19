@@ -155,6 +155,17 @@ describe('IncomesScreen', () => {
     expect(screen.queryByText(LEGACY_BALANCE_NOTICE)).toBeNull()
   })
 
+  it('drops the move notice when an old VA or VR income is given another destination', async () => {
+    await mount()
+    await screen.findByText('R$ 600,00')
+    await fireEvent.press(screen.getByRole('link', { name: 'Editar entrada de R$ 600,00 em 01/11/2026 (Salário)' }))
+    expect(screen.getByText(LEGACY_BALANCE_NOTICE)).toBeTruthy()
+    await fireEvent.press(screen.getByRole('radio', { name: 'Dinheiro' }))
+    expect(screen.queryByText(LEGACY_BALANCE_NOTICE)).toBeNull()
+    await fireEvent.press(screen.getByRole('radio', { name: 'Cartão de benefícios (VA/VR)' }))
+    expect(screen.getByText(LEGACY_BALANCE_NOTICE)).toBeTruthy()
+  })
+
   it('removes an income only after confirmation', async () => {
     const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => undefined)
     const { incomeApi } = await mount()

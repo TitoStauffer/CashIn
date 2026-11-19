@@ -1,7 +1,7 @@
 # Arquitetura do Mobile
 
 **Status:** confirmado
-**Última revisão:** 18/11/2026
+**Última revisão:** 19/11/2026
 
 ## Organização
 
@@ -61,7 +61,7 @@ O app fica em `apps/mobile`, com Expo SDK 58, React Native e TypeScript estrito,
 - **Período:** um mês por vez (`src/ui/MonthSelector.tsx`, `src/period/period.ts`), filtrado do primeiro ao último dia real do mês. A lista pertence à carteira e ao mês: quando um dos dois muda, a lista antiga sai da tela e o formulário aberto é descartado.
 - **Valor:** `src/money/amount.ts` lê o valor digitado sem passar por `number`. Vírgula e ponto são separador decimal (o teclado decimal do aparelho oferece um ou outro), não há separador de milhar, e a API recebe a string exata (`0,10` vira `"0.10"`). Negativo e zero são recusados. Despesas, cartões e metas vão reutilizar o mesmo campo e o mesmo seletor de mês.
 - **Data:** digitada como DD/MM/AAAA e aceita só quando é um dia real do calendário; a data de hoje vem preenchida.
-- **Saldo de destino:** dinheiro, Cartão de benefícios (VA/VR) ou AHO. O `PUT` substitui todos os campos, e a API normaliza VA ou VR antigo para o saldo unificado em qualquer escrita. Por isso, editar uma entrada antiga abre com o saldo unificado marcado e um aviso de que salvar a move para ele, em vez de oferecer uma escolha que o salvamento não manteria.
+- **Saldo de destino:** dinheiro, Cartão de benefícios (VA/VR) ou AHO. O `PUT` substitui todos os campos, e a API normaliza VA ou VR antigo para o saldo unificado em qualquer escrita. Por isso, editar uma entrada antiga abre com o saldo unificado marcado e um aviso de que salvar a move para ele, em vez de oferecer uma escolha que o salvamento não manteria. O aviso só aparece enquanto o saldo unificado está escolhido: trocar para dinheiro ou AHO o remove ([DEV-161](https://titostauffer.atlassian.net/browse/DEV-161)).
 
 ## Despesas (DEV-146)
 
@@ -151,6 +151,7 @@ A API precisa estar acessível pelo celular. O `docker compose up` publica a por
 - [`apps/mobile/src/screens/WalletSharingScreen.tsx`](../../../apps/mobile/src/screens/WalletSharingScreen.tsx)
 - [`apps/mobile/src/catalog/catalogApi.ts`](../../../apps/mobile/src/catalog/catalogApi.ts)
 - [`apps/mobile/src/incomes/incomeApi.ts`](../../../apps/mobile/src/incomes/incomeApi.ts)
+- [`apps/mobile/src/screens/IncomesScreen.tsx`](../../../apps/mobile/src/screens/IncomesScreen.tsx)
 - [`apps/mobile/src/expenses/expenseApi.ts`](../../../apps/mobile/src/expenses/expenseApi.ts)
 - [`apps/mobile/src/expenses/ExpenseForm.tsx`](../../../apps/mobile/src/expenses/ExpenseForm.tsx)
 - [`apps/mobile/src/dashboard/dashboardApi.ts`](../../../apps/mobile/src/dashboard/dashboardApi.ts)
