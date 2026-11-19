@@ -1,0 +1,18 @@
+{
+  "ticket": "DEV-161",
+  "mutations": [
+    {
+      "id": "move-notice-follows-chosen-destination",
+      "package": "apps/mobile",
+      "file": "apps/mobile/src/screens/IncomesScreen.tsx",
+      "find": "isLegacyBalanceType(editor.original.balanceType) && editor.balanceType === 'food_meal_benefit' ?",
+      "replace": "isLegacyBalanceType(editor.original.balanceType) ?",
+      "command": [
+        "npx",
+        "jest",
+        "src/screens/IncomesScreen.test.tsx"
+      ],
+      "timeoutSeconds": 240
+    }
+  ]
+}
