@@ -5,13 +5,15 @@ import { FinancialSidebar } from '../layout/FinancialSidebar'
 import { useWallet } from '../wallets/useWallet'
 import {
   getPaymentMethodNatureLabel,
+  paymentMethodChanges,
   paymentMethodNatures,
   paymentMethodsApi,
 } from './paymentMethodsApi'
 import type { PaymentMethod, PaymentMethodNature } from './paymentMethodsApi'
 import './PaymentMethodsPage.css'
 
-type Editor = { id: string | null; name: string; nature: PaymentMethodNature } | null
+// The original method is kept while editing so the save sends only what changed.
+type Editor = { original: PaymentMethod | null; name: string; nature: PaymentMethodNature } | null
 
 type PaymentMethodsPageProps = {
   userEmail: string
@@ -74,13 +76,13 @@ export function PaymentMethodsPage({ userEmail, isLoggingOut, onLogout }: Paymen
   function openCreate() {
     setFormError('')
     setSuccessMessage('')
-    setEditor({ id: null, name: '', nature: 'immediate' })
+    setEditor({ original: null, name: '', nature: 'immediate' })
   }
 
   function openEdit(method: PaymentMethod) {
     setFormError('')
     setSuccessMessage('')
-    setEditor({ id: method.id, name: method.name, nature: method.nature })
+    setEditor({ original: method, name: method.name, nature: method.nature })
   }
 
   async function handleSave(event: FormEvent<HTMLFormElement>) {
@@ -92,12 +94,20 @@ export function PaymentMethodsPage({ userEmail, isLoggingOut, onLogout }: Paymen
       return
     }
 
+    const changes = editor.original ? paymentMethodChanges(editor.original, name, editor.nature) : null
+    // Nothing changed: the API refuses an empty update, and there is nothing to save.
+    if (changes && Object.keys(changes).length === 0) {
+      setFormError('')
+      setEditor(null)
+      return
+    }
+
     setFormError('')
     setSuccessMessage('')
     setPendingAction('save')
     try {
-      if (editor.id) {
-        await paymentMethodsApi.update(editor.id, { name, nature: editor.nature })
+      if (editor.original && changes) {
+        await paymentMethodsApi.update(editor.original.id, changes)
         setSuccessMessage('Forma de pagamento atualizada.')
       } else {
         await paymentMethodsApi.create({ name, nature: editor.nature })
@@ -153,7 +163,7 @@ export function PaymentMethodsPage({ userEmail, isLoggingOut, onLogout }: Paymen
             {editor && !isWalletLoading && !loadError && (
               <form className="payment-method-editor" onSubmit={handleSave} aria-labelledby="payment-method-editor-title">
                 <div className="payment-method-editor__heading">
-                  <h2 id="payment-method-editor-title">{editor.id ? 'Editar forma de pagamento' : 'Nova forma de pagamento'}</h2>
+                  <h2 id="payment-method-editor-title">{editor.original ? 'Editar forma de pagamento' : 'Nova forma de pagamento'}</h2>
                   <p>Defina um nome e a natureza usada para classificar as despesas.</p>
                 </div>
                 <div className="payment-method-editor__grid">
