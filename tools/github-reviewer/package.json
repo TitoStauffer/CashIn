@@ -8,6 +8,7 @@
     "build": "tsc -p tsconfig.json",
     "test": "npm run build && node --test test/*.test.mjs",
     "test:review-inputs": "npm run build && node --test test/agent-review-inputs.test.mjs",
+    "test:vault-context": "npm run build && node --test test/vault-context.test.mjs",
     "test:required-checks": "npm run build && node --test test/merge-readiness.test.mjs test/agent-stage-policy.test.mjs test/agent-ci-evidence.test.mjs test/agent-review-inputs.test.mjs",
     "review": "node src/cli.mjs",
     "publish-report": "npm run build && node dist/report-cli.js",
