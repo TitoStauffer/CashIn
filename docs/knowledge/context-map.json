@@ -64,6 +64,10 @@
       "documents": ["docs/knowledge/learnings/agent-process.md"]
     },
     {
+      "paths": ["deploy/production/**", "apps/api/Dockerfile.production", "apps/web/Dockerfile.production", "apps/mobile/eas.json"],
+      "documents": ["docs/knowledge/runbooks/production-vps.md", "docs/knowledge/architecture/system-overview.md"]
+    },
+    {
       "paths": ["deploy/observability/**"],
       "documents": ["docs/knowledge/runbooks/observability-vps.md", "docs/knowledge/architecture/system-overview.md"]
     },

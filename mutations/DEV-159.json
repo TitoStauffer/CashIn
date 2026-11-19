@@ -1,0 +1,103 @@
+{
+  "ticket": "DEV-159",
+  "mutations": [
+    {
+      "id": "forwarded-address-is-ignored-behind-the-proxy",
+      "package": "apps/api",
+      "file": "apps/api/src/app.ts",
+      "find": "trustProxy: options.trustedProxies?.length ? options.trustedProxies : false,",
+      "replace": "trustProxy: false,",
+      "command": [
+        "npx",
+        "tsx",
+        "--test",
+        "--test-name-pattern=proxy",
+        "src/auth/auth.routes.test.ts"
+      ],
+      "timeoutSeconds": 180
+    },
+    {
+      "id": "every-forwarded-address-is-believed",
+      "package": "apps/api",
+      "file": "apps/api/src/app.ts",
+      "find": "trustProxy: options.trustedProxies?.length ? options.trustedProxies : false,",
+      "replace": "trustProxy: options.trustedProxies?.length ? true : false,",
+      "command": [
+        "npx",
+        "tsx",
+        "--test",
+        "--test-name-pattern=proxy",
+        "src/auth/auth.routes.test.ts"
+      ],
+      "timeoutSeconds": 180
+    },
+    {
+      "id": "forwarded-address-is-believed-without-a-proxy",
+      "package": "apps/api",
+      "file": "apps/api/src/app.ts",
+      "find": "trustProxy: options.trustedProxies?.length ? options.trustedProxies : false,",
+      "replace": "trustProxy: options.trustedProxies?.length ? options.trustedProxies : true,",
+      "command": [
+        "npx",
+        "tsx",
+        "--test",
+        "--test-name-pattern=proxy",
+        "src/auth/auth.routes.test.ts"
+      ],
+      "timeoutSeconds": 180
+    },
+    {
+      "id": "blank-proxy-list-trusts-an-empty-address",
+      "package": "apps/api",
+      "file": "apps/api/src/trusted-proxies.ts",
+      "find": ".filter(Boolean)",
+      "replace": ".filter(() => true)",
+      "command": [
+        "npx",
+        "tsx",
+        "--test",
+        "src/trusted-proxies.test.ts"
+      ],
+      "timeoutSeconds": 120
+    },
+    {
+      "id": "preview-build-goes-to-the-store",
+      "package": "apps/mobile",
+      "file": "apps/mobile/eas.json",
+      "find": "\"distribution\": \"internal\",",
+      "replace": "\"distribution\": \"store\",",
+      "command": [
+        "npx",
+        "jest",
+        "src/config/easConfig.test.ts"
+      ],
+      "timeoutSeconds": 120
+    },
+    {
+      "id": "api-address-written-in-the-repository",
+      "package": "apps/mobile",
+      "file": "apps/mobile/eas.json",
+      "find": "\"environment\": \"production\",",
+      "replace": "\"environment\": \"production\", \"env\": { \"EXPO_PUBLIC_API_URL\": \"https://api.example.invalid\" },",
+      "command": [
+        "npx",
+        "jest",
+        "src/config/easConfig.test.ts"
+      ],
+      "timeoutSeconds": 120
+    },
+    {
+      "id": "preview-build-without-its-environment",
+      "package": "apps/mobile",
+      "file": "apps/mobile/eas.json",
+      "find": "\"environment\": \"preview\",",
+      "replace": "\"channel\": \"preview\",",
+      "command": [
+        "npx",
+        "jest",
+        "src/config/easConfig.test.ts"
+      ],
+      "timeoutSeconds": 120
+    }
+  ]
+}

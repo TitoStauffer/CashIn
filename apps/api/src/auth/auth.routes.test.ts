@@ -314,6 +314,68 @@ test("login limits attempts by IP temporarily without locking an account", async
   await app.close();
 });
 
+async function exhaustLoginBudget(app: ReturnType<typeof createApp>, headers: Record<string, string>) {
+  const payload = { email: "person@example.com", password: "WrongPassword1!" };
+  for (let attempt = 0; attempt < 10; attempt += 1) {
+    assert.equal((await app.inject({ method: "POST", url: "/auth/login", payload, headers })).statusCode, 401);
+  }
+  return payload;
+}
+
+test("behind the trusted proxy, the login budget follows the address the proxy wrote", async () => {
+  // Injected requests come from 127.0.0.1, which stands for the proxy here; only the forwarded address differs.
+  const app = createApp(createTestDatabase(), { authRepository: new MemoryAuthRepository(), trustedProxies: ["127.0.0.1"] });
+  try {
+    const payload = await exhaustLoginBudget(app, { "x-forwarded-for": "198.51.100.1" });
+    const blocked = await app.inject({ method: "POST", url: "/auth/login", payload, headers: { "x-forwarded-for": "198.51.100.1" } });
+    assert.equal(blocked.statusCode, 429);
+
+    const otherClient = await app.inject({ method: "POST", url: "/auth/login", payload, headers: { "x-forwarded-for": "198.51.100.2" } });
+    assert.equal(otherClient.statusCode, 401);
+
+    // A client that writes its own X-Forwarded-For only adds entries before the one the proxy appended.
+    const forged = await app.inject({
+      method: "POST",
+      url: "/auth/login",
+      payload,
+      headers: { "x-forwarded-for": "203.0.113.77, 198.51.100.1" },
+    });
+    assert.equal(forged.statusCode, 429);
+
+    // A client that reaches the API directly, not through the proxy, is never believed: its own socket
+    // address counts, whatever header it sends.
+    const direct = await app.inject({
+      method: "POST",
+      url: "/auth/login",
+      payload,
+      remoteAddress: "203.0.113.9",
+      headers: { "x-forwarded-for": "198.51.100.3" },
+    });
+    assert.equal(direct.statusCode, 401);
+    const directUsingABlockedAddress = await app.inject({
+      method: "POST",
+      url: "/auth/login",
+      payload,
+      remoteAddress: "198.51.100.3",
+      headers: { "x-forwarded-for": "198.51.100.1" },
+    });
+    assert.equal(directUsingABlockedAddress.statusCode, 401);
+  } finally {
+    await app.close();
+  }
+});
+
+test("without a trusted proxy, X-Forwarded-For does not change the address of the login budget", async () => {
+  const app = createApp(createTestDatabase(), { authRepository: new MemoryAuthRepository() });
+  try {
+    const payload = await exhaustLoginBudget(app, { "x-forwarded-for": "198.51.100.1" });
+    const otherHeader = await app.inject({ method: "POST", url: "/auth/login", payload, headers: { "x-forwarded-for": "198.51.100.2" } });
+    assert.equal(otherHeader.statusCode, 429);
+  } finally {
+    await app.close();
+  }
+});
+
 const VERIFIED_PASSWORD = "Abcdef1!secure";
 
 function createAppWithMailbox(repository = new MemoryAuthRepository()) {

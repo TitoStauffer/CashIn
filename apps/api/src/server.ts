@@ -2,6 +2,7 @@ import { Pool } from "pg";
 import { createApp } from "./app.js";
 import { createDatabase, runMigrations } from "./database.js";
 import { createEmailSenderFromEnvironment } from "./auth/email-sender.js";
+import { trustedProxiesFromEnvironment } from "./trusted-proxies.js";
 
 const databaseUrl = process.env.DATABASE_URL;
 
@@ -28,6 +29,7 @@ const app = createApp(database, {
   walletInvitationTokenTtlHours: positiveIntegerFromEnvironment("WALLET_INVITATION_TOKEN_TTL_HOURS", 168),
   walletAccessLinkTtlHours: positiveIntegerFromEnvironment("WALLET_ACCESS_LINK_TTL_HOURS", 168),
   secureCookies: process.env.NODE_ENV === "production",
+  trustedProxies: trustedProxiesFromEnvironment(process.env.TRUSTED_PROXIES),
 });
 
 const port = Number(process.env.PORT ?? 3000);

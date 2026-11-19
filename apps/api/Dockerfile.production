@@ -1,0 +1,22 @@
+# Production image of the API (DEV-159), used by deploy/production/compose.yaml. The development image
+# (Dockerfile) runs tsx in watch mode; this one runs the compiled JavaScript with production dependencies
+# only, as the unprivileged `node` user. Base images are pinned by digest (deploy/production/check-compose.mjs).
+FROM node:24-alpine@sha256:116b800c3754b440ee0aa3ed2f20f5bf3d99a554bfd9adeea09ea8017f6e85f5 AS build
+WORKDIR /app
+COPY package.json package-lock.json ./
+RUN npm ci
+COPY tsconfig.json ./
+COPY src ./src
+RUN npm run build && find dist -name "*.test.js" -delete
+
+FROM node:24-alpine@sha256:116b800c3754b440ee0aa3ed2f20f5bf3d99a554bfd9adeea09ea8017f6e85f5
+ENV NODE_ENV=production
+WORKDIR /app
+COPY package.json package-lock.json ./
+RUN npm ci --omit=dev && npm cache clean --force
+COPY --from=build /app/dist ./dist
+# runMigrations reads ../migrations from dist/database.js, and applies them at every start.
+COPY migrations ./migrations
+USER node
+EXPOSE 3000
+CMD ["node", "--import", "./dist/instrumentation.js", "dist/server.js"]

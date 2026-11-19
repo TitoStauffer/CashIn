@@ -1,0 +1,38 @@
+# Reverse proxy of the production stack (DEV-159). Caddy obtains and renews the certificate of
+# SITE_ADDRESS by itself; with SITE_ADDRESS=localhost (smoke test) it uses its own local authority.
+# Plain HTTP on port 80 only answers the ACME challenge and redirects to HTTPS.
+{
+	email {$ACME_EMAIL}
+	# The admin endpoint is not needed: configuration changes go through a restart.
+	admin off
+}
+
+{$SITE_ADDRESS} {
+	encode zstd gzip
+
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options nosniff
+		X-Frame-Options DENY
+		Referrer-Policy strict-origin-when-cross-origin
+		-Server
+	}
+
+	# Same path as the Vite proxy in development: /api/x reaches the API as /x. The app uses
+	# https://<domain>/api as EXPO_PUBLIC_API_URL. Caddy replaces any X-Forwarded-For the client sent with
+	# the client's address, and the API trusts it only from this container (TRUSTED_PROXIES).
+	handle_path /api/* {
+		request_body {
+			# Imports accept up to 10 MB (financial-imports); the API gives the message in Portuguese.
+			max_size 11MB
+		}
+		reverse_proxy api:3000
+	}
+
+	# The single-page Web: unknown paths fall back to index.html, which the router resolves.
+	handle {
+		root * /srv
+		try_files {path} /index.html
+		file_server
+	}
+}

@@ -27,6 +27,7 @@ Autenticação, carteiras, convites, solicitações de acesso, categorias, forma
 - Dinheiro é validado e serializado como decimal, evitando ponto flutuante no contrato.
 - Testes de integração criam schemas temporários e aplicam as migrations oficiais.
 - Upload financeiro usa limite próprio e não persiste o arquivo bruto.
+- **IP do cliente atrás do proxy (DEV-159).** Os limitadores por IP (cadastro, login e pedido de acesso) usam `request.ip`. Sem `TRUSTED_PROXIES` (`src/trusted-proxies.ts`, opção `trustedProxies` de `createApp`), esse IP é o do socket, como sempre foi. Com a variável, que em produção é só o IP fixo do Caddy, uma conexão vinda desse endereço é atribuída ao endereço que o proxy acrescentou ao `X-Forwarded-For`; o que o cliente escreveu antes é ignorado, e um cliente que chega direto nunca é acreditado. Não há contagem de saltos: o Fastify 5.12 a recusa. Um endereço inválido impede a API de subir. Testes em `src/auth/auth.routes.test.ts` e `src/trusted-proxies.test.ts`; stack e runbook em [`runbooks/production-vps.md`](../runbooks/production-vps.md).
 
 ## Autenticação (DEV-140)
 

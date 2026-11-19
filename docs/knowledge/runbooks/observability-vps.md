@@ -52,7 +52,7 @@ No total, até 2,5 CPUs e cerca de 2,2 GB. A VPS precisa ter folga para isso **a
    ```
 
 4. Suba: `docker compose -f deploy/observability/compose.yaml up -d`.
-5. Ligue a API à rede `saldocerto-observability` e defina, no ambiente dela:
+5. Ligue a API à rede `saldocerto-observability` e defina, no ambiente dela (o `deploy/production/compose.yaml` da DEV-159 já faz os dois; ver [production-vps.md](production-vps.md)):
    - `OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318`
    - `OTEL_LOGS_EXPORTER=otlp`
    - `OTEL_METRICS_EXPORTER=otlp` (métricas técnicas, DEV-134)

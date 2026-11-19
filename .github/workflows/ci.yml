@@ -150,8 +150,9 @@ jobs:
     # 15 minutes for the API itself plus room for the two observability checks that run only when
     # deploy/observability changes: the stack smoke test (DEV-133, about 2 minutes plus the image pulls) and
     # the dashboard check (DEV-136, about 2 minutes: the stack again, 25 seconds of traffic and up to 90 seconds
-    # of waiting for data).
-    timeout-minutes: 22
+    # of waiting for data). Six more for the production stack smoke test (DEV-159), which builds the API and
+    # Web production images and runs only when the stack changes.
+    timeout-minutes: 28
     defaults:
       run:
         working-directory: apps/api
@@ -223,6 +224,33 @@ jobs:
             exit 0
           fi
           node deploy/observability/smoke/smoke-test.mjs
+
+      - name: Validate production stack
+        working-directory: .
+        # deploy/production (DEV-159) is applied on the VPS only on request. The rules run on the configuration
+        # Compose resolves and on the two production Dockerfiles; the values below are placeholders that only
+        # let `config` interpolate the required variables.
+        env:
+          SITE_ADDRESS: localhost
+          ACME_EMAIL: ci-check@example.invalid
+          POSTGRES_DB: ci-check
+          POSTGRES_USER: ci-check
+          POSTGRES_PASSWORD: ci-check
+        run: |
+          node --test deploy/production/check-compose.test.mjs
+          docker compose -f deploy/production/compose.yaml config --format json | node deploy/production/check-compose.mjs
+
+      - name: Smoke test production stack
+        working-directory: .
+        # Builds the production images, brings the stack up with Caddy's local authority and checks it over
+        # HTTPS (deploy/production/smoke/smoke-test.mjs). Runs only when the commit under test changes the
+        # stack or the images it builds.
+        run: |
+          if git diff --quiet HEAD^1 HEAD -- deploy/production apps/api/Dockerfile.production apps/web/Dockerfile.production; then
+            echo "The production stack is unchanged by this commit: smoke test not needed."
+            exit 0
+          fi
+          node deploy/production/smoke/smoke-test.mjs
 
       - name: Install dependencies
         run: npm ci --fetch-timeout=15000 --fetch-retries=1
