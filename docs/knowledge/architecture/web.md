@@ -1,7 +1,7 @@
 # Arquitetura da Web
 
 **Status:** confirmado
-**Última revisão:** 11/11/2026
+**Última revisão:** 19/11/2026
 
 ## Organização
 
@@ -25,6 +25,7 @@ A Web usa React e Vite. `App.tsx` resolve a página pelo caminho atual, restaura
 - **O caminho passa por `assertSafeApiPath` (`api/requestPath.ts`) antes do `fetch`.** Cada domínio monta o caminho com prefixo literal e identificadores sob `encodeURIComponent`; a guarda recusa caminho que não comece em `/`, protocolo-relativo (`//host`), segmento que suba de diretório em qualquer grafia — `..`, `.%2e`, `%2e%2e` e as formas em maiúscula, por decodificação —, escape truncado e caracteres que uma rota nunca precisa. Ela aceita `!*'()`, que `encodeURIComponent` não escapa. A convenção do encode já bastava; a guarda existe porque convenção se esquece, e porque a análise estática não a prova lendo os chamadores.
 - **Caminho recusado tem mensagem própria** em `feedback/apiErrorFeedback.ts`: o erro não tem status, então cairia no texto de conexão de cada tela e mandaria a pessoa tentar de novo algo que não pode dar certo.
 - Feedbacks de API passam pelas funções em `feedback/` para mensagens acionáveis.
+- **A edição de forma de pagamento manda só os campos alterados** (`paymentMethodChanges`, em `paymentMethods/paymentMethodsApi.ts`), como o app: a API normaliza toda natureza recebida, então reenviar uma natureza histórica de VA ou VR a reclassificaria. Sem alteração, o editor fecha sem chamar a API ([DEV-155](https://titostauffer.atlassian.net/browse/DEV-155)).
 - Período mensal é compartilhado por utilitários em `period/`.
 - Não há biblioteca externa de roteamento; `App.tsx` usa `window.location` e caminhos conhecidos.
 
@@ -44,5 +45,6 @@ npm run build
 - [`apps/web/src/authApi.ts`](../../../apps/web/src/authApi.ts)
 - [`apps/web/src/api/request.ts`](../../../apps/web/src/api/request.ts)
 - [`apps/web/src/layout/FinancialSidebar.tsx`](../../../apps/web/src/layout/FinancialSidebar.tsx)
+- [`apps/web/src/paymentMethods/paymentMethodsApi.ts`](../../../apps/web/src/paymentMethods/paymentMethodsApi.ts)
 - [`apps/web/src/wallets/WalletContext.tsx`](../../../apps/web/src/wallets/WalletContext.tsx)
 - [`apps/web/package.json`](../../../apps/web/package.json)
