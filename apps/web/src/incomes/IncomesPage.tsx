@@ -22,6 +22,7 @@ type IncomeEditor = {
   subcategoryId: string
   balanceType: IncomeBalanceType
   // The income was saved with a historical VA or VR balance, which the API moves to the unified one on any write.
+  // The move notice shows only while the unified balance is the chosen destination.
   hasLegacyBalanceType: boolean
 } | null
 
@@ -374,7 +375,7 @@ export function IncomesPage({ userEmail, isLoggingOut, onLogout }: IncomesPagePr
                       <option key={value} value={value}>{balanceTypeLabels[value]}</option>
                     ))}
                   </select>
-                  <small id="income-balance-type-hint">{editor.hasLegacyBalanceType ? 'Esta entrada usa um saldo antigo de VA ou VR. Ao salvar, ela passa para o Cartão de benefícios (VA/VR), que reúne os dois.' : 'VA e VR usam um único saldo no cartão de benefícios. Benefícios ficam separados do saldo em dinheiro.'}</small>
+                  <small id="income-balance-type-hint">{editor.hasLegacyBalanceType && editor.balanceType === 'food_meal_benefit' ? 'Esta entrada usa um saldo antigo de VA ou VR. Ao salvar, ela passa para o Cartão de benefícios (VA/VR), que reúne os dois.' : 'VA e VR usam um único saldo no cartão de benefícios. Benefícios ficam separados do saldo em dinheiro.'}</small>
                 </div>
                 <div className="income-field income-field--wide">
                   <label htmlFor="income-description">Descrição <span>(opcional)</span></label>

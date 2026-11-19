@@ -184,6 +184,18 @@ describe('IncomesPage currency input', () => {
     await waitFor(() => expect(incomesApi.update).toHaveBeenCalledWith('income-1', expect.objectContaining({ balanceType: 'food_meal_benefit' })))
   })
 
+  it('drops the move notice when a historical benefit income is given another destination', async () => {
+    vi.mocked(incomesApi.list).mockResolvedValueOnce({ items: [{ ...income, balanceType: 'food_benefit' }] })
+    const user = userEvent.setup()
+    await renderPage()
+    await user.click(await screen.findByRole('button', { name: 'Editar entrada Salário mensal' }))
+    await user.selectOptions(screen.getByLabelText('Destino do valor *'), 'cash')
+
+    const destination = screen.getByLabelText('Destino do valor *')
+    expect(destination).toHaveAccessibleDescription(/VA e VR usam um único saldo no cartão de benefícios/)
+    expect(destination).not.toHaveAccessibleDescription(/passa para o Cartão de benefícios/)
+  })
+
   it('keeps the regular hint when editing an income already in the unified benefit balance', async () => {
     vi.mocked(incomesApi.list).mockResolvedValueOnce({ items: [{ ...income, balanceType: 'food_meal_benefit' }] })
     const user = userEvent.setup()
